@@ -18,14 +18,14 @@ console = Console()
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    commands = {"agent", "chat", "sessions", "doctor", "hardware", "models"}
+    if raw_argv and raw_argv[0] not in commands and not raw_argv[0].startswith("-"):
+        raw_argv = ["agent", *raw_argv]
+
     parser = argparse.ArgumentParser(
         prog="ci2lab",
         description="Agente local multi-modelo con arnés agéntico",
-    )
-    parser.add_argument(
-        "prompt",
-        nargs="?",
-        help="Petición directa (atajo: ci2lab \"tu tarea\")",
     )
     parser.add_argument(
         "--model",
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     recommend_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
     recommend_p.add_argument("--limit", type=int, default=5, help="Número máximo de modelos")
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
     args.cwd = os.path.abspath(args.cwd or os.getcwd())
 
     if args.command == "agent":
@@ -81,9 +81,6 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_hardware(args)
     if args.command == "models" and args.models_command == "recommend":
         return _cmd_models_recommend(args)
-    if args.prompt:
-        return _run_turn(args.prompt, args)
-
     parser.print_help()
     return 0
 
