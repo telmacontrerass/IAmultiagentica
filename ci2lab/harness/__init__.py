@@ -1,1 +1,35 @@
-"""Arnés agéntico: bucle ReAct, tools y prompts."""
+"""Arnés agéntico: bucle ReAct, herramientas, REPL y sesiones."""
+
+from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.loop import run_agent
+from ci2lab.harness.repl import run_repl
+from ci2lab.harness.session import list_sessions, load_session, new_session_id, save_session
+from ci2lab.harness.types import AgentConfig
+
+
+def default_selection(
+    ollama_tag: str = "llama3.1:8b",
+    *,
+    tool_mode: str = "native",
+) -> ModelSelection:
+    """ModelSelection de prueba cuando el router aún no está implementado."""
+    return ModelSelection(
+        model_id=ollama_tag.replace(":", "-"),
+        ollama_tag=ollama_tag,
+        display_name=ollama_tag,
+        tool_mode=tool_mode,  # type: ignore[arg-type]
+        supports_tools=True,
+    )
+
+
+__all__ = [
+    "AgentConfig",
+    "ModelSelection",
+    "default_selection",
+    "list_sessions",
+    "load_session",
+    "new_session_id",
+    "run_agent",
+    "run_repl",
+    "save_session",
+]

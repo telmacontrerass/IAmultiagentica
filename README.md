@@ -16,7 +16,7 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 | `ci2lab/hardware/` | 🔲 | Perfilador RAM/VRAM/GPU |
 | `ci2lab/router/` | 🔲 | Catálogo + selección de modelo |
 | `ci2lab/runtime/` | 🔲 | Ollama pull/ensure |
-| `ci2lab/harness/` | 🔲 | Arnés agéntico (ReAct + tools) |
+| `ci2lab/harness/` | ✅ | Arnés completo (ReAct, 7 tools, REPL, sesiones, streaming) |
 
 ## Instalación (desarrollo)
 
@@ -25,6 +25,10 @@ cd IAmultiagentica
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
+ci2lab doctor
+ci2lab "lista los archivos Python" --model llama3.1:8b --yes
+ci2lab chat                              # modo interactivo
+ci2lab sessions                          # historial guardado
 ```
 
 ## Documentación
