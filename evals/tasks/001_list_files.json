@@ -1,0 +1,33 @@
+{
+  "id": "001_list_files",
+  "name": "Listar archivos con ls",
+  "prompt": "Lista los archivos del directorio actual del proyecto.",
+  "workspace_setup": {
+    "files": {
+      "readme.txt": "hola",
+      "src/app.py": "print('ok')"
+    }
+  },
+  "expected_tool_groups": [["ls"]],
+  "forbidden_tools": ["bash", "write_file", "edit_file"],
+  "max_rounds": 10,
+  "write_tools_enabled": true,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "ls",
+            "arguments": "{\"path\": \".\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "El directorio contiene readme.txt y src/.",
+      "tool_calls": []
+    }
+  ]
+}

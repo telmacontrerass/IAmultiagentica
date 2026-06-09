@@ -17,6 +17,7 @@ def prepare_session(
     *,
     force_model: str | None = None,
     tool_mode: str = "native",
+    backend_url: str | None = None,
     pull: bool = True,  # noqa: ARG001 — usado cuando exista runtime.ensure
 ) -> tuple[HardwareProfile | None, ModelSelection]:
     """
@@ -40,4 +41,7 @@ def prepare_session(
         return profile, selection
     except ImportError:
         tag = force_model or os.environ.get("CI2LAB_MODEL", "llama3.1:8b")
-        return None, default_selection(tag, tool_mode=tool_mode)
+        selection = default_selection(tag, tool_mode=tool_mode)
+        if backend_url:
+            selection.backend_url = backend_url
+        return None, selection

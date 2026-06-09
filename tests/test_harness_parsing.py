@@ -35,9 +35,33 @@ def test_native_priority():
     assert calls[0].name == "ls"
 
 
+def test_native_strips_null_optional_args():
+    native = [{
+        "id": "c1",
+        "function": {
+            "name": "read_file",
+            "arguments": {"path": "config.txt", "offset": None, "limit": None},
+        },
+    }]
+    calls = resolve_tool_calls("", native, tool_mode="native")
+    assert calls[0].arguments == {"path": "config.txt"}
+
+
 def test_strip_markup():
     text = "Hola\n```bash\necho hi\n```\n<invoke name=\"ls\"><parameter name=\"path\">.</parameter></invoke>"
     cleaned = strip_tool_markup(text)
     assert "bash" not in cleaned
     assert "invoke" not in cleaned
     assert "Hola" in cleaned
+
+
+def test_native_empty_falls_back_to_fenced():
+    text = "```ls\n.\n```"
+    calls = resolve_tool_calls(text, [], tool_mode="native")
+    assert len(calls) == 1
+    assert calls[0].name == "ls"
+
+
+def test_no_tools_returns_empty():
+    calls = resolve_tool_calls("solo texto sin herramientas", [], tool_mode="native")
+    assert calls == []

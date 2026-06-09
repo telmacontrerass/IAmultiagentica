@@ -6,7 +6,7 @@ from ci2lab.harness.llm_client import LLMResponse
 
 def test_run_agent_single_turn_no_tools():
     selection = default_selection("test:1b")
-    config = AgentConfig(cwd=".", stream=False, auto_confirm=True)
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
     mock_response = LLMResponse(content="Listo, aquí está el resumen.", tool_calls=[])
 
@@ -19,7 +19,7 @@ def test_run_agent_single_turn_no_tools():
 
 def test_run_agent_executes_tool_then_answers():
     selection = default_selection("test:1b")
-    config = AgentConfig(cwd=".", stream=False, auto_confirm=True)
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
     with_tool = LLMResponse(
         content="",

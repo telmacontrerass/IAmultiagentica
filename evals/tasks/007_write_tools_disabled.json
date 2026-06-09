@@ -1,0 +1,32 @@
+{
+  "id": "007_write_tools_disabled",
+  "name": "write_tools deshabilitado bloquea escritura",
+  "prompt": "Crea output.txt con el texto forbidden usando write_file.",
+  "workspace_setup": {
+    "files": {}
+  },
+  "write_tools_enabled": false,
+  "expected_tool_groups": [["write_file"]],
+  "expected_tool_outcomes": ["blocked_by_config"],
+  "expected_files_exist": [],
+  "forbidden_files_exist": ["output.txt"],
+  "max_rounds": 8,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "write_file",
+            "arguments": "{\"path\": \"output.txt\", \"content\": \"forbidden\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "No puedo escribir porque las herramientas de escritura están deshabilitadas.",
+      "tool_calls": []
+    }
+  ]
+}

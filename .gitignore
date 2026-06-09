@@ -11,3 +11,5 @@ venv/
 .ruff_cache/
 *.log
 .env
+runs/
+evals/results/

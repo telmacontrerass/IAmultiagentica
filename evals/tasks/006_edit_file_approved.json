@@ -1,0 +1,35 @@
+{
+  "id": "006_edit_file_approved",
+  "name": "edit_file aprobado modifica archivo",
+  "prompt": "Edita target.txt reemplazando alpha por beta.",
+  "workspace_setup": {
+    "files": {
+      "target.txt": "alpha"
+    }
+  },
+  "requires_approval": true,
+  "expected_tool_groups": [["edit_file"]],
+  "expected_tool_outcomes": ["approved"],
+  "expected_file_contains": {
+    "target.txt": "beta"
+  },
+  "max_rounds": 10,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "edit_file",
+            "arguments": "{\"path\": \"target.txt\", \"old_string\": \"alpha\", \"new_string\": \"beta\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "Archivo actualizado a beta.",
+      "tool_calls": []
+    }
+  ]
+}

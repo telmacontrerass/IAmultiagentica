@@ -1,0 +1,35 @@
+{
+  "id": "005_edit_file_denied",
+  "name": "edit_file denegado no modifica",
+  "prompt": "Cambia el contenido de target.txt de alpha a beta usando edit_file.",
+  "workspace_setup": {
+    "files": {
+      "target.txt": "alpha"
+    }
+  },
+  "requires_approval": false,
+  "expected_tool_groups": [["edit_file"]],
+  "expected_tool_outcomes": ["denied"],
+  "expected_file_contains": {
+    "target.txt": "alpha"
+  },
+  "max_rounds": 10,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "edit_file",
+            "arguments": "{\"path\": \"target.txt\", \"old_string\": \"alpha\", \"new_string\": \"beta\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "El usuario denegó la edición.",
+      "tool_calls": []
+    }
+  ]
+}
