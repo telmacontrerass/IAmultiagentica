@@ -10,6 +10,7 @@ import sys
 from rich.console import Console
 from rich.table import Table
 
+from ci2lab.config import Ci2LabConfig, load_config, merge_cli_config
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.intent import classify_intent
 from ci2lab.router.recommend import recommend_download_plan, score_recommendations
@@ -19,7 +20,7 @@ console = Console()
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    commands = {"agent", "chat", "sessions", "doctor", "hardware", "models"}
+    commands = {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
     if raw_argv and raw_argv[0] not in commands and not raw_argv[0].startswith("-"):
         raw_argv = ["agent", *raw_argv]
 
@@ -27,21 +28,12 @@ def main(argv: list[str] | None = None) -> int:
         prog="ci2lab",
         description="Agente local multi-modelo con arnés agéntico",
     )
+    _add_agent_flags(parser)
     parser.add_argument(
-        "--model",
-        default=None,
-        help="Tag Ollama (override; si no, router o CI2LAB_MODEL)",
+        "prompt",
+        nargs="?",
+        help="Petición directa (atajo: ci2lab \"tu tarea\")",
     )
-    parser.add_argument(
-        "--tool-mode",
-        choices=["native", "fenced"],
-        default="native",
-    )
-    parser.add_argument("--cwd", default=None, help="Directorio de trabajo")
-    parser.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
-    parser.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
-    parser.add_argument("--max-rounds", type=int, default=25)
-    parser.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
 
     sub = parser.add_subparsers(dest="command")
 
@@ -66,83 +58,191 @@ def main(argv: list[str] | None = None) -> int:
     recommend_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
     recommend_p.add_argument("--limit", type=int, default=5, help="Número máximo de modelos")
 
+    evals_p = sub.add_parser("evals", help="Evaluación práctica del arnés")
+    evals_sub = evals_p.add_subparsers(dest="evals_command")
+    evals_run = evals_sub.add_parser("run", help="Ejecutar tareas de evals/")
+    evals_run.add_argument("--tasks-dir", default=None)
+    evals_run.add_argument("--task", action="append", dest="task_ids", metavar="ID")
+    evals_run.add_argument("--model", default=None)
+    evals_run.add_argument("--live", action="store_true")
+
     args = parser.parse_args(raw_argv)
-    args.cwd = os.path.abspath(args.cwd or os.getcwd())
+
+    try:
+        runtime = _resolve_runtime_config(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.command == "agent":
-        return _run_turn(args.agent_prompt, args)
+        return _run_turn(args.agent_prompt, args, runtime)
     if args.command == "chat":
-        return _run_repl(args)
+        return _run_repl(args, runtime)
     if args.command == "sessions":
         return _cmd_sessions(args)
     if args.command == "doctor":
-        return _cmd_doctor()
+        return _cmd_doctor(runtime)
     if args.command == "hardware":
         return _cmd_hardware(args)
     if args.command == "models" and args.models_command == "recommend":
         return _cmd_models_recommend(args)
+    if args.command == "evals":
+        return _cmd_evals(args)
+    if args.prompt:
+        return _run_turn(args.prompt, args, runtime)
+
     parser.print_help()
     return 0
 
 
 def _add_agent_flags(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--model", default=None)
-    p.add_argument("--tool-mode", choices=["native", "fenced"], default="native")
-    p.add_argument("--cwd", default=None)
-    p.add_argument("--yes", action="store_true")
-    p.add_argument("--no-stream", action="store_true")
-    p.add_argument("--max-rounds", type=int, default=25)
-    p.add_argument("--session", default=None)
-
-
-def _build_config(args: argparse.Namespace):
-    from ci2lab.harness import AgentConfig
-
-    return AgentConfig(
-        cwd=args.cwd,
-        max_rounds=args.max_rounds,
-        auto_confirm=args.yes,
-        stream=not args.no_stream,
-        session_id=args.session,
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Tag Ollama (override; si no, config o CI2LAB_MODEL)",
+    )
+    p.add_argument(
+        "--tool-mode",
+        choices=["native", "fenced"],
+        default=None,
+        help="Modo de invocación de herramientas",
+    )
+    p.add_argument(
+        "--cwd",
+        default=None,
+        help="Directorio de trabajo (legacy; preferir --workspace)",
+    )
+    p.add_argument(
+        "--workspace",
+        default=None,
+        help="Directorio de trabajo del agente (alias semántico de --cwd)",
+    )
+    p.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
+    p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
+    p.add_argument("--max-rounds", type=int, default=None)
+    p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
+    p.add_argument(
+        "--runs-dir",
+        default=None,
+        help="Directorio base para logs de ejecución (default: runs)",
+    )
+    p.add_argument(
+        "--no-log",
+        action="store_true",
+        help="No guardar artefactos de la ejecución en runs/",
     )
 
 
-def _resolve_selection(args: argparse.Namespace, prompt: str):
+def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
+    base = load_config()
+    return merge_cli_config(
+        base,
+        model=args.model,
+        tool_mode=args.tool_mode,
+        max_rounds=args.max_rounds,
+        workspace=args.workspace,
+        cwd=args.cwd,
+        no_stream=args.no_stream,
+        auto_confirm=args.yes,
+        runs_dir=args.runs_dir,
+        no_log=args.no_log,
+    )
+
+
+def _build_config(
+    runtime: Ci2LabConfig,
+    args: argparse.Namespace,
+    selection,
+):
+    from ci2lab.harness import AgentConfig
+    from ci2lab.harness.run_logger import build_config_snapshot
+
+    cwd = runtime.workspace or os.getcwd()
+    base_agent = AgentConfig(
+        cwd=cwd,
+        max_rounds=runtime.max_rounds,
+        auto_confirm=runtime.auto_confirm,
+        stream=runtime.stream,
+        run_log_enabled=runtime.log_runs,
+        runs_dir=runtime.runs_dir,
+        write_tools_enabled=runtime.write_tools_enabled,
+        require_diff_preview=runtime.require_diff_preview,
+    )
+    agent = AgentConfig(
+        cwd=cwd,
+        max_rounds=runtime.max_rounds,
+        auto_confirm=runtime.auto_confirm,
+        stream=runtime.stream,
+        session_id=args.session,
+        run_log_enabled=runtime.log_runs,
+        runs_dir=runtime.runs_dir,
+        write_tools_enabled=runtime.write_tools_enabled,
+        require_diff_preview=runtime.require_diff_preview,
+        config_snapshot=build_config_snapshot(
+            runtime_fields={
+                "model": runtime.model,
+                "backend_url": runtime.backend_url,
+                "tool_mode": runtime.tool_mode,
+                "max_rounds": runtime.max_rounds,
+                "workspace": cwd,
+                "stream": runtime.stream,
+                "auto_confirm": runtime.auto_confirm,
+                "log_runs": runtime.log_runs,
+                "runs_dir": runtime.runs_dir,
+                "write_tools_enabled": runtime.write_tools_enabled,
+                "require_diff_preview": runtime.require_diff_preview,
+            },
+            agent_config=base_agent,
+            selection=selection,
+        ),
+    )
+    return agent
+
+
+def _resolve_selection(runtime: Ci2LabConfig, prompt: str):
     from ci2lab.pipeline import prepare_session
 
     _, selection = prepare_session(
         prompt,
-        force_model=args.model,
-        tool_mode=args.tool_mode,
+        force_model=runtime.model,
+        tool_mode=runtime.tool_mode,
+        backend_url=runtime.backend_url,
         pull=False,
     )
     return selection
 
 
-def _run_turn(prompt: str, args: argparse.Namespace) -> int:
+def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     from ci2lab.harness import run_agent
+    from ci2lab.harness.llm_errors import LLMError
 
-    selection = _resolve_selection(args, prompt)
-    config = _build_config(args)
+    selection = _resolve_selection(runtime, prompt)
+    config = _build_config(runtime, args, selection)
 
     console.print(f"[bold]Modelo:[/bold] {selection.ollama_tag}")
     console.print(f"[bold]CWD:[/bold] {config.cwd}\n")
 
     try:
         run_agent(prompt, selection, config=config)
+    except LLMError as exc:
+        console.print(f"[red]{exc.user_message}[/red]")
+        return exc.exit_code
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrumpido.[/yellow]")
         return 130
     return 0
 
 
-def _run_repl(args: argparse.Namespace) -> int:
+def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
+    from ci2lab.harness.llm_errors import LLMError
     from ci2lab.harness.repl import run_repl
 
-    selection = _resolve_selection(args, "")
-    config = _build_config(args)
+    selection = _resolve_selection(runtime, "")
+    config = _build_config(runtime, args, selection)
     try:
         run_repl(selection, config, session_id=args.session)
+    except LLMError as exc:
+        console.print(f"[red]{exc.user_message}[/red]")
+        return exc.exit_code
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrumpido.[/yellow]")
         return 130
@@ -170,7 +270,26 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_doctor() -> int:
+def _cmd_evals(args: argparse.Namespace) -> int:
+    from ci2lab.evals.run import main as evals_main
+
+    if args.evals_command != "run":
+        console.print("Uso: ci2lab evals run [--mock por defecto] [--live]")
+        return 0
+    argv: list[str] = []
+    if args.tasks_dir:
+        argv.extend(["--tasks-dir", args.tasks_dir])
+    if args.task_ids:
+        for tid in args.task_ids:
+            argv.extend(["--task", tid])
+    if args.model:
+        argv.extend(["--model", args.model])
+    if args.live:
+        argv.append("--live")
+    return evals_main(argv)
+
+
+def _cmd_doctor(runtime: Ci2LabConfig) -> int:
     import httpx
 
     ok = True
@@ -184,16 +303,23 @@ def _cmd_doctor() -> int:
         console.print(f"[red]✗[/red] ci2lab: {exc}")
         ok = False
 
-    url = os.environ.get("CI2LAB_OLLAMA_URL", "http://localhost:11434")
+    base_url = runtime.backend_url.removesuffix("/v1").rstrip("/")
     try:
-        r = httpx.get(f"{url}/api/tags", timeout=3.0)
+        r = httpx.get(f"{base_url}/api/tags", timeout=3.0)
         r.raise_for_status()
         models = [m.get("name") for m in r.json().get("models", [])]
-        console.print(f"[green]✓[/green] Ollama en {url} ({len(models)} modelos)")
+        console.print(f"[green]✓[/green] Ollama en {base_url} ({len(models)} modelos)")
         if models:
             console.print(f"  Ejemplos: {', '.join(models[:5])}")
+        if runtime.model not in models and not any(
+            m and m.startswith(runtime.model.split(":")[0]) for m in models
+        ):
+            console.print(
+                f"[yellow]![/yellow] Modelo configurado `{runtime.model}` no aparece en la lista"
+            )
     except Exception as exc:
-        console.print(f"[red]✗[/red] Ollama no responde en {url}: {exc}")
+        console.print(f"[red]✗[/red] Ollama no responde en {base_url}: {exc}")
+        console.print("  Comprueba que Ollama esté abierto y que `ollama serve` esté corriendo.")
         ok = False
 
     return 0 if ok else 1

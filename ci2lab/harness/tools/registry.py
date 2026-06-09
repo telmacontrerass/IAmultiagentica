@@ -7,8 +7,11 @@ from typing import Any, Callable
 
 from ci2lab.harness.tools import bash as bash_tool
 from ci2lab.harness.tools import filesystem as fs
+from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.filesystem import permission_summary
+from ci2lab.harness.tools.write_preview import preview_edit_file, preview_write_file
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
+from ci2lab.harness.write_permissions import WRITE_TOOLS, check_write_permission
 
 TOOL_NAMES = frozenset({
     "bash",
@@ -161,15 +164,105 @@ _DISPATCH: dict[str, Callable[..., str]] = {
 }
 
 
+def normalize_tool_arguments(args: dict[str, Any]) -> dict[str, Any]:
+    """
+    Limpia argumentos de tool calls del modelo.
+
+    Ollama y otros backends envían a menudo null explícito en campos opcionales
+    (p. ej. offset/limit en read_file), lo que rompe .get(key, default).
+    """
+    return {k: v for k, v in args.items() if v is not None}
+
+
 def parse_arguments(raw: str | dict[str, Any]) -> dict[str, Any]:
     if isinstance(raw, dict):
-        return raw
+        return normalize_tool_arguments(raw)
     if not raw or not str(raw).strip():
         return {}
     try:
-        return json.loads(raw)
+        return normalize_tool_arguments(json.loads(raw))
     except json.JSONDecodeError:
         return {"command": str(raw)} if raw else {}
+
+
+def _execute_write_tool(
+    name: str,
+    args: dict[str, Any],
+    config: AgentConfig,
+    call_id: str | None,
+) -> ToolResult:
+    if not config.write_tools_enabled:
+        return ToolResult(
+            tool_name=name,
+            content=(
+                f"Error: `{name}` deshabilitado por configuración "
+                "(write_tools_enabled=false)."
+            ),
+            is_error=True,
+            call_id=call_id,
+            outcome="blocked_by_config",
+        )
+
+    try:
+        if name == "write_file":
+            preview = preview_write_file(
+                config.cwd, args["path"], args["content"]
+            )
+        else:
+            preview = preview_edit_file(
+                config.cwd,
+                args["path"],
+                args["old_string"],
+                args["new_string"],
+                args.get("replace_all", False),
+            )
+    except Exception as exc:  # noqa: BLE001
+        return ToolResult(
+            tool_name=name,
+            content=f"Error: {exc}",
+            is_error=True,
+            call_id=call_id,
+            outcome="failed",
+        )
+
+    if not preview.is_valid:
+        return ToolResult(
+            tool_name=name,
+            content=preview.validation_error or "Error de validación",
+            is_error=True,
+            call_id=call_id,
+            outcome="failed",
+        )
+
+    allowed, deny_msg = check_write_permission(name, preview, config)
+    if not allowed:
+        return ToolResult(
+            tool_name=name,
+            content=deny_msg or "Denegado",
+            is_error=True,
+            call_id=call_id,
+            outcome="denied",
+        )
+
+    try:
+        output = _DISPATCH[name](config, args)
+    except Exception as exc:  # noqa: BLE001
+        return ToolResult(
+            tool_name=name,
+            content=f"Error: {exc}",
+            is_error=True,
+            call_id=call_id,
+            outcome="failed",
+        )
+
+    is_error = output.startswith("Error:")
+    return ToolResult(
+        tool_name=name,
+        content=output,
+        is_error=is_error,
+        call_id=call_id,
+        outcome="failed" if is_error else "approved",
+    )
 
 
 def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
@@ -184,7 +277,23 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
         )
 
-    args = call.arguments
+    args = normalize_tool_arguments(call.arguments)
+
+    if name in WRITE_TOOLS:
+        return _execute_write_tool(name, args, config, call.call_id)
+
+    if name == "bash":
+        blocked = check_bash_blocked(str(args.get("command", "")))
+        if blocked:
+            return ToolResult(
+                tool_name=name,
+                content=(
+                    f"Error: comando bloqueado por política de seguridad ({blocked})."
+                ),
+                is_error=True,
+                call_id=call.call_id,
+            )
+
     allowed, deny_msg = check_permission(
         name,
         permission_summary(name, args),

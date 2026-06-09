@@ -1,0 +1,251 @@
+"""
+Configuración centralizada de Ci2Lab.
+
+Prioridad (mayor a menor): argumentos CLI > variables de entorno > ci2lab.yaml > defaults.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any
+
+DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_BACKEND_URL = "http://localhost:11434/v1"
+DEFAULT_TOOL_MODE = "native"
+DEFAULT_MAX_ROUNDS = 25
+DEFAULT_STREAM = True
+DEFAULT_AUTO_CONFIRM = False
+DEFAULT_RUNS_DIR = "runs"
+DEFAULT_LOG_RUNS = True
+DEFAULT_WRITE_TOOLS_ENABLED = True
+DEFAULT_REQUIRE_DIFF_PREVIEW = True
+
+_CONFIG_FILENAMES = ("ci2lab.yaml", "ci2lab.yml", "ci2lab.json")
+
+
+@dataclass
+class Ci2LabConfig:
+    model: str = DEFAULT_MODEL
+    backend_url: str = DEFAULT_BACKEND_URL
+    tool_mode: str = DEFAULT_TOOL_MODE
+    max_rounds: int = DEFAULT_MAX_ROUNDS
+    workspace: str | None = None
+    stream: bool = DEFAULT_STREAM
+    auto_confirm: bool = DEFAULT_AUTO_CONFIRM
+    runs_dir: str = DEFAULT_RUNS_DIR
+    log_runs: bool = DEFAULT_LOG_RUNS
+    write_tools_enabled: bool = DEFAULT_WRITE_TOOLS_ENABLED
+    require_diff_preview: bool = DEFAULT_REQUIRE_DIFF_PREVIEW
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "y", "on", "si", "sí"}
+
+
+def _coerce_value(key: str, raw: str) -> Any:
+    text = raw.strip().strip("'\"")
+    if key in {"max_rounds"}:
+        return int(text)
+    if key in {
+        "stream",
+        "auto_confirm",
+        "log_runs",
+        "write_tools_enabled",
+        "require_diff_preview",
+    }:
+        return _parse_bool(text)
+    if key == "no_log":
+        return _parse_bool(text)
+    return text
+
+
+def _load_simple_yaml(text: str) -> dict[str, Any]:
+    """Parser YAML mínimo (pares clave: valor, sin dependencias externas)."""
+    data: dict[str, Any] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        if not key or not value.strip():
+            continue
+        data[key] = _coerce_value(key, value)
+    return data
+
+
+def _load_file_config(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        loaded = json.loads(text)
+        return loaded if isinstance(loaded, dict) else {}
+    return _load_simple_yaml(text)
+
+
+def _find_config_file(explicit: str | None = None) -> Path | None:
+    if explicit:
+        path = Path(explicit).expanduser()
+        return path if path.is_file() else None
+    for name in _CONFIG_FILENAMES:
+        candidate = Path.cwd() / name
+        if candidate.is_file():
+            return candidate
+    home = Path.home() / ".ci2lab" / "ci2lab.yaml"
+    if home.is_file():
+        return home
+    return None
+
+
+def _normalize_backend_url(url: str) -> str:
+    base = url.rstrip("/")
+    if base.endswith("/v1"):
+        return base
+    return f"{base}/v1"
+
+
+def _apply_mapping(config: Ci2LabConfig, mapping: dict[str, Any]) -> Ci2LabConfig:
+    alias = {
+        "endpoint": "backend_url",
+        "cwd": "workspace",
+        "ollama_url": "backend_url",
+    }
+    valid = {f.name for f in fields(Ci2LabConfig)}
+    updates: dict[str, Any] = {}
+    for key, value in mapping.items():
+        if value is None:
+            continue
+        if key == "no_log":
+            if value:
+                updates["log_runs"] = False
+            continue
+        target = alias.get(key, key)
+        if target == "backend_url" and isinstance(value, str):
+            updates[target] = _normalize_backend_url(value)
+        elif target in valid:
+            updates[target] = value
+    if not updates:
+        return config
+    return Ci2LabConfig(**{**config.__dict__, **updates})
+
+
+def _from_env(config: Ci2LabConfig) -> Ci2LabConfig:
+    mapping: dict[str, Any] = {}
+    if model := os.environ.get("CI2LAB_MODEL"):
+        mapping["model"] = model
+    if url := os.environ.get("CI2LAB_OLLAMA_URL"):
+        mapping["backend_url"] = url
+    if backend := os.environ.get("CI2LAB_BACKEND_URL"):
+        mapping["backend_url"] = backend
+    if tool_mode := os.environ.get("CI2LAB_TOOL_MODE"):
+        mapping["tool_mode"] = tool_mode
+    if max_rounds := os.environ.get("CI2LAB_MAX_ROUNDS"):
+        mapping["max_rounds"] = int(max_rounds)
+    if workspace := os.environ.get("CI2LAB_WORKSPACE") or os.environ.get("CI2LAB_CWD"):
+        mapping["workspace"] = workspace
+    if stream := os.environ.get("CI2LAB_STREAM"):
+        mapping["stream"] = _parse_bool(stream)
+    if os.environ.get("CI2LAB_AUTO_CONFIRM", "").lower() in {"1", "true", "yes"}:
+        mapping["auto_confirm"] = True
+    if os.environ.get("CI2LAB_YES", "").lower() in {"1", "true", "yes"}:
+        mapping["auto_confirm"] = True
+    if runs_dir := os.environ.get("CI2LAB_RUNS_DIR"):
+        mapping["runs_dir"] = runs_dir
+    if os.environ.get("CI2LAB_NO_LOG", "").lower() in {"1", "true", "yes"}:
+        mapping["log_runs"] = False
+    if os.environ.get("CI2LAB_WRITE_TOOLS_ENABLED", "").lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        mapping["write_tools_enabled"] = False
+    if os.environ.get("CI2LAB_REQUIRE_DIFF_PREVIEW", "").lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        mapping["require_diff_preview"] = False
+    return _apply_mapping(config, mapping)
+
+
+def load_config(*, config_path: str | None = None) -> Ci2LabConfig:
+    """
+    Carga defaults + ci2lab.yaml (si existe) + variables de entorno.
+    No incluye overrides de CLI.
+    """
+    config = Ci2LabConfig()
+    explicit = config_path or os.environ.get("CI2LAB_CONFIG")
+    path = _find_config_file(explicit)
+    if path:
+        try:
+            file_data = _load_file_config(path)
+            config = _apply_mapping(config, file_data)
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+    return _from_env(config)
+
+
+def resolve_workspace(
+    *,
+    workspace: str | None,
+    cwd: str | None,
+    config: Ci2LabConfig,
+) -> str:
+    """Resuelve directorio de trabajo; error si --workspace y --cwd coexisten."""
+    if workspace and cwd:
+        raise ValueError(
+            "Usa solo uno de --workspace o --cwd, no ambos."
+        )
+    raw = workspace or cwd or config.workspace or os.getcwd()
+    return os.path.abspath(raw)
+
+
+def merge_cli_config(
+    base: Ci2LabConfig,
+    *,
+    model: str | None = None,
+    tool_mode: str | None = None,
+    max_rounds: int | None = None,
+    workspace: str | None = None,
+    cwd: str | None = None,
+    stream: bool | None = None,
+    no_stream: bool = False,
+    auto_confirm: bool = False,
+    runs_dir: str | None = None,
+    no_log: bool = False,
+) -> Ci2LabConfig:
+    """Aplica overrides de CLI sobre la config cargada."""
+    updates: dict[str, Any] = {}
+    if model is not None:
+        updates["model"] = model
+    if tool_mode is not None:
+        updates["tool_mode"] = tool_mode
+    if max_rounds is not None:
+        updates["max_rounds"] = max_rounds
+    if stream is not None:
+        updates["stream"] = stream
+    elif no_stream:
+        updates["stream"] = False
+    if auto_confirm:
+        updates["auto_confirm"] = True
+    if runs_dir is not None:
+        updates["runs_dir"] = runs_dir
+    if no_log:
+        updates["log_runs"] = False
+    merged = _apply_mapping(base, updates)
+    merged = Ci2LabConfig(
+        **{
+            **merged.__dict__,
+            "workspace": resolve_workspace(
+                workspace=workspace,
+                cwd=cwd,
+                config=merged,
+            ),
+        }
+    )
+    return merged

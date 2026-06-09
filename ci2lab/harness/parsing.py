@@ -15,7 +15,7 @@ import re
 import uuid
 from typing import Any
 
-from ci2lab.harness.tools.registry import TOOL_NAMES, parse_arguments
+from ci2lab.harness.tools.registry import TOOL_NAMES, normalize_tool_arguments, parse_arguments
 from ci2lab.harness.types import ToolCall
 
 _FENCED_RE = re.compile(
@@ -83,6 +83,8 @@ def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
         args = item.get("arguments") or item.get("function", {}).get("arguments", {})
         if isinstance(args, str):
             args = parse_arguments(args)
+        elif isinstance(args, dict):
+            args = normalize_tool_arguments(args)
         calls.append(
             ToolCall(
                 name=name,
@@ -179,8 +181,7 @@ def resolve_tool_calls(
     text: str,
     native_calls: list[dict[str, Any]] | None,
     *,
-    tool_mode: str,
-    skip_fenced_if_native: bool = True,
+    tool_mode: str,  # noqa: ARG001 — reservado para políticas futuras por modo
 ) -> list[ToolCall]:
     if native_calls:
         parsed = native_to_tool_calls(native_calls)
@@ -190,9 +191,6 @@ def resolve_tool_calls(
     xml_calls = parse_xml_blocks(text)
     if xml_calls:
         return xml_calls
-
-    if skip_fenced_if_native and tool_mode == "native" and native_calls is not None:
-        return []
 
     return parse_fenced_blocks(text)
 

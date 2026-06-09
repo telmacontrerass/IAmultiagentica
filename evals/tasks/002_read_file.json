@@ -1,0 +1,35 @@
+{
+  "id": "002_read_file",
+  "name": "Leer archivo con read_file",
+  "prompt": "Lee el archivo config.txt y dime qué contiene.",
+  "workspace_setup": {
+    "files": {
+      "config.txt": "version=1.0\nmode=test"
+    }
+  },
+  "expected_tool_groups": [["read_file"]],
+  "forbidden_tools": ["write_file", "edit_file"],
+  "expected_tool_output_contains": [
+    "version=1.0",
+    "mode=test"
+  ],
+  "max_rounds": 10,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\": \"config.txt\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "config.txt contiene version=1.0 y mode=test.",
+      "tool_calls": []
+    }
+  ]
+}

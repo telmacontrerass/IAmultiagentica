@@ -1,0 +1,31 @@
+{
+  "id": "003_find_function",
+  "name": "Buscar función con grep o glob+read_file",
+  "prompt": "Encuentra dónde está definida la función main en este proyecto.",
+  "workspace_setup": {
+    "files": {
+      "sample.py": "def helper():\n    pass\n\ndef main():\n    return 42\n"
+    }
+  },
+  "expected_tool_groups": [["grep"], ["glob", "read_file"]],
+  "forbidden_tools": ["write_file", "edit_file", "bash"],
+  "max_rounds": 12,
+  "mock_responses": [
+    {
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "function": {
+            "name": "grep",
+            "arguments": "{\"pattern\": \"def main\", \"glob\": \"*.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "main está definida en sample.py.",
+      "tool_calls": []
+    }
+  ]
+}

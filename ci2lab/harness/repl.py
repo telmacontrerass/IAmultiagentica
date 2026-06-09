@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.loop import run_agent
 from ci2lab.harness.session import load_session, new_session_id, save_session
 from ci2lab.harness.types import AgentConfig
@@ -64,12 +65,14 @@ def run_repl(
                 console.print("[yellow]Nada que guardar aún.[/yellow]")
             continue
 
-        if history is None:
-            run_agent(line, selection, config=config)
-            data = load_session(sid)
-            history = data.get("messages") if data else None
-        else:
-            run_agent(line, selection, config=config, messages=history)
+        try:
+            if history is None:
+                run_agent(line, selection, config=config)
+            else:
+                run_agent(line, selection, config=config, messages=history)
+        except LLMError as exc:
+            console.print(f"[red]{exc.user_message}[/red]")
+            continue
 
         data = load_session(sid)
         if data:

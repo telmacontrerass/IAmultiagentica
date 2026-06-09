@@ -17,7 +17,7 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
         return f"Error: no existe el archivo {resolved}"
     text = resolved.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
-    start = max(1, offset)
+    start = max(1, offset if offset is not None else 1)
     end = start + (limit or MAX_READ_LINES) - 1
     slice_lines = lines[start - 1 : end]
     numbered = [f"{i + start:6d}|{line}" for i, line in enumerate(slice_lines)]
@@ -132,18 +132,23 @@ def edit_file(
     new_string: str,
     replace_all: bool = False,
 ) -> str:
+    from ci2lab.harness.tools.write_preview import compute_edit_result
+
     resolved = resolve_path(path, cwd)
-    if not resolved.is_file():
-        return f"Error: no existe {resolved}"
-    text = resolved.read_text(encoding="utf-8", errors="replace")
-    count = text.count(old_string)
-    if count == 0:
-        return "Error: old_string no encontrado en el archivo"
-    if not replace_all and count > 1:
-        return f"Error: old_string aparece {count} veces; usa replace_all o hazlo único"
-    new_text = text.replace(old_string, new_string, count if replace_all else 1)
-    resolved.write_text(new_text, encoding="utf-8")
-    replaced = count if replace_all else 1
+    if resolved.is_file():
+        original_count = resolved.read_text(encoding="utf-8", errors="replace").count(
+            old_string
+        )
+    else:
+        original_count = 0
+
+    new_text, error = compute_edit_result(
+        cwd, path, old_string, new_string, replace_all
+    )
+    if error:
+        return error
+    resolved.write_text(new_text or "", encoding="utf-8")
+    replaced = original_count if replace_all else 1
     return f"Editado {resolved}: {replaced} reemplazo(s)"
 
 
