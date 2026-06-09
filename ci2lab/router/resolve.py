@@ -24,7 +24,15 @@ def resolve_model(
         raise RuntimeError("No hay modelos en el catálogo que quepan en este hardware.")
 
     if force_model_id:
-        chosen = next((model for model, _ in recommendations if model.id == force_model_id), None)
+        normalized = force_model_id.lower()
+        chosen = next(
+            (
+                model
+                for model, _ in recommendations
+                if model.id.lower() == normalized or model.ollama_tag.lower() == normalized
+            ),
+            None,
+        )
         if chosen is None:
             raise RuntimeError(f"El modelo forzado no cabe o no existe: {force_model_id}")
     else:

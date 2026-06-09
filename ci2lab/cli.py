@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from rich.console import Console
 from rich.table import Table
 
+from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
+from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
 from ci2lab.router.recommend import recommend_download_plan, score_recommendations
 
@@ -65,6 +68,17 @@ def main(argv: list[str] | None = None) -> int:
     recommend_p.add_argument("model_prompt", nargs="*", help="Consulta concreta opcional")
     recommend_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
     recommend_p.add_argument("--limit", type=int, default=5, help="Número máximo de modelos")
+    install_p = models_sub.add_parser(
+        "install",
+        help="Muestra el comando para instalar y abrir un modelo permitido",
+    )
+    install_p.add_argument("model", help="ID del catálogo o tag Ollama")
+    install_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
+    run_p = models_sub.add_parser(
+        "run",
+        help="Abre el modelo en la consola con ollama run",
+    )
+    run_p.add_argument("model", help="ID del catálogo o tag Ollama")
 
     args = parser.parse_args(raw_argv)
     args.cwd = os.path.abspath(args.cwd or os.getcwd())
@@ -81,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_hardware(args)
     if args.command == "models" and args.models_command == "recommend":
         return _cmd_models_recommend(args)
+    if args.command == "models" and args.models_command == "install":
+        return _cmd_models_install(args)
+    if args.command == "models" and args.models_command == "run":
+        return _cmd_models_run(args)
     parser.print_help()
     return 0
 
@@ -225,6 +243,113 @@ def _cmd_models_recommend(args: argparse.Namespace) -> int:
             limit=args.limit,
         )
     return _download_plan_command(profile=profile, json_output=args.json)
+
+
+def _cmd_models_install(args: argparse.Namespace) -> int:
+    profile = scan_hardware()
+    model = _resolve_allowed_model(args.model, profile=profile)
+    if model is None:
+        return 1
+
+    commands = _install_commands(model)
+    if args.json:
+        console.print_json(json.dumps({
+            "id": model.id,
+            "display_name": model.display_name,
+            "ollama_tag": model.ollama_tag,
+            "commands": commands,
+        }))
+        return 0
+
+    console.print(f"[bold]Modelo elegido:[/bold] {model.display_name}")
+    console.print(f"[bold]Ollama:[/bold] {model.ollama_tag}\n")
+    console.print("[bold]1. Instalar/descargar el modelo:[/bold]")
+    console.print(f"  {commands['pull']}")
+    console.print("\n[bold]2. Abrir chat directo con Ollama:[/bold]")
+    console.print(f"  {commands['ollama_run']}")
+    console.print("\n[bold]3. Abrir chat agéntico desde ci2lab:[/bold]")
+    console.print(f"  {commands['ci2lab_chat']}")
+    return 0
+
+
+def _cmd_models_run(args: argparse.Namespace) -> int:
+    profile = scan_hardware()
+    model = _resolve_allowed_model(args.model, profile=profile)
+    if model is None:
+        return 1
+
+    console.print(f"[bold]Abriendo:[/bold] {model.display_name} ({model.ollama_tag})")
+    console.print("[dim]Sal con /bye o Ctrl+C.[/dim]\n")
+    try:
+        completed = subprocess.run(["ollama", "run", model.ollama_tag], check=False)
+    except FileNotFoundError:
+        console.print("[red]No encuentro el comando `ollama`.[/red]")
+        console.print("Instala Ollama y después ejecuta:")
+        console.print(f"  {_install_commands(model)['pull']}")
+        return 1
+    return completed.returncode
+
+
+def _install_commands(model: ModelSpec) -> dict[str, str]:
+    return {
+        "pull": f"ollama pull {model.ollama_tag}",
+        "ollama_run": f"ollama run {model.ollama_tag}",
+        "ci2lab_chat": f"ci2lab --model {model.id} chat",
+    }
+
+
+def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> ModelSpec | None:
+    normalized = model_name.strip().lower()
+    models = load_model_catalog()
+    exact = [
+        model
+        for model in models
+        if normalized in {
+            model.id.lower(),
+            model.ollama_tag.lower(),
+            model.display_name.lower(),
+        }
+    ]
+
+    if not exact:
+        console.print(f"[red]Modelo no reconocido:[/red] {model_name}")
+        _print_allowed_models(profile)
+        return None
+
+    model = exact[0]
+    if not _model_allowed(model, profile):
+        console.print(f"[red]Ese modelo existe, pero no cabe en este equipo:[/red] {model.display_name}")
+        console.print(
+            "Presupuesto aproximado para inferencia: "
+            f"[bold]{profile.inference_budget_gb:g} GB[/bold]."
+        )
+        _print_allowed_models(profile)
+        return None
+
+    return model
+
+
+def _model_allowed(model: ModelSpec, profile: HardwareProfile) -> bool:
+    if profile.inference_mode == "gpu" and profile.gpu_vendor != "apple":
+        required_gb = model.vram_min_gb
+    else:
+        required_gb = model.ram_inference_gb
+    return required_gb <= profile.inference_budget_gb
+
+
+def _print_allowed_models(profile: HardwareProfile) -> None:
+    allowed = [model for model in load_model_catalog() if _model_allowed(model, profile)]
+    if not allowed:
+        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        return
+
+    table = Table(title="Modelos permitidos en este equipo")
+    table.add_column("Escribe esto")
+    table.add_column("Ollama")
+    table.add_column("Nombre")
+    for model in allowed:
+        table.add_row(model.id, model.ollama_tag, model.display_name)
+    console.print(table)
 
 
 def _focused_recommend_command(

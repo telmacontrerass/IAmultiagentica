@@ -18,17 +18,49 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 | `ci2lab/runtime/` | 🔲 | Ollama pull/ensure |
 | `ci2lab/harness/` | ✅ | Arnés completo (ReAct, 7 tools, REPL, sesiones, streaming) |
 
-## Instalación (desarrollo)
+## Instalación para usarlo
+
+Requisitos:
+
+- Python 3.11 o superior.
+- [Ollama](https://ollama.com/download) instalado y abierto.
+
+### macOS / Linux
 
 ```bash
 cd IAmultiagentica
-python -m venv .venv
-.venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
 ci2lab doctor
-ci2lab "lista los archivos Python" --model llama3.1:8b --yes
-ci2lab chat                              # modo interactivo
+ci2lab models recommend
+ci2lab models install qwen2.5-coder-1.5b
+ollama pull qwen2.5-coder:1.5b
+ci2lab models run qwen2.5-coder-1.5b
+```
+
+### Windows PowerShell
+
+```powershell
+cd IAmultiagentica
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+ci2lab doctor
+ci2lab models recommend
+ci2lab models install qwen2.5-coder-1.5b
+ollama pull qwen2.5-coder:1.5b
+ci2lab models run qwen2.5-coder-1.5b
+```
+
+`ci2lab models recommend` muestra los modelos permitidos para ese ordenador. El usuario puede pasar a `install` el ID del catálogo (`qwen2.5-coder-1.5b`) o el tag de Ollama (`qwen2.5-coder:1.5b`).
+
+Comandos útiles:
+
+```bash
+ci2lab chat                              # modo interactivo agéntico
 ci2lab sessions                          # historial guardado
+ci2lab "lista los archivos Python" --model qwen2.5-coder-1.5b --yes
 ```
 
 ## Documentación
