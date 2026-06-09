@@ -29,7 +29,7 @@ _DOCTOR_WARN = "WARN"
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     commands = {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
-    if raw_argv and raw_argv[0] not in commands and not raw_argv[0].startswith("-"):
+    if raw_argv and not any(tok in commands for tok in raw_argv):
         raw_argv = ["agent", *raw_argv]
 
     parser = argparse.ArgumentParser(
@@ -37,11 +37,6 @@ def main(argv: list[str] | None = None) -> int:
         description="Agente local multi-modelo con arnés agéntico",
     )
     _add_agent_flags(parser)
-    parser.add_argument(
-        "prompt",
-        nargs="?",
-        help="Petición directa (atajo: ci2lab \"tu tarea\")",
-    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -110,8 +105,6 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_run(args)
     if args.command == "evals":
         return _cmd_evals(args)
-    if args.prompt:
-        return _run_turn(args.prompt, args, runtime)
 
     parser.print_help()
     return 0
