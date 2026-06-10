@@ -52,12 +52,20 @@ class LLMModelNotFoundError(LLMError):
 
 def _response_detail(response: httpx.Response) -> str:
     try:
+        response.read()
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
+
+    try:
         body: Any = response.json()
         if isinstance(body, dict):
             return str(body.get("error") or body.get("message") or body)
         return str(body)
-    except Exception:  # noqa: BLE001
-        return response.text[:500]
+    except Exception as exc:  # noqa: BLE001
+        try:
+            return response.text[:500]
+        except Exception:  # noqa: BLE001
+            return str(exc)
 
 
 def _looks_like_model_missing(status: int, detail: str, model: str) -> bool:
@@ -85,7 +93,11 @@ def classify_http_error(
     url: str,
 ) -> LLMError:
     detail = _response_detail(exc.response)
-    if _looks_like_model_missing(exc.response.status_code, detail, model):
+    if exc.response.status_code == 404 or _looks_like_model_missing(
+        exc.response.status_code,
+        detail,
+        model,
+    ):
         return LLMModelNotFoundError(model, detail)
     return LLMError(
         f"Error HTTP {exc.response.status_code} al contactar Ollama ({url}).\n"

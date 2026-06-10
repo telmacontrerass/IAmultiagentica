@@ -74,7 +74,7 @@ def test_recommend_marks_llama_3b_ok_if_memory_freed_under_pressure():
     profile = build_cpu_profile_for_testing(ram_total_gb=16.0, ram_available_gb=2.0)
     llama_3b = next(m for m in load_model_catalog() if m.id == "llama3.2-3b")
 
-    scored = score_recommendations("", profile=profile, limit=10)
+    scored = score_recommendations("", profile=profile, limit=len(load_model_catalog()))
     match = next(item for item in scored if item.model.id == llama_3b.id)
 
     assert match.recommendation_status == "OK_IF_MEMORY_FREED"
@@ -100,7 +100,7 @@ def test_recommend_marks_small_model_ok_now_when_ram_available_is_high():
     profile = build_cpu_profile_for_testing(ram_total_gb=16.0, ram_available_gb=12.0)
     qwen = next(m for m in load_model_catalog() if m.id == "qwen2.5-coder-1.5b")
 
-    scored = score_recommendations("", profile=profile, limit=10)
+    scored = score_recommendations("", profile=profile, limit=len(load_model_catalog()))
     match = next(item for item in scored if item.model.id == qwen.id)
 
     assert match.recommendation_status == "OK_NOW"
