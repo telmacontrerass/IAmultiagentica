@@ -10,6 +10,25 @@ import os
 
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.harness import default_selection
+from ci2lab.router.catalog import resolve_catalog_model
+
+
+def _fallback_selection(
+    model_name: str,
+    *,
+    tool_mode: str,
+) -> ModelSelection:
+    model = resolve_catalog_model(model_name)
+    if model:
+        return ModelSelection(
+            model_id=model.id,
+            ollama_tag=model.ollama_tag,
+            display_name=model.display_name,
+            tool_mode=model.tool_mode,
+            supports_tools=model.supports_tools,
+            context_length=model.context_length,
+        )
+    return default_selection(model_name, tool_mode=tool_mode)
 
 
 def prepare_session(
@@ -40,8 +59,8 @@ def prepare_session(
             ensure_model_ready(selection)
         return profile, selection
     except ImportError:
-        tag = force_model or os.environ.get("CI2LAB_MODEL", "llama3.1:8b")
-        selection = default_selection(tag, tool_mode=tool_mode)
+        model_name = force_model or os.environ.get("CI2LAB_MODEL", "llama3.1:8b")
+        selection = _fallback_selection(model_name, tool_mode=tool_mode)
         if backend_url:
             selection.backend_url = backend_url
         return None, selection

@@ -1,5 +1,7 @@
 import os
+import sys
 import tempfile
+import types
 
 from ci2lab.harness.tools.filesystem import read_file, write_file, edit_file, ls
 from ci2lab.harness.tools.paths import PathViolationError, resolve_path
@@ -20,6 +22,30 @@ def test_read_file_null_offset_limit(tmp_path):
     (tmp_path / "config.txt").write_text("version=1.0\n", encoding="utf-8")
     text = read_file(str(tmp_path), "config.txt", offset=None, limit=None)
     assert "version" in text
+
+
+def test_read_file_pdf_extracts_text(tmp_path, monkeypatch):
+    class FakePage:
+        def __init__(self, text):
+            self.text = text
+
+        def extract_text(self):
+            return self.text
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.pages = [FakePage("primer parrafo"), FakePage("segundo parrafo")]
+
+    fake_pypdf = types.SimpleNamespace(PdfReader=FakeReader)
+    monkeypatch.setitem(sys.modules, "pypdf", fake_pypdf)
+    (tmp_path / "doc.pdf").write_bytes(b"%PDF-1.4 fake")
+
+    text = read_file(str(tmp_path), "doc.pdf")
+
+    assert "[PDF page 1/2]" in text
+    assert "primer parrafo" in text
+    assert "segundo parrafo" in text
 
 
 def test_execute_read_file_strips_null_optional_args(tmp_path):

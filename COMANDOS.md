@@ -145,107 +145,133 @@ ci2lab models recommend "usar en un ordenador con pocos recursos"
 ```
 Recomienda modelos ligeros.
 
-## 8. Ver como instalar el modelo elegido
+## 8. Patron para usar cualquier modelo
 
-Estos comandos no descargan directamente el modelo: muestran el plan y los comandos recomendados.
+En la tabla de abajo, `ci2lab` acepta tanto `ID Ci2Lab` como `Tag Ollama`. Si uno falla porque Ollama no encuentra el modelo, Ci2Lab intenta el alias alternativo automaticamente.
 
-```powershell
-ci2lab models install qwen2.5-coder-1.5b
-```
-Muestra comandos para instalar y usar ese modelo.
+Para comandos `ollama`, usa siempre `Tag Ollama`.
 
 ```powershell
-ci2lab models install qwen2.5-coder:1.5b
+ci2lab models install <MODELO_ID>
 ```
-Muestra comandos usando el tag de Ollama.
-
-## 9. Descargar modelos con Ollama
-
-Descarga solo los modelos que te haya recomendado `ci2lab models recommend` y que quepan en tu equipo.
+Muestra el plan para instalar y usar el modelo.
 
 ```powershell
-ollama pull llama3.2:1b
+ollama pull <OLLAMA_TAG>
 ```
-Descarga Llama 3.2 1B.
+Descarga el modelo en Ollama.
 
 ```powershell
-ollama pull qwen2.5-coder:1.5b
+ci2lab models run <MODELO_ID>
 ```
-Descarga Qwen2.5 Coder 1.5B.
+Abre el modelo desde Ci2Lab con `ollama run`.
 
 ```powershell
-ollama pull llama3.2:3b
+ci2lab --model <MODELO_ID> chat
 ```
-Descarga Llama 3.2 3B.
+Abre chat agente con ese modelo.
 
 ```powershell
-ollama pull gemma2:2b
+ci2lab --model <MODELO_ID> "hola"
 ```
-Descarga Gemma 2 2B.
+Ejecuta una peticion puntual con ese modelo.
 
 ```powershell
-ollama pull mistral:7b
+ollama rm <OLLAMA_TAG>
 ```
-Descarga Mistral 7B.
+Elimina el modelo descargado del disco.
 
 ```powershell
-ollama pull qwen2.5-coder:7b
+ollama list
 ```
-Descarga Qwen2.5 Coder 7B.
+Muestra los modelos instalados en Ollama.
 
-```powershell
-ollama pull gemma2:9b
-```
-Descarga Gemma 2 9B.
+## 9. Tabla de modelos disponibles
 
-```powershell
-ollama pull phi4:14b
-```
-Descarga Phi-4 14B.
+El catalogo actual tiene 64 modelos. Descarga solo los que te recomiende `ci2lab models recommend` y que quepan en tu equipo.
 
-```powershell
-ollama pull qwen2.5-coder:14b
-```
-Descarga Qwen2.5 Coder 14B.
+| Modelo | ID Ci2Lab | Tag Ollama | Uso | Tier | RAM aprox. |
+|---|---|---|---|---|---|
+| Llama 3.2 1B | `llama3.2-1b` | `llama3.2:1b` | general, edge | edge | 2 GB |
+| Qwen2.5 Coder 1.5B | `qwen2.5-coder-1.5b` | `qwen2.5-coder:1.5b` | coding, edge | edge | 3 GB |
+| Llama 3.2 3B | `llama3.2-3b` | `llama3.2:3b` | general, reasoning, edge | edge | 5 GB |
+| Gemma 2 2B | `gemma2-2b` | `gemma2:2b` | general, edge | edge | 4 GB |
+| TinyLlama 1.1B Chat | `tinyllama-1.1b` | `tinyllama:1.1b` | general, edge | edge | 2 GB |
+| Qwen2.5 3B Instruct | `qwen2.5-3b` | `qwen2.5:3b` | general, reasoning, edge | edge | 4 GB |
+| Phi-3 Mini 4K Instruct | `phi3-mini` | `phi3:mini` | general, reasoning, edge | edge | 4 GB |
+| Phi-3.5 Mini Instruct | `phi3.5-3.8b` | `phi3.5:3.8b` | general, reasoning, edge | edge | 4 GB |
+| Qwen3 4B Instruct | `qwen3-4b` | `qwen3:4b` | general, reasoning | edge | 4.5 GB |
+| Qwen1.5 0.5B | `qwen-0-5b` | `qwen:0.5b` | general, edge | edge | 2 GB |
+| Qwen1.5 1.8B | `qwen-1-8b` | `qwen:1.8b` | general, edge | edge | 2 GB |
+| Qwen2 1.5B | `qwen2-1-5b` | `qwen2:1.5b` | general, edge | edge | 2 GB |
+| Qwen2.5 1.5B | `qwen2.5-1-5b` | `qwen2.5:1.5b` | general, edge | edge | 2 GB |
+| Qwen3 0.6B | `qwen3-0-6b` | `qwen3:0.6b` | general, edge | edge | 2 GB |
+| Qwen3 1.7B Base | `qwen3-1-7b` | `qwen3:1.7b` | general, edge | edge | 2 GB |
+| Qwen2.5 Coder 3B | `qwen2.5-coder-3b` | `qwen2.5-coder:3b` | coding, edge | edge | 2.9 GB |
+| starcoder2 3b | `starcoder2-3b` | `starcoder2:3b` | coding, edge | edge | 2.8 GB |
+| Mistral 7B Instruct | `mistral-7b` | `mistral:7b` | general, reasoning | workstation | 8 GB |
+| Falcon 7B Instruct | `falcon-7b` | `falcon:7b` | general, reasoning | workstation | 6.8 GB |
+| DeepSeek Coder 6.7B Instruct | `deepseek-coder-6.7b` | `deepseek-coder:6.7b` | coding, general | workstation | 6.5 GB |
+| Qwen2.5 7B Instruct | `qwen2.5-7b` | `qwen2.5:7b` | general, reasoning | workstation | 7.2 GB |
+| DeepSeek R1 Distill 7B | `deepseek-r1-7b` | `deepseek-r1:7b` | reasoning, general, coding | workstation | 7.2 GB |
+| Llama 3 8B Instruct | `llama3-8b` | `llama3:8b` | general, reasoning | workstation | 7.5 GB |
+| Granite 3.3 8B Instruct | `granite3.3-8b` | `granite3.3:8b` | general, reasoning | workstation | 7.6 GB |
+| Qwen2.5 Coder 7B | `qwen2.5-coder-7b` | `qwen2.5-coder:7b` | coding, general, reasoning | workstation | 9 GB |
+| Gemma 2 9B | `gemma2-9b` | `gemma2:9b` | general, reasoning | workstation | 12 GB |
+| Phi-4 14B | `phi4-14b` | `phi4:14b` | reasoning, coding, general | workstation | 16 GB |
+| Qwen2.5 Coder 14B | `qwen2.5-coder-14b` | `qwen2.5-coder:14b` | coding, reasoning, general | workstation | 18 GB |
+| CodeLlama 7b Instruct | `codellama-7b` | `codellama:7b` | coding | workstation | 6.3 GB |
+| vicuna 7b v1.5 | `vicuna-7b` | `vicuna:7b` | general | workstation | 6.3 GB |
+| openchat 3.5 0106 | `openchat-7b` | `openchat:7b` | general | workstation | 6.5 GB |
+| starcoder2 7b | `starcoder2-7b` | `starcoder2:7b` | coding | workstation | 6.7 GB |
+| zephyr 7b beta | `zephyr-7b` | `zephyr:7b` | general | workstation | 6.7 GB |
+| Falcon3 7B | `falcon3-7b` | `falcon3:7b` | general | workstation | 6.9 GB |
+| Qwen1.5 7B | `qwen-7b` | `qwen:7b` | general | workstation | 7.2 GB |
+| Qwen2 7B | `qwen2-7b` | `qwen2:7b` | general | workstation | 7.1 GB |
+| Hermes 3 Llama 3.1 8B | `hermes3-8b` | `hermes3:8b` | general | workstation | 7.5 GB |
+| Qwen3 8B Base | `qwen3-8b` | `qwen3:8b` | general | workstation | 7.6 GB |
+| Yi 1.5 9B | `yi-9b` | `yi:9b` | general | workstation | 8.2 GB |
+| glm 4 9b | `glm4-9b` | `glm4:9b` | general | workstation | 8.8 GB |
+| SOLAR 10.7B Instruct v1.0 | `solar-10-7b` | `solar:10.7b` | general | workstation | 10 GB |
+| Mistral Nemo Instruct 2407 | `mistral-nemo-12b` | `mistral-nemo:12b` | general | workstation | 11.4 GB |
+| vicuna 13b v1.5 | `vicuna-13b` | `vicuna:13b` | general | workstation | 12.1 GB |
+| Qwen2.5 14B | `qwen2.5-14b` | `qwen2.5:14b` | general | workstation | 13.7 GB |
+| DeepSeek R1 Distill Qwen 14B | `deepseek-r1-14b` | `deepseek-r1:14b` | reasoning | workstation | 13.8 GB |
+| Qwen3 14B AWQ | `qwen3-14b` | `qwen3:14b` | general | workstation | 13.8 GB |
+| starcoder2 15b | `starcoder2-15b` | `starcoder2:15b` | coding | workstation | 14.6 GB |
+| Qwen2.5 Coder 32B | `qwen2.5-coder-32b` | `qwen2.5-coder:32b` | coding, reasoning, general | enterprise | 32 GB |
+| gemma 2 27b | `gemma2-27b` | `gemma2:27b` | general | enterprise | 25.4 GB |
+| Qwen3 30B A3B GPTQ Int4 | `qwen3-30b` | `qwen3:30b` | general | enterprise | 28.4 GB |
+| Qwen1.5 32B | `qwen-32b` | `qwen:32b` | general | enterprise | 30.3 GB |
+| Qwen2.5 32B | `qwen2.5-32b` | `qwen2.5:32b` | general | enterprise | 30.3 GB |
+| DeepSeek R1 Distill Qwen 32B | `deepseek-r1-32b` | `deepseek-r1:32b` | reasoning | enterprise | 30.5 GB |
+| Qwen3 32B AWQ | `qwen3-32b` | `qwen3:32b` | general | enterprise | 30.5 GB |
+| falcon 40b | `falcon-40b` | `falcon:40b` | general | enterprise | 37.3 GB |
+| Mixtral 8x7B Instruct v0.1 | `mixtral-8x7b` | `mixtral:8x7b` | general | enterprise | 43.5 GB |
+| Llama 3.1 70B | `llama3.1-70b` | `llama3.1:70b` | general | enterprise | 65.7 GB |
+| Llama 3.3 70B | `llama3.3-70b` | `llama3.3:70b` | general | enterprise | 65.7 GB |
+| Qwen2 72B | `qwen2-72b` | `qwen2:72b` | general | enterprise | 67.7 GB |
+| Qwen2.5 72B | `qwen2.5-72b` | `qwen2.5:72b` | general | enterprise | 67.7 GB |
+| Qwen1.5 110B Chat AWQ | `qwen-110b` | `qwen:110b` | general | enterprise | 103.6 GB |
+| Mixtral 8x22B Instruct v0.1 | `mixtral-8x22b` | `mixtral:8x22b` | general | enterprise | 131 GB |
+| Qwen3 235B A22B | `qwen3-235b` | `qwen3:235b` | general | enterprise | 218.9 GB |
+| Llama 3.1 405B | `llama3.1-405b` | `llama3.1:405b` | general | enterprise | 378 GB |
 
-```powershell
-ollama pull qwen2.5-coder:32b
-```
-Descarga Qwen2.5 Coder 32B.
+Ejemplo de sustitucion: para Qwen2.5 Coder 1.5B, `<MODELO_ID>` es `qwen2.5-coder-1.5b` y `<OLLAMA_TAG>` es `qwen2.5-coder:1.5b`.
 
-## 10. Probar un modelo descargado
-
-```powershell
-ollama run qwen2.5-coder:1.5b
-```
-Abre chat directo con Qwen Coder.
-
-```powershell
-ollama run llama3.1:8b
-```
-Abre chat directo con Ollama.
-
-```powershell
-ci2lab models run qwen2.5-coder-1.5b
-```
-Abre el modelo con `ollama run`.
-
-```powershell
-ci2lab models run qwen2.5-coder:1.5b
-```
-Abre el modelo usando el tag de Ollama.
-
-## 11. Usar el agente por primera vez
+## 10. Usar el agente por primera vez
 
 ```powershell
 ci2lab chat
 ```
-Abre el modo interactivo del agente.
+Abre el modo interactivo con el modelo por defecto.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b chat
+ci2lab --model <MODELO_ID> chat
 ```
-Abre chat agente con ese modelo.
+Abre chat agente con el modelo elegido en la tabla.
+
+Si acabas de descargar un modelo concreto, usa siempre `--model <MODELO_ID>` para evitar que Ci2Lab intente abrir el modelo por defecto.
 
 ```powershell
 ci2lab "lista los archivos Python"
@@ -267,46 +293,24 @@ ci2lab --workspace . --yes "ejecuta los tests y dime el resultado"
 ```
 Permite al agente lanzar pruebas si lo necesita.
 
-## 12. Salir de la conversacion y borrar cosas
+## 11. Salir de la conversacion y borrar cosas
 
 Dentro de `ci2lab chat` o `ci2lab --model ... chat`, escribe uno de estos comandos.
 
-```text
-/exit
-```
-Sale de la conversacion con el agente.
-
-```text
-/quit
-```
-Sale de la conversacion con el agente.
-
-```text
-exit
-```
-Sale de la conversacion con el agente.
-
-```text
-quit
-```
-Sale de la conversacion con el agente.
-
-```text
-Ctrl+C
-```
-Interrumpe y cierra la conversacion.
+| Comando | Hace |
+|---|---|
+| `/exit` | Sale de la conversacion con el agente |
+| `/quit` | Sale de la conversacion con el agente |
+| `exit` | Sale de la conversacion con el agente |
+| `quit` | Sale de la conversacion con el agente |
+| `Ctrl+C` | Interrumpe y cierra la conversacion |
 
 Dentro de `ollama run ...`, usa este comando.
 
-```text
-/bye
-```
-Sale del chat directo de Ollama.
-
-```text
-Ctrl+C
-```
-Interrumpe el chat directo de Ollama.
+| Comando | Hace |
+|---|---|
+| `/bye` | Sale del chat directo de Ollama |
+| `Ctrl+C` | Interrumpe el chat directo de Ollama |
 
 Para ver sesiones guardadas de Ci2Lab.
 
@@ -332,21 +336,16 @@ Borra una sesion concreta de Ci2Lab.
 Para eliminar un modelo descargado en Ollama.
 
 ```powershell
-ollama rm llama3.1:8b
+ollama rm <OLLAMA_TAG>
 ```
-Elimina el modelo `llama3.1:8b` del disco.
-
-```powershell
-ollama rm qwen2.5-coder:1.5b
-```
-Elimina el modelo `qwen2.5-coder:1.5b` del disco.
+Elimina del disco el modelo indicado en la tabla.
 
 ```powershell
 ollama list
 ```
 Muestra los modelos instalados en Ollama.
 
-## 13. Comandos principales de uso diario
+## 12. Comandos principales de uso diario
 
 ```powershell
 ci2lab doctor
@@ -378,71 +377,19 @@ ci2lab evals run
 ```
 Valida el harness en modo mock.
 
-## IDs validos del catalogo
-
-```text
-llama3.2-1b
-```
-Modelo pequeno generalista.
-
-```text
-qwen2.5-coder-1.5b
-```
-Modelo pequeno orientado a codigo.
-
-```text
-llama3.2-3b
-```
-Modelo pequeno generalista y razonamiento ligero.
-
-```text
-gemma2-2b
-```
-Modelo pequeno generalista.
-
-```text
-mistral-7b
-```
-Modelo generalista de workstation.
-
-```text
-qwen2.5-coder-7b
-```
-Modelo de codigo de workstation.
-
-```text
-gemma2-9b
-```
-Modelo generalista mas grande.
-
-```text
-phi4-14b
-```
-Modelo orientado a razonamiento.
-
-```text
-qwen2.5-coder-14b
-```
-Modelo grande orientado a codigo.
-
-```text
-qwen2.5-coder-32b
-```
-Modelo grande de mayor calidad para codigo.
-
 ## Flags del agente
 
 Estos flags se pueden usar antes del prompt o con `ci2lab agent`.
 
 ```powershell
-ci2lab --model llama3.1:8b "hola"
+ci2lab --model <MODELO_ID> "hola"
 ```
-Fuerza el modelo para una peticion.
+Fuerza un modelo de la tabla para una peticion.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b "revisa este proyecto"
+ci2lab --model <OLLAMA_TAG> "revisa este proyecto"
 ```
-Fuerza un modelo por ID del catalogo.
+Fuerza un modelo usando el tag de Ollama.
 
 ```powershell
 ci2lab --tool-mode native "haz una tarea"
@@ -851,16 +798,16 @@ ci2lab models recommend "programar en Python"
 Elige un modelo para tu caso.
 
 ```powershell
-ci2lab models install qwen2.5-coder-1.5b
+ci2lab models install <MODELO_ID>
 ```
 Obtiene el comando de instalacion del modelo.
 
 ```powershell
-ollama pull qwen2.5-coder:1.5b
+ollama pull <OLLAMA_TAG>
 ```
 Descarga el modelo en Ollama.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b chat
+ci2lab --model <MODELO_ID> chat
 ```
 Abre chat agente con ese modelo.

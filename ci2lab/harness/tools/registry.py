@@ -46,7 +46,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Lee un archivo del proyecto. Devuelve líneas numeradas.",
+            "description": "Lee un archivo del proyecto, incluidos PDFs con texto extraible. Devuelve líneas numeradas.",
             "parameters": {
                 "type": "object",
                 "properties": {

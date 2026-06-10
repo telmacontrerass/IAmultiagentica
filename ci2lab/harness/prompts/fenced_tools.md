@@ -18,7 +18,7 @@ List a directory:
 .
 ```
 
-Read a file (one path per block):
+Read a text file or PDF with extractable text (one path per block):
 
 ```read_file
 src/main.py
