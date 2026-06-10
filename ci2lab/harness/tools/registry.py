@@ -7,8 +7,11 @@ from typing import Any, Callable
 
 from ci2lab.harness.tools import bash as bash_tool
 from ci2lab.harness.tools import filesystem as fs
+from ci2lab.harness.tools.bash import _format_bash_block_message
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.filesystem import permission_summary
+from ci2lab.harness.policy import outcome_for_tool_output
+from ci2lab.harness.tools.paths import PathViolationError
 from ci2lab.harness.tools.write_preview import preview_edit_file, preview_write_file
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.harness.write_permissions import WRITE_TOOLS, check_write_permission
@@ -216,6 +219,14 @@ def _execute_write_tool(
                 args["new_string"],
                 args.get("replace_all", False),
             )
+    except PathViolationError as exc:
+        return ToolResult(
+            tool_name=name,
+            content=f"Error: {exc}",
+            is_error=True,
+            call_id=call_id,
+            outcome="blocked_by_workspace",
+        )
     except Exception as exc:  # noqa: BLE001
         return ToolResult(
             tool_name=name,
@@ -283,15 +294,17 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         return _execute_write_tool(name, args, config, call.call_id)
 
     if name == "bash":
-        blocked = check_bash_blocked(str(args.get("command", "")))
+        blocked = check_bash_blocked(
+            str(args.get("command", "")),
+            cwd=config.cwd,
+        )
         if blocked:
             return ToolResult(
                 tool_name=name,
-                content=(
-                    f"Error: comando bloqueado por política de seguridad ({blocked})."
-                ),
+                content=_format_bash_block_message(blocked),
                 is_error=True,
                 call_id=call.call_id,
+                outcome="blocked_by_workspace",
             )
 
     allowed, deny_msg = check_permission(
@@ -310,6 +323,14 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
 
     try:
         output = _DISPATCH[name](config, args)
+    except PathViolationError as exc:
+        return ToolResult(
+            tool_name=name,
+            content=f"Error: {exc}",
+            is_error=True,
+            call_id=call.call_id,
+            outcome="blocked_by_workspace",
+        )
     except Exception as exc:  # noqa: BLE001 — devolver error al modelo
         return ToolResult(
             tool_name=name,
@@ -323,9 +344,11 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             output[: config.max_tool_output_chars]
             + f"\n... (truncado, {len(output)} caracteres totales)"
         )
+    is_error = output.startswith("Error:")
     return ToolResult(
         tool_name=name,
         content=output,
-        is_error=output.startswith("Error:"),
+        is_error=is_error,
         call_id=call.call_id,
+        outcome=outcome_for_tool_output(output) if is_error else None,
     )

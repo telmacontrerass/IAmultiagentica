@@ -6,13 +6,23 @@ import re
 import subprocess
 from pathlib import Path
 
-from ci2lab.harness.tools.paths import format_size, resolve_path
+from ci2lab.harness.tools.paths import PathViolationError, format_size, resolve_path
+
+
+def _resolve_or_error(raw: str, cwd: str) -> tuple[Path | None, str | None]:
+    try:
+        return resolve_path(raw, cwd), None
+    except PathViolationError as exc:
+        return None, f"Error: {exc}"
 
 MAX_READ_LINES = 2000
 
 
 def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) -> str:
-    resolved = resolve_path(path, cwd)
+    resolved, err = _resolve_or_error(path, cwd)
+    if err:
+        return err
+    assert resolved is not None
     if not resolved.is_file():
         return f"Error: no existe el archivo {resolved}"
     text = resolved.read_text(encoding="utf-8", errors="replace")
@@ -27,7 +37,10 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
 
 
 def ls(cwd: str, path: str = ".") -> str:
-    resolved = resolve_path(path or ".", cwd)
+    resolved, err = _resolve_or_error(path or ".", cwd)
+    if err:
+        return err
+    assert resolved is not None
     if not resolved.is_dir():
         return f"Error: no es un directorio {resolved}"
     dirs: list[str] = []
@@ -46,7 +59,10 @@ def ls(cwd: str, path: str = ".") -> str:
 
 
 def glob_search(cwd: str, pattern: str, path: str = ".") -> str:
-    base = resolve_path(path or ".", cwd)
+    base, err = _resolve_or_error(path or ".", cwd)
+    if err:
+        return err
+    assert base is not None
     if not base.is_dir():
         return f"Error: base no es directorio {base}"
     matches = sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -66,7 +82,10 @@ def grep_search(
     ignore_case: bool = False,
     max_results: int = 50,
 ) -> str:
-    base = resolve_path(path or ".", cwd)
+    base, err = _resolve_or_error(path or ".", cwd)
+    if err:
+        return err
+    assert base is not None
     flags = re.IGNORECASE if ignore_case else 0
     try:
         regex = re.compile(pattern, flags)
@@ -119,7 +138,10 @@ def grep_search(
 
 
 def write_file(cwd: str, path: str, content: str) -> str:
-    resolved = resolve_path(path, cwd)
+    resolved, err = _resolve_or_error(path, cwd)
+    if err:
+        return err
+    assert resolved is not None
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
     return f"Escrito {resolved} ({len(content)} caracteres)"
@@ -134,7 +156,10 @@ def edit_file(
 ) -> str:
     from ci2lab.harness.tools.write_preview import compute_edit_result
 
-    resolved = resolve_path(path, cwd)
+    resolved, err = _resolve_or_error(path, cwd)
+    if err:
+        return err
+    assert resolved is not None
     if resolved.is_file():
         original_count = resolved.read_text(encoding="utf-8", errors="replace").count(
             old_string

@@ -10,9 +10,26 @@ class PathViolationError(ValueError):
     """La ruta escapa del directorio permitido."""
 
 
+def workspace_root(cwd: str) -> Path:
+    return Path(cwd).resolve()
+
+
+def is_within_workspace(raw: str, cwd: str) -> bool:
+    """True si raw resuelve dentro del workspace."""
+    base = workspace_root(cwd)
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    try:
+        candidate.resolve().relative_to(base)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def resolve_path(raw: str, cwd: str) -> Path:
     """Resuelve raw respecto a cwd y rechaza path traversal."""
-    base = Path(cwd).resolve()
+    base = workspace_root(cwd)
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
         candidate = base / candidate
@@ -21,7 +38,7 @@ def resolve_path(raw: str, cwd: str) -> Path:
         resolved.relative_to(base)
     except ValueError as exc:
         raise PathViolationError(
-            f"Ruta fuera del proyecto: {resolved} (base: {base})"
+            f"Ruta fuera del workspace: {resolved} (base: {base})"
         ) from exc
     return resolved
 

@@ -7,12 +7,16 @@ import subprocess
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 
 
+def _format_bash_block_message(blocked: str) -> str:
+    if blocked.startswith("Comando bloqueado:"):
+        return f"Error: {blocked}"
+    return f"Error: comando bloqueado por politica de seguridad ({blocked})."
+
+
 def run_bash(cwd: str, command: str, timeout_seconds: int = 60) -> str:
-    blocked = check_bash_blocked(command)
+    blocked = check_bash_blocked(command, cwd=cwd)
     if blocked:
-        return (
-            f"Error: comando bloqueado por política de seguridad ({blocked})."
-        )
+        return _format_bash_block_message(blocked)
     try:
         proc = subprocess.run(
             command,

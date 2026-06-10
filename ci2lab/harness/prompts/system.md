@@ -40,6 +40,7 @@ Rules:
 - Use paths relative to the project working directory.
 - `bash`, `write_file`, and `edit_file` may ask the user for confirmation.
 - Only claim something is done after the tool result confirms it. Never say a file was created if the tool did not return success.
+- If a tool says a path is outside the workspace, respect that policy. Do not retry the same path and do not use `bash`, `copy`, `cp`, `type`, `cat`, `Get-Content`, or any other command to bypass the restriction. Explain the limitation to the user and stop.
 
 ## Finishing
 

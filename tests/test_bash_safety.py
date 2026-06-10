@@ -22,7 +22,7 @@ def test_allows_safe_ls():
 
 def test_run_bash_returns_error_when_blocked():
     out = run_bash(".", "rm -rf /")
-    assert "bloqueado" in out
+    assert out.startswith("Error:")
 
 
 def test_execute_tool_blocks_even_with_yes():
@@ -30,4 +30,4 @@ def test_execute_tool_blocks_even_with_yes():
     call = ToolCall(name="bash", arguments={"command": "rm -rf /"}, call_id="c1")
     result = execute_tool(call, config)
     assert result.is_error
-    assert "bloqueado" in result.content.lower()
+    assert result.content.startswith("Error:")

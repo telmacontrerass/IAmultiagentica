@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from ci2lab.harness.tools.bash_workspace import check_bash_workspace_blocked
+
 # (patrón, descripción corta para el usuario)
 _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\brm\s+(-[^\s]*f|-\w*f\w*|\S+\s+-rf\b)", re.I), "rm -rf / eliminación recursiva forzada"),
@@ -39,10 +41,11 @@ _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def check_bash_blocked(command: str) -> str | None:
+def check_bash_blocked(command: str, *, cwd: str | None = None) -> str | None:
     """Devuelve la descripción de la regla violada, o None si está permitido.
 
     La blocklist se aplica siempre, incluso con --yes.
+    Si se pasa cwd, también se validan rutas respecto al workspace.
     """
     if not command or not command.strip():
         return None
@@ -50,4 +53,8 @@ def check_bash_blocked(command: str) -> str | None:
     for pattern, description in _BLOCKED_RULES:
         if pattern.search(normalized):
             return description
+    if cwd:
+        workspace_block = check_bash_workspace_blocked(normalized, cwd)
+        if workspace_block:
+            return workspace_block
     return None

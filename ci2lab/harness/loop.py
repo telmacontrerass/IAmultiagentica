@@ -29,8 +29,14 @@ from ci2lab.harness.parsing import resolve_tool_calls, strip_tool_markup
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.session import save_session
+from ci2lab.harness.policy import (
+    POLICY_NUDGE_MESSAGE,
+    POLICY_REPEAT_MESSAGE,
+    is_policy_error,
+    tool_call_signature,
+)
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS, execute_tool
-from ci2lab.harness.types import AgentConfig
+from ci2lab.harness.types import AgentConfig, ToolResult
 
 console = Console()
 
@@ -67,6 +73,8 @@ def run_agent(
 
     tools = FUNCTION_SCHEMAS if selection.supports_tools else None
     recent_sigs: deque[str] = deque(maxlen=6)
+    policy_blocked_sigs: set[str] = set()
+    policy_nudge_sent = False
     stuck_rounds = 0
     final_text = ""
     content = ""
@@ -148,10 +156,24 @@ def run_agent(
 
             append_assistant_turn(history, content, calls)
             results = []
+            round_policy_error = False
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {_summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
-                result = execute_tool(call, cfg)
+                sig = tool_call_signature(call)
+                if sig in policy_blocked_sigs:
+                    result = ToolResult(
+                        tool_name=call.name,
+                        content=POLICY_REPEAT_MESSAGE,
+                        is_error=True,
+                        call_id=call.call_id,
+                        outcome="blocked_by_policy",
+                    )
+                else:
+                    result = execute_tool(call, cfg)
+                    if is_policy_error(result):
+                        policy_blocked_sigs.add(sig)
+                        round_policy_error = True
                 ended_at = datetime.now(timezone.utc)
                 if run_log:
                     run_log.record_tool_call(
@@ -169,6 +191,9 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            if round_policy_error and not policy_nudge_sent:
+                history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
+                policy_nudge_sent = True
             _maybe_save(cfg, history, selection)
         else:
             hit_max_rounds = True
