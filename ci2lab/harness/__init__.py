@@ -10,33 +10,12 @@ from ci2lab.harness.types import AgentConfig
 def default_selection(
     ollama_tag: str = "llama3.1:8b",
     *,
-    tool_mode: str = "native",
+    tool_mode: str | None = None,
 ) -> ModelSelection:
-    """ModelSelection de prueba cuando el router aun no esta implementado."""
-    try:
-        from ci2lab.router.catalog import resolve_catalog_model
+    """ModelSelection for tests/evals; uses catalog tool_mode when not overridden."""
+    from ci2lab.router.selection import build_model_selection
 
-        model = resolve_catalog_model(ollama_tag)
-    except Exception:  # noqa: BLE001
-        model = None
-
-    if model:
-        return ModelSelection(
-            model_id=model.id,
-            ollama_tag=model.ollama_tag,
-            display_name=model.display_name,
-            tool_mode=model.tool_mode,
-            supports_tools=model.supports_tools,
-            context_length=model.context_length,
-        )
-
-    return ModelSelection(
-        model_id=ollama_tag.replace(":", "-"),
-        ollama_tag=ollama_tag,
-        display_name=ollama_tag,
-        tool_mode=tool_mode,  # type: ignore[arg-type]
-        supports_tools=True,
-    )
+    return build_model_selection(ollama_tag, tool_mode_override=tool_mode)
 
 
 __all__ = [

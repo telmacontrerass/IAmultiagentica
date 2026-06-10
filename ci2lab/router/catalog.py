@@ -17,8 +17,9 @@ def load_model_catalog(path: Path = CATALOG_PATH) -> list[ModelSpec]:
     return [ModelSpec(**model) for model in raw_models]
 
 
-def resolve_catalog_model(model_name: str) -> ModelSpec | None:
-    normalized = model_name.strip().lower()
+def find_model_by_tag(tag: str) -> ModelSpec | None:
+    """Match catalog entry by id, ollama_tag, or display name."""
+    normalized = tag.strip().lower()
     for model in load_model_catalog():
         if normalized in {
             model.id.lower(),
@@ -27,3 +28,7 @@ def resolve_catalog_model(model_name: str) -> ModelSpec | None:
         }:
             return model
     return None
+
+
+def resolve_catalog_model(model_name: str) -> ModelSpec | None:
+    return find_model_by_tag(model_name)

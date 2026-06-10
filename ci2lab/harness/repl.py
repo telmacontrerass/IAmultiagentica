@@ -33,6 +33,7 @@ def run_repl(
     console.print(Panel(
         f"[bold]ci2lab REPL[/bold]\n"
         f"Modelo: {selection.ollama_tag}\n"
+        f"Tool mode: {selection.tool_mode}\n"
         f"CWD: {config.cwd}\n"
         f"Sesión: {sid}\n\n"
         "Escribe tu petición. Comandos: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold]",

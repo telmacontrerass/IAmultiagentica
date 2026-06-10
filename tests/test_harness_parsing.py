@@ -1,5 +1,8 @@
 from ci2lab.harness.parsing import (
+    looks_like_unparsed_tool_attempt,
     parse_fenced_blocks,
+    parse_generic_fenced_blocks,
+    parse_json_tool_objects,
     parse_xml_blocks,
     resolve_tool_calls,
     strip_tool_markup,
@@ -65,3 +68,75 @@ def test_native_empty_falls_back_to_fenced():
 def test_no_tools_returns_empty():
     calls = resolve_tool_calls("solo texto sin herramientas", [], tool_mode="native")
     assert calls == []
+
+
+def test_parse_json_fenced_write_file():
+    text = (
+        'Here is the tool call:\n```json\n'
+        '{"name": "write_file", "arguments": {"path": "count_to_100.py", '
+        '"content": "for i in range(1, 101):\\n    print(i)\\n"}}\n```'
+    )
+    calls = resolve_tool_calls(text, [], tool_mode="native")
+    assert len(calls) == 1
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["path"] == "count_to_100.py"
+    assert "print(i)" in calls[0].arguments["content"]
+
+
+def test_parse_inline_json_write_file():
+    text = (
+        '{"name": "write_file", "arguments": {"path": "wordle.py", '
+        '"content": "print(1)"}}'
+    )
+    calls = parse_json_tool_objects(text)
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["path"] == "wordle.py"
+
+
+def test_parse_llama_parameters_field():
+    text = '{"name": "read_file", "parameters": {"path": "wordle.py", "offset": "1", "limit": "1000"}}'
+    calls = resolve_tool_calls(text, [], tool_mode="native")
+    assert calls[0].name == "read_file"
+    assert calls[0].arguments["path"] == "wordle.py"
+    assert calls[0].arguments["offset"] == 1
+    assert calls[0].arguments["limit"] == 1000
+
+
+def test_parse_write_file_inside_bash_fence():
+    text = (
+        "```bash\nwrite_file\n"
+        '{"path": "wordle.py", "content": "print(1)"}\n```'
+    )
+    calls = parse_generic_fenced_blocks(text)
+    assert len(calls) == 1
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["path"] == "wordle.py"
+
+
+def test_parse_bash_fence_with_shell_command():
+    text = "```bash\npython wordle.py\n```"
+    calls = resolve_tool_calls(text, [], tool_mode="fenced")
+    assert len(calls) == 1
+    assert calls[0].name == "bash"
+    assert calls[0].arguments["command"] == "python wordle.py"
+
+
+def test_write_file_new_string_alias_normalized():
+    native = [{
+        "name": "write_file",
+        "arguments": {"path": "a.py", "new_string": "x = 1"},
+    }]
+    calls = resolve_tool_calls("", native, tool_mode="native")
+    assert calls[0].arguments["content"] == "x = 1"
+
+
+def test_looks_like_unparsed_tool_attempt():
+    # Valid JSON is now parsed successfully, so this should NOT look "unparsed".
+    assert not looks_like_unparsed_tool_attempt(
+        '```json\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x"}}\n```'
+    )
+    # Broken JSON that still looks like a tool attempt should trigger recovery.
+    assert looks_like_unparsed_tool_attempt(
+        '```json\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x"\n```'
+    )
+    assert not looks_like_unparsed_tool_attempt("just some explanation text")

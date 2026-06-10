@@ -4,7 +4,9 @@ This model calls tools by writing a fenced code block whose **language tag is th
 
 Hard rules:
 
-- The opening fence must be the tool name, e.g. ` ```write_file `. Do NOT use ` ```json `, ` ```python `, or ` ```sh ` — those are treated as plain text and will NOT run.
+- The opening fence must be the tool name, e.g. ` ```write_file `. Do NOT use ` ```python ` for actions.
+- ` ```json ` with `{"name": "write_file", "arguments": {...}}` is also accepted as a fallback.
+- Never put `write_file` inside a ` ```bash ` block. Bash is only for shell commands like `python wordle.py`.
 - Use one tool block at a time, then wait for the result before the next step.
 - After a tool runs, only say the task is done if the result confirms success.
 

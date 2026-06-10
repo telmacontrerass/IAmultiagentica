@@ -1,66 +1,55 @@
 """
-Pipeline de preparación: hardware + router + runtime.
+Pipeline de preparación: hardware + selección de modelo para el arnés.
 
-Cuando el router no está implementado, devuelve un ModelSelection por defecto.
+El router (models recommend) sugiere modelos; el usuario elige cuál ejecutar.
+Al arrancar chat/agent se aplica el tool_mode del catálogo para ese modelo.
 """
 
 from __future__ import annotations
 
 import os
 
+from ci2lab.config import DEFAULT_MODEL
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
-from ci2lab.harness import default_selection
-from ci2lab.router.catalog import resolve_catalog_model
-
-
-def _fallback_selection(
-    model_name: str,
-    *,
-    tool_mode: str,
-) -> ModelSelection:
-    model = resolve_catalog_model(model_name)
-    if model:
-        return ModelSelection(
-            model_id=model.id,
-            ollama_tag=model.ollama_tag,
-            display_name=model.display_name,
-            tool_mode=model.tool_mode,
-            supports_tools=model.supports_tools,
-            context_length=model.context_length,
-        )
-    return default_selection(model_name, tool_mode=tool_mode)
+from ci2lab.hardware import scan_hardware
+from ci2lab.router.selection import build_model_selection
 
 
 def prepare_session(
     user_prompt: str,
     *,
     force_model: str | None = None,
-    tool_mode: str = "native",
+    tool_mode_override: str | None = None,
     backend_url: str | None = None,
-    pull: bool = True,  # noqa: ARG001 — usado cuando exista runtime.ensure
+    pull: bool = True,
 ) -> tuple[HardwareProfile | None, ModelSelection]:
     """
-    Punto de integración router ↔ arnés.
+    Prepara una sesión del arnés para el modelo que el usuario eligió.
 
-    1. Intenta scan_hardware + resolve_model (módulos del router).
-    2. Si no existen, usa default_selection con --model o CI2LAB_MODEL.
-    3. Cuando exista runtime.ensure_model_ready, lo invocará aquí.
+    - No auto-selecciona modelo desde el router (eso es `ci2lab models recommend`).
+    - Aplica tool_mode del catálogo para el tag elegido.
+    - `tool_mode_override` solo cuando el usuario pasa --tool-mode en CLI.
     """
     _ = user_prompt
 
-    try:
-        from ci2lab.hardware.profiler import scan_hardware
-        from ci2lab.router.resolve import resolve_model
-        from ci2lab.runtime.ensure import ensure_model_ready
+    profile = scan_hardware()
+    tag = force_model or os.environ.get("CI2LAB_MODEL", DEFAULT_MODEL)
+    selection = build_model_selection(
+        tag,
+        tool_mode_override=tool_mode_override,
+        backend_url=backend_url,
+        profile=profile,
+    )
 
-        profile = scan_hardware()
-        selection = resolve_model(user_prompt, profile=profile, force_model_id=force_model)
-        if pull:
-            ensure_model_ready(selection)
-        return profile, selection
+    if pull:
+        _maybe_ensure_model_ready(selection)
+
+    return profile, selection
+
+
+def _maybe_ensure_model_ready(selection: ModelSelection) -> None:
+    try:
+        from ci2lab.runtime.ensure import ensure_model_ready
     except ImportError:
-        model_name = force_model or os.environ.get("CI2LAB_MODEL", "llama3.1:8b")
-        selection = _fallback_selection(model_name, tool_mode=tool_mode)
-        if backend_url:
-            selection.backend_url = backend_url
-        return None, selection
+        return
+    ensure_model_ready(selection)

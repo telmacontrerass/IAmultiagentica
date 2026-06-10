@@ -25,7 +25,11 @@ from ci2lab.harness.context import trim_messages
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
-from ci2lab.harness.parsing import resolve_tool_calls, strip_tool_markup
+from ci2lab.harness.parsing import (
+    looks_like_unparsed_tool_attempt,
+    resolve_tool_calls,
+    strip_tool_markup,
+)
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.session import save_session
@@ -76,6 +80,7 @@ def run_agent(
     policy_blocked_sigs: set[str] = set()
     policy_nudge_sent = False
     stuck_rounds = 0
+    unparsed_tool_nudges = 0
     final_text = ""
     content = ""
     status = "success"
@@ -124,6 +129,37 @@ def run_agent(
             )
 
             if not calls:
+                if (
+                    looks_like_unparsed_tool_attempt(content)
+                    and unparsed_tool_nudges < 2
+                    and selection.supports_tools
+                ):
+                    unparsed_tool_nudges += 1
+                    console.print(
+                        "[yellow]Tool call detected as text but not executed; "
+                        "asking the model to retry.[/yellow]"
+                    )
+                    append_assistant_turn(history, content)
+                    if selection.tool_mode == "fenced":
+                        hint = (
+                            "Your previous tool call was not executed. "
+                            "Use a fenced block with the tool name as the tag, e.g.\n"
+                            "```write_file\n"
+                            '{"path": "file.py", "content": "..."}\n'
+                            "```\n"
+                            "Do not put write_file inside a bash block. "
+                            "Do not reply with plain JSON only."
+                        )
+                    else:
+                        hint = (
+                            "Your previous tool call was not executed. "
+                            "Invoke the tool through function calling, or use a "
+                            "```write_file fenced block with JSON arguments."
+                        )
+                    history.append({"role": "user", "content": hint})
+                    _maybe_save(cfg, history, selection)
+                    continue
+
                 final_text = strip_tool_markup(content).strip() or content.strip()
                 if final_text and not cfg.stream:
                     console.print(final_text)

@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ci2lab.harness.tools import bash as bash_tool
 from ci2lab.harness.tools import filesystem as fs
 from ci2lab.harness.tools.bash import _format_bash_block_message
+from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.filesystem import permission_summary
 from ci2lab.harness.policy import outcome_for_tool_output
@@ -167,23 +168,34 @@ _DISPATCH: dict[str, Callable[..., str]] = {
 }
 
 
-def normalize_tool_arguments(args: dict[str, Any]) -> dict[str, Any]:
+def normalize_tool_arguments(
+    args: dict[str, Any],
+    *,
+    tool_name: str | None = None,
+) -> dict[str, Any]:
     """
     Limpia argumentos de tool calls del modelo.
 
     Ollama y otros backends envían a menudo null explícito en campos opcionales
     (p. ej. offset/limit en read_file), lo que rompe .get(key, default).
     """
-    return {k: v for k, v in args.items() if v is not None}
+    cleaned = {k: v for k, v in args.items() if v is not None}
+    if tool_name:
+        return normalize_args_for_tool(tool_name, cleaned)
+    return cleaned
 
 
-def parse_arguments(raw: str | dict[str, Any]) -> dict[str, Any]:
+def parse_arguments(
+    raw: str | dict[str, Any],
+    *,
+    tool_name: str | None = None,
+) -> dict[str, Any]:
     if isinstance(raw, dict):
-        return normalize_tool_arguments(raw)
+        return normalize_tool_arguments(raw, tool_name=tool_name)
     if not raw or not str(raw).strip():
         return {}
     try:
-        return normalize_tool_arguments(json.loads(raw))
+        return normalize_tool_arguments(json.loads(raw), tool_name=tool_name)
     except json.JSONDecodeError:
         return {"command": str(raw)} if raw else {}
 
@@ -288,7 +300,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
         )
 
-    args = normalize_tool_arguments(call.arguments)
+    args = normalize_tool_arguments(call.arguments, tool_name=name)
 
     if name in WRITE_TOOLS:
         return _execute_write_tool(name, args, config, call.call_id)
