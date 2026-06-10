@@ -145,97 +145,65 @@ ci2lab models recommend "usar en un ordenador con pocos recursos"
 ```
 Recomienda modelos ligeros.
 
-## 8. Ver como instalar el modelo elegido
+## 8. Patron para usar cualquier modelo
 
-Estos comandos no descargan directamente el modelo: muestran el plan y los comandos recomendados.
-
-```powershell
-ci2lab models install qwen2.5-coder-1.5b
-```
-Muestra comandos para instalar y usar ese modelo.
+En la tabla de abajo, usa `ID Ci2Lab` cuando el comando sea de `ci2lab` y usa `Tag Ollama` cuando el comando sea de `ollama`.
 
 ```powershell
-ci2lab models install qwen2.5-coder:1.5b
+ci2lab models install <MODELO_ID>
 ```
-Muestra comandos usando el tag de Ollama.
-
-## 9. Descargar modelos con Ollama
-
-Descarga solo los modelos que te haya recomendado `ci2lab models recommend` y que quepan en tu equipo.
+Muestra el plan para instalar y usar el modelo.
 
 ```powershell
-ollama pull llama3.2:1b
+ollama pull <OLLAMA_TAG>
 ```
-Descarga Llama 3.2 1B.
+Descarga el modelo en Ollama.
 
 ```powershell
-ollama pull qwen2.5-coder:1.5b
+ci2lab models run <MODELO_ID>
 ```
-Descarga Qwen2.5 Coder 1.5B.
+Abre el modelo desde Ci2Lab con `ollama run`.
 
 ```powershell
-ollama pull llama3.2:3b
+ci2lab --model <MODELO_ID> chat
 ```
-Descarga Llama 3.2 3B.
+Abre chat agente con ese modelo.
 
 ```powershell
-ollama pull gemma2:2b
+ci2lab --model <MODELO_ID> "hola"
 ```
-Descarga Gemma 2 2B.
+Ejecuta una peticion puntual con ese modelo.
 
 ```powershell
-ollama pull mistral:7b
+ollama rm <OLLAMA_TAG>
 ```
-Descarga Mistral 7B.
+Elimina el modelo descargado del disco.
 
 ```powershell
-ollama pull qwen2.5-coder:7b
+ollama list
 ```
-Descarga Qwen2.5 Coder 7B.
+Muestra los modelos instalados en Ollama.
 
-```powershell
-ollama pull gemma2:9b
-```
-Descarga Gemma 2 9B.
+## 9. Tabla de modelos disponibles
 
-```powershell
-ollama pull phi4:14b
-```
-Descarga Phi-4 14B.
+Descarga solo los modelos que te recomiende `ci2lab models recommend` y que quepan en tu equipo.
 
-```powershell
-ollama pull qwen2.5-coder:14b
-```
-Descarga Qwen2.5 Coder 14B.
+| Modelo | ID Ci2Lab | Tag Ollama | Uso principal | Tamano orientativo |
+|---|---|---|---|---|
+| Llama 3.2 1B | `llama3.2-1b` | `llama3.2:1b` | General ligero | Muy pequeno |
+| Qwen2.5 Coder 1.5B | `qwen2.5-coder-1.5b` | `qwen2.5-coder:1.5b` | Codigo ligero | Muy pequeno |
+| Llama 3.2 3B | `llama3.2-3b` | `llama3.2:3b` | General y razonamiento ligero | Pequeno |
+| Gemma 2 2B | `gemma2-2b` | `gemma2:2b` | General ligero | Pequeno |
+| Mistral 7B Instruct | `mistral-7b` | `mistral:7b` | General y razonamiento | Medio |
+| Qwen2.5 Coder 7B | `qwen2.5-coder-7b` | `qwen2.5-coder:7b` | Codigo | Medio |
+| Gemma 2 9B | `gemma2-9b` | `gemma2:9b` | General | Medio/grande |
+| Phi-4 14B | `phi4-14b` | `phi4:14b` | Razonamiento y codigo | Grande |
+| Qwen2.5 Coder 14B | `qwen2.5-coder-14b` | `qwen2.5-coder:14b` | Codigo avanzado | Grande |
+| Qwen2.5 Coder 32B | `qwen2.5-coder-32b` | `qwen2.5-coder:32b` | Codigo de mayor calidad | Muy grande |
 
-```powershell
-ollama pull qwen2.5-coder:32b
-```
-Descarga Qwen2.5 Coder 32B.
+Ejemplo de sustitucion: para Qwen2.5 Coder 1.5B, `<MODELO_ID>` es `qwen2.5-coder-1.5b` y `<OLLAMA_TAG>` es `qwen2.5-coder:1.5b`.
 
-## 10. Probar un modelo descargado
-
-```powershell
-ollama run qwen2.5-coder:1.5b
-```
-Abre chat directo con Qwen Coder.
-
-```powershell
-ollama run llama3.1:8b
-```
-Abre chat directo con Ollama.
-
-```powershell
-ci2lab models run qwen2.5-coder-1.5b
-```
-Abre el modelo con `ollama run`.
-
-```powershell
-ci2lab models run qwen2.5-coder:1.5b
-```
-Abre el modelo usando el tag de Ollama.
-
-## 11. Usar el agente por primera vez
+## 10. Usar el agente por primera vez
 
 ```powershell
 ci2lab chat
@@ -243,9 +211,9 @@ ci2lab chat
 Abre el modo interactivo del agente.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b chat
+ci2lab --model <MODELO_ID> chat
 ```
-Abre chat agente con ese modelo.
+Abre chat agente con el modelo elegido en la tabla.
 
 ```powershell
 ci2lab "lista los archivos Python"
@@ -267,46 +235,24 @@ ci2lab --workspace . --yes "ejecuta los tests y dime el resultado"
 ```
 Permite al agente lanzar pruebas si lo necesita.
 
-## 12. Salir de la conversacion y borrar cosas
+## 11. Salir de la conversacion y borrar cosas
 
 Dentro de `ci2lab chat` o `ci2lab --model ... chat`, escribe uno de estos comandos.
 
-```text
-/exit
-```
-Sale de la conversacion con el agente.
-
-```text
-/quit
-```
-Sale de la conversacion con el agente.
-
-```text
-exit
-```
-Sale de la conversacion con el agente.
-
-```text
-quit
-```
-Sale de la conversacion con el agente.
-
-```text
-Ctrl+C
-```
-Interrumpe y cierra la conversacion.
+| Comando | Hace |
+|---|---|
+| `/exit` | Sale de la conversacion con el agente |
+| `/quit` | Sale de la conversacion con el agente |
+| `exit` | Sale de la conversacion con el agente |
+| `quit` | Sale de la conversacion con el agente |
+| `Ctrl+C` | Interrumpe y cierra la conversacion |
 
 Dentro de `ollama run ...`, usa este comando.
 
-```text
-/bye
-```
-Sale del chat directo de Ollama.
-
-```text
-Ctrl+C
-```
-Interrumpe el chat directo de Ollama.
+| Comando | Hace |
+|---|---|
+| `/bye` | Sale del chat directo de Ollama |
+| `Ctrl+C` | Interrumpe el chat directo de Ollama |
 
 Para ver sesiones guardadas de Ci2Lab.
 
@@ -332,21 +278,16 @@ Borra una sesion concreta de Ci2Lab.
 Para eliminar un modelo descargado en Ollama.
 
 ```powershell
-ollama rm llama3.1:8b
+ollama rm <OLLAMA_TAG>
 ```
-Elimina el modelo `llama3.1:8b` del disco.
-
-```powershell
-ollama rm qwen2.5-coder:1.5b
-```
-Elimina el modelo `qwen2.5-coder:1.5b` del disco.
+Elimina del disco el modelo indicado en la tabla.
 
 ```powershell
 ollama list
 ```
 Muestra los modelos instalados en Ollama.
 
-## 13. Comandos principales de uso diario
+## 12. Comandos principales de uso diario
 
 ```powershell
 ci2lab doctor
@@ -378,71 +319,19 @@ ci2lab evals run
 ```
 Valida el harness en modo mock.
 
-## IDs validos del catalogo
-
-```text
-llama3.2-1b
-```
-Modelo pequeno generalista.
-
-```text
-qwen2.5-coder-1.5b
-```
-Modelo pequeno orientado a codigo.
-
-```text
-llama3.2-3b
-```
-Modelo pequeno generalista y razonamiento ligero.
-
-```text
-gemma2-2b
-```
-Modelo pequeno generalista.
-
-```text
-mistral-7b
-```
-Modelo generalista de workstation.
-
-```text
-qwen2.5-coder-7b
-```
-Modelo de codigo de workstation.
-
-```text
-gemma2-9b
-```
-Modelo generalista mas grande.
-
-```text
-phi4-14b
-```
-Modelo orientado a razonamiento.
-
-```text
-qwen2.5-coder-14b
-```
-Modelo grande orientado a codigo.
-
-```text
-qwen2.5-coder-32b
-```
-Modelo grande de mayor calidad para codigo.
-
 ## Flags del agente
 
 Estos flags se pueden usar antes del prompt o con `ci2lab agent`.
 
 ```powershell
-ci2lab --model llama3.1:8b "hola"
+ci2lab --model <MODELO_ID> "hola"
 ```
-Fuerza el modelo para una peticion.
+Fuerza un modelo de la tabla para una peticion.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b "revisa este proyecto"
+ci2lab --model <OLLAMA_TAG> "revisa este proyecto"
 ```
-Fuerza un modelo por ID del catalogo.
+Fuerza un modelo usando el tag de Ollama.
 
 ```powershell
 ci2lab --tool-mode native "haz una tarea"
@@ -851,16 +740,16 @@ ci2lab models recommend "programar en Python"
 Elige un modelo para tu caso.
 
 ```powershell
-ci2lab models install qwen2.5-coder-1.5b
+ci2lab models install <MODELO_ID>
 ```
 Obtiene el comando de instalacion del modelo.
 
 ```powershell
-ollama pull qwen2.5-coder:1.5b
+ollama pull <OLLAMA_TAG>
 ```
 Descarga el modelo en Ollama.
 
 ```powershell
-ci2lab --model qwen2.5-coder-1.5b chat
+ci2lab --model <MODELO_ID> chat
 ```
 Abre chat agente con ese modelo.
