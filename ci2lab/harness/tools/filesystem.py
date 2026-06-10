@@ -9,13 +9,23 @@ from pathlib import Path
 from ci2lab.harness.tools.paths import format_size, resolve_path
 
 MAX_READ_LINES = 2000
+MAX_PDF_PAGES = 100
 
 
 def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) -> str:
     resolved = resolve_path(path, cwd)
     if not resolved.is_file():
         return f"Error: no existe el archivo {resolved}"
-    text = resolved.read_text(encoding="utf-8", errors="replace")
+    if resolved.suffix.lower() == ".pdf":
+        text = _read_pdf_text(resolved)
+        if text.startswith("Error:"):
+            return text
+    else:
+        text = resolved.read_text(encoding="utf-8", errors="replace")
+    return _numbered_lines(text, offset=offset, limit=limit)
+
+
+def _numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str:
     lines = text.splitlines()
     start = max(1, offset if offset is not None else 1)
     end = start + (limit or MAX_READ_LINES) - 1
@@ -24,6 +34,50 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
     if len(lines) > end:
         numbered.append(f"... ({len(lines) - end} líneas más; usa offset/limit)")
     return "\n".join(numbered) if numbered else "(archivo vacío)"
+
+
+def _read_pdf_text(path: Path) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return (
+            "Error: no se puede leer PDF porque falta la dependencia `pypdf`. "
+            "Instala el proyecto de nuevo para activar soporte PDF."
+        )
+
+    try:
+        reader = PdfReader(str(path))
+    except Exception as exc:  # noqa: BLE001
+        return f"Error: no se pudo abrir el PDF {path}: {exc}"
+
+    total_pages = len(reader.pages)
+    page_count = min(total_pages, MAX_PDF_PAGES)
+    chunks: list[str] = []
+    has_extractable_text = False
+    for index in range(page_count):
+        page = reader.pages[index]
+        page_number = index + 1
+        chunks.append(f"[PDF page {page_number}/{total_pages}]")
+        try:
+            page_text = page.extract_text() or ""
+        except Exception as exc:  # noqa: BLE001
+            page_text = f"Error extrayendo texto de esta pagina: {exc}"
+        page_text = page_text.strip()
+        if page_text:
+            has_extractable_text = True
+        chunks.append(page_text or "(sin texto extraible en esta pagina)")
+
+    if total_pages > page_count:
+        chunks.append(
+            f"... ({total_pages - page_count} paginas mas; limite PDF {MAX_PDF_PAGES})"
+        )
+
+    if not has_extractable_text:
+        return (
+            "Error: el PDF no contiene texto extraible. Puede ser un PDF escaneado; "
+            "hace falta OCR para leer imagenes."
+        )
+    return "\n".join(chunks).strip()
 
 
 def ls(cwd: str, path: str = ".") -> str:

@@ -25,11 +25,85 @@ _DOCTOR_OK = "OK"
 _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
 
+_CLI_COMMANDS = frozenset(
+    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
+)
+
+
+def _is_global_help_request(raw_argv: list[str]) -> bool:
+    """True cuando el usuario pide ayuda global sin subcomando."""
+    if not raw_argv:
+        return True
+    return raw_argv in (["--help"], ["-h"])
+
+
+def _print_global_help() -> None:
+    """Ayuda global ASCII (compatible cp1252)."""
+    lines = [
+        "usage: ci2lab [opciones] [comando] [argumentos]",
+        "",
+        "CLI local: detecta hardware, recomienda modelos y ejecuta un agente",
+        "con herramientas en terminal (read, grep, bash, edicion supervisada).",
+        "",
+        "Atajo:",
+        '  ci2lab "peticion"                 Ejecuta el agente (equivale a agent)',
+        "",
+        "Comandos principales:",
+        '  ci2lab agent "peticion"           Una tarea y sale',
+        "  ci2lab chat                       Modo interactivo (REPL)",
+        "  ci2lab sessions [--json]          Lista sesiones guardadas",
+        "  ci2lab doctor                     Comprueba Python, Ollama y modelos",
+        "  ci2lab hardware [--json]          RAM, GPU, presupuesto de memoria",
+        "  ci2lab models recommend [consulta]",
+        "                                    Modelos recomendados para tu PC",
+        "  ci2lab models install <modelo>    Comandos pull/run/chat para un modelo",
+        "  ci2lab models run <modelo>        Abre el modelo con ollama run",
+        "  ci2lab evals run                  Evaluaciones del arnes (mock)",
+        "",
+        "Flags del agente (atajo, agent y chat):",
+        "  --model TAG                       Tag Ollama (ej. qwen2.5-coder:7b)",
+        "  --tool-mode {native,fenced}       native=function calling; fenced=bloques",
+        "  --workspace PATH                  Directorio de trabajo del agente",
+        "  --cwd PATH                        Alias legacy de --workspace",
+        "  --yes                             Auto-confirmar bash (no omite preview)",
+        "  --no-stream                       Desactivar streaming de tokens",
+        "  --max-rounds N                    Maximo de vueltas del agente",
+        "  --session ID                      Reanudar sesion en chat",
+        "  --runs-dir PATH                   Directorio de logs (default: runs)",
+        "  --no-log                          No guardar artefactos en runs/",
+        "",
+        "Importante: los flags del agente van ANTES del subcomando:",
+        "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
+        "",
+        "Opciones por comando:",
+        "  models recommend [--json] [--limit N] [consulta]",
+        "  models install <id|tag> [--json]",
+        "  models run <id|tag>",
+        "  evals run [--live] [--model TAG] [--task ID] [--tasks-dir PATH]",
+        "",
+        "Evals (alternativa):",
+        "  python -m ci2lab.evals.run        Equivalente a ci2lab evals run (mock)",
+        "",
+        "Herramientas del agente (dentro de chat/agent):",
+        "  read_file, ls, glob, grep, edit_file, write_file, bash",
+        "",
+        "Config opcional: ci2lab.yaml o ~/.ci2lab/ci2lab.yaml",
+        "  (model, workspace, runs_dir, write_tools_enabled, etc.)",
+        "",
+        "Ayuda detallada por comando:",
+        "  ci2lab <comando> --help",
+        "  ci2lab models recommend --help",
+    ]
+    print("\n".join(lines))
+
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    commands = {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
-    if raw_argv and not any(tok in commands for tok in raw_argv):
+    if _is_global_help_request(raw_argv):
+        _print_global_help()
+        return 0
+
+    if raw_argv and not any(tok in _CLI_COMMANDS for tok in raw_argv):
         raw_argv = ["agent", *raw_argv]
 
     parser = argparse.ArgumentParser(
