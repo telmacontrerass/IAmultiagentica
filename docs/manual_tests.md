@@ -157,7 +157,26 @@ Modo live (opcional, requiere Ollama):
 python -m ci2lab.evals.run --live --model llama3.1:8b --task 001_list_files
 ```
 
-## 9. Entrypoints
+## 9. Hardware y router
+
+```bash
+ci2lab hardware
+ci2lab hardware --json
+ci2lab models recommend
+ci2lab models recommend "quiero programar en Python"
+ci2lab models install qwen2.5-coder-1.5b
+```
+
+Verificar:
+
+- [ ] `hardware` muestra RAM, VRAM, GPU, `inference_budget_gb`, `hardware_tier`
+- [ ] `models recommend` lista solo modelos que caben en el presupuesto
+- [ ] Con prompt de coding, los modelos coder aparecen arriba
+- [ ] `models install` muestra `ollama pull`, `ollama run` y `ci2lab --model … chat`
+
+**Limitación conocida:** `ci2lab chat` no usa el router automáticamente; `--model` debe ir antes del subcomando. Ver [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).
+
+## 10. Entrypoints
 
 ```bash
 python -m ci2lab.cli --help

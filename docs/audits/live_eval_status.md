@@ -6,7 +6,9 @@
 
 ## Resumen
 
-El arnés agéntico local del paquete `ci2lab` queda **validado en mock y live** con el modelo `llama3.1:8b` vía Ollama. La suite de evaluación práctica (`evals/`) cubre tools de lectura, seguridad de `bash`, escritura con diff preview y políticas de configuración. Este documento cierra formalmente el hito del harness como base funcional antes de hardware/router/runtime.
+El arnés agéntico local del paquete `ci2lab` queda **validado en mock y live** con el modelo `llama3.1:8b` vía Ollama. La suite de evaluación práctica (`evals/`) cubre tools de lectura, seguridad de `bash`, escritura con diff preview y políticas de configuración. Este documento cierra formalmente el hito del harness como base funcional.
+
+> **Nota (2026-06-10):** Desde el cierre del harness se implementaron `hardware/` y `router/` (CLI `ci2lab hardware`, `ci2lab models …`). La integración con `chat`/`agent` vía `pipeline.py` sigue pendiente. Ver [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
 
 ## Modelo probado
 
@@ -18,7 +20,7 @@ El arnés agéntico local del paquete `ci2lab` queda **validado en mock y live**
 |-------|-----------|
 | Mock evals | 7/7 PASS |
 | Live evals | 7/7 PASS |
-| Tests automatizados (`pytest`) | 64 passed (verificación de cierre 2026-06-09) |
+| Tests automatizados (`pytest`) | 70 passed (última verificación 2026-06-10; 64 en cierre 2026-06-09) |
 
 ## Tareas validadas
 
