@@ -44,7 +44,16 @@ class HardwareProfile:
     """gpu si hay VRAM utilizable (≥4 GB); si no, cpu."""
 
     inference_budget_gb: float
-    """VRAM o RAM disponible para cargar el modelo, ya con margen de seguridad."""
+    """Presupuesto efectivo para filtrar modelos (max teórico/disponible según modo)."""
+
+    inference_budget_theoretical_gb: float = 0.0
+    """Capacidad teórica del equipo (p. ej. 45 % RAM total o VRAM total - 2 GB)."""
+
+    inference_budget_available_gb: float = 0.0
+    """Memoria segura según disponibilidad actual (p. ej. 60 % RAM libre o VRAM libre - 2 GB)."""
+
+    memory_pressure: bool = False
+    """True si la memoria libre actual es claramente menor que el techo teórico."""
 
     hardware_tier: HardwareTier = "workstation"
     """edge | workstation | enterprise — calculado por el profiler o router."""
@@ -64,6 +73,9 @@ class HardwareProfile:
             "os": self.os,
             "inference_mode": self.inference_mode,
             "inference_budget_gb": self.inference_budget_gb,
+            "inference_budget_theoretical_gb": self.inference_budget_theoretical_gb,
+            "inference_budget_available_gb": self.inference_budget_available_gb,
+            "memory_pressure": self.memory_pressure,
             "hardware_tier": self.hardware_tier,
         }
 

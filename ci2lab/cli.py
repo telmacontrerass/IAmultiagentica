@@ -350,13 +350,36 @@ def _cmd_hardware(args: argparse.Namespace) -> int:
         console.print_json(json.dumps(profile.to_dict()))
         return 0
 
-    table = Table(title="Características detectadas")
+    table = Table(title="Caracteristicas detectadas")
     table.add_column("Dato")
     table.add_column("Valor")
     for key, value in profile.to_dict().items():
-        table.add_row(key, str(value))
+        display = str(value)
+        if key == "memory_pressure":
+            display = "True" if value else "False"
+        table.add_row(key, display)
     console.print(table)
     return 0
+
+
+def _print_memory_budget_context(profile: HardwareProfile) -> None:
+    mode = profile.inference_mode
+    console.print(
+        f"Tu equipo permite teoricamente ~{profile.inference_budget_theoretical_gb:g} GB "
+        f"para inferencia en modo {mode}."
+    )
+    if mode == "gpu" and profile.gpu_vendor != "apple":
+        available_label = "VRAM disponible segura ahora"
+    else:
+        available_label = "RAM disponible segura ahora"
+    console.print(
+        f"{available_label}: ~{profile.inference_budget_available_gb:g} GB."
+    )
+    if profile.memory_pressure:
+        console.print(
+            "[yellow]Aviso: hay presion de memoria. "
+            "Cierra aplicaciones antes de usar modelos grandes.[/yellow]"
+        )
 
 
 def _cmd_models_recommend(args: argparse.Namespace) -> int:
@@ -505,6 +528,11 @@ def _focused_recommend_command(
                     "ollama_tag": item.model.ollama_tag,
                     "reason": item.reason,
                     "score": item.total_score,
+                    "fit_label": item.fit_label,
+                    "recommendation_status": item.recommendation_status,
+                    "theoretical_fit": item.theoretical_fit,
+                    "current_fit": item.current_fit,
+                    "requires_memory_cleanup": item.requires_memory_cleanup,
                     "criteria": _criteria_payload(item),
                 }
                 for item in recommendations
@@ -513,12 +541,8 @@ def _focused_recommend_command(
         console.print_json(json.dumps(payload))
         return 0
 
-    console.print(f"Intención detectada: [bold]{intent.category}[/bold]")
-    console.print(
-        "Tu equipo permite aproximadamente "
-        f"[bold]{profile.inference_budget_gb:g} GB[/bold] para inferencia "
-        f"en modo [bold]{profile.inference_mode}[/bold]."
-    )
+    console.print(f"Intencion detectada: [bold]{intent.category}[/bold]")
+    _print_memory_budget_context(profile)
 
     if not recommendations:
         console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
@@ -527,13 +551,15 @@ def _focused_recommend_command(
     table = Table(title="Modelos recomendados")
     table.add_column("Modelo")
     table.add_column("Ollama")
+    table.add_column("Estado")
     table.add_column("Score")
     table.add_column("Memoria")
-    table.add_column("Por qué cabe")
+    table.add_column("Motivo")
     for item in recommendations:
         table.add_row(
             item.model.display_name,
             item.model.ollama_tag,
+            item.fit_label,
             str(item.total_score),
             _memory_summary(item),
             item.reason,
@@ -556,6 +582,11 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
                     "ollama_tag": item.recommendation.model.ollama_tag,
                     "reason": item.recommendation.reason,
                     "score": item.recommendation.total_score,
+                    "fit_label": item.recommendation.fit_label,
+                    "recommendation_status": item.recommendation.recommendation_status,
+                    "theoretical_fit": item.recommendation.theoretical_fit,
+                    "current_fit": item.recommendation.current_fit,
+                    "requires_memory_cleanup": item.recommendation.requires_memory_cleanup,
                     "criteria": _criteria_payload(item.recommendation),
                 }
                 for item in plan
@@ -564,11 +595,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
         console.print_json(json.dumps(payload))
         return 0
 
-    console.print(
-        "Tu equipo permite aproximadamente "
-        f"[bold]{profile.inference_budget_gb:g} GB[/bold] para inferencia "
-        f"en modo [bold]{profile.inference_mode}[/bold]."
-    )
+    _print_memory_budget_context(profile)
 
     if not plan:
         console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
@@ -578,6 +605,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
     table.add_column("Usos")
     table.add_column("Modelo")
     table.add_column("Ollama")
+    table.add_column("Estado")
     table.add_column("Score")
     table.add_column("Memoria")
     table.add_column("Motivo")
@@ -587,6 +615,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
             ", ".join(item.use_cases),
             recommendation.model.display_name,
             recommendation.model.ollama_tag,
+            recommendation.fit_label,
             str(recommendation.total_score),
             _memory_summary(recommendation),
             recommendation.reason,
@@ -595,7 +624,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
     return 0
 
 
-def _criteria_payload(item) -> dict[str, float]:
+def _criteria_payload(item) -> dict[str, float | str | bool]:
     return {
         "quality": item.quality_score,
         "speed": item.speed_score,
@@ -605,6 +634,11 @@ def _criteria_payload(item) -> dict[str, float]:
         "memory_budget_gb": item.memory_budget_gb,
         "remaining_memory_gb": item.remaining_memory_gb,
         "memory_usage_percent": item.memory_usage_percent,
+        "memory_fit_status": item.memory_fit_status,
+        "recommendation_status": item.recommendation_status,
+        "theoretical_fit": item.theoretical_fit,
+        "current_fit": item.current_fit,
+        "requires_memory_cleanup": item.requires_memory_cleanup,
     }
 
 

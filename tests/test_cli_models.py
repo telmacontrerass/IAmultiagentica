@@ -17,6 +17,9 @@ def _profile() -> HardwareProfile:
         os="darwin",
         inference_mode="gpu",
         inference_budget_gb=3.6,
+        inference_budget_theoretical_gb=3.6,
+        inference_budget_available_gb=2.4,
+        memory_pressure=False,
     )
 
 
