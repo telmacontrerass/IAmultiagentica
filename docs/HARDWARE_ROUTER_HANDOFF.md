@@ -8,6 +8,34 @@
 
 ---
 
+## Estado de implementación (2026-06-10)
+
+Resumen de lo que **ya existe** frente a lo que **falta** según este handoff.
+
+| Componente | Estado | Archivos / CLI |
+|------------|--------|----------------|
+| `hardware/profile.py` | ✅ Implementado | `scan_hardware()` — RAM, VRAM, GPU, CPU, presupuesto inferencia |
+| `router/catalog.py` | ✅ Implementado | Carga `ci2lab/catalog/models.json` (21 modelos) |
+| `router/intent.py` | ✅ Implementado | Clasificador por keywords (`coding`, `reasoning`, `rag`, …) |
+| `router/recommend.py` | ✅ Implementado | Scoring por categoría, memoria, plan de descarga |
+| `router/resolve.py` | ✅ Implementado | `resolve_model()` → `ModelSelection` |
+| CLI `ci2lab hardware` | ✅ Implementado | Tabla o `--json` |
+| CLI `ci2lab models recommend` | ✅ Implementado | Con/sin prompt; plan de descarga |
+| CLI `ci2lab models install` | ✅ Implementado | Comandos pull/run/chat |
+| CLI `ci2lab models run` | ✅ Implementado | `ollama run` del tag elegido |
+| `runtime/ensure.py` | 🔲 Pendiente | Sin auto-pull ni comprobación de modelo instalado |
+| `pipeline.py` integración | ⚠️ Parcial | Importa módulos inexistentes; cae en fallback del arnés |
+| Tests hardware/router | ✅ Parcial | `test_hardware_profile.py`, `test_cli_models.py` |
+
+### Qué falta para cerrar el handoff
+
+1. **`ci2lab/runtime/ensure.py`** — `ensure_model_ready(selection)` con `ollama pull` opcional.
+2. **Corregir `pipeline.py`** — importar `scan_hardware` desde `ci2lab.hardware` (no `hardware.profiler`); llamar a `resolve_model()` en `chat`/`agent`.
+3. **`prefer_installed`** — hoy ignorado en `resolve_model()`; debería priorizar modelos ya en `ollama list`.
+4. **Validación live por modelo** — solo `llama3.1:8b` validado en evals del arnés.
+
+---
+
 ## 1. Contexto del proyecto
 
 **IAmultiagentica** (paquete Python `ci2lab`) es una CLI local que:
