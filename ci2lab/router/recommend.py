@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from ci2lab.contracts import HardwareProfile, IntentCategory, ModelSpec
 from ci2lab.hardware import scan_hardware
@@ -10,6 +11,15 @@ from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
 
 USE_CASES: tuple[IntentCategory, ...] = ("coding", "reasoning", "general", "rag")
+
+MemoryFitStatus = Literal["ok_now", "requires_cleanup", "not_recommended"]
+RecommendationStatus = Literal["OK_NOW", "OK_IF_MEMORY_FREED", "NOT_RECOMMENDED"]
+
+_STATUS_LABELS: dict[RecommendationStatus, str] = {
+    "OK_NOW": "Cabe ahora",
+    "OK_IF_MEMORY_FREED": "Cabe liberando memoria",
+    "NOT_RECOMMENDED": "No recomendable",
+}
 
 CONTEXT_TARGETS: dict[IntentCategory, int] = {
     "coding": 32768,
@@ -36,6 +46,22 @@ class ScoredRecommendation:
     memory_budget_gb: float
     remaining_memory_gb: float
     memory_usage_percent: float
+    memory_fit_status: MemoryFitStatus
+    requires_memory_cleanup: bool
+    fit_label: str
+    theoretical_fit: bool
+    current_fit: bool
+    recommendation_status: RecommendationStatus
+
+
+@dataclass(frozen=True)
+class ModelMemoryClassification:
+    required_gb: float
+    theoretical_fit: bool
+    current_fit: bool
+    recommendation_status: RecommendationStatus
+    requires_memory_cleanup: bool
+    fit_label: str
 
 
 @dataclass(frozen=True)
@@ -112,8 +138,66 @@ def _score_for_category(
     return scored[:limit]
 
 
+def classify_model_memory(
+    required_gb: float,
+    profile: HardwareProfile,
+) -> ModelMemoryClassification:
+    theoretical_gb = _effective_theoretical_budget(profile)
+    available_gb = _effective_available_budget(profile)
+    theoretical_fit = required_gb <= theoretical_gb
+    current_fit = required_gb <= available_gb
+
+    if theoretical_fit and current_fit:
+        status: RecommendationStatus = "OK_NOW"
+        requires_cleanup = False
+    elif theoretical_fit:
+        status = "OK_IF_MEMORY_FREED"
+        requires_cleanup = True
+    else:
+        status = "NOT_RECOMMENDED"
+        requires_cleanup = False
+
+    return ModelMemoryClassification(
+        required_gb=required_gb,
+        theoretical_fit=theoretical_fit,
+        current_fit=current_fit,
+        recommendation_status=status,
+        requires_memory_cleanup=requires_cleanup,
+        fit_label=_STATUS_LABELS[status],
+    )
+
+
+def classify_memory_fit(
+    required_gb: float,
+    profile: HardwareProfile,
+) -> tuple[MemoryFitStatus, bool, str]:
+    """Compatibilidad con tests/codigo anterior."""
+    classification = classify_model_memory(required_gb, profile)
+    legacy_status: MemoryFitStatus
+    if classification.recommendation_status == "OK_NOW":
+        legacy_status = "ok_now"
+    elif classification.recommendation_status == "OK_IF_MEMORY_FREED":
+        legacy_status = "requires_cleanup"
+    else:
+        legacy_status = "not_recommended"
+    return legacy_status, classification.requires_memory_cleanup, classification.fit_label
+
+
+def _effective_theoretical_budget(profile: HardwareProfile) -> float:
+    if profile.inference_budget_theoretical_gb > 0.0:
+        return profile.inference_budget_theoretical_gb
+    return profile.inference_budget_gb
+
+
+def _effective_available_budget(profile: HardwareProfile) -> float:
+    if profile.inference_budget_available_gb > 0.0:
+        return profile.inference_budget_available_gb
+    return profile.inference_budget_gb
+
+
 def _model_fits(model: ModelSpec, profile: HardwareProfile) -> bool:
-    return _memory_required_gb(model, profile) <= profile.inference_budget_gb
+    required_gb = _memory_required_gb(model, profile)
+    return classify_model_memory(required_gb, profile).theoretical_fit
 
 
 def _score_recommendation(
@@ -123,11 +207,17 @@ def _score_recommendation(
 ) -> ScoredRecommendation:
     required_gb = _memory_required_gb(model, profile)
     budget_gb = profile.inference_budget_gb
+    available_gb = _effective_available_budget(profile)
+    classification = classify_model_memory(required_gb, profile)
+    memory_fit_status, requires_memory_cleanup, fit_label = classify_memory_fit(
+        required_gb,
+        profile,
+    )
     quality_score = _quality_score(model, category)
     speed_score = _speed_score(required_gb, budget_gb)
     fit_score = _fit_score(required_gb, budget_gb)
     context_score = _context_score(model, category)
-    remaining_memory_gb = max(0.0, budget_gb - required_gb)
+    remaining_memory_gb = max(0.0, available_gb - required_gb)
     memory_usage_percent = (required_gb / budget_gb * 100) if budget_gb > 0 else 0.0
 
     total_score = (
@@ -139,7 +229,7 @@ def _score_recommendation(
 
     return ScoredRecommendation(
         model=model,
-        reason=_fit_reason(model, profile),
+        reason=_fit_reason(profile, classification=classification),
         total_score=round(total_score, 3),
         quality_score=round(quality_score, 3),
         speed_score=round(speed_score, 3),
@@ -149,6 +239,12 @@ def _score_recommendation(
         memory_budget_gb=budget_gb,
         remaining_memory_gb=round(remaining_memory_gb, 2),
         memory_usage_percent=round(memory_usage_percent, 1),
+        memory_fit_status=memory_fit_status,
+        requires_memory_cleanup=requires_memory_cleanup,
+        fit_label=fit_label,
+        theoretical_fit=classification.theoretical_fit,
+        current_fit=classification.current_fit,
+        recommendation_status=classification.recommendation_status,
     )
 
 
@@ -181,15 +277,34 @@ def _context_score(model: ModelSpec, category: IntentCategory) -> float:
     return min(1.0, model.context_length / target)
 
 
-def _fit_reason(model: ModelSpec, profile: HardwareProfile) -> str:
+def _fit_reason(
+    profile: HardwareProfile,
+    *,
+    classification: ModelMemoryClassification,
+) -> str:
+    required_gb = classification.required_gb
+    available_gb = _effective_available_budget(profile)
+    theoretical_gb = _effective_theoretical_budget(profile)
+
     if profile.inference_mode == "gpu" and profile.gpu_vendor != "apple":
+        resource = "VRAM"
+    else:
+        resource = "RAM"
+
+    if classification.recommendation_status == "OK_NOW":
         return (
-            f"necesita ~{model.vram_min_gb:g} GB de VRAM; "
-            f"tu presupuesto GPU es ~{profile.inference_budget_gb:g} GB"
+            f"necesita ~{required_gb:g} GB de {resource}; "
+            f"cabe ahora (~{available_gb:g} GB disponibles seguros)"
+        )
+    if classification.recommendation_status == "OK_IF_MEMORY_FREED":
+        return (
+            f"necesita ~{required_gb:g} GB; cabe teoricamente "
+            f"(~{theoretical_gb:g} GB), pero ahora solo hay "
+            f"~{available_gb:g} GB disponibles seguros"
         )
     return (
-        f"necesita ~{model.ram_inference_gb:g} GB de RAM; "
-        f"tu presupuesto es ~{profile.inference_budget_gb:g} GB"
+        f"necesita ~{required_gb:g} GB de {resource}; "
+        f"supera el presupuesto teorico del equipo (~{theoretical_gb:g} GB)"
     )
 
 

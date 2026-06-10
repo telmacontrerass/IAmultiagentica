@@ -12,6 +12,11 @@ import psutil
 
 from ci2lab.contracts import HardwareProfile, HardwareTier
 
+_CPU_TOTAL_FACTOR = 0.45
+_CPU_AVAILABLE_FACTOR = 0.6
+_GPU_RESERVE_GB = 2.0
+_MEMORY_PRESSURE_RATIO = 0.5
+
 
 def scan_hardware() -> HardwareProfile:
     """Return a best-effort snapshot of the current machine."""
@@ -27,14 +32,18 @@ def scan_hardware() -> HardwareProfile:
     if gpu["gpu_vendor"] == "apple" and ram_total_gb >= 8:
         inference_mode = "gpu"
 
-    if inference_mode == "gpu" and gpu["gpu_vendor"] != "apple":
-        inference_budget_gb = max(0.0, gpu["vram_available_gb"] - 2.0)
-    else:
-        inference_budget_gb = max(0.0, ram_available_gb * 0.6, ram_total_gb * 0.45)
+    budgets = _compute_inference_budgets(
+        inference_mode=inference_mode,
+        gpu_vendor=gpu["gpu_vendor"],
+        ram_total_gb=ram_total_gb,
+        ram_available_gb=ram_available_gb,
+        vram_total_gb=gpu["vram_total_gb"],
+        vram_available_gb=gpu["vram_available_gb"],
+    )
 
     hardware_tier = _hardware_tier(
         ram_total_gb=ram_total_gb,
-        inference_budget_gb=inference_budget_gb,
+        inference_budget_gb=budgets["inference_budget_gb"],
         inference_mode=inference_mode,
     )
 
@@ -48,9 +57,78 @@ def scan_hardware() -> HardwareProfile:
         cpu_cores=cpu_cores,
         os=os_name,
         inference_mode=inference_mode,
-        inference_budget_gb=round(inference_budget_gb, 2),
+        inference_budget_gb=budgets["inference_budget_gb"],
+        inference_budget_theoretical_gb=budgets["inference_budget_theoretical_gb"],
+        inference_budget_available_gb=budgets["inference_budget_available_gb"],
+        memory_pressure=budgets["memory_pressure"],
         hardware_tier=hardware_tier,
         raw=gpu["raw"],
+    )
+
+
+def _compute_inference_budgets(
+    *,
+    inference_mode: str,
+    gpu_vendor: str,
+    ram_total_gb: float,
+    ram_available_gb: float,
+    vram_total_gb: float,
+    vram_available_gb: float,
+) -> dict[str, float | bool]:
+    if inference_mode == "gpu" and gpu_vendor != "apple":
+        theoretical = max(0.0, vram_total_gb - _GPU_RESERVE_GB)
+        available = max(0.0, vram_available_gb - _GPU_RESERVE_GB)
+        budget = available
+    else:
+        theoretical = max(0.0, ram_total_gb * _CPU_TOTAL_FACTOR)
+        available = max(0.0, ram_available_gb * _CPU_AVAILABLE_FACTOR)
+        budget = max(0.0, available, theoretical)
+
+    memory_pressure = (
+        theoretical > 0.0 and available < theoretical * _MEMORY_PRESSURE_RATIO
+    )
+
+    return {
+        "inference_budget_theoretical_gb": round(theoretical, 2),
+        "inference_budget_available_gb": round(available, 2),
+        "inference_budget_gb": round(budget, 2),
+        "memory_pressure": memory_pressure,
+    }
+
+
+def build_cpu_profile_for_testing(
+    *,
+    ram_total_gb: float,
+    ram_available_gb: float,
+) -> HardwareProfile:
+    """Helper for tests: CPU profile without calling psutil."""
+    budgets = _compute_inference_budgets(
+        inference_mode="cpu",
+        gpu_vendor="none",
+        ram_total_gb=ram_total_gb,
+        ram_available_gb=ram_available_gb,
+        vram_total_gb=0.0,
+        vram_available_gb=0.0,
+    )
+    return HardwareProfile(
+        ram_total_gb=ram_total_gb,
+        ram_available_gb=ram_available_gb,
+        vram_total_gb=0.0,
+        vram_available_gb=0.0,
+        gpu_name="CPU only",
+        gpu_vendor="none",
+        cpu_cores=8,
+        os="windows",
+        inference_mode="cpu",
+        inference_budget_gb=budgets["inference_budget_gb"],
+        inference_budget_theoretical_gb=budgets["inference_budget_theoretical_gb"],
+        inference_budget_available_gb=budgets["inference_budget_available_gb"],
+        memory_pressure=bool(budgets["memory_pressure"]),
+        hardware_tier=_hardware_tier(
+            ram_total_gb=ram_total_gb,
+            inference_budget_gb=budgets["inference_budget_gb"],
+            inference_mode="cpu",
+        ),
     )
 
 
