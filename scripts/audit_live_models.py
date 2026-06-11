@@ -40,6 +40,9 @@ class AuditCaseResult:
 
 
 def _non_interactive_config(workspace: str) -> AgentConfig:
+    # write_tools_enabled=False SOLO para esta auditoria live: evita prompts
+    # interactivos de write/edit y respuestas del modelo que intenten documentar
+    # bloqueos con archivos. No es la politica del agente en uso normal.
     return AgentConfig(
         cwd=workspace,
         auto_confirm=True,

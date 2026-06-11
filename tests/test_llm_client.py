@@ -67,6 +67,11 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
             return False
 
     class GoodStreamResponse:
+        is_error = False
+
+        def read(self):
+            return b""
+
         def raise_for_status(self):
             return None
 

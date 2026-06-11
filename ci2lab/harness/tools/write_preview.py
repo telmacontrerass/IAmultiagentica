@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ci2lab.harness.tools.paths import resolve_path
+from ci2lab.harness.tools.secret_files import is_sensitive_path, secret_file_block_message
 
 MAX_DISPLAY_LINES = 80
 MAX_NEW_FILE_PREVIEW_CHARS = 2000
@@ -99,6 +100,13 @@ def compute_edit_result(
 def preview_write_file(cwd: str, path: str, content: str) -> WritePreview:
     resolved = resolve_path(path, cwd)
     rel = _display_path(resolved, cwd)
+    if is_sensitive_path(resolved):
+        return WritePreview(
+            path=rel,
+            is_new_file=not resolved.is_file(),
+            diff="",
+            validation_error=secret_file_block_message(),
+        )
     if resolved.is_file():
         current = resolved.read_text(encoding="utf-8", errors="replace")
         return WritePreview(
@@ -124,6 +132,13 @@ def preview_edit_file(
 ) -> WritePreview:
     resolved = resolve_path(path, cwd)
     rel = _display_path(resolved, cwd)
+    if is_sensitive_path(resolved):
+        return WritePreview(
+            path=rel,
+            is_new_file=False,
+            diff="",
+            validation_error=secret_file_block_message(),
+        )
     new_text, error = compute_edit_result(
         cwd, path, old_string, new_string, replace_all
     )

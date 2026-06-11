@@ -312,12 +312,13 @@ def _execute_write_tool(
         )
 
     if not preview.is_valid:
+        err_msg = preview.validation_error or "Error de validación"
         return ToolResult(
             tool_name=name,
-            content=preview.validation_error or "Error de validación",
+            content=err_msg,
             is_error=True,
             call_id=call_id,
-            outcome="failed",
+            outcome=outcome_for_tool_output(err_msg) or "failed",
         )
 
     allowed, deny_msg = check_write_permission(name, preview, config)

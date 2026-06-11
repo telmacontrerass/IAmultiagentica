@@ -237,6 +237,8 @@ def write_file(cwd: str, path: str, content: str) -> str:
     if err:
         return err
     assert resolved is not None
+    if is_sensitive_path(resolved):
+        return secret_file_block_message()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
     return f"Escrito {resolved} ({len(content)} caracteres)"
@@ -255,6 +257,8 @@ def edit_file(
     if err:
         return err
     assert resolved is not None
+    if is_sensitive_path(resolved):
+        return secret_file_block_message()
     if resolved.is_file():
         original_count = resolved.read_text(encoding="utf-8", errors="replace").count(
             old_string

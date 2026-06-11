@@ -54,11 +54,21 @@ def main
 
 ### write_file (create or overwrite a file)
 
+Use `write_file` when the user explicitly asks to create or save a file in the project. Security blocks external paths and sensitive files (`.env`, keys, credentials); it does **not** forbid normal file creation inside the workspace.
+
 The body MUST be a single JSON object with `path` and `content`. Put the full file text in `content` (escape newlines as `\n`). The key is `content`, never `new_string`.
 
 ```write_file
 {"path": "count_to_100.py", "content": "for i in range(1, 101):\n    print(i)\n"}
 ```
+
+User-requested doc example:
+
+```write_file
+{"path": "docs/resumen.md", "content": "# Resumen\n\nContenido pedido por el usuario.\n"}
+```
+
+Do not create error/log files (e.g. `ci2lab_error.txt`) on your own after a tool block unless the user asked for that file.
 
 ### edit_file (replace exact text in an existing file)
 

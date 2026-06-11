@@ -1,0 +1,214 @@
+"""Tests de politica de escritura: workspace, secretos e intencion del agente."""
+
+from __future__ import annotations
+
+import json
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from rich.console import Console
+
+from ci2lab.harness import default_selection, run_agent
+from ci2lab.harness.llm_client import LLMResponse
+from ci2lab.harness.tools.registry import execute_tool
+from ci2lab.harness.tools.secret_files import POLICY_SECRET_FILE_BLOCKED
+from ci2lab.harness.types import AgentConfig, ToolCall
+
+SECRET_PAYLOAD = "TOKEN=SHOULD_NOT_WRITE"
+
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    (ws / "docs").mkdir()
+    return ws
+
+
+@pytest.fixture
+def write_config(workspace: Path) -> AgentConfig:
+    return AgentConfig(
+        cwd=str(workspace),
+        auto_confirm=True,
+        require_diff_preview=False,
+        write_tools_enabled=True,
+        stream=False,
+        run_log_enabled=False,
+    )
+
+
+def test_write_file_inside_workspace(write_config: AgentConfig, workspace: Path):
+    target = workspace / "docs" / "generated_test.md"
+    result = execute_tool(
+        ToolCall(
+            name="write_file",
+            arguments={"path": "docs/generated_test.md", "content": "# OK\n"},
+            call_id="w1",
+        ),
+        write_config,
+    )
+    assert not result.is_error
+    assert target.read_text(encoding="utf-8") == "# OK\n"
+
+
+def test_write_file_outside_workspace_blocked(write_config: AgentConfig, tmp_path: Path):
+    outside = tmp_path / "outside.txt"
+    result = execute_tool(
+        ToolCall(
+            name="write_file",
+            arguments={"path": str(outside), "content": "hack"},
+            call_id="w2",
+        ),
+        write_config,
+    )
+    assert result.is_error
+    assert result.outcome == "blocked_by_workspace"
+    assert not outside.exists()
+
+
+def test_write_file_sensitive_path_blocked(write_config: AgentConfig, workspace: Path):
+    result = execute_tool(
+        ToolCall(
+            name="write_file",
+            arguments={"path": ".env.test", "content": SECRET_PAYLOAD},
+            call_id="w3",
+        ),
+        write_config,
+    )
+    assert result.is_error
+    assert result.outcome == "blocked_by_secret_policy"
+    assert POLICY_SECRET_FILE_BLOCKED in result.content
+    assert SECRET_PAYLOAD not in result.content
+    assert not (workspace / ".env.test").exists()
+
+
+def test_write_file_yes_does_not_bypass_workspace(workspace: Path, tmp_path: Path):
+    outside = tmp_path / "outside.txt"
+    config = AgentConfig(
+        cwd=str(workspace),
+        auto_confirm=True,
+        require_diff_preview=False,
+        write_tools_enabled=True,
+    )
+    result = execute_tool(
+        ToolCall(
+            name="write_file",
+            arguments={"path": "../outside.txt", "content": "x"},
+            call_id="w4",
+        ),
+        config,
+    )
+    assert result.is_error
+    assert result.outcome == "blocked_by_workspace"
+    assert not outside.exists()
+
+
+def test_run_agent_explicit_create_calls_write_file(workspace: Path):
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=str(workspace),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        write_tools_enabled=True,
+        run_log_enabled=False,
+    )
+    write_call = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "write_file",
+                    "arguments": json.dumps(
+                        {"path": "docs/hello.md", "content": "# Hello\n"}
+                    ),
+                },
+            }
+        ],
+    )
+    final = LLMResponse(content="Archivo docs/hello.md creado.", tool_calls=[])
+
+    quiet = Console(file=StringIO(), width=120, force_terminal=False)
+    with patch("ci2lab.harness.loop.console", quiet):
+        with patch("ci2lab.harness.write_permissions._console", quiet):
+            with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+                client = mock_cls.return_value
+                client.chat.side_effect = [write_call, final]
+                with patch(
+                    "ci2lab.harness.loop.execute_tool", wraps=execute_tool
+                ) as execute_mock:
+                    run_agent(
+                        "Crea docs/hello.md con un titulo Hello",
+                        selection,
+                        config=config,
+                    )
+                write_calls = [
+                    c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
+                ]
+
+    assert len(write_calls) == 1
+    assert (workspace / "docs" / "hello.md").read_text(encoding="utf-8") == "# Hello\n"
+
+
+def test_run_agent_blocked_read_without_spontaneous_error_file(
+    workspace: Path, tmp_path: Path
+):
+    outside = tmp_path / "outside" / "secret.txt"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("decoy", encoding="utf-8")
+
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=str(workspace),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        write_tools_enabled=True,
+        run_log_enabled=False,
+        max_rounds=4,
+    )
+    read_call = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "read_file",
+                    "arguments": json.dumps({"path": str(outside)}),
+                },
+            }
+        ],
+    )
+    final = LLMResponse(
+        content="No puedo leer archivos fuera del workspace.",
+        tool_calls=[],
+    )
+
+    quiet = Console(file=StringIO(), width=120, force_terminal=False)
+    with patch("ci2lab.harness.loop.console", quiet):
+        with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+            client = mock_cls.return_value
+            client.chat.side_effect = [read_call, final]
+            with patch(
+                "ci2lab.harness.loop.execute_tool", wraps=execute_tool
+            ) as execute_mock:
+                run_agent("Lee el secreto externo", selection, config=config)
+            write_calls = [
+                c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
+            ]
+
+    assert len(write_calls) == 0
+    assert not (workspace / "ci2lab_error.txt").exists()
+
+
+def test_system_prompt_allows_explicit_write_and_discourages_error_files():
+    from ci2lab.harness.prompts import build_system_prompt
+    from ci2lab.harness import default_selection
+
+    text = build_system_prompt(default_selection("test:1b"), ".")
+    assert "docs/resumen.md" in text
+    assert "ci2lab_error.txt" in text
+    assert "explicitly" in text.lower() or "explicitamente" in text.lower() or "explicit" in text.lower()

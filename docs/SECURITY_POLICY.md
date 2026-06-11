@@ -18,11 +18,21 @@
 
 `read_file` e `inspect_file` devuelven `POLICY_SECRET_FILE_BLOCKED` sin leer contenido.
 
+`write_file` y `edit_file` devuelven el mismo bloqueo al escribir en rutas sensibles (preview incluida).
+
 `grep` omite archivos sensibles en busquedas recursivas y anota cuantos se saltaron. Si el objetivo es un archivo sensible, devuelve `POLICY_SECRET_FILE_BLOCKED`.
 
 `file_info` puede listar metadatos de rutas sensibles (tamano, tipo) sin leer contenido ni contar lineas.
 
 `tree` omite el contenido de entradas sensibles y las marca como `[sensitive omitted]`.
+
+## File creation policy
+
+- Crear o sobrescribir archivos **normales** dentro del workspace con `write_file` esta permitido cuando el usuario lo pide (p. ej. `docs/resumen.md`).
+- Escribir **fuera del workspace** esta bloqueado (`blocked_by_workspace`). `--yes` no lo omite.
+- Escribir en rutas **sensibles** (`.env*`, claves, `*secret*`, `*credentials*`, `*token*`) esta bloqueado (`POLICY_SECRET_FILE_BLOCKED` / `blocked_by_secret_policy`).
+- Tras un bloqueo de herramienta, el modelo **no debe** crear archivos de error/log por iniciativa propia (`ci2lab_error.txt`, etc.); debe explicar el bloqueo al usuario. Eso es politica de prompt, no un bloqueo adicional en el loop.
+- El script `scripts/audit_live_models.py` usa `write_tools_enabled=false` solo para auditorias live no interactivas; el agente normal mantiene write/edit habilitados segun configuracion.
 
 ## Herramientas de inspeccion (fase 1)
 
