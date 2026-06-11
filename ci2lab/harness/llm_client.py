@@ -124,7 +124,7 @@ class LLMClient:
 
                 try:
                     with client.stream("POST", self.chat_url, json=payload) as response:
-                        if response.is_error:
+                        if getattr(response, "is_error", False):
                             response.read()
                         response.raise_for_status()
                         self.selection.ollama_tag = model

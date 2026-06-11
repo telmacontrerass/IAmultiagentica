@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -33,7 +34,7 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
     if is_sensitive_path(resolved):
         return secret_file_block_message()
     if resolved.suffix.lower() == ".pdf":
-        text = _read_pdf_text(resolved)
+        text = extract_pdf_text(resolved)
         if text.startswith("Error:"):
             return text
     else:
@@ -52,7 +53,8 @@ def _numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str
     return "\n".join(numbered) if numbered else "(archivo vacío)"
 
 
-def _read_pdf_text(path: Path) -> str:
+def extract_pdf_text(path: Path) -> str:
+    """Extract text from a PDF file, returning an Error: string on failure."""
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -60,6 +62,8 @@ def _read_pdf_text(path: Path) -> str:
             "Error: no se puede leer PDF porque falta la dependencia `pypdf`. "
             "Instala el proyecto de nuevo para activar soporte PDF."
         )
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
 
     try:
         reader = PdfReader(str(path))
@@ -220,10 +224,15 @@ def _grep_scan_tree(
             rel = file_path.relative_to(root)
         except ValueError:
             continue
-        try:
-            content = file_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+        if file_path.suffix.lower() == ".pdf":
+            content = extract_pdf_text(file_path)
+            if content.startswith("Error:"):
+                continue
+        else:
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
         for i, line in enumerate(content.splitlines(), start=1):
             if regex.search(line):
                 results.append(f"{rel}:{i}:{line}")

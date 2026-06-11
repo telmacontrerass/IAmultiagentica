@@ -3,7 +3,13 @@ import sys
 import tempfile
 import types
 
-from ci2lab.harness.tools.filesystem import read_file, write_file, edit_file, ls
+from ci2lab.harness.tools.filesystem import (
+    grep_search,
+    read_file,
+    write_file,
+    edit_file,
+    ls,
+)
 from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 from ci2lab.harness.tools.registry import execute_tool, normalize_tool_arguments
 from ci2lab.harness.types import AgentConfig, ToolCall
@@ -46,6 +52,46 @@ def test_read_file_pdf_extracts_text(tmp_path, monkeypatch):
     assert "[PDF page 1/2]" in text
     assert "primer parrafo" in text
     assert "segundo parrafo" in text
+
+
+def test_grep_search_finds_text_inside_pdf(tmp_path, monkeypatch):
+    class FakePage:
+        def extract_text(self):
+            return "formal register\ninformal mate"
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.pages = [FakePage()]
+
+    fake_pypdf = types.SimpleNamespace(PdfReader=FakeReader)
+    monkeypatch.setitem(sys.modules, "pypdf", fake_pypdf)
+    (tmp_path / "doc.pdf").write_bytes(b"%PDF-1.4 fake")
+
+    text = grep_search(str(tmp_path), "formal", glob_pattern="*.pdf")
+
+    assert "doc.pdf" in text
+    assert "formal register" in text
+
+
+def test_read_file_pdf_without_text_reports_ocr_needed(tmp_path, monkeypatch):
+    class FakePage:
+        def extract_text(self):
+            return ""
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.pages = [FakePage()]
+
+    fake_pypdf = types.SimpleNamespace(PdfReader=FakeReader)
+    monkeypatch.setitem(sys.modules, "pypdf", fake_pypdf)
+    (tmp_path / "scan.pdf").write_bytes(b"%PDF-1.4 fake")
+
+    text = read_file(str(tmp_path), "scan.pdf")
+
+    assert text.startswith("Error:")
+    assert "OCR" in text
 
 
 def test_execute_read_file_strips_null_optional_args(tmp_path):

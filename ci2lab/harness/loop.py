@@ -12,6 +12,7 @@ Flujo por ronda:
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -40,7 +41,7 @@ from ci2lab.harness.policy import (
     tool_call_signature,
 )
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS, execute_tool
-from ci2lab.harness.types import AgentConfig, ToolResult
+from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 console = Console()
 
@@ -81,6 +82,8 @@ def run_agent(
     policy_nudge_sent = False
     stuck_rounds = 0
     unparsed_tool_nudges = 0
+    pdf_tool_nudges = 0
+    pdf_tool_used = False
     final_text = ""
     content = ""
     status = "success"
@@ -127,8 +130,39 @@ def run_agent(
                 llm_response.tool_calls,
                 tool_mode=selection.tool_mode,
             )
+            forced_pdf_call = (
+                _forced_pdf_read_tool_call(user_prompt)
+                if not calls and not pdf_tool_used and pdf_tool_nudges >= 1
+                else None
+            )
+            if forced_pdf_call:
+                console.print(
+                    "[yellow]El modelo siguió sin usar herramientas; ejecutando "
+                    "read_file automáticamente para el PDF mencionado.[/yellow]"
+                )
+                calls = [forced_pdf_call]
 
             if not calls:
+                pdf_hint = _pdf_tool_retry_hint(
+                    user_prompt,
+                    selection_tool_mode=selection.tool_mode,
+                )
+                if (
+                    pdf_hint
+                    and not pdf_tool_used
+                    and pdf_tool_nudges < 1
+                    and selection.supports_tools
+                ):
+                    pdf_tool_nudges += 1
+                    console.print(
+                        "[yellow]La petición menciona un PDF pero el modelo no usó "
+                        "herramientas; reintentando con read_file/grep.[/yellow]"
+                    )
+                    append_assistant_turn(history, content)
+                    history.append({"role": "user", "content": pdf_hint})
+                    _maybe_save(cfg, history, selection)
+                    continue
+
                 if (
                     looks_like_unparsed_tool_attempt(content)
                     and unparsed_tool_nudges < 2
@@ -173,6 +207,8 @@ def run_agent(
                 f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
                 for c in calls
             )
+            if any(_is_pdf_read_tool_call(c.name, c.arguments) for c in calls):
+                pdf_tool_used = True
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -227,6 +263,9 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            pdf_followup = _pdf_tool_result_followup(results, user_prompt)
+            if pdf_followup:
+                history.append({"role": "user", "content": pdf_followup})
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True
@@ -315,3 +354,78 @@ def _summarize_args(args: dict) -> str:
     if "pattern" in args:
         return str(args["pattern"])
     return ""
+
+
+_PDF_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.pdf)\b", re.IGNORECASE)
+
+
+def _pdf_tool_retry_hint(
+    user_prompt: str,
+    *,
+    selection_tool_mode: str,
+) -> str | None:
+    match = _PDF_PATH_RE.search(user_prompt)
+    if not match:
+        return None
+
+    pdf_path = match.group("path")
+    if selection_tool_mode == "fenced":
+        return (
+            "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+            "No digas que no puedes acceder al archivo: tienes herramientas locales. "
+            "Llama ahora a la herramienta `read_file` con este bloque exacto, espera el "
+            "resultado y después responde a la tarea del usuario:\n"
+            "```read_file\n"
+            f"{pdf_path}\n"
+            "```"
+        )
+
+    return (
+        "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+        "No digas que no puedes acceder al archivo: tienes herramientas locales. "
+        f"Invoca ahora la herramienta read_file con path={pdf_path!r}, espera el "
+        "resultado y después responde a la tarea del usuario."
+    )
+
+
+def _is_pdf_read_tool_call(tool_name: str, args: dict[str, Any]) -> bool:
+    if tool_name == "read_file":
+        return str(args.get("path", "")).lower().endswith(".pdf")
+    if tool_name == "grep":
+        path = str(args.get("path", "")).lower()
+        glob = str(args.get("glob", "")).lower()
+        return path.endswith(".pdf") or ".pdf" in glob
+    return False
+
+
+def _forced_pdf_read_tool_call(user_prompt: str) -> ToolCall | None:
+    match = _PDF_PATH_RE.search(user_prompt)
+    if not match:
+        return None
+    return ToolCall(
+        name="read_file",
+        arguments={"path": match.group("path")},
+        call_id="auto_pdf_read",
+    )
+
+
+def _pdf_tool_result_followup(
+    results: list[ToolResult],
+    original_user_prompt: str,
+) -> str | None:
+    pdf_outputs = [
+        result.content
+        for result in results
+        if result.tool_name == "read_file"
+        and not result.is_error
+        and "[PDF page " in result.content
+    ]
+    if not pdf_outputs:
+        return None
+    content = "\n\n".join(pdf_outputs)
+    return (
+        "Contenido del PDF leído con la herramienta `read_file`:\n\n"
+        f"{content}\n\n"
+        "Ahora responde a la petición original usando exclusivamente ese contenido. "
+        f"Petición original: {original_user_prompt}"
+    )

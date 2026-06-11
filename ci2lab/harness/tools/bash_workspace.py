@@ -84,7 +84,14 @@ def extract_path_candidates(command: str) -> list[str]:
         add(match.group(0))
 
     for match in _QUOTED_PATH.finditer(command):
-        add(match.group(1))
+        quoted = match.group(1)
+        for nested in _UNC_PATH.finditer(quoted):
+            add(nested.group(0))
+        for nested in _WIN_ABS_PATH.finditer(quoted):
+            add(nested.group(0))
+        for nested in re.finditer(r"(?:~|/)[^\s'\"|&;<>^]+", quoted):
+            add(nested.group(0))
+        add(quoted)
 
     try:
         tokens = shlex.split(command, posix=False)
