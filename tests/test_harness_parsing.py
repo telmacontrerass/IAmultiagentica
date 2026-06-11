@@ -121,6 +121,19 @@ def test_parse_bash_fence_with_shell_command():
     assert calls[0].arguments["command"] == "python wordle.py"
 
 
+def test_unknown_fenced_tag_is_not_executed_as_bash():
+    calls = resolve_tool_calls("```unknown_tool\nx\n```", [], tool_mode="fenced")
+    assert calls == []
+
+
+def test_shell_fence_tag_still_runs_command_via_generic_parser():
+    text = "```sh\necho hi\n```"
+    calls = resolve_tool_calls(text, [], tool_mode="fenced")
+    assert len(calls) == 1
+    assert calls[0].name == "bash"
+    assert calls[0].arguments["command"] == "echo hi"
+
+
 def test_write_file_new_string_alias_normalized():
     native = [{
         "name": "write_file",

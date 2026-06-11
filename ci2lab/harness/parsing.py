@@ -27,7 +27,21 @@ _FENCED_RE = re.compile(
     re.IGNORECASE,
 )
 _JSON_FENCED_RE = re.compile(r"```json\s*\n([\s\S]*?)```", re.IGNORECASE)
-_GENERIC_FENCED_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n([\s\S]*?)```", re.IGNORECASE)
+_GENERIC_FENCED_RE = re.compile(
+    r"```([a-zA-Z0-9_+-]*)\s*\n([\s\S]*?)```",
+    re.IGNORECASE,
+)
+# Solo estas etiquetas de fence pueden promover el cuerpo a bash (V-01 red team).
+_SHELL_FENCE_TAGS = frozenset({
+    "bash",
+    "sh",
+    "shell",
+    "cmd",
+    "powershell",
+    "ps",
+    "terminal",
+    "command",
+})
 
 _XML_TOOL_CALL_RE = re.compile(
     r"<(?:[\w]+:)?(?:tool_call|function_call)>\s*([\s\S]*?)</(?:[\w]+:)?(?:tool_call|function_call)>",
@@ -218,13 +232,19 @@ def parse_json_tool_objects(text: str) -> list[ToolCall]:
     return calls
 
 
+def _is_shell_fence_tag(tag: str) -> bool:
+    low = tag.strip().lower()
+    return low in _SHELL_FENCE_TAGS or _map_name(low) == "bash"
+
+
 def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
     """Parse ```bash/json/...``` blocks that contain tool names + JSON."""
     calls: list[ToolCall] = []
     seen: set[tuple[str, str]] = set()
 
     for match in _GENERIC_FENCED_RE.finditer(text):
-        body = match.group(1).strip()
+        fence_tag = match.group(1) or ""
+        body = match.group(2).strip()
         if not body:
             continue
 
@@ -258,7 +278,7 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
                             calls.append(call)
             continue
 
-        if _looks_like_shell_command(body):
+        if _is_shell_fence_tag(fence_tag) and _looks_like_shell_command(body):
             call = _new_call("bash", {"command": body})
             if _remember_call(call, seen):
                 calls.append(call)
