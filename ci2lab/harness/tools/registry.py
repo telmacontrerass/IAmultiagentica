@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from ci2lab.harness.tools import bash as bash_tool
 from ci2lab.harness.tools import filesystem as fs
+from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools.bash import _format_bash_block_message
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.filesystem import permission_summary
@@ -24,6 +25,9 @@ TOOL_NAMES = frozenset({
     "glob",
     "write_file",
     "edit_file",
+    "file_info",
+    "tree",
+    "inspect_file",
 })
 
 # Schemas compatibles con OpenAI function calling (extraídos/adaptados de Odysseus).
@@ -135,6 +139,51 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_info",
+            "description": "Metadatos de archivo o directorio sin leer contenido sensible.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tree",
+            "description": "Arbol de directorios acotado por profundidad y numero de entradas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "depth": {"type": "integer"},
+                    "max_entries": {"type": "integer"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_file",
+            "description": "Lee un rango acotado de lineas de un archivo de texto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start": {"type": "integer"},
+                    "end": {"type": "integer"},
+                    "max_lines": {"type": "integer"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 _DISPATCH: dict[str, Callable[..., str]] = {
@@ -163,6 +212,20 @@ _DISPATCH: dict[str, Callable[..., str]] = {
         a["old_string"],
         a["new_string"],
         a.get("replace_all", False),
+    ),
+    "file_info": lambda cfg, a: inspection_tool.file_info(cfg.cwd, a["path"]),
+    "tree": lambda cfg, a: inspection_tool.tree(
+        cfg.cwd,
+        a.get("path", "."),
+        a.get("depth", 2),
+        a.get("max_entries", 200),
+    ),
+    "inspect_file": lambda cfg, a: inspection_tool.inspect_file(
+        cfg.cwd,
+        a["path"],
+        a.get("start", 1),
+        a.get("end"),
+        a.get("max_lines", 120),
     ),
 }
 

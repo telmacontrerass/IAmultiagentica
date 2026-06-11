@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 from ci2lab.harness.tools.paths import PathViolationError, format_size, resolve_path
+from ci2lab.harness.tools.secret_files import (
+    grep_skip_notice,
+    is_sensitive_path,
+    secret_file_block_message,
+)
 
 
 def _resolve_or_error(raw: str, cwd: str) -> tuple[Path | None, str | None]:
@@ -26,6 +30,8 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
     assert resolved is not None
     if not resolved.is_file():
         return f"Error: no existe el archivo {resolved}"
+    if is_sensitive_path(resolved):
+        return secret_file_block_message()
     if resolved.suffix.lower() == ".pdf":
         text = _read_pdf_text(resolved)
         if text.startswith("Error:"):
@@ -146,34 +152,69 @@ def grep_search(
     except re.error as exc:
         return f"Error: expresión regular inválida: {exc}"
 
-    # Intentar ripgrep si está disponible (más rápido y respeta .gitignore).
-    rg_cmd = ["rg", "--line-number", "--no-heading", pattern, str(base)]
-    if ignore_case:
-        rg_cmd.insert(1, "-i")
-    if glob_pattern:
-        rg_cmd.extend(["--glob", glob_pattern])
-    try:
-        proc = subprocess.run(
-            rg_cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=cwd,
-        )
-        if proc.returncode in (0, 1) and proc.stdout.strip():
-            lines = proc.stdout.strip().splitlines()[:max_results]
-            return "\n".join(lines)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    if base.is_file():
+        if is_sensitive_path(base):
+            return secret_file_block_message()
+        return _grep_single_file(base, root=Path(cwd).resolve(), regex=regex, max_results=max_results)
 
-    # Fallback Python.
+    results, skipped = _grep_scan_tree(
+        base,
+        root=Path(cwd).resolve(),
+        regex=regex,
+        glob_pattern=glob_pattern,
+        max_results=max_results,
+    )
+    if results:
+        body = "\n".join(results)
+        notice = grep_skip_notice(skipped)
+        return f"{body}\n{notice}" if notice else body
+    if skipped:
+        notice = grep_skip_notice(skipped)
+        return f"Sin coincidencias para `{pattern}`\n{notice}"
+    return f"Sin coincidencias para `{pattern}`"
+
+
+def _grep_single_file(
+    file_path: Path,
+    *,
+    root: Path,
+    regex: re.Pattern[str],
+    max_results: int,
+) -> str:
     results: list[str] = []
-    root = Path(cwd).resolve()
-    files = [base] if base.is_file() else base.rglob("*")
-    for file_path in files:
+    try:
+        rel = file_path.relative_to(root)
+    except ValueError:
+        rel = file_path
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return f"Sin coincidencias para `{regex.pattern}`"
+    for i, line in enumerate(content.splitlines(), start=1):
+        if regex.search(line):
+            results.append(f"{rel}:{i}:{line}")
+            if len(results) >= max_results:
+                break
+    return "\n".join(results) if results else f"Sin coincidencias para `{regex.pattern}`"
+
+
+def _grep_scan_tree(
+    base: Path,
+    *,
+    root: Path,
+    regex: re.Pattern[str],
+    glob_pattern: str | None,
+    max_results: int,
+) -> tuple[list[str], int]:
+    results: list[str] = []
+    skipped = 0
+    for file_path in base.rglob("*"):
         if not file_path.is_file():
             continue
         if glob_pattern and not file_path.match(glob_pattern):
+            continue
+        if is_sensitive_path(file_path):
+            skipped += 1
             continue
         try:
             rel = file_path.relative_to(root)
@@ -187,8 +228,8 @@ def grep_search(
             if regex.search(line):
                 results.append(f"{rel}:{i}:{line}")
                 if len(results) >= max_results:
-                    return "\n".join(results)
-    return "\n".join(results) if results else f"Sin coincidencias para `{pattern}`"
+                    return results, skipped
+    return results, skipped
 
 
 def write_file(cwd: str, path: str, content: str) -> str:

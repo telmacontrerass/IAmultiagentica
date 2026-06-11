@@ -174,6 +174,22 @@ def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         return {"pattern": body}
     if tool == "ls":
         return {"path": body or "."}
+    if tool == "file_info":
+        return {"path": body.strip()}
+    if tool == "tree":
+        if body.strip().startswith("{"):
+            try:
+                return json.loads(body)
+            except json.JSONDecodeError:
+                pass
+        return {"path": body.strip() or "."}
+    if tool == "inspect_file":
+        if body.strip().startswith("{"):
+            try:
+                return json.loads(body)
+            except json.JSONDecodeError:
+                pass
+        return {"path": body.strip()}
     return {"raw": body}
 
 

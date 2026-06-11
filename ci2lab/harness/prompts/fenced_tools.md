@@ -66,4 +66,22 @@ The body MUST be a single JSON object with `path`, `old_string`, and `new_string
 {"path": "src/main.py", "old_string": "DEBUG = True", "new_string": "DEBUG = False"}
 ```
 
-Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`.
+File metadata (path in block):
+
+```file_info
+src/main.py
+```
+
+Directory tree (optional JSON for depth/limits):
+
+```tree
+{"path": ".", "depth": 2, "max_entries": 100}
+```
+
+Inspect a line range from a text file:
+
+```inspect_file
+{"path": "src/main.py", "start": 1, "end": 40}
+```
+
+Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`.

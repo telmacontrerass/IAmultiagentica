@@ -12,6 +12,7 @@ POLICY_ERROR_PHRASES = (
     "comando bloqueado: intenta acceder",
     "blocked_by_policy",
     "blocked_by_workspace",
+    "policy_secret_file_blocked",
 )
 
 POLICY_NUDGE_MESSAGE = (
@@ -40,7 +41,11 @@ def tool_call_signature(call: ToolCall) -> str:
 
 
 def is_policy_error(result: ToolResult) -> bool:
-    if result.outcome in {"blocked_by_policy", "blocked_by_workspace"}:
+    if result.outcome in {
+        "blocked_by_policy",
+        "blocked_by_workspace",
+        "blocked_by_secret_policy",
+    }:
         return True
     lower = result.content.lower()
     return any(phrase in lower for phrase in POLICY_ERROR_PHRASES)
@@ -50,6 +55,8 @@ def outcome_for_tool_output(content: str) -> str | None:
     if not content.startswith("Error:"):
         return None
     lower = content.lower()
+    if "policy_secret_file_blocked" in lower:
+        return "blocked_by_secret_policy"
     if any(
         phrase in lower
         for phrase in (

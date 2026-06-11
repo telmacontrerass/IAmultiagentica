@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from pathlib import Path
@@ -22,8 +23,23 @@ _FILE_ACCESS_VERBS = re.compile(
 )
 
 _WIN_ABS_PATH = re.compile(r"[A-Za-z]:[\\/][^\s'\"|&;<>^]+")
+_UNC_PATH = re.compile(r"\\\\[^\s'\"|&;<>^]+")
 _QUOTED_PATH = re.compile(r"""['"]([^'"]+)['"]""")
-_RELATIVE_PATH = re.compile(r"[^\s'\"|&;<>^]+")
+_PERCENT_ENV = re.compile(r"%([^%]+)%")
+_DOLLAR_ENV = re.compile(r"\$env:([^\\\s'\"]+)", re.I)
+
+
+def _expand_windows_env_refs(raw: str) -> str:
+    expanded = raw
+    for match in _PERCENT_ENV.finditer(raw):
+        value = os.environ.get(match.group(1))
+        if value:
+            expanded = expanded.replace(match.group(0), value)
+    for match in _DOLLAR_ENV.finditer(raw):
+        value = os.environ.get(match.group(1))
+        if value:
+            expanded = expanded.replace(match.group(0), value)
+    return expanded
 
 
 def _strip_quotes(token: str) -> str:
@@ -43,15 +59,26 @@ def extract_path_candidates(command: str) -> list[str]:
 
     def add(raw: str) -> None:
         cleaned = _strip_quotes(raw.strip().rstrip(",;"))
+        cleaned = _expand_windows_env_refs(cleaned)
         if not cleaned or cleaned in seen:
             return
         if cleaned.startswith("http://") or cleaned.startswith("https://"):
             return
+        if cleaned.startswith("\\\\") or cleaned.startswith("//"):
+            seen.add(cleaned)
+            found.append(cleaned)
+            return
         if "/" not in cleaned and "\\" not in cleaned and ".." not in cleaned:
             if not _WIN_ABS_PATH.match(cleaned):
+                if "%" in raw or "$env:" in raw.lower():
+                    seen.add(cleaned)
+                    found.append(cleaned)
                 return
         seen.add(cleaned)
         found.append(cleaned)
+
+    for match in _UNC_PATH.finditer(command):
+        add(match.group(0))
 
     for match in _WIN_ABS_PATH.finditer(command):
         add(match.group(0))
@@ -81,6 +108,9 @@ def path_escapes_workspace(raw_path: str, workspace: Path) -> bool:
     """True si la ruta resuelta queda fuera del workspace."""
     if not raw_path or not str(raw_path).strip():
         return False
+    raw_path = _expand_windows_env_refs(raw_path)
+    if raw_path.startswith("\\\\") or raw_path.startswith("//"):
+        return True
     candidate = Path(raw_path).expanduser()
     if not candidate.is_absolute():
         candidate = workspace / candidate

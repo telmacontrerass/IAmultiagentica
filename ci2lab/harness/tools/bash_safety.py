@@ -38,6 +38,8 @@ _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
         ),
         "descarga combinada con Set-ExecutionPolicy Bypass",
     ),
+    (re.compile(r"\binvoke-expression\b", re.I), "Invoke-Expression"),
+    (re.compile(r"\biex\b", re.I), "iex (Invoke-Expression)"),
 ]
 
 

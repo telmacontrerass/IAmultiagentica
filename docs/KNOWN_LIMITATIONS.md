@@ -27,11 +27,16 @@ Este documento resume lo que **no** está implementado, qué riesgos permanecen 
 
 ## Seguridad y sandbox
 
+Ver politica detallada en [`SECURITY_POLICY.md`](SECURITY_POLICY.md).
+
 | Limitación | Detalle |
 |------------|---------|
 | `bash` con `shell=True` | Mitigado con confirmación interactiva, blocklist mínima; `--yes` no omite blocklist |
 | Sin sandbox avanzado | No hay contenedores, seccomp ni restricción de red para tools |
 | Rutas | `resolve_path()` confina al `workspace`; symlinks no auditados en profundidad |
+| Archivos sensibles | `read_file`/`grep` bloquean u omiten `.env*`, claves y nombres con `secret`/`credentials`/`token`; heuristica, no clasificador perfecto |
+| `iex` / `Invoke-Expression` | Bloqueados globalmente en `bash`; puede impedir scripts PowerShell legitimos |
+| Rutas UNC | Tratadas como fuera del workspace local |
 | Edición en disco | `write_file` / `edit_file` en modo supervisado (diff preview + aprobación); ver [`WRITE_POLICY.md`](WRITE_POLICY.md) |
 
 ## Operación y calidad del harness
