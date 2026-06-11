@@ -30,6 +30,7 @@ packages = ["ci2lab"]
 [tool.hatch.build.targets.wheel.force-include]
 "ci2lab/harness/prompts" = "ci2lab/harness/prompts"
 "ci2lab/catalog/models.json" = "ci2lab/catalog/models.json"
+"ci2lab/ui/static" = "ci2lab/ui/static"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

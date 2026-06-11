@@ -26,7 +26,7 @@ _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
 
 _CLI_COMMANDS = frozenset(
-    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
+    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals", "ui"}
 )
 
 
@@ -59,6 +59,7 @@ def _print_global_help() -> None:
         "  ci2lab models install <modelo>    Comandos pull/run/chat para un modelo",
         "  ci2lab models run <modelo>        Abre el modelo con ollama run",
         "  ci2lab evals run                  Evaluaciones del arnes (mock)",
+        "  ci2lab ui                         Interfaz web local",
         "",
         "Flags del agente (atajo, agent y chat):",
         "  --model TAG                       Tag Ollama (ej. qwen2.5-coder:7b)",
@@ -154,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
     evals_run.add_argument("--model", default=None)
     evals_run.add_argument("--live", action="store_true")
 
+    ui_p = sub.add_parser("ui", help="Interfaz web local")
+    ui_p.add_argument("--host", default="127.0.0.1", help="Host local")
+    ui_p.add_argument("--port", type=int, default=8765, help="Puerto local")
+    ui_p.add_argument("--no-open", action="store_true", help="No abrir navegador")
+
     args = parser.parse_args(raw_argv)
 
     try:
@@ -179,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_run(args)
     if args.command == "evals":
         return _cmd_evals(args)
+    if args.command == "ui":
+        return _cmd_ui(args, runtime)
 
     parser.print_help()
     return 0
@@ -372,6 +380,17 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
         table.add_row(row["id"], row["model"], row["cwd"][:40], row["updated_at"][:19])
     console.print(table)
     return 0
+
+
+def _cmd_ui(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
+    from ci2lab.ui import run_ui
+
+    return run_ui(
+        runtime,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+    )
 
 
 def _cmd_evals(args: argparse.Namespace) -> int:

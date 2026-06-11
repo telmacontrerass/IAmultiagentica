@@ -2,6 +2,8 @@
 
 CLI local que detecta las capacidades del ordenador, recomienda modelos open source que quepan en tu hardware y ejecuta un agente con herramientas en terminal (VS Code, PowerShell, CMD).
 
+Incluye una interfaz web local (`ci2lab ui`) para usar el agente desde el navegador sin perder el funcionamiento local de Ollama, sesiones y logs.
+
 ## Estructura
 
 Todo el código del producto está **aquí**. Los repos de referencia (claude-code, odysseus, opencode, deepagents) están en la carpeta padre `Ci2Lab/` y no forman parte de este paquete.
@@ -33,7 +35,7 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 ### Router y hardware (implementados, uso parcial)
 
 - `ci2lab hardware` — escaneo del sistema
-- `ci2lab models recommend` — recomendaciones por intención y VRAM/RAM
+- `ci2lab models rec<!--  -->ommend` — recomendaciones por intención y VRAM/RAM
 - `ci2lab models install <id>` — comandos para pull/run/chat
 - `ci2lab models run <id>` — abre el modelo con `ollama run`
 
@@ -90,10 +92,22 @@ ci2lab --model qwen2.5-coder:7b chat      # agente interactivo
 ci2lab doctor                                          # comprobar entorno
 ci2lab hardware                                        # perfil de hardware
 ci2lab models recommend                                # modelos recomendados
+ci2lab ui                                              # interfaz web local
 ci2lab --model qwen2.5-coder:7b chat                   # REPL agéntico
 ci2lab --model llama3.1:8b "lista los archivos Python" # una petición
 ci2lab sessions                                        # sesiones guardadas
 ```
+
+### Interfaz web local
+
+```powershell
+ci2lab ui                                  # abre http://127.0.0.1:8765
+ci2lab --model qwen2.5-coder:7b ui         # arranca la UI con un modelo por defecto
+ci2lab ui --no-open                        # no abre el navegador automaticamente
+ci2lab ui --port 8766                      # usa otro puerto local
+```
+
+La UI funciona solo en tu equipo, habla con Ollama local y reutiliza las mismas sesiones, modelos y logs del CLI. El modo tecnico permite herramientas con aprobacion; sin activarlo, la interfaz prioriza conversaciones seguras.
 
 **Importante:** los flags globales (`--model`, `--tool-mode`, `--yes`, etc.) van **antes** del subcomando:
 

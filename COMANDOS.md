@@ -261,6 +261,32 @@ Ejemplo de sustitucion: para Qwen2.5 Coder 1.5B, `<MODELO_ID>` es `qwen2.5-coder
 
 ## 10. Usar el agente por primera vez
 
+### Modo facil con interfaz web
+
+```powershell
+ci2lab ui
+```
+Abre una interfaz web local para usar Ci2Lab sin escribir comandos.
+
+```powershell
+ci2lab --model <MODELO_ID> ui
+```
+Abre la interfaz web usando un modelo concreto por defecto.
+
+```powershell
+ci2lab ui --no-open
+```
+Arranca el servidor local sin abrir el navegador.
+
+```powershell
+ci2lab ui --port 8766
+```
+Arranca la interfaz en otro puerto local.
+
+La UI funciona solo en local, usa Ollama como motor y mantiene sesiones/logs en tu equipo.
+
+### Modo terminal
+
 ```powershell
 ci2lab chat
 ```
@@ -356,6 +382,11 @@ Verifica que todo esta listo.
 ci2lab chat
 ```
 Abre una conversacion interactiva.
+
+```powershell
+ci2lab ui
+```
+Abre la interfaz web local.
 
 ```powershell
 ci2lab sessions
