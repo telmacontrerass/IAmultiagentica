@@ -51,20 +51,16 @@ Usuario
   │
   └─ ci2lab chat / agent ──────────► pipeline.prepare_session()
                                         │
-                                        ├─ (ideal) scan_hardware + resolve_model
-                                        │            + ensure_model_ready
-                                        │
-                                        └─ (actual) default_selection() fallback
+                                        ├─ modelo = --model / config / default
+                                        ├─ tool_mode = catálogo para ese tag
+                                        │     (override: --tool-mode o yaml)
+                                        └─ build_model_selection()
                                               │
                                               ▼
                                         harness.run_agent() / run_repl()
 ```
 
-### Gap de integración actual
-
-`pipeline.py` intenta importar `ci2lab.hardware.profiler` y `ci2lab.runtime.ensure`, que no existen. El `ImportError` hace que `chat` y `agent` usen siempre `default_selection()` con el tag de `--model` o `llama3.1:8b`, sin pasar por el router ni el catálogo.
-
-Los comandos `hardware` y `models` **sí** llaman directamente a `hardware/` y `router/`.
+El router (`models recommend`) **sugiere** modelos; no auto-selecciona en chat. Al ejecutar, el catálogo define el `tool_mode` del modelo elegido.
 
 ## Integración (objetivo)
 

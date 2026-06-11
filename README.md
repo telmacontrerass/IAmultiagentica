@@ -18,7 +18,7 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 | `ci2lab/catalog/` | ✅ | `models.json` con 21 modelos y metadatos (VRAM, tool_mode, benchmarks) |
 | `ci2lab/harness/` | ✅ | Arnés ReAct, 7 tools, REPL, sesiones, streaming, run logs |
 | `ci2lab/runtime/` | 🔲 | Sin `ensure_model_ready` — no hay `ollama pull` automático |
-| Integración pipeline | ⚠️ | `chat`/`agent` aún no usan el router (ver [Limitaciones](docs/KNOWN_LIMITATIONS.md)) |
+| Integración pipeline | ✅ | `chat`/`agent` aplican `tool_mode` del catálogo para el modelo elegido |
 
 ### Harness (validado 2026-06-09)
 
@@ -37,7 +37,7 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 - `ci2lab models install <id>` — comandos para pull/run/chat
 - `ci2lab models run <id>` — abre el modelo con `ollama run`
 
-El router **no está conectado** al flujo `ci2lab chat` / `ci2lab agent` todavía: `pipeline.py` cae en un fallback porque faltan imports de integración (`runtime.ensure`). Ver [`docs/HARDWARE_ROUTER_HANDOFF.md`](docs/HARDWARE_ROUTER_HANDOFF.md#estado-de-implementación-2026-06-10).
+El router **sugiere** modelos (`ci2lab models recommend`); tú eliges cuál ejecutar con `--model`. Al arrancar chat/agent, se aplica el `tool_mode` guardado en el catálogo para ese modelo (override con `--tool-mode`). Ver [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
 ## Instalación
 
@@ -107,12 +107,14 @@ ci2lab chat --model qwen2.5-coder:7b
 
 ### Modos de herramientas (`tool_mode`)
 
-| Modo | Cuándo usarlo |
-|------|----------------|
-| `native` (default) | Modelos con function calling fiable vía Ollama (`llama3.1:8b`, `qwen2.5-coder:7b`) |
-| `fenced` | Modelos que responden mejor con bloques de texto (`deepseek-coder`, modelos pequeños) |
+Cada modelo del catálogo tiene un `tool_mode` guardado (`native` o `fenced`). Se aplica automáticamente al ejecutar:
 
-Si el modelo imprime JSON o código pero no ejecuta herramientas, prueba:
+```powershell
+ci2lab --model qwen2.5-coder:7b chat      # usa native (catálogo)
+ci2lab --model deepseek-coder:6.7b chat   # usa fenced (catálogo)
+```
+
+Override manual solo si quieres experimentar:
 
 ```powershell
 ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat

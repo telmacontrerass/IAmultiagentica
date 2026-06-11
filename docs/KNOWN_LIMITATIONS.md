@@ -6,11 +6,11 @@ Este documento resume lo que **no** está implementado, qué riesgos permanecen 
 
 | Limitación | Detalle |
 |------------|---------|
-| Router no conectado a `chat`/`agent` | `prepare_session()` en `pipeline.py` intenta importar `ci2lab.hardware.profiler` y `ci2lab.runtime.ensure`, que no existen. Cae en `default_selection()` con `tool_mode: native` siempre. |
-| `--model` ignora catálogo en chat | Al forzar un tag Ollama no catalogado (p. ej. `deepseek-coder:6.7b-instruct`), no se aplica el `tool_mode` del catálogo. |
+| Router no auto-selecciona modelo en chat | `ci2lab models recommend` sugiere; el usuario elige con `--model`. Correcto por diseño. |
+| `tool_mode` desde catálogo | Al ejecutar un modelo, `prepare_session()` aplica el `tool_mode` del catálogo para ese tag. Override con `--tool-mode` o `tool_mode` en yaml. |
+| Tags no catalogados | Modelos desconocidos usan `tool_mode: fenced` por defecto. |
 | Sin auto-pull | `runtime/ensure.py` no existe; el usuario debe hacer `ollama pull` manualmente. |
-
-**Workaround:** pasar `--tool-mode fenced` explícitamente para modelos que no soportan native tools. Ver README.
+| Parser estricto | Modelos que imprimen JSON como texto pueden fallar aunque el `tool_mode` sea correcto. Ver mejoras pendientes en harness. |
 
 ## Fuera de alcance
 

@@ -22,7 +22,8 @@ Este paquete define los tipos compartidos entre:
 
 ## Estado de integración
 
-El router está implementado y expuesto vía CLI (`ci2lab hardware`, `ci2lab models …`), pero `pipeline.prepare_session()` aún no lo conecta al flujo `chat`/`agent`. Ver [`docs/KNOWN_LIMITATIONS.md`](../../docs/KNOWN_LIMITATIONS.md).
+- **Sugerencias:** `ci2lab models recommend` (router) — el usuario decide qué modelo ejecutar.
+- **Ejecución:** `pipeline.prepare_session()` aplica el `tool_mode` del catálogo para el modelo elegido (`--model` / config).
 
 ## Documentación completa
 

@@ -11,7 +11,7 @@ import sys
 from rich.console import Console
 from rich.table import Table
 
-from ci2lab.config import Ci2LabConfig, load_config, merge_cli_config
+from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
 from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
@@ -288,13 +288,26 @@ def _build_config(
     return agent
 
 
-def _resolve_selection(runtime: Ci2LabConfig, prompt: str):
+def _tool_mode_override(runtime: Ci2LabConfig, args: argparse.Namespace) -> str | None:
+    """CLI flag or yaml/env config override catalog; None means use catalog default."""
+    if args.tool_mode is not None:
+        return args.tool_mode
+    if runtime.tool_mode != DEFAULT_TOOL_MODE:
+        return runtime.tool_mode
+    return None
+
+
+def _resolve_selection(
+    runtime: Ci2LabConfig,
+    prompt: str,
+    args: argparse.Namespace,
+):
     from ci2lab.pipeline import prepare_session
 
     _, selection = prepare_session(
         prompt,
         force_model=runtime.model,
-        tool_mode=runtime.tool_mode,
+        tool_mode_override=_tool_mode_override(runtime, args),
         backend_url=runtime.backend_url,
         pull=False,
     )
@@ -305,10 +318,11 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
     from ci2lab.harness import run_agent
     from ci2lab.harness.llm_errors import LLMError
 
-    selection = _resolve_selection(runtime, prompt)
+    selection = _resolve_selection(runtime, prompt, args)
     config = _build_config(runtime, args, selection)
 
     console.print(f"[bold]Modelo:[/bold] {selection.ollama_tag}")
+    console.print(f"[bold]Tool mode:[/bold] {selection.tool_mode}")
     console.print(f"[bold]CWD:[/bold] {config.cwd}\n")
 
     try:
@@ -326,7 +340,7 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     from ci2lab.harness.llm_errors import LLMError
     from ci2lab.harness.repl import run_repl
 
-    selection = _resolve_selection(runtime, "")
+    selection = _resolve_selection(runtime, "", args)
     config = _build_config(runtime, args, selection)
     try:
         run_repl(selection, config, session_id=args.session)
