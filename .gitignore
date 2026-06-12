@@ -26,3 +26,6 @@ audit/live_claude/
 # Local test leftovers
 /inside.txt
 generated_ok.md
+
+# Local OpenCode config
+/opencode.json
