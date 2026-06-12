@@ -2,45 +2,30 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from ci2lab.security.paths import (
+    PathViolationError,
+    assert_within_workspace,
+    is_within_workspace,
+    resolve_workspace_path,
+    workspace_root,
+)
 
-class PathViolationError(ValueError):
-    """La ruta escapa del directorio permitido."""
-
-
-def workspace_root(cwd: str) -> Path:
-    return Path(cwd).resolve()
-
-
-def is_within_workspace(raw: str, cwd: str) -> bool:
-    """True si raw resuelve dentro del workspace."""
-    base = workspace_root(cwd)
-    candidate = Path(raw).expanduser()
-    if not candidate.is_absolute():
-        candidate = base / candidate
-    try:
-        candidate.resolve().relative_to(base)
-        return True
-    except (ValueError, OSError):
-        return False
+__all__ = [
+    "PathViolationError",
+    "assert_within_workspace",
+    "format_size",
+    "is_within_workspace",
+    "resolve_path",
+    "resolve_workspace_path",
+    "workspace_root",
+]
 
 
 def resolve_path(raw: str, cwd: str) -> Path:
-    """Resuelve raw respecto a cwd y rechaza path traversal."""
-    base = workspace_root(cwd)
-    candidate = Path(raw).expanduser()
-    if not candidate.is_absolute():
-        candidate = base / candidate
-    resolved = candidate.resolve()
-    try:
-        resolved.relative_to(base)
-    except ValueError as exc:
-        raise PathViolationError(
-            f"Ruta fuera del workspace: {resolved} (base: {base})"
-        ) from exc
-    return resolved
+    """Compat: resolve_path(raw, cwd) -> resolve_workspace_path(cwd, raw)."""
+    return resolve_workspace_path(cwd, raw)
 
 
 def format_size(num_bytes: int) -> str:

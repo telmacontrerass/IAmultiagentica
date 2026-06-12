@@ -9,9 +9,17 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+from ci2lab.harness.security_profiles import (
+    SecurityConfig,
+    UnknownSecurityProfileError,
+    parse_security_config,
+)
+from ci2lab.security.engine import UnknownSecurityEngineError
+from ci2lab.security.opencode_presets import UnknownPermissionPresetError
 
 DEFAULT_MODEL = "llama3.1:8b"
 DEFAULT_BACKEND_URL = "http://localhost:11434/v1"
@@ -40,6 +48,9 @@ class Ci2LabConfig:
     log_runs: bool = DEFAULT_LOG_RUNS
     write_tools_enabled: bool = DEFAULT_WRITE_TOOLS_ENABLED
     require_diff_preview: bool = DEFAULT_REQUIRE_DIFF_PREVIEW
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    permission: dict[str, Any] = field(default_factory=dict)
+    """permission root-level estilo OpenCode (solo opencode_experimental)."""
 
 
 def _parse_bool(value: str) -> bool:
@@ -124,6 +135,16 @@ def _apply_mapping(config: Ci2LabConfig, mapping: dict[str, Any]) -> Ci2LabConfi
             if value:
                 updates["log_runs"] = False
             continue
+        if key == "security":
+            if not isinstance(value, dict):
+                raise ValueError("security debe ser un objeto JSON/YAML.")
+            updates["security"] = parse_security_config(value)
+            continue
+        if key == "permission":
+            if not isinstance(value, dict):
+                raise ValueError("permission debe ser un objeto JSON/YAML.")
+            updates["permission"] = dict(value)
+            continue
         target = alias.get(key, key)
         if target == "backend_url" and isinstance(value, str):
             updates[target] = _normalize_backend_url(value)
@@ -185,6 +206,12 @@ def load_config(*, config_path: str | None = None) -> Ci2LabConfig:
         try:
             file_data = _load_file_config(path)
             config = _apply_mapping(config, file_data)
+        except (
+            UnknownSecurityProfileError,
+            UnknownSecurityEngineError,
+            UnknownPermissionPresetError,
+        ):
+            raise
         except (OSError, json.JSONDecodeError, ValueError):
             pass
     return _from_env(config)

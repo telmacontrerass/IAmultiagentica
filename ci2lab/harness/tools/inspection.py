@@ -66,7 +66,7 @@ def file_info(cwd: str, path: str) -> str:
     assert resolved is not None
     root = workspace_root(cwd)
     rel = _relative_path(resolved, root)
-    sensitive = is_sensitive_path(resolved)
+    sensitive = is_sensitive_path(resolved, workspace=cwd)
 
     lines = [
         f"exists: {'yes' if resolved.exists() else 'no'}",
@@ -147,7 +147,7 @@ def tree(
                 return
             if entry.name in SKIPPED_DIR_NAMES:
                 continue
-            if is_sensitive_path(entry):
+            if is_sensitive_path(entry, workspace=cwd):
                 skipped_sensitive += 1
                 if not append(f"{prefix}[sensitive omitted] {entry.name}"):
                     return
@@ -185,7 +185,7 @@ def inspect_file(
         return f"Error: no existe el archivo {resolved}"
     if not resolved.is_file():
         return f"Error: no es un archivo {resolved}"
-    if is_sensitive_path(resolved):
+    if is_sensitive_path(resolved, workspace=cwd):
         return secret_file_block_message()
     if _looks_binary(resolved):
         return (

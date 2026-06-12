@@ -10,7 +10,14 @@ from ci2lab.harness.tools import filesystem as fs
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools.bash import _format_bash_block_message
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
-from ci2lab.harness.tools.bash_safety import check_bash_blocked
+from ci2lab.security.audit import (
+    AuditPersistContext,
+    get_audit_persist_context,
+    log_decision,
+    set_audit_persist_context,
+)
+from ci2lab.security.engine import ToolGateResult, enforce_ci2lab_hard_policy
+from ci2lab.security.permissions import evaluate_tool_gate
 from ci2lab.harness.tools.filesystem import permission_summary
 from ci2lab.harness.policy import outcome_for_tool_output
 from ci2lab.harness.tools.paths import PathViolationError
@@ -189,10 +196,18 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
 
 _DISPATCH: dict[str, Callable[..., str]] = {
     "bash": lambda cfg, a: bash_tool.run_bash(
-        cfg.cwd, a["command"], cfg.bash_timeout_seconds
+        cfg.cwd,
+        a["command"],
+        cfg.bash_timeout_seconds,
+        security_profile=cfg.security_profile,
+        security_engine=cfg.security_engine,
     ),
     "read_file": lambda cfg, a: fs.read_file(
-        cfg.cwd, a["path"], a.get("offset", 1), a.get("limit")
+        cfg.cwd,
+        a["path"],
+        a.get("offset", 1),
+        a.get("limit"),
+        security_engine=cfg.security_engine,
     ),
     "ls": lambda cfg, a: fs.ls(cfg.cwd, a.get("path", ".")),
     "grep": lambda cfg, a: fs.grep_search(
@@ -263,11 +278,106 @@ def parse_arguments(
         return {"command": str(raw)} if raw else {}
 
 
+def _ensure_audit_persist_context(config: AgentConfig) -> None:
+    if get_audit_persist_context() is not None:
+        return
+    set_audit_persist_context(
+        AuditPersistContext(
+            workspace=config.cwd,
+            runs_dir=config.runs_dir,
+            security_engine=config.security_engine,
+        )
+    )
+
+
+def _audit_security_decision(
+    *,
+    tool: str,
+    detail: str,
+    decision: str,
+    gate: ToolGateResult | None = None,
+    reason: str | None = None,
+    confirmed: bool | None = None,
+    outcome: str | None = None,
+    confirm_extra: dict[str, Any] | None = None,
+) -> None:
+    kwargs: dict[str, Any] = {
+        "tool": tool,
+        "detail": detail,
+        "decision": decision,
+        "reason": reason or (gate.reason if gate else ""),
+        "confirmed": confirmed,
+        "outcome": outcome,
+    }
+    merged_extra: dict[str, Any] = dict(confirm_extra or {})
+    if gate is not None:
+        kwargs.update(
+            {
+                "security_engine": gate.engine,
+                "matched_rule": gate.matched_rule,
+                "external_directory": gate.external_directory,
+                "hard_guards_enabled": gate.hard_guards_enabled,
+                "permission_layer_enabled": gate.permission_layer_enabled,
+                "experimental": gate.experimental,
+                "session_approval_used": gate.session_approval_used,
+                "session_approval_scope": gate.session_approval_scope,
+            }
+        )
+        merged_extra.setdefault("engine", gate.engine)
+    if merged_extra:
+        kwargs["extra"] = merged_extra
+    log_decision(**kwargs)
+
+
+def _resolve_tool_confirm(
+    name: str,
+    args: dict[str, Any],
+    detail: str,
+    gate: ToolGateResult,
+    config: AgentConfig,
+) -> tuple[bool, str | None, str, dict[str, Any]]:
+    """Confirma un ask post-gate. Devuelve allowed, deny_msg, reason, audit_extra."""
+    from ci2lab.harness.permissions import check_permission
+    from ci2lab.security.approval_prompt import (
+        confirm_opencode_ask,
+        uses_modern_permission_prompt,
+    )
+
+    if uses_modern_permission_prompt(config.security_engine):
+        result = confirm_opencode_ask(
+            config=config,
+            tool_name=name,
+            args=args,
+            gate=gate,
+            detail=detail,
+        )
+        extra = {
+            "approval_choice": result.choice.value if result.choice else None,
+            "session_scope_granted": result.session_scope_granted,
+        }
+        if result.proceed:
+            return True, None, result.reason, extra
+        return False, result.message, result.reason, extra
+
+    allowed, deny_msg = check_permission(
+        name,
+        detail,
+        auto_confirm=config.auto_confirm,
+        confirm_callback=config.confirm_callback,
+    )
+    reason = "confirmed" if config.auto_confirm else "user_confirmed"
+    if allowed:
+        return True, None, reason, {}
+    return False, deny_msg, "user_denied", {}
+
+
 def _execute_write_tool(
     name: str,
     args: dict[str, Any],
     config: AgentConfig,
     call_id: str | None,
+    *,
+    gate: ToolGateResult | None = None,
 ) -> ToolResult:
     if not config.write_tools_enabled:
         return ToolResult(
@@ -281,10 +391,14 @@ def _execute_write_tool(
             outcome="blocked_by_config",
         )
 
+    enforce_hard = enforce_ci2lab_hard_policy(config.security_engine)
     try:
         if name == "write_file":
             preview = preview_write_file(
-                config.cwd, args["path"], args["content"]
+                config.cwd,
+                args["path"],
+                args["content"],
+                enforce_hard_policy=enforce_hard,
             )
         else:
             preview = preview_edit_file(
@@ -293,6 +407,7 @@ def _execute_write_tool(
                 args["old_string"],
                 args["new_string"],
                 args.get("replace_all", False),
+                enforce_hard_policy=enforce_hard,
             )
     except PathViolationError as exc:
         return ToolResult(
@@ -321,15 +436,78 @@ def _execute_write_tool(
             outcome=outcome_for_tool_output(err_msg) or "failed",
         )
 
-    allowed, deny_msg = check_write_permission(name, preview, config)
-    if not allowed:
-        return ToolResult(
-            tool_name=name,
-            content=deny_msg or "Denegado",
-            is_error=True,
-            call_id=call_id,
-            outcome="denied",
-        )
+    needs_confirm = gate.needs_confirm if gate is not None else True
+    if needs_confirm:
+        from ci2lab.security.approval_prompt import uses_modern_permission_prompt
+
+        detail = preview.path
+        if uses_modern_permission_prompt(config.security_engine) and gate is not None:
+            if config.require_diff_preview:
+                from rich.panel import Panel
+
+                from ci2lab.harness.write_permissions import _console as write_console
+
+                write_console.print(
+                    Panel(
+                        preview.format_for_display(),
+                        title=f"Preview: {name}",
+                        border_style="yellow",
+                    )
+                )
+            _audit_security_decision(
+                tool=name,
+                detail=detail,
+                decision="ask",
+                gate=gate,
+                outcome="pending",
+            )
+            allowed, deny_msg, reason, confirm_extra = _resolve_tool_confirm(
+                name,
+                args,
+                detail,
+                gate,
+                config,
+            )
+            if not allowed:
+                _audit_security_decision(
+                    tool=name,
+                    detail=detail,
+                    decision="deny",
+                    gate=gate,
+                    reason=reason,
+                    confirmed=False,
+                    outcome="denied",
+                    confirm_extra=confirm_extra,
+                )
+                return ToolResult(
+                    tool_name=name,
+                    content=deny_msg or "Denegado",
+                    is_error=True,
+                    call_id=call_id,
+                    outcome="denied",
+                )
+            _audit_security_decision(
+                tool=name,
+                detail=detail,
+                decision="allow",
+                gate=gate,
+                reason=reason,
+                confirmed=True,
+                outcome="executed",
+                confirm_extra=confirm_extra,
+            )
+        else:
+            from ci2lab.harness.write_permissions import check_write_permission
+
+            allowed, deny_msg = check_write_permission(name, preview, config)
+            if not allowed:
+                return ToolResult(
+                    tool_name=name,
+                    content=deny_msg or "Denegado",
+                    is_error=True,
+                    call_id=call_id,
+                    outcome="denied",
+                )
 
     try:
         output = _DISPATCH[name](config, args)
@@ -353,7 +531,7 @@ def _execute_write_tool(
 
 
 def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
-    from ci2lab.harness.permissions import check_permission
+    _ensure_audit_persist_context(config)
 
     name = call.name
     if name not in TOOL_NAMES:
@@ -366,40 +544,91 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
 
     args = normalize_tool_arguments(call.arguments, tool_name=name)
 
-    if name in WRITE_TOOLS:
-        return _execute_write_tool(name, args, config, call.call_id)
+    detail = permission_summary(name, args) or str(args)[:120]
+    gate = evaluate_tool_gate(name, args, config)
 
-    if name == "bash":
-        blocked = check_bash_blocked(
-            str(args.get("command", "")),
-            cwd=config.cwd,
+    if gate.blocked:
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="deny",
+            gate=gate,
+            outcome=gate.outcome or "blocked",
         )
-        if blocked:
-            return ToolResult(
-                tool_name=name,
-                content=_format_bash_block_message(blocked),
-                is_error=True,
-                call_id=call.call_id,
-                outcome="blocked_by_workspace",
-            )
-
-    allowed, deny_msg = check_permission(
-        name,
-        permission_summary(name, args),
-        auto_confirm=config.auto_confirm,
-        confirm_callback=config.confirm_callback,
-    )
-    if not allowed:
         return ToolResult(
             tool_name=name,
-            content=deny_msg or "Denegado",
+            content=gate.message or "Error: bloqueado por politica de seguridad",
             is_error=True,
             call_id=call.call_id,
+            outcome=gate.outcome,
+        )
+
+    if name in WRITE_TOOLS:
+        return _execute_write_tool(name, args, config, call.call_id, gate=gate)
+
+    if gate.needs_confirm:
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="ask",
+            gate=gate,
+            outcome="pending",
+        )
+        allowed, deny_msg, reason, confirm_extra = _resolve_tool_confirm(
+            name,
+            args,
+            detail,
+            gate,
+            config,
+        )
+        if not allowed:
+            _audit_security_decision(
+                tool=name,
+                detail=detail,
+                decision="deny",
+                gate=gate,
+                reason=reason,
+                confirmed=False,
+                outcome="denied",
+                confirm_extra=confirm_extra or None,
+            )
+            return ToolResult(
+                tool_name=name,
+                content=deny_msg or "Denegado",
+                is_error=True,
+                call_id=call.call_id,
+                outcome="denied",
+            )
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="allow",
+            gate=gate,
+            reason=reason,
+            confirmed=True,
+            outcome="executed",
+            confirm_extra=confirm_extra or None,
+        )
+    else:
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="allow",
+            gate=gate,
+            outcome="executed",
         )
 
     try:
         output = _DISPATCH[name](config, args)
     except PathViolationError as exc:
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="deny",
+            gate=gate,
+            reason="outside_workspace",
+            outcome="blocked_by_workspace",
+        )
         return ToolResult(
             tool_name=name,
             content=f"Error: {exc}",
@@ -421,6 +650,15 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             + f"\n... (truncado, {len(output)} caracteres totales)"
         )
     is_error = output.startswith("Error:")
+    if is_error:
+        _audit_security_decision(
+            tool=name,
+            detail=detail,
+            decision="deny",
+            gate=gate,
+            reason=outcome_for_tool_output(output) or "tool_error",
+            outcome="error",
+        )
     return ToolResult(
         tool_name=name,
         content=output,

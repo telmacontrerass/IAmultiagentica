@@ -20,18 +20,57 @@ def _resolve_or_error(raw: str, cwd: str) -> tuple[Path | None, str | None]:
     except PathViolationError as exc:
         return None, f"Error: {exc}"
 
+
+def _resolve_for_access(
+    raw: str,
+    cwd: str,
+    *,
+    security_engine: str = "ci2lab",
+) -> tuple[Path | None, str | None]:
+    from ci2lab.security.engine import enforce_ci2lab_hard_policy
+
+    if enforce_ci2lab_hard_policy(security_engine):
+        return _resolve_or_error(raw, cwd)
+    try:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(cwd) / candidate
+        return candidate.resolve(), None
+    except OSError as exc:
+        return None, f"Error: ruta invalida: {exc}"
+
+
+def _check_sensitive(
+    resolved: Path,
+    cwd: str,
+    *,
+    security_engine: str = "ci2lab",
+) -> bool:
+    from ci2lab.security.engine import enforce_ci2lab_hard_policy
+
+    if not enforce_ci2lab_hard_policy(security_engine):
+        return False
+    return is_sensitive_path(resolved, workspace=cwd)
+
 MAX_READ_LINES = 2000
 MAX_PDF_PAGES = 100
 
 
-def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) -> str:
-    resolved, err = _resolve_or_error(path, cwd)
+def read_file(
+    cwd: str,
+    path: str,
+    offset: int = 1,
+    limit: int | None = None,
+    *,
+    security_engine: str = "ci2lab",
+) -> str:
+    resolved, err = _resolve_for_access(path, cwd, security_engine=security_engine)
     if err:
         return err
     assert resolved is not None
     if not resolved.is_file():
         return f"Error: no existe el archivo {resolved}"
-    if is_sensitive_path(resolved):
+    if _check_sensitive(resolved, cwd, security_engine=security_engine):
         return secret_file_block_message()
     if resolved.suffix.lower() == ".pdf":
         text = extract_pdf_text(resolved)
@@ -157,7 +196,7 @@ def grep_search(
         return f"Error: expresión regular inválida: {exc}"
 
     if base.is_file():
-        if is_sensitive_path(base):
+        if is_sensitive_path(base, workspace=cwd):
             return secret_file_block_message()
         return _grep_single_file(base, root=Path(cwd).resolve(), regex=regex, max_results=max_results)
 
@@ -217,7 +256,7 @@ def _grep_scan_tree(
             continue
         if glob_pattern and not file_path.match(glob_pattern):
             continue
-        if is_sensitive_path(file_path):
+        if is_sensitive_path(file_path, workspace=root):
             skipped += 1
             continue
         try:
@@ -246,7 +285,7 @@ def write_file(cwd: str, path: str, content: str) -> str:
     if err:
         return err
     assert resolved is not None
-    if is_sensitive_path(resolved):
+    if is_sensitive_path(resolved, workspace=cwd):
         return secret_file_block_message()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
@@ -266,7 +305,7 @@ def edit_file(
     if err:
         return err
     assert resolved is not None
-    if is_sensitive_path(resolved):
+    if is_sensitive_path(resolved, workspace=cwd):
         return secret_file_block_message()
     if resolved.is_file():
         original_count = resolved.read_text(encoding="utf-8", errors="replace").count(

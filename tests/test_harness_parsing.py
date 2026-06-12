@@ -1,3 +1,5 @@
+import pytest
+
 from ci2lab.harness.parsing import (
     looks_like_unparsed_tool_attempt,
     parse_fenced_blocks,
@@ -124,6 +126,36 @@ def test_parse_bash_fence_with_shell_command():
 def test_unknown_fenced_tag_is_not_executed_as_bash():
     calls = resolve_tool_calls("```unknown_tool\nx\n```", [], tool_mode="fenced")
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("fence_body", "tag"),
+    [
+        ("```unknown_tool\nx\n```", "unknown_tool"),
+        ("```diagnostic\ndir\n```", "diagnostic"),
+        ('```note\npython -c "print(\'BAD\')"\n```', "note"),
+    ],
+)
+def test_v01_unknown_fenced_tags_never_become_bash(fence_body, tag):
+    calls = resolve_tool_calls(fence_body, [], tool_mode="fenced")
+    assert calls == [], f"{tag} must not produce tool calls"
+
+
+def test_v01_json_fence_explicit_bash_is_structured_not_fallback():
+    text = '```json\n{"name":"bash","arguments":{"command":"dir"}}\n```'
+    calls = resolve_tool_calls(text, [], tool_mode="fenced")
+    assert len(calls) == 1
+    assert calls[0].name == "bash"
+    assert calls[0].arguments["command"] == "dir"
+
+
+def test_v01_plain_json_parsed_but_not_bash_fallback():
+    """JSON inline se parsea por diseno; V-01 es fences desconocidos -> bash."""
+    text = '{"name":"read_file","arguments":{"path":"../secret.txt"}}'
+    calls = resolve_tool_calls(text, [], tool_mode="native")
+    assert len(calls) == 1
+    assert calls[0].name == "read_file"
+    assert calls[0].name != "bash"
 
 
 def test_shell_fence_tag_still_runs_command_via_generic_parser():

@@ -17,6 +17,11 @@ from rich.console import Console
 
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
+from ci2lab.security.audit import AuditPersistContext, set_audit_persist_context
+from ci2lab.security.session_permissions import (
+    bind_active_session,
+    clear_session_permissions,
+)
 
 _console = Console()
 LOG_OUTPUT_MAX_CHARS = 2000
@@ -84,6 +89,18 @@ class RunLogger:
             self._run_dir = self.runs_dir / f"{stamp}_{short_id}"
             self._run_dir.mkdir(parents=True, exist_ok=False)
             self._write_json("config_snapshot.json", self.config_snapshot)
+            set_audit_persist_context(
+                AuditPersistContext(
+                    workspace=self.agent_config.cwd,
+                    runs_dir=self.agent_config.runs_dir,
+                    run_id=self._run_dir.name,
+                    run_subdir=self._run_dir.name,
+                    security_engine=self.agent_config.security_engine,
+                )
+            )
+            bind_active_session(
+                self.agent_config.session_id or self._run_dir.name
+            )
             return self._run_dir
         except Exception as exc:  # noqa: BLE001
             self._deactivate(f"No se pudo crear la carpeta de run: {exc}")
@@ -176,6 +193,14 @@ class RunLogger:
             _console.print(f"[dim]Run guardado: {self._run_dir}[/dim]")
         except Exception as exc:  # noqa: BLE001
             self._warn(f"No se pudo finalizar el log de ejecución: {exc}")
+        finally:
+            session_key = self.agent_config.session_id or (
+                self._run_dir.name if self._run_dir is not None else None
+            )
+            if session_key:
+                clear_session_permissions(session_key)
+            bind_active_session(None)
+            set_audit_persist_context(None)
 
     def _write_json(self, name: str, data: Any) -> None:
         if self._run_dir is None:

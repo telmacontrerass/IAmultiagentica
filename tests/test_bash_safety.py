@@ -20,6 +20,18 @@ def test_allows_safe_ls():
     assert check_bash_blocked("ls -la") is None
 
 
+def test_blocks_rm_star_wildcard():
+    assert check_bash_blocked("rm *") is not None
+
+
+def test_blocks_del_star_wildcard():
+    assert check_bash_blocked("del *") is not None
+
+
+def test_blocks_remove_item_star_wildcard():
+    assert check_bash_blocked("Remove-Item *") is not None
+
+
 def test_run_bash_returns_error_when_blocked():
     out = run_bash(".", "rm -rf /")
     assert out.startswith("Error:")

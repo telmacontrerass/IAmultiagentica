@@ -39,6 +39,33 @@ Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
 El router **sugiere** modelos (`ci2lab models recommend`); tú eliges cuál ejecutar con `--model`. Al arrancar chat/agent, se aplica el `tool_mode` guardado en el catálogo para ese modelo (override con `--tool-mode`). Ver [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
+### Motores de seguridad
+
+| Motor | Rol |
+|-------|-----|
+| **`ci2lab`** (default) | Sandbox-first clásico: workspace, secretos, blocklist, perfiles. Sin activación explícita. |
+| **`claude_experimental`** | **Recomendado para pruebas reales** (experimental, no default): hard guards de `ci2lab` + UX permission moderna, session approvals y audit/dashboard. |
+| **`opencode_experimental`** | **Laboratorio inseguro** permission-first (sin hard guards) — solo para comparar con OpenCode. |
+
+```powershell
+# Default (no hace falta flag)
+ci2lab chat
+
+# Modo experimental recomendado (P2.9 validado live)
+ci2lab --security-engine claude_experimental chat
+
+# Laboratorio inseguro — no usar en trabajo real
+ci2lab --security-engine opencode_experimental chat
+```
+
+Validación live y checklist: [`docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`](docs/CLAUDE_EXPERIMENTAL_VALIDATION.md). Política: [`docs/SECURITY_POLICY.md`](docs/SECURITY_POLICY.md).
+
+```powershell
+python scripts/audit_claude_experimental_live.py --all
+python scripts/compare_security_engines.py
+python scripts/security_gate_check.py --engine ci2lab --workspace . --tool read_file --target "../outside.txt"
+```
+
 ## Instalación
 
 Requisitos:

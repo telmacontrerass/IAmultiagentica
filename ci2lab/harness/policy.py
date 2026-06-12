@@ -13,6 +13,7 @@ POLICY_ERROR_PHRASES = (
     "blocked_by_policy",
     "blocked_by_workspace",
     "policy_secret_file_blocked",
+    "tool_blocked_by_security_profile",
 )
 
 POLICY_NUDGE_MESSAGE = (
@@ -45,6 +46,7 @@ def is_policy_error(result: ToolResult) -> bool:
         "blocked_by_policy",
         "blocked_by_workspace",
         "blocked_by_secret_policy",
+        "blocked_by_security_profile",
     }:
         return True
     lower = result.content.lower()

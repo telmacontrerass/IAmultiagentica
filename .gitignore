@@ -15,3 +15,14 @@ venv/
 .env
 runs/
 evals/results/
+
+# Generated harness / audit output (regenerable; see audit/repo_cleanup/)
+artifacts/
+tmp/
+.ci2lab/
+audit/deterministic_claude/
+audit/live_claude/
+
+# Local test leftovers
+/inside.txt
+generated_ok.md

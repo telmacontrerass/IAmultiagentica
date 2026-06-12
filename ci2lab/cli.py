@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
+from ci2lab.harness.security_profiles import SecurityConfig, resolved_opencode_permissions
 from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
@@ -26,7 +27,7 @@ _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
 
 _CLI_COMMANDS = frozenset(
-    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals"}
+    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals", "permissions"}
 )
 
 
@@ -59,6 +60,7 @@ def _print_global_help() -> None:
         "  ci2lab models install <modelo>    Comandos pull/run/chat para un modelo",
         "  ci2lab models run <modelo>        Abre el modelo con ollama run",
         "  ci2lab evals run                  Evaluaciones del arnes (mock)",
+        "  ci2lab permissions summary        Dashboard de permisos / auditoria",
         "",
         "Flags del agente (atajo, agent y chat):",
         "  --model TAG                       Tag Ollama (ej. qwen2.5-coder:7b)",
@@ -154,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     evals_run.add_argument("--model", default=None)
     evals_run.add_argument("--live", action="store_true")
 
+    from ci2lab.cli_permissions import add_permissions_parser
+
+    add_permissions_parser(sub)
+
     args = parser.parse_args(raw_argv)
 
     try:
@@ -179,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_run(args)
     if args.command == "evals":
         return _cmd_evals(args)
+    if args.command == "permissions":
+        from ci2lab.cli_permissions import cmd_permissions
+
+        return cmd_permissions(args)
 
     parser.print_help()
     return 0
@@ -207,6 +217,12 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         help="Directorio de trabajo del agente (alias semántico de --cwd)",
     )
     p.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
+    p.add_argument(
+        "--security-engine",
+        choices=["ci2lab", "opencode_experimental", "claude_experimental"],
+        default=None,
+        help="Motor de seguridad (default: ci2lab). opencode_experimental es INSEGURO.",
+    )
     p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
     p.add_argument("--max-rounds", type=int, default=None)
     p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
@@ -224,7 +240,7 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
 
 def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
     base = load_config()
-    return merge_cli_config(
+    merged = merge_cli_config(
         base,
         model=args.model,
         tool_mode=args.tool_mode,
@@ -236,6 +252,24 @@ def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
         runs_dir=args.runs_dir,
         no_log=args.no_log,
     )
+    if args.security_engine is not None:
+        from ci2lab.security.engine import normalize_security_engine
+
+        engine = normalize_security_engine(args.security_engine)
+        sec = merged.security
+        merged = Ci2LabConfig(
+            **{
+                **merged.__dict__,
+                "security": SecurityConfig(
+                    profile=sec.profile,
+                    engine=engine,
+                    bash_timeout_seconds=sec.bash_timeout_seconds,
+                    max_tool_output_chars=sec.max_tool_output_chars,
+                    permission=sec.permission,
+                ),
+            }
+        )
+    return merged
 
 
 def _build_config(
@@ -247,26 +281,30 @@ def _build_config(
     from ci2lab.harness.run_logger import build_config_snapshot
 
     cwd = runtime.workspace or os.getcwd()
-    base_agent = AgentConfig(
-        cwd=cwd,
-        max_rounds=runtime.max_rounds,
-        auto_confirm=runtime.auto_confirm,
-        stream=runtime.stream,
-        run_log_enabled=runtime.log_runs,
-        runs_dir=runtime.runs_dir,
-        write_tools_enabled=runtime.write_tools_enabled,
-        require_diff_preview=runtime.require_diff_preview,
+    security_limits = runtime.security.resolved_limits()
+    opencode_perms = resolved_opencode_permissions(
+        runtime.security,
+        root_permission=runtime.permission or None,
     )
-    agent = AgentConfig(
+    agent_fields = dict(
         cwd=cwd,
         max_rounds=runtime.max_rounds,
         auto_confirm=runtime.auto_confirm,
         stream=runtime.stream,
-        session_id=args.session,
         run_log_enabled=runtime.log_runs,
         runs_dir=runtime.runs_dir,
         write_tools_enabled=runtime.write_tools_enabled,
         require_diff_preview=runtime.require_diff_preview,
+        security_profile=runtime.security.profile,
+        security_engine=runtime.security.engine,
+        opencode_permissions=opencode_perms,
+        bash_timeout_seconds=security_limits.bash_timeout_seconds,
+        max_tool_output_chars=security_limits.max_tool_output_chars,
+    )
+    base_agent = AgentConfig(**agent_fields)
+    agent = AgentConfig(
+        **agent_fields,
+        session_id=args.session,
         config_snapshot=build_config_snapshot(
             runtime_fields={
                 "model": runtime.model,
@@ -280,6 +318,10 @@ def _build_config(
                 "runs_dir": runtime.runs_dir,
                 "write_tools_enabled": runtime.write_tools_enabled,
                 "require_diff_preview": runtime.require_diff_preview,
+                "security_profile": runtime.security.profile,
+                "security_engine": runtime.security.engine,
+                "bash_timeout_seconds": security_limits.bash_timeout_seconds,
+                "max_tool_output_chars": security_limits.max_tool_output_chars,
             },
             agent_config=base_agent,
             selection=selection,
