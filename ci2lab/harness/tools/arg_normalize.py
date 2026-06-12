@@ -17,6 +17,12 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     elif name == "edit_file":
         if "new_string" not in cleaned and "content" in cleaned:
             cleaned["new_string"] = cleaned.pop("content")
+    elif name == "apply_patch":
+        if "patch" not in cleaned:
+            for alias in ("diff", "unified_diff", "content", "body"):
+                if alias in cleaned:
+                    cleaned["patch"] = cleaned.pop(alias)
+                    break
     elif name == "bash":
         if "command" not in cleaned:
             for alias in ("cmd", "script", "shell"):

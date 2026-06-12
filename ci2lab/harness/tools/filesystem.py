@@ -519,6 +519,9 @@ def permission_summary(tool_name: str, args: dict) -> str:
         return cmd[:120] + ("..." if len(cmd) > 120 else "")
     if tool_name in ("write_file", "edit_file", "notebook_edit"):
         return str(args.get("path", ""))
+    if tool_name == "apply_patch":
+        patch = str(args.get("patch", ""))
+        return patch[:120] + ("..." if len(patch) > 120 else "")
     if tool_name == "web_fetch":
         return str(args.get("url", ""))[:120]
     if tool_name == "ask_user":

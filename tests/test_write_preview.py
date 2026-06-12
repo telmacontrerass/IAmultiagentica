@@ -9,6 +9,26 @@ from ci2lab.harness.tools.write_preview import preview_edit_file, preview_write_
 from ci2lab.harness.types import ToolCall
 
 
+def test_edit_file_rejects_identical_old_and_new_strings(tmp_path):
+    target = tmp_path / "a.txt"
+    target.write_text("hola\n", encoding="utf-8")
+    preview = preview_edit_file(str(tmp_path), "a.txt", "hola", "hola")
+    assert not preview.is_valid
+    assert "son iguales" in (preview.validation_error or "")
+
+
+def test_edit_file_missing_path_lists_root_py_files(tmp_path):
+    (tmp_path / "Pruebas.py").write_text("x\n", encoding="utf-8")
+    preview = preview_edit_file(
+        str(tmp_path),
+        "src/main.py",
+        "a",
+        "b",
+    )
+    assert not preview.is_valid
+    assert "Pruebas.py" in (preview.validation_error or "")
+
+
 def test_edit_file_generates_diff(tmp_path):
     path = tmp_path / "a.txt"
     path.write_text("hello world\n", encoding="utf-8")

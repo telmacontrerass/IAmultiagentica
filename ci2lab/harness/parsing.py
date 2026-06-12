@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
+from ci2lab.harness.tools.bash_redirect import redirect_bash_call
 from ci2lab.harness.tools.registry import TOOL_NAMES, is_known_tool
 from ci2lab.harness.types import ToolCall
 
@@ -137,9 +138,55 @@ def _args_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             if isinstance(parsed, dict):
                 return parsed
+    skip_keys = {"name", "tool", "function"}
+    if isinstance(payload.get("command"), str) and _command_field_as_tool_name(payload):
+        skip_keys.add("command")
     if any(k in payload for k in ("path", "content", "command", "pattern", "old_string")):
-        return {k: v for k, v in payload.items() if k != "name"}
+        return {k: v for k, v in payload.items() if k not in skip_keys}
     return {}
+
+
+def _infer_tool_from_bare_args(obj: dict[str, Any]) -> str | None:
+    """Modelos que emiten solo los argumentos sin name/command."""
+    keys = set(obj.keys())
+    if "old_string" in keys and "new_string" in keys:
+        return "edit_file"
+    if keys & {"patch", "diff", "unified_diff"}:
+        return "apply_patch"
+    if "content" in keys and "path" in keys:
+        return "write_file"
+    if "url" in keys or "uri" in keys:
+        return "web_fetch"
+    if "pattern" in keys:
+        return "grep"
+    if "path" in keys and keys <= {"path", "offset", "limit", "file", "filename", "filepath"}:
+        return "read_file"
+    if "command" in keys and isinstance(obj.get("command"), str):
+        cmd = str(obj["command"])
+        if " " in cmd or "\n" in cmd:
+            return "bash"
+        mapped = _map_name(cmd)
+        if is_known_tool(mapped) and mapped != "bash":
+            return mapped
+    return None
+
+
+def _command_field_as_tool_name(obj: dict[str, Any]) -> str | None:
+    """Algunos modelos usan {"command": "edit_file", "args": {...}} en lugar de name."""
+    cmd = obj.get("command")
+    if not isinstance(cmd, str):
+        return None
+    stripped = cmd.strip()
+    if not stripped or " " in stripped or "\n" in stripped:
+        return None
+    mapped = _map_name(stripped)
+    if not is_known_tool(mapped):
+        return None
+    if mapped == "bash" and not any(
+        k in obj for k in ("arguments", "parameters", "args", "input")
+    ):
+        return None
+    return stripped
 
 
 def _json_object_to_call(obj: dict[str, Any]) -> ToolCall | None:
@@ -148,6 +195,10 @@ def _json_object_to_call(obj: dict[str, Any]) -> ToolCall | None:
         fn = obj.get("function")
         if isinstance(fn, dict):
             raw_name = fn.get("name")
+    if not raw_name:
+        raw_name = _command_field_as_tool_name(obj)
+    if not raw_name:
+        raw_name = _infer_tool_from_bare_args(obj)
     if not raw_name:
         return None
     name = _map_name(str(raw_name))
@@ -278,13 +329,18 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
                             calls.append(call)
                 except json.JSONDecodeError:
                     if mapped == "bash" and json_part:
-                        call = _new_call("bash", {"command": json_part})
+                        call = redirect_bash_call(_new_call("bash", {"command": json_part}))
                         if _remember_call(call, seen):
+                            calls.append(call)
+                    else:
+                        tool_args = _fenced_body_to_args(mapped, json_part)
+                        call = _new_call(mapped, tool_args)
+                        if call.arguments and _remember_call(call, seen):
                             calls.append(call)
             continue
 
         if _is_shell_fence_tag(fence_tag) and _looks_like_shell_command(body):
-            call = _new_call("bash", {"command": body})
+            call = redirect_bash_call(_new_call("bash", {"command": body}))
             if _remember_call(call, seen):
                 calls.append(call)
 
@@ -316,7 +372,7 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
             continue
         body = match.group(2).strip()
         args = _fenced_body_to_args(tag, body)
-        calls.append(_new_call(tag, args))
+        calls.append(redirect_bash_call(_new_call(tag, args)))
     return calls
 
 
@@ -331,6 +387,14 @@ def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return data if isinstance(data, dict) else {"path": body}
         except json.JSONDecodeError:
             return {"path": body.splitlines()[0]}
+    if tool == "apply_patch":
+        if body.strip().startswith("{"):
+            try:
+                data = json.loads(body)
+                return data if isinstance(data, dict) else {"patch": body}
+            except json.JSONDecodeError:
+                pass
+        return {"patch": body}
     if tool in ("write_file", "edit_file"):
         try:
             data = json.loads(body)
@@ -458,9 +522,17 @@ def looks_like_unparsed_tool_attempt(text: str) -> bool:
     if resolve_tool_calls(text, [], tool_mode="native"):
         return False
     lowered = text.lower()
-    if "```json" in lowered and '"name"' in lowered:
+    if "```json" in lowered and (
+        '"name"' in lowered
+        or '"command"' in lowered
+        or '"old_string"' in lowered
+        or '"path"' in lowered
+    ):
         return True
-    if re.search(r'["\']name["\']\s*:\s*["\'](?:' + "|".join(TOOL_NAMES) + r')["\']', lowered):
+    if re.search(
+        r'["\'](?:name|command)["\']\s*:\s*["\'](?:' + "|".join(TOOL_NAMES) + r')["\']',
+        lowered,
+    ):
         return True
     for tool in TOOL_NAMES:
         if re.search(rf"```(?:bash|sh|json)?\s*\n\s*{tool}\b", lowered):

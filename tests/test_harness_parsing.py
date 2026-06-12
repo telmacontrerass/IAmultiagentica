@@ -76,6 +76,42 @@ def test_no_tools_returns_empty():
     assert calls == []
 
 
+def test_parse_json_fenced_bare_edit_file_args():
+    text = (
+        '```json\n'
+        '{\n'
+        '  "path": "Pruebas.py",\n'
+        '  "old_string": "linea tres",\n'
+        '  "new_string": "No se cuantos intentos"\n'
+        '}\n'
+        '```'
+    )
+    calls = resolve_tool_calls(text, [], tool_mode="fenced")
+    assert len(calls) == 1
+    assert calls[0].name == "edit_file"
+    assert calls[0].arguments["new_string"] == "No se cuantos intentos"
+
+
+def test_parse_json_fenced_command_args_edit_file():
+    text = (
+        '```json\n'
+        '{\n'
+        '  "command": "edit_file",\n'
+        '  "args": {\n'
+        '    "path": "Pruebas.py",\n'
+        '    "old_string": "linea tres",\n'
+        '    "new_string": "No se cuantos intentos"\n'
+        '  }\n'
+        '}\n'
+        '```'
+    )
+    calls = resolve_tool_calls(text, [], tool_mode="fenced")
+    assert len(calls) == 1
+    assert calls[0].name == "edit_file"
+    assert calls[0].arguments["path"] == "Pruebas.py"
+    assert calls[0].arguments["old_string"] == "linea tres"
+
+
 def test_parse_json_fenced_write_file():
     text = (
         'Here is the tool call:\n```json\n'

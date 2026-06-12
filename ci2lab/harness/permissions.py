@@ -9,6 +9,7 @@ CONFIRM_TOOLS = frozenset({
     "bash",
     "write_file",
     "edit_file",
+    "apply_patch",
     "web_fetch",
     "notebook_edit",
 })

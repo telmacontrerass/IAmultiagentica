@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -25,6 +26,7 @@ from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.harness.compact import manage_context
 from ci2lab.harness.context import trim_messages
 from ci2lab.harness.document_answer import maybe_answer_document_request
+from ci2lab.harness.edit_followup import EditSignature, process_edit_round
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
@@ -87,6 +89,7 @@ def run_agent(
     summary_failures = 0
     document_tool_nudges = 0
     document_tool_used = False
+    completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
     status = "success"
@@ -143,6 +146,7 @@ def run_agent(
                 llm_response.tool_calls,
                 tool_mode=selection.tool_mode,
             )
+            calls = _prepend_missing_reads(calls, user_prompt)
             forced_document_call = (
                 _forced_document_read_tool_call(user_prompt)
                 if not calls and not document_tool_used and document_tool_nudges >= 1
@@ -191,10 +195,14 @@ def run_agent(
                         hint = (
                             "Your previous tool call was not executed. "
                             "Use a fenced block with the tool name as the tag, e.g.\n"
-                            "```write_file\n"
-                            '{"path": "file.py", "content": "..."}\n'
+                            "```read_file\n"
+                            "Pruebas.py\n"
                             "```\n"
-                            "Do not put write_file inside a bash block. "
+                            "or\n"
+                            "```edit_file\n"
+                            '{"path": "Pruebas.py", "old_string": "...", "new_string": "..."}\n'
+                            "```\n"
+                            "Never run read_file or edit_file as shell commands (`bash read_file ...`). "
                             "Do not reply with plain JSON only."
                         )
                     else:
@@ -286,6 +294,15 @@ def run_agent(
             document_followup = _document_tool_result_followup(results, user_prompt)
             if document_followup:
                 history.append({"role": "user", "content": document_followup})
+            edit_followup = process_edit_round(
+                calls,
+                results,
+                cwd=cfg.cwd,
+                user_prompt=user_prompt,
+                completed_edits=completed_edits,
+            )
+            if edit_followup:
+                history.append({"role": "user", "content": edit_followup})
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True
@@ -364,6 +381,36 @@ def _maybe_save(
         cwd=cfg.cwd,
     )
     console.print(f"[dim]Sesión guardada: {path}[/dim]")
+
+
+def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
+    """Si el usuario pidió leer un archivo y el modelo solo llama edit_file, leer primero."""
+    if not calls or not re.search(r"\bread\b", user_prompt, re.IGNORECASE):
+        return calls
+    edit_paths = {
+        str(call.arguments["path"])
+        for call in calls
+        if call.name == "edit_file" and call.arguments.get("path")
+    }
+    if not edit_paths:
+        return calls
+    read_paths = {
+        str(call.arguments["path"])
+        for call in calls
+        if call.name in ("read_file", "read_document") and call.arguments.get("path")
+    }
+    missing = sorted(edit_paths - read_paths)
+    if not missing:
+        return calls
+    prefixed = [
+        ToolCall(
+            name="read_file",
+            arguments={"path": path},
+            call_id=f"call_{uuid.uuid4().hex[:8]}",
+        )
+        for path in missing
+    ]
+    return prefixed + calls
 
 
 def _summarize_args(args: dict) -> str:

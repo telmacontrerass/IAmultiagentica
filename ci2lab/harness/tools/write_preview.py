@@ -80,9 +80,13 @@ def compute_edit_result(
     replace_all: bool = False,
 ) -> tuple[str | None, str | None]:
     """Devuelve (nuevo_contenido, mensaje_error)."""
+    if old_string == new_string:
+        return None, "Error: old_string y new_string son iguales; no hay cambio que aplicar"
     resolved = resolve_path(path, cwd)
     if not resolved.is_file():
-        return None, f"Error: no existe {resolved}"
+        from ci2lab.harness.tools.file_hints import format_missing_file_error
+
+        return None, format_missing_file_error(cwd, resolved)
     text = resolved.read_text(encoding="utf-8", errors="replace")
     count = text.count(old_string)
     if count == 0:
@@ -155,6 +159,36 @@ def preview_edit_file(
         is_new_file=False,
         diff=_unified_diff(current, new_text or "", rel),
         new_content=new_text,
+    )
+
+
+def preview_apply_patch(cwd: str, patch_text: str) -> WritePreview:
+    from ci2lab.harness.tools.patch import plan_patch
+
+    plan, error = plan_patch(cwd, patch_text)
+    if error:
+        return WritePreview(
+            path="apply_patch",
+            is_new_file=False,
+            diff="",
+            validation_error=error,
+        )
+    assert plan is not None
+    if not plan.combined_diff or plan.combined_diff == "(sin cambios detectados)":
+        return WritePreview(
+            path="apply_patch",
+            is_new_file=False,
+            diff="",
+            validation_error="Error: el parche no introduce cambios",
+        )
+    if len(plan.touched_paths) == 1:
+        path_label = plan.touched_paths[0]
+    else:
+        path_label = f"{len(plan.touched_paths)} archivos: {', '.join(plan.touched_paths)}"
+    return WritePreview(
+        path=path_label,
+        is_new_file=False,
+        diff=plan.combined_diff,
     )
 
 

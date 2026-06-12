@@ -11,16 +11,22 @@ from ci2lab.harness.tools import filesystem as fs
 from ci2lab.harness.tools import git_tools
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
+from ci2lab.harness.tools import patch as patch_tool
 from ci2lab.harness.tools import todo as todo_tool
 from ci2lab.harness.tools import skill_tool
 from ci2lab.harness.tools import web as web_tool
 from ci2lab.harness.tools.bash import _format_bash_block_message
+from ci2lab.harness.tools.bash_redirect import tool_call_from_bash_command
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.filesystem import permission_summary
 from ci2lab.harness.policy import outcome_for_tool_output
 from ci2lab.harness.tools.paths import PathViolationError
-from ci2lab.harness.tools.write_preview import preview_edit_file, preview_write_file
+from ci2lab.harness.tools.write_preview import (
+    preview_apply_patch,
+    preview_edit_file,
+    preview_write_file,
+)
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.harness.write_permissions import WRITE_TOOLS, check_write_permission
 
@@ -33,6 +39,7 @@ TOOL_NAMES = frozenset({
     "glob",
     "write_file",
     "edit_file",
+    "apply_patch",
     "file_info",
     "tree",
     "inspect_file",
@@ -176,6 +183,28 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
                     "replace_all": {"type": "boolean"},
                 },
                 "required": ["path", "old_string", "new_string"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "apply_patch",
+            "description": (
+                "Apply a unified diff patch to one or more text files. "
+                "Use after read_file when edit_file would be fragile. "
+                "Format: --- a/path, +++ b/path, then @@ hunks with lines "
+                "prefixed by space, -, or +."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "patch": {
+                        "type": "string",
+                        "description": "Unified diff text (git diff style)",
+                    },
+                },
+                "required": ["patch"],
             },
         },
     },
@@ -447,6 +476,7 @@ _DISPATCH: dict[str, Callable[..., str]] = {
         a["new_string"],
         a.get("replace_all", False),
     ),
+    "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
     "file_info": lambda cfg, a: inspection_tool.file_info(cfg.cwd, a["path"]),
     "tree": lambda cfg, a: inspection_tool.tree(
         cfg.cwd,
@@ -564,6 +594,8 @@ def _execute_write_tool(
             preview = preview_write_file(
                 config.cwd, args["path"], args["content"]
             )
+        elif name == "apply_patch":
+            preview = preview_apply_patch(config.cwd, args["patch"])
         else:
             preview = preview_edit_file(
                 config.cwd,
@@ -700,8 +732,12 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         )
 
     if name == "bash":
+        command = str(args.get("command", ""))
+        redirected = tool_call_from_bash_command(command, call_id=call.call_id)
+        if redirected is not None:
+            return execute_tool(redirected, config)
         blocked = check_bash_blocked(
-            str(args.get("command", "")),
+            command,
             cwd=config.cwd,
         )
         if blocked:

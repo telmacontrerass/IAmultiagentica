@@ -32,6 +32,7 @@ COMPACTABLE_TOOLS = frozenset({
     "git_diff",
     "write_file",
     "edit_file",
+    "apply_patch",
 })
 
 # Resultados de tool más cortos que esto no merecen stub (el stub no ahorra nada).

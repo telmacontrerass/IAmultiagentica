@@ -7,7 +7,8 @@ Hard rules (read carefully — breaking these means the tool does NOT run):
 - The opening fence must be the exact tool name, e.g. ` ```write_file `. Never use ` ```python ` or ` ```text ` for an action.
 - Output exactly ONE tool block per message, then stop and wait for the result.
 - Do not describe a tool call in prose or in a plain ` ```json ` block of explanation — only a real tool-named block runs. (` ```json ` with `{"name": "...", "arguments": {...}}` is accepted only as a fallback.)
-- Never put `write_file` or other tools inside a ` ```bash ` block. `bash` is only for shell commands like `python wordle.py`.
+- Never put `read_file`, `edit_file`, `write_file`, or other tools inside a ` ```bash ` block. `bash` is only for real shell commands like `python wordle.py`.
+- To read a file use ` ```read_file ` with the path as the body, not ` ```bash\nread_file Pruebas.py `.
 - Use the exact argument names shown below.
 - Only say the task is done after a tool result confirms success.
 
@@ -24,7 +25,7 @@ List a directory:
 Read a text/code file with numbered lines (one path per block):
 
 ```read_file
-src/main.py
+Pruebas.py
 ```
 
 Read a document by format (PDF, DOCX, PPTX, XLSX, CSV, Markdown, plain text):
@@ -82,7 +83,22 @@ Do not create error/log files (e.g. `ci2lab_error.txt`) on your own after a tool
 The body MUST be a single JSON object with `path`, `old_string`, and `new_string`. `old_string` must match the existing text exactly.
 
 ```edit_file
-{"path": "src/main.py", "old_string": "DEBUG = True", "new_string": "DEBUG = False"}
+{"path": "Pruebas.py", "old_string": "linea tres", "new_string": "Linea cambiada otra vez"}
+```
+
+### apply_patch (unified diff)
+
+The body is the patch text itself (or JSON with a `patch` field). Use after `read_file` when a multi-line change is easier as a diff.
+
+```apply_patch
+--- a/Pruebas.py
++++ b/Pruebas.py
+@@ -1,4 +1,4 @@
+ # archivo de prueba
+ linea dos
+-linea tres
++Linea cambiada otra vez
+ linea cuatro
 ```
 
 ### file_info
@@ -90,7 +106,7 @@ The body MUST be a single JSON object with `path`, `old_string`, and `new_string
 Path metadata without reading full content:
 
 ```file_info
-src/main.py
+Pruebas.py
 ```
 
 ### tree
@@ -106,7 +122,7 @@ Directory tree (optional JSON for depth/limits):
 Inspect a line range from a text file:
 
 ```inspect_file
-{"path": "src/main.py", "start": 1, "end": 40}
+{"path": "Pruebas.py", "start": 1, "end": 4}
 ```
 
 ### todo_write
@@ -155,4 +171,4 @@ https://docs.python.org/3/library/random.html
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

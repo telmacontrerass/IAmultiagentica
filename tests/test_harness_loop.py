@@ -2,6 +2,8 @@ from unittest.mock import MagicMock, patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
+from ci2lab.harness.loop import _prepend_missing_reads
+from ci2lab.harness.types import ToolCall
 
 
 def test_run_agent_single_turn_no_tools():
@@ -156,3 +158,73 @@ def test_run_agent_answers_simple_document_summary_without_extra_model_round(tmp
     assert "informal" in result.lower()
     assert "formal" in result.lower()
     assert client.chat.call_count == 2
+
+
+def test_prepend_missing_reads_before_edit():
+    calls = [
+        ToolCall(
+            name="edit_file",
+            arguments={
+                "path": "Pruebas.py",
+                "old_string": "a",
+                "new_string": "b",
+            },
+        )
+    ]
+    result = _prepend_missing_reads(
+        calls,
+        "First read Pruebas.py, then change line 3",
+    )
+    assert len(result) == 2
+    assert result[0].name == "read_file"
+    assert result[0].arguments["path"] == "Pruebas.py"
+    assert result[1].name == "edit_file"
+
+
+def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
+    selection = default_selection("test:1b")
+    target = tmp_path / "Pruebas.py"
+    target.write_text("linea tres\n", encoding="utf-8")
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        run_log_enabled=False,
+    )
+
+    edit_call = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {
+                "name": "edit_file",
+                "arguments": (
+                    '{"path": "Pruebas.py", "old_string": "linea tres", '
+                    '"new_string": "Decimocuarto intento"}'
+                ),
+            },
+        }],
+    )
+    final = LLMResponse(
+        content="Listo: la línea 3 de Pruebas.py ahora dice Decimocuarto intento.",
+        tool_calls=[],
+    )
+
+    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [edit_call, final]
+        result = run_agent(
+            'change the third line of Pruebas.py to "Decimocuarto intento"',
+            selection,
+            config=config,
+        )
+
+    assert "Decimocuarto intento" in result
+    assert client.chat.call_count == 2
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user" and "se aplicó correctamente" in str(m.get("content", ""))
+        for m in second_turn_messages
+    )
+    assert target.read_text(encoding="utf-8") == "Decimocuarto intento\n"
