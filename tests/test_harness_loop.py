@@ -168,6 +168,39 @@ def test_prepend_missing_reads_before_edit():
     assert result[1].name == "edit_file"
 
 
+def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
+    from ci2lab.harness.session import save_session
+
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    sid = "abc123"
+    save_session(
+        sid,
+        messages=[{"role": "user", "content": "hola"}],
+        model_tag="test:1b",
+        cwd=str(tmp_path),
+    )
+    selection = default_selection("test:1b", tool_mode="fenced")
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        session_id=sid,
+    )
+
+    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        result = run_agent(
+            "elimina lo que acabas de guardar",
+            selection,
+            config=config,
+        )
+
+    assert "eliminada" in result
+    assert not (tmp_path / f"{sid}.json").exists()
+    assert client.chat.call_count == 0
+
+
 def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
     selection = default_selection("test:1b")
     target = tmp_path / "Pruebas.py"

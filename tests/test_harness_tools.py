@@ -157,8 +157,9 @@ def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
 
         def iter_rows(self, **kwargs):
             return iter([
-                ("Alumno", "Examen"),
-                ("A1", 8.5),
+                ("Alumno", "Examen", None, None),
+                ("A1", 8.5, None, None),
+                (None, None, None, None),
             ])
 
     class FakeWorkbook:
@@ -179,6 +180,7 @@ def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
     assert "[Sheet: Notas]" in text
     assert "Alumno | Examen" in text
     assert "A1 | 8.5" in text
+    assert "A1 | 8.5 |" not in text
 
 
 def test_grep_search_finds_text_inside_docx(tmp_path, monkeypatch):

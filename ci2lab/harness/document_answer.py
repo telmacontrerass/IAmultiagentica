@@ -26,6 +26,10 @@ def maybe_answer_document_request(
     if not lines:
         return None
 
+    spreadsheet_answer = _spreadsheet_answer(title or _document_name(document_text), lines)
+    if spreadsheet_answer:
+        return spreadsheet_answer
+
     bullets = _extract_bullets(lines, max_items=6)
     if not bullets:
         return None
@@ -124,6 +128,42 @@ def _extract_bullets(lines: list[str], *, max_items: int) -> list[str]:
         if len(chosen) >= max_items:
             break
     return chosen
+
+
+def _spreadsheet_answer(title: str | None, lines: list[str]) -> str | None:
+    sheet_name = None
+    table_lines: list[str] = []
+    for line in lines:
+        if line.startswith("[Sheet:") and line.endswith("]"):
+            sheet_name = line.removeprefix("[Sheet:").removesuffix("]").strip()
+            continue
+        if " | " in line:
+            table_lines.append(line)
+
+    if not table_lines:
+        return None
+
+    header = _split_table_row(table_lines[0])
+    rows = [_split_table_row(line) for line in table_lines[1:]]
+    rows = [row for row in rows if any(cell for cell in row)]
+    heading = title or "la hoja de cálculo"
+    intro = f"He leído {heading}."
+    if sheet_name:
+        intro += f" Hoja: {sheet_name}."
+    details = []
+    if header:
+        details.append("Columnas: " + ", ".join(header))
+    if rows:
+        details.append(f"Filas con datos detectadas: {len(rows)}")
+        examples = rows[:5]
+        details.append("Primeras filas:")
+        for row in examples:
+            details.append("- " + " | ".join(row))
+    return intro + "\n\n" + "\n".join(details)
+
+
+def _split_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.split("|") if cell.strip()]
 
 
 def _paragraph_candidates(lines: list[str]) -> list[tuple[int, str]]:

@@ -1,6 +1,12 @@
 import json
 
-from ci2lab.harness.session import load_session, new_session_id, save_session
+from ci2lab.harness.session import (
+    delete_session,
+    is_delete_session_request,
+    load_session,
+    new_session_id,
+    save_session,
+)
 
 
 def test_session_roundtrip(tmp_path, monkeypatch):
@@ -31,3 +37,26 @@ def test_load_session_normalizes_null_content(tmp_path, monkeypatch):
 
     assert data is not None
     assert data["messages"][0]["content"] == ""
+
+
+def test_delete_session_removes_saved_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    sid = new_session_id()
+    path = save_session(
+        sid,
+        messages=[{"role": "user", "content": "hola"}],
+        model_tag="m:1",
+        cwd="/tmp",
+    )
+
+    assert path.is_file()
+    assert delete_session(sid)
+    assert not path.exists()
+    assert not delete_session(sid)
+
+
+def test_is_delete_session_request_accepts_natural_spanish():
+    assert is_delete_session_request("elimina lo que acabas de guardar")
+    assert is_delete_session_request("borra la sesión guardada")
+    assert is_delete_session_request("/delete")
+    assert not is_delete_session_request("elimina el archivo prueba.pdf")

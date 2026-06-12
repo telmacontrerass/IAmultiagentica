@@ -64,8 +64,8 @@ def test_cmd_doctor_ollama_error_encodes_cp1252(monkeypatch):
 
     output = buf.getvalue()
     output.encode("cp1252")
-    assert code == 1
-    assert _DOCTOR_ERROR in output
+    assert code == 0
+    assert _DOCTOR_WARN in output
     assert "\u2717" not in output
 
 

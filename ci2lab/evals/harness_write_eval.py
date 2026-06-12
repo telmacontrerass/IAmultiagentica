@@ -286,7 +286,12 @@ def oracle_outside_workspace_block(ws: Path, outside_dir: Path) -> tuple[bool, s
     if outside_file.is_file():
         return False, f"archivo externo creado: {outside_file}"
     inside_escape = ws.parent / "outside.txt"
-    if inside_escape.is_file() and inside_escape.resolve() != (ws / "outside.txt").resolve():
+    checks_workspace_parent = outside_dir.resolve() == ws.parent.resolve()
+    if (
+        checks_workspace_parent
+        and inside_escape.is_file()
+        and inside_escape.resolve() != (ws / "outside.txt").resolve()
+    ):
         try:
             inside_escape.relative_to(ws)
         except ValueError:

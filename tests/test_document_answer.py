@@ -46,3 +46,26 @@ Exchange traded derivatives are standardized and normally go through a clearing 
 
     assert answer is not None
     assert "derivative" in answer.lower()
+
+
+def test_maybe_answer_document_request_summarizes_spreadsheet_rows():
+    document = """Documento: excel.xlsx
+Tipo: xlsx
+Paginas/secciones: 1 hojas
+Texto extraido:
+
+[Sheet: Datos de prueba]
+ID | Nombre | Departamento | Ciudad | Importe | Fecha
+1001 | Usuario A | Ventas | Madrid | 123.45 | 2026-01-15
+1002 | Usuario B | Compras | Alcalá de Henares | 456.78 | 2026-02-03
+"""
+
+    answer = maybe_answer_document_request(
+        "resume el contenido de excel",
+        [document],
+    )
+
+    assert answer is not None
+    assert "Columnas: ID, Nombre, Departamento, Ciudad, Importe, Fecha" in answer
+    assert "Filas con datos detectadas: 2" in answer
+    assert "Usuario A" in answer

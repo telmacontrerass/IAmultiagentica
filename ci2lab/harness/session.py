@@ -49,6 +49,35 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     return data
 
 
+def delete_session(session_id: str) -> bool:
+    path = sessions_dir() / f"{session_id}.json"
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
+
+
+def is_delete_session_request(text: str) -> bool:
+    normalized = text.strip().lower()
+    if normalized in {"/delete", "/delete-session", "/forget", "/borrar", "/eliminar"}:
+        return True
+    delete_words = ("elimina", "eliminar", "borra", "borrar")
+    saved_words = (
+        "guardado",
+        "guardada",
+        "guardar",
+        "guardé",
+        "guarde",
+        "sesion",
+        "sesión",
+        "conversacion",
+        "conversación",
+    )
+    return any(word in normalized for word in delete_words) and any(
+        word in normalized for word in saved_words
+    )
+
+
 def normalize_messages_for_storage(
     messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:

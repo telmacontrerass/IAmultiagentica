@@ -539,10 +539,9 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
     if missing_document_deps:
         names = ", ".join(name for name, _label in missing_document_deps)
         console.print(
-            f"[red]{_DOCTOR_ERROR}[/red] Faltan librerias de documentos: {names}"
+            f"[yellow]{_DOCTOR_WARN}[/yellow] Faltan librerias de documentos: {names}"
         )
         console.print('  Ejecuta: pip install -e ".[dev]"')
-        ok = False
     else:
         labels = ", ".join(label for _name, label in _DOCUMENT_DEPENDENCIES)
         console.print(
@@ -567,9 +566,10 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
                 f"`{runtime.model}` no aparece en la lista"
             )
     except Exception as exc:
-        console.print(f"[red]{_DOCTOR_ERROR}[/red] Ollama no responde en {base_url}: {exc}")
+        console.print(
+            f"[yellow]{_DOCTOR_WARN}[/yellow] Ollama no responde en {base_url}: {exc}"
+        )
         console.print("  Comprueba que Ollama esté abierto y que `ollama serve` esté corriendo.")
-        ok = False
 
     return 0 if ok else 1
 

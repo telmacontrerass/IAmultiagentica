@@ -334,7 +334,9 @@ def extract_xlsx_text(path: Path) -> tuple[str, str]:
             values_only=True,
         ):
             row_count += 1
-            values = ["" if value is None else str(value) for value in row]
+            values = _trim_empty_tail(["" if value is None else str(value) for value in row])
+            if not values:
+                continue
             chunks.append(" | ".join(values).rstrip())
         if row_count >= MAX_SPREADSHEET_ROWS:
             chunks.append(
@@ -363,8 +365,17 @@ def extract_csv_text(path: Path) -> str:
         if index > MAX_SPREADSHEET_ROWS:
             rows.append(f"... (tabla truncada; limite {MAX_SPREADSHEET_ROWS} filas)")
             break
-        rows.append(" | ".join(row))
+        values = _trim_empty_tail(row)
+        if values:
+            rows.append(" | ".join(values))
     return "\n".join(rows).strip() or "(archivo CSV vacio)"
+
+
+def _trim_empty_tail(values: list[str]) -> list[str]:
+    trimmed = [value.strip() for value in values]
+    while trimmed and not trimmed[-1]:
+        trimmed.pop()
+    return trimmed
 
 
 def ls(cwd: str, path: str = ".") -> str:

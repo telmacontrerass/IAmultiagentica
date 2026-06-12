@@ -8,7 +8,13 @@ from rich.panel import Panel
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.loop import run_agent
-from ci2lab.harness.session import load_session, new_session_id, save_session
+from ci2lab.harness.session import (
+    delete_session,
+    is_delete_session_request,
+    load_session,
+    new_session_id,
+    save_session,
+)
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
@@ -39,7 +45,7 @@ def run_repl(
         f"CWD: {config.cwd}\n"
         f"Sesión: {sid}\n\n"
         "Escribe tu petición. Comandos: [bold]/exit[/bold], [bold]/save[/bold], "
-        "[bold]/clear[/bold], [bold]/skills[/bold], [bold]/skill-name[/bold]",
+        "[bold]/clear[/bold], [bold]/delete[/bold], [bold]/skills[/bold], [bold]/skill-name[/bold]",
         title="Agente local",
         border_style="blue",
     ))
@@ -68,6 +74,14 @@ def run_repl(
             else:
                 console.print("[yellow]Nada que guardar aún.[/yellow]")
             continue
+        if is_delete_session_request(line):
+            deleted = delete_session(sid)
+            history = None
+            if deleted:
+                console.print(f"[green]Sesión {sid} eliminada.[/green]")
+            else:
+                console.print("[yellow]No había sesión guardada que eliminar.[/yellow]")
+            continue
         if line.lower() == "/skills":
             skills = load_skills(config.cwd)
             if not skills:
@@ -80,7 +94,7 @@ def run_repl(
             continue
         if line.startswith("/"):
             skill_line = line[1:].strip()
-            if skill_line and not skill_line.lower().startswith(("exit", "quit", "save", "clear")):
+            if skill_line and not skill_line.lower().startswith(("exit", "quit", "save", "clear", "delete", "forget")):
                 parts = skill_line.split(maxsplit=1)
                 skill_name = parts[0]
                 skill_args = parts[1] if len(parts) > 1 else ""

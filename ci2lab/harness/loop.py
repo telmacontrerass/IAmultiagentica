@@ -38,7 +38,7 @@ from ci2lab.harness.parsing import (
 )
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.run_logger import RunLogger
-from ci2lab.harness.session import save_session
+from ci2lab.harness.session import delete_session, is_delete_session_request, save_session
 from ci2lab.harness.policy import (
     POLICY_NUDGE_MESSAGE,
     POLICY_REPEAT_MESSAGE,
@@ -70,6 +70,16 @@ def run_agent(
     cfg = config or AgentConfig(cwd=".")
     client = LLMClient(selection)
     system = build_system_prompt(selection, cfg.cwd)
+
+    if cfg.session_id and is_delete_session_request(user_prompt):
+        deleted = delete_session(cfg.session_id)
+        final_text = (
+            f"Sesión {cfg.session_id} eliminada."
+            if deleted
+            else "No había sesión guardada que eliminar."
+        )
+        console.print(final_text)
+        return final_text
 
     if messages is None:
         history: list[dict[str, Any]] = [
