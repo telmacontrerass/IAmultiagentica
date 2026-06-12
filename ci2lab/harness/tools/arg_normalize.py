@@ -23,7 +23,7 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
                 if alias in cleaned:
                     cleaned["command"] = cleaned.pop(alias)
                     break
-    elif name == "read_file":
+    elif name in ("read_file", "read_document"):
         for key in ("offset", "limit"):
             if key in cleaned:
                 cleaned[key] = _coerce_int(cleaned[key])

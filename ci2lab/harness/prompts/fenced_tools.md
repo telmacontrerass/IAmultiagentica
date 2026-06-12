@@ -21,10 +21,16 @@ List a directory:
 .
 ```
 
-Read a text file or PDF with extractable text (one path per block):
+Read a text/code file with numbered lines (one path per block):
 
 ```read_file
 src/main.py
+```
+
+Read a document by format (PDF, DOCX, PPTX, XLSX, CSV, Markdown, plain text):
+
+```read_document
+rubrica.docx
 ```
 
 Find files by glob pattern:
@@ -149,4 +155,4 @@ https://docs.python.org/3/library/random.html
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

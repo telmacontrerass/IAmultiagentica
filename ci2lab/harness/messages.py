@@ -13,7 +13,10 @@ def append_assistant_turn(
     content: str,
     tool_calls: list[ToolCall] | None = None,
 ) -> None:
-    msg: dict[str, Any] = {"role": "assistant", "content": content or None}
+    # Ollama rejects assistant messages with JSON null content (`<nil>`), even
+    # when the message also carries tool_calls. Keep it OpenAI-compatible but
+    # serialize empty assistant text as an empty string.
+    msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
     if tool_calls:
         msg["tool_calls"] = [
             {

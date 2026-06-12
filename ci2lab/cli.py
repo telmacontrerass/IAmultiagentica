@@ -92,7 +92,7 @@ def _print_global_help() -> None:
         "  python -m ci2lab.evals.run        Equivalente a ci2lab evals run (mock)",
         "",
         "Herramientas del agente (dentro de chat/agent):",
-        "  read_file, ls, glob, grep, edit_file, write_file, notebook_edit,",
+        "  read_document, read_file, ls, glob, grep, edit_file, write_file, notebook_edit,",
         "  bash, git_status, git_diff, todo_write, ask_user, web_fetch",
         "",
         "Config opcional: ci2lab.yaml o ~/.ci2lab/ci2lab.yaml",

@@ -31,7 +31,7 @@ def save_session(
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "model_tag": model_tag,
         "cwd": cwd,
-        "messages": messages,
+        "messages": normalize_messages_for_storage(messages),
     }
     path = sessions_dir() / f"{session_id}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -42,7 +42,26 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     path = sessions_dir() / f"{session_id}.json"
     if not path.is_file():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    messages = data.get("messages")
+    if isinstance(messages, list):
+        data["messages"] = normalize_messages_for_storage(messages)
+    return data
+
+
+def normalize_messages_for_storage(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep persisted histories accepted by OpenAI-compatible backends."""
+    normalized: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        item = dict(message)
+        if item.get("content") is None:
+            item["content"] = ""
+        normalized.append(item)
+    return normalized
 
 
 def list_sessions() -> list[dict[str, str]]:

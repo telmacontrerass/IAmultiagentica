@@ -323,7 +323,7 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
 def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
     if tool == "bash":
         return {"command": body}
-    if tool == "read_file":
+    if tool in ("read_file", "read_document"):
         if "\n" not in body and not body.startswith("{"):
             return {"path": body}
         try:

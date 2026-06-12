@@ -26,6 +26,7 @@ from ci2lab.harness.write_permissions import WRITE_TOOLS, check_write_permission
 
 TOOL_NAMES = frozenset({
     "bash",
+    "read_document",
     "read_file",
     "ls",
     "grep",
@@ -71,13 +72,31 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a whole text file or a text-extractable PDF. Returns numbered lines. For a known line range of a large file, use inspect_file instead.",
+            "description": "Read a whole text/code file and return numbered lines. For PDF, Word, PowerPoint, Excel, CSV, Markdown or teaching documents, prefer read_document. For a known line range of a large file, use inspect_file instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
                     "offset": {"type": "integer", "description": "First line to read (1-based)"},
                     "limit": {"type": "integer", "description": "Max number of lines to read"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_document",
+            "description": (
+                "Lee documentos docentes o de oficina y detecta el formato: "
+                "PDF con texto, DOCX, PPTX, XLSX, CSV, Markdown y texto plano. "
+                "Devuelve metadatos y texto extraido."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
                 },
                 "required": ["path"],
             },
@@ -407,6 +426,7 @@ _DISPATCH: dict[str, Callable[..., str]] = {
     "read_file": lambda cfg, a: fs.read_file(
         cfg.cwd, a["path"], a.get("offset", 1), a.get("limit")
     ),
+    "read_document": lambda cfg, a: fs.read_document(cfg.cwd, a["path"]),
     "ls": lambda cfg, a: fs.ls(cfg.cwd, a.get("path", ".")),
     "grep": lambda cfg, a: fs.grep_search(
         cfg.cwd,

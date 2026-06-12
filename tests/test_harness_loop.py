@@ -123,3 +123,36 @@ def test_run_agent_auto_reads_pdf_when_model_never_calls_tool(tmp_path):
 
     assert "registro formal" in result.lower()
     assert client.chat.call_count == 3
+
+
+def test_run_agent_answers_simple_document_summary_without_extra_model_round(tmp_path):
+    selection = default_selection("test:1b", tool_mode="fenced")
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+    )
+    (tmp_path / "prueba.md").write_text(
+        "# Registro formal e informal\n\n"
+        "El documento explica que la escritura informal usa contracciones, "
+        "abreviaturas y verbos frasales.\n"
+        "La escritura academica formal usa voz pasiva, tono impersonal y "
+        "vocabulario mas preciso.\n",
+        encoding="utf-8",
+    )
+
+    refusal = LLMResponse(
+        content="No puedo acceder a archivos locales.",
+        tool_calls=[],
+    )
+
+    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [refusal, refusal]
+        result = run_agent("resume prueba.md", selection, config=config)
+
+    assert "ideas principales" in result.lower()
+    assert "informal" in result.lower()
+    assert "formal" in result.lower()
+    assert client.chat.call_count == 2

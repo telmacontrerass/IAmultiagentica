@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
 from pathlib import Path
@@ -22,6 +24,28 @@ def _resolve_or_error(raw: str, cwd: str) -> tuple[Path | None, str | None]:
 
 MAX_READ_LINES = 2000
 MAX_PDF_PAGES = 100
+MAX_SPREADSHEET_ROWS = 200
+MAX_SPREADSHEET_COLS = 30
+MAX_PRESENTATION_SLIDES = 200
+MAX_DOCUMENT_CHARS = 120_000
+
+TEXT_DOCUMENT_SUFFIXES = frozenset({
+    ".csv",
+    ".json",
+    ".log",
+    ".md",
+    ".rst",
+    ".text",
+    ".tsv",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+})
+OFFICE_DOCUMENT_SUFFIXES = frozenset({".docx", ".pptx", ".xlsx"})
+SUPPORTED_DOCUMENT_SUFFIXES = (
+    TEXT_DOCUMENT_SUFFIXES | OFFICE_DOCUMENT_SUFFIXES | frozenset({".pdf"})
+)
 
 
 def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) -> str:
@@ -33,13 +57,23 @@ def read_file(cwd: str, path: str, offset: int = 1, limit: int | None = None) ->
         return f"Error: no existe el archivo {resolved}"
     if is_sensitive_path(resolved):
         return secret_file_block_message()
-    if resolved.suffix.lower() == ".pdf":
-        text = extract_pdf_text(resolved)
-        if text.startswith("Error:"):
-            return text
-    else:
-        text = resolved.read_text(encoding="utf-8", errors="replace")
+    text = extract_document_text(resolved, include_metadata=False)
+    if text.startswith("Error:"):
+        return text
     return _numbered_lines(text, offset=offset, limit=limit)
+
+
+def read_document(cwd: str, path: str) -> str:
+    """Read a document-like file and return structured extracted text."""
+    resolved, err = _resolve_or_error(path, cwd)
+    if err:
+        return err
+    assert resolved is not None
+    if not resolved.is_file():
+        return f"Error: no existe el archivo {resolved}"
+    if is_sensitive_path(resolved):
+        return secret_file_block_message()
+    return extract_document_text(resolved, include_metadata=True)
 
 
 def _numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str:
@@ -51,6 +85,69 @@ def _numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str
     if len(lines) > end:
         numbered.append(f"... ({len(lines) - end} líneas más; usa offset/limit)")
     return "\n".join(numbered) if numbered else "(archivo vacío)"
+
+
+def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
+    """Extract text from supported teaching/document formats."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        text = extract_pdf_text(path)
+        sections = (
+            _pdf_section_count(path)
+            if include_metadata and not text.startswith("Error:")
+            else None
+        )
+    elif suffix == ".docx":
+        text = extract_docx_text(path)
+        sections = "desconocido"
+    elif suffix == ".pptx":
+        text, sections = extract_pptx_text(path)
+    elif suffix == ".xlsx":
+        text, sections = extract_xlsx_text(path)
+    elif suffix in {".csv", ".tsv"}:
+        text = extract_csv_text(path)
+        sections = "1 tabla"
+    elif suffix in TEXT_DOCUMENT_SUFFIXES or not suffix:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        sections = "texto plano"
+    elif not include_metadata:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        sections = "texto plano"
+    else:
+        return (
+            f"Error: formato no soportado para lectura documental: "
+            f"{suffix or '(sin extension)'}"
+        )
+
+    if text.startswith("Error:") or not include_metadata:
+        return text
+
+    text = _truncate_document_text(text)
+    return (
+        f"Documento: {path.name}\n"
+        f"Tipo: {suffix.lstrip('.') or 'texto'}\n"
+        f"Paginas/secciones: {sections or 'desconocido'}\n"
+        "Texto extraido:\n\n"
+        f"{text}"
+    ).strip()
+
+
+def _truncate_document_text(text: str) -> str:
+    if len(text) <= MAX_DOCUMENT_CHARS:
+        return text
+    return (
+        text[:MAX_DOCUMENT_CHARS].rstrip()
+        + f"\n\n... (texto truncado; limite {MAX_DOCUMENT_CHARS} caracteres)"
+    )
+
+
+def _pdf_section_count(path: Path) -> str | None:
+    try:
+        from pypdf import PdfReader
+
+        return f"{len(PdfReader(str(path)).pages)} paginas"
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def extract_pdf_text(path: Path) -> str:
@@ -98,6 +195,137 @@ def extract_pdf_text(path: Path) -> str:
             "hace falta OCR para leer imagenes."
         )
     return "\n".join(chunks).strip()
+
+
+def extract_docx_text(path: Path) -> str:
+    try:
+        from docx import Document
+    except ImportError:
+        return (
+            "Error: no se puede leer DOCX porque falta la dependencia `python-docx`. "
+            "Instala el proyecto de nuevo para activar soporte Word."
+        )
+
+    try:
+        document = Document(str(path))
+    except Exception as exc:  # noqa: BLE001
+        return f"Error: no se pudo abrir el DOCX {path}: {exc}"
+
+    chunks: list[str] = []
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if not text:
+            continue
+        style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
+        if style_name.lower().startswith("heading"):
+            chunks.append(f"[{style_name}] {text}")
+        else:
+            chunks.append(text)
+
+    for table_index, table in enumerate(document.tables, start=1):
+        rows = []
+        for row in table.rows:
+            cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+            rows.append(" | ".join(cells))
+        if rows:
+            chunks.append(f"[Table {table_index}]")
+            chunks.extend(rows)
+
+    return "\n".join(chunks).strip() or "(documento DOCX sin texto extraible)"
+
+
+def extract_pptx_text(path: Path) -> tuple[str, str]:
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return (
+            "Error: no se puede leer PPTX porque falta la dependencia `python-pptx`. "
+            "Instala el proyecto de nuevo para activar soporte PowerPoint."
+        ), "desconocido"
+
+    try:
+        presentation = Presentation(str(path))
+    except Exception as exc:  # noqa: BLE001
+        return f"Error: no se pudo abrir el PPTX {path}: {exc}", "desconocido"
+
+    total_slides = len(presentation.slides)
+    chunks: list[str] = []
+    for slide_index, slide in enumerate(presentation.slides, start=1):
+        if slide_index > MAX_PRESENTATION_SLIDES:
+            break
+        slide_text: list[str] = []
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text = str(shape.text).strip()
+                if text:
+                    slide_text.append(text)
+        chunks.append(f"[Slide {slide_index}]")
+        chunks.append("\n".join(slide_text) if slide_text else "(sin texto extraible)")
+
+    if total_slides > MAX_PRESENTATION_SLIDES:
+        chunks.append(
+            f"... ({total_slides - MAX_PRESENTATION_SLIDES} diapositivas mas; "
+            f"limite {MAX_PRESENTATION_SLIDES})"
+        )
+
+    return "\n".join(chunks).strip(), f"{total_slides} diapositivas"
+
+
+def extract_xlsx_text(path: Path) -> tuple[str, str]:
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return (
+            "Error: no se puede leer XLSX porque falta la dependencia `openpyxl`. "
+            "Instala el proyecto de nuevo para activar soporte Excel."
+        ), "desconocido"
+
+    try:
+        workbook = load_workbook(str(path), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        return f"Error: no se pudo abrir el XLSX {path}: {exc}", "desconocido"
+
+    chunks: list[str] = []
+    for sheet in workbook.worksheets:
+        chunks.append(f"[Sheet: {sheet.title}]")
+        row_count = 0
+        for row in sheet.iter_rows(
+            max_row=MAX_SPREADSHEET_ROWS,
+            max_col=MAX_SPREADSHEET_COLS,
+            values_only=True,
+        ):
+            row_count += 1
+            values = ["" if value is None else str(value) for value in row]
+            chunks.append(" | ".join(values).rstrip())
+        if row_count >= MAX_SPREADSHEET_ROWS:
+            chunks.append(
+                f"... (hoja truncada; limite {MAX_SPREADSHEET_ROWS} filas x "
+                f"{MAX_SPREADSHEET_COLS} columnas)"
+            )
+
+    close = getattr(workbook, "close", None)
+    if callable(close):
+        close()
+    return "\n".join(chunks).strip(), f"{len(workbook.worksheets)} hojas"
+
+
+def extract_csv_text(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    delimiter = "\t" if path.suffix.lower() == ".tsv" else None
+    sample = text[:4096]
+    if delimiter is None:
+        try:
+            delimiter = csv.Sniffer().sniff(sample).delimiter
+        except csv.Error:
+            delimiter = ","
+    rows: list[str] = []
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    for index, row in enumerate(reader, start=1):
+        if index > MAX_SPREADSHEET_ROWS:
+            rows.append(f"... (tabla truncada; limite {MAX_SPREADSHEET_ROWS} filas)")
+            break
+        rows.append(" | ".join(row))
+    return "\n".join(rows).strip() or "(archivo CSV vacio)"
 
 
 def ls(cwd: str, path: str = ".") -> str:
@@ -191,8 +419,10 @@ def _grep_single_file(
     except ValueError:
         rel = file_path
     try:
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        content = extract_document_text(file_path, include_metadata=False)
     except OSError:
+        return f"Sin coincidencias para `{regex.pattern}`"
+    if content.startswith("Error:"):
         return f"Sin coincidencias para `{regex.pattern}`"
     for i, line in enumerate(content.splitlines(), start=1):
         if regex.search(line):
@@ -224,15 +454,12 @@ def _grep_scan_tree(
             rel = file_path.relative_to(root)
         except ValueError:
             continue
-        if file_path.suffix.lower() == ".pdf":
-            content = extract_pdf_text(file_path)
-            if content.startswith("Error:"):
-                continue
-        else:
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
+        try:
+            content = extract_document_text(file_path, include_metadata=False)
+        except OSError:
+            continue
+        if content.startswith("Error:"):
+            continue
         for i, line in enumerate(content.splitlines(), start=1):
             if regex.search(line):
                 results.append(f"{rel}:{i}:{line}")

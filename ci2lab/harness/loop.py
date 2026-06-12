@@ -24,6 +24,7 @@ from rich.text import Text
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.harness.compact import manage_context
 from ci2lab.harness.context import trim_messages
+from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
@@ -84,8 +85,8 @@ def run_agent(
     stuck_rounds = 0
     unparsed_tool_nudges = 0
     summary_failures = 0
-    pdf_tool_nudges = 0
-    pdf_tool_used = False
+    document_tool_nudges = 0
+    document_tool_used = False
     final_text = ""
     content = ""
     status = "success"
@@ -142,36 +143,36 @@ def run_agent(
                 llm_response.tool_calls,
                 tool_mode=selection.tool_mode,
             )
-            forced_pdf_call = (
-                _forced_pdf_read_tool_call(user_prompt)
-                if not calls and not pdf_tool_used and pdf_tool_nudges >= 1
+            forced_document_call = (
+                _forced_document_read_tool_call(user_prompt)
+                if not calls and not document_tool_used and document_tool_nudges >= 1
                 else None
             )
-            if forced_pdf_call:
+            if forced_document_call:
                 console.print(
                     "[yellow]El modelo siguió sin usar herramientas; ejecutando "
-                    "read_file automáticamente para el PDF mencionado.[/yellow]"
+                    "read_document automáticamente para el documento mencionado.[/yellow]"
                 )
-                calls = [forced_pdf_call]
+                calls = [forced_document_call]
 
             if not calls:
-                pdf_hint = _pdf_tool_retry_hint(
+                document_hint = _document_tool_retry_hint(
                     user_prompt,
                     selection_tool_mode=selection.tool_mode,
                 )
                 if (
-                    pdf_hint
-                    and not pdf_tool_used
-                    and pdf_tool_nudges < 1
+                    document_hint
+                    and not document_tool_used
+                    and document_tool_nudges < 1
                     and selection.supports_tools
                 ):
-                    pdf_tool_nudges += 1
+                    document_tool_nudges += 1
                     console.print(
-                        "[yellow]La petición menciona un PDF pero el modelo no usó "
-                        "herramientas; reintentando con read_file/grep.[/yellow]"
+                        "[yellow]La petición menciona un documento pero el modelo no usó "
+                        "herramientas; reintentando con read_document/grep.[/yellow]"
                     )
                     append_assistant_turn(history, content)
-                    history.append({"role": "user", "content": pdf_hint})
+                    history.append({"role": "user", "content": document_hint})
                     _maybe_save(cfg, history, selection)
                     continue
 
@@ -219,8 +220,8 @@ def run_agent(
                 f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
                 for c in calls
             )
-            if any(_is_pdf_read_tool_call(c.name, c.arguments) for c in calls):
-                pdf_tool_used = True
+            if any(_is_document_read_tool_call(c.name, c.arguments) for c in calls):
+                document_tool_used = True
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -275,9 +276,16 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
-            pdf_followup = _pdf_tool_result_followup(results, user_prompt)
-            if pdf_followup:
-                history.append({"role": "user", "content": pdf_followup})
+            document_answer = _document_direct_answer(results, user_prompt)
+            if document_answer:
+                final_text = document_answer
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                _maybe_save(cfg, history, selection)
+                break
+            document_followup = _document_tool_result_followup(results, user_prompt)
+            if document_followup:
+                history.append({"role": "user", "content": document_followup})
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True
@@ -377,76 +385,162 @@ def _summarize_args(args: dict) -> str:
     return ""
 
 
-_PDF_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.pdf)\b", re.IGNORECASE)
+_DOCUMENT_EXTENSIONS = (
+    "pdf",
+    "docx",
+    "pptx",
+    "xlsx",
+    "csv",
+    "tsv",
+    "md",
+    "rst",
+    "txt",
+    "text",
+    "json",
+    "yaml",
+    "yml",
+)
+_DOCUMENT_PATH_RE = re.compile(
+    rf"(?P<path>[^\s`\"']+\.({'|'.join(_DOCUMENT_EXTENSIONS)}))\b",
+    re.IGNORECASE,
+)
 
 
-def _pdf_tool_retry_hint(
+def _document_tool_retry_hint(
     user_prompt: str,
     *,
     selection_tool_mode: str,
 ) -> str | None:
-    match = _PDF_PATH_RE.search(user_prompt)
+    if not _looks_like_document_read_request(user_prompt):
+        return None
+    match = _DOCUMENT_PATH_RE.search(user_prompt)
     if not match:
         return None
 
-    pdf_path = match.group("path")
+    document_path = match.group("path")
     if selection_tool_mode == "fenced":
         return (
-            "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+            "La petición del usuario requiere leer un documento del directorio de trabajo. "
             "No digas que no puedes acceder al archivo: tienes herramientas locales. "
-            "Llama ahora a la herramienta `read_file` con este bloque exacto, espera el "
+            "Llama ahora a la herramienta `read_document` con este bloque exacto, espera el "
             "resultado y después responde a la tarea del usuario:\n"
-            "```read_file\n"
-            f"{pdf_path}\n"
+            "```read_document\n"
+            f"{document_path}\n"
             "```"
         )
 
     return (
-        "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+        "La petición del usuario requiere leer un documento del directorio de trabajo. "
         "No digas que no puedes acceder al archivo: tienes herramientas locales. "
-        f"Invoca ahora la herramienta read_file con path={pdf_path!r}, espera el "
+        f"Invoca ahora la herramienta read_document con path={document_path!r}, espera el "
         "resultado y después responde a la tarea del usuario."
     )
 
 
-def _is_pdf_read_tool_call(tool_name: str, args: dict[str, Any]) -> bool:
-    if tool_name == "read_file":
-        return str(args.get("path", "")).lower().endswith(".pdf")
+def _is_document_read_tool_call(tool_name: str, args: dict[str, Any]) -> bool:
+    if tool_name in {"read_file", "read_document"}:
+        return _is_supported_document_path(str(args.get("path", "")))
     if tool_name == "grep":
         path = str(args.get("path", "")).lower()
         glob = str(args.get("glob", "")).lower()
-        return path.endswith(".pdf") or ".pdf" in glob
+        return _is_supported_document_path(path) or any(
+            f".{ext}" in glob for ext in _DOCUMENT_EXTENSIONS
+        )
     return False
 
 
-def _forced_pdf_read_tool_call(user_prompt: str) -> ToolCall | None:
-    match = _PDF_PATH_RE.search(user_prompt)
+def _forced_document_read_tool_call(user_prompt: str) -> ToolCall | None:
+    if not _looks_like_document_read_request(user_prompt):
+        return None
+    match = _DOCUMENT_PATH_RE.search(user_prompt)
     if not match:
         return None
     return ToolCall(
-        name="read_file",
+        name="read_document",
         arguments={"path": match.group("path")},
-        call_id="auto_pdf_read",
+        call_id="auto_document_read",
     )
 
 
-def _pdf_tool_result_followup(
+def _document_tool_result_followup(
     results: list[ToolResult],
     original_user_prompt: str,
 ) -> str | None:
-    pdf_outputs = [
+    document_outputs = [
         result.content
         for result in results
-        if result.tool_name == "read_file"
+        if result.tool_name in {"read_file", "read_document"}
         and not result.is_error
-        and "[PDF page " in result.content
+        and ("Texto extraido:" in result.content or "[PDF page " in result.content)
     ]
-    if not pdf_outputs:
+    if not document_outputs:
         return None
-    content = "\n\n".join(pdf_outputs)
+    content = "\n\n".join(document_outputs)
     return (
-        "Contenido del PDF leído con la herramienta `read_file`:\n\n"
+        "Contenido del documento leido con la herramienta `read_document`:\n\n"
         f"{content}\n\n"
         "Ahora responde a la petición original usando exclusivamente ese contenido. "
         f"Petición original: {original_user_prompt}"
     )
+
+
+def _document_direct_answer(
+    results: list[ToolResult],
+    original_user_prompt: str,
+) -> str | None:
+    document_outputs = [
+        result.content
+        for result in results
+        if result.tool_name in {"read_file", "read_document"}
+        and not result.is_error
+        and ("Texto extraido:" in result.content or "[PDF page " in result.content)
+    ]
+    return maybe_answer_document_request(original_user_prompt, document_outputs)
+
+
+def _is_supported_document_path(path: str) -> bool:
+    low = path.lower()
+    return any(low.endswith(f".{ext}") for ext in _DOCUMENT_EXTENSIONS)
+
+
+def _looks_like_document_read_request(user_prompt: str) -> bool:
+    text = user_prompt.lower()
+    if not _DOCUMENT_PATH_RE.search(user_prompt):
+        return False
+    write_verbs = (
+        "crea",
+        "crear",
+        "guarda",
+        "guardar",
+        "escribe",
+        "escribir",
+        "edita",
+        "editar",
+        "modifica",
+        "modificar",
+        "sobrescribe",
+        "sobrescribir",
+    )
+    if any(verb in text for verb in write_verbs):
+        return False
+    read_verbs = (
+        "abre",
+        "abrir",
+        "analiza",
+        "analizar",
+        "busca",
+        "buscar",
+        "consulta",
+        "consultar",
+        "corrige",
+        "corregir",
+        "extrae",
+        "extraer",
+        "lee",
+        "leer",
+        "resume",
+        "resumir",
+        "revisa",
+        "revisar",
+    )
+    return any(verb in text for verb in read_verbs)
