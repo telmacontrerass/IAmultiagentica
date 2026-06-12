@@ -22,6 +22,7 @@ from rich.live import Live
 from rich.text import Text
 
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
+from ci2lab.harness.compact import manage_context
 from ci2lab.harness.context import trim_messages
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
@@ -82,6 +83,7 @@ def run_agent(
     policy_nudge_sent = False
     stuck_rounds = 0
     unparsed_tool_nudges = 0
+    summary_failures = 0
     pdf_tool_nudges = 0
     pdf_tool_used = False
     final_text = ""
@@ -101,6 +103,15 @@ def run_agent(
             rounds_completed = round_num
             if run_log:
                 run_log.set_rounds_completed(round_num)
+
+            history, summary_failures, compact_events = manage_context(
+                history,
+                client,
+                selection.context_length,
+                summary_failures=summary_failures,
+            )
+            for event in compact_events:
+                console.print(f"[dim]{event}[/dim]")
 
             trimmed = trim_messages(history, selection.context_length)
 

@@ -48,11 +48,11 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Ejecuta un comando en la shell del sistema. Usar para compilar, tests, git, etc.",
+            "description": "Run a shell command (build, tests, installs, running scripts). Asks for confirmation. Prefer read-only tools for exploring; use bash only when no read-only tool fits.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Comando a ejecutar"},
+                    "command": {"type": "string", "description": "Shell command to run"},
                 },
                 "required": ["command"],
             },
@@ -62,13 +62,13 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Lee un archivo del proyecto, incluidos PDFs con texto extraible. Devuelve líneas numeradas.",
+            "description": "Read a whole text file or a text-extractable PDF. Returns numbered lines. For a known line range of a large file, use inspect_file instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "offset": {"type": "integer", "description": "Línea inicial (1-based)"},
-                    "limit": {"type": "integer"},
+                    "offset": {"type": "integer", "description": "First line to read (1-based)"},
+                    "limit": {"type": "integer", "description": "Max number of lines to read"},
                 },
                 "required": ["path"],
             },
@@ -78,7 +78,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "ls",
-            "description": "Lista el contenido de un directorio del proyecto.",
+            "description": "List the entries of one directory. For a recursive view use tree.",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -90,7 +90,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "grep",
-            "description": "Busca un patrón regex en archivos del proyecto.",
+            "description": "Search file contents by regex across the workspace. Use to find where text or symbols appear.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -108,7 +108,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "glob",
-            "description": "Encuentra archivos por patrón glob (ej. **/*.py).",
+            "description": "Find files by name pattern (e.g. **/*.py). Use to locate files by name, not by content.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -123,7 +123,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Crea o sobrescribe un archivo en el proyecto.",
+            "description": "Create or overwrite a file with plain text. Put the full file text in `content`. Not for .docx or other binary formats.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -138,7 +138,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edita un archivo por reemplazo exacto de texto.",
+            "description": "Edit an existing file by exact text replacement. `old_string` must match the current text exactly.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -155,7 +155,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "file_info",
-            "description": "Metadatos de archivo o directorio sin leer contenido sensible.",
+            "description": "Get metadata for a file or directory (size, type) without reading its content.",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -167,7 +167,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "tree",
-            "description": "Arbol de directorios acotado por profundidad y numero de entradas.",
+            "description": "Show a bounded directory tree (control depth and max_entries). Use to understand project layout cheaply.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -183,7 +183,7 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "inspect_file",
-            "description": "Lee un rango acotado de lineas de un archivo de texto.",
+            "description": "Read a bounded line range of a text file. Cheaper than read_file for large files when you know the range.",
             "parameters": {
                 "type": "object",
                 "properties": {

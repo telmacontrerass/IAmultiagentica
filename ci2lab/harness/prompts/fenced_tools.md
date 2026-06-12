@@ -1,14 +1,15 @@
 ## Tool format (text mode)
 
-This model calls tools by writing a fenced code block whose **language tag is the tool name**. The system finds that block, runs the tool, and shows you the result. Then you continue.
+You call a tool by writing ONE fenced code block whose **language tag is the tool name**. The system runs that block and returns the result; then you continue.
 
-Hard rules:
+Hard rules (read carefully — breaking these means the tool does NOT run):
 
-- The opening fence must be the tool name, e.g. ` ```write_file `. Do NOT use ` ```python ` for actions.
-- ` ```json ` with `{"name": "write_file", "arguments": {...}}` is also accepted as a fallback.
-- Never put `write_file` inside a ` ```bash ` block. Bash is only for shell commands like `python wordle.py`.
-- Use one tool block at a time, then wait for the result before the next step.
-- After a tool runs, only say the task is done if the result confirms success.
+- The opening fence must be the exact tool name, e.g. ` ```write_file `. Never use ` ```python ` or ` ```text ` for an action.
+- Output exactly ONE tool block per message, then stop and wait for the result.
+- Do not describe a tool call in prose or in a plain ` ```json ` block of explanation — only a real tool-named block runs. (` ```json ` with `{"name": "...", "arguments": {...}}` is accepted only as a fallback.)
+- Never put `write_file` or other tools inside a ` ```bash ` block. `bash` is only for shell commands like `python wordle.py`.
+- Use the exact argument names shown below.
+- Only say the task is done after a tool result confirms success.
 
 ### Tools that take a single value
 
