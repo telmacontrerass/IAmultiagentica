@@ -40,6 +40,12 @@ _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
     ),
     (re.compile(r"\binvoke-expression\b", re.I), "Invoke-Expression"),
     (re.compile(r"\biex\b", re.I), "iex (Invoke-Expression)"),
+    (re.compile(r"\brm\s+\*"), "rm * (eliminacion con comodin)"),
+    (re.compile(r"\bdel\s+\*", re.I), "del * (eliminacion con comodin)"),
+    (
+        re.compile(r"\bremove-item\s+\*", re.I),
+        "Remove-Item * (eliminacion con comodin)",
+    ),
 ]
 
 

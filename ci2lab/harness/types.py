@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,7 @@ class ToolResult:
     is_error: bool = False
     call_id: str | None = None
     outcome: str | None = None
-    """approved | denied | blocked_by_config | failed"""
+    """approved | denied | blocked_by_config | blocked_by_security_profile | failed"""
 
 
 @dataclass
@@ -58,6 +61,15 @@ class AgentConfig:
 
     require_diff_preview: bool = True
     """Si True, write/edit siempre muestran diff y piden confirmación (--yes no omite)."""
+
+    security_profile: str = "standard"
+    """Perfil de seguridad (strict, standard, dev, audit)."""
+
+    security_engine: str = "ci2lab"
+    """Motor de seguridad: ci2lab (default) u opencode_experimental."""
+
+    opencode_permissions: OpenCodePermissionConfig | None = None
+    """Reglas permission estilo OpenCode (solo motor experimental)."""
 
     skill_allowed_tools: frozenset[str] | None = None
     """When set by an invoked skill, only these tool names are exposed to the model."""

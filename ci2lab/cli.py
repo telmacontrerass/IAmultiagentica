@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -12,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
+from ci2lab.harness.security_profiles import SecurityConfig, resolved_opencode_permissions
 from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
@@ -32,7 +34,25 @@ _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
 
 _CLI_COMMANDS = frozenset(
-    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals", "ui"}
+    {
+        "agent",
+        "chat",
+        "sessions",
+        "doctor",
+        "hardware",
+        "models",
+        "evals",
+        "permissions",
+        "ui",
+        "tools",
+    }
+)
+
+_DOCUMENT_DEPENDENCIES = (
+    ("pypdf", "PDF"),
+    ("docx", "Word/DOCX"),
+    ("pptx", "PowerPoint/PPTX"),
+    ("openpyxl", "Excel/XLSX"),
 )
 
 
@@ -57,6 +77,8 @@ def _print_global_help() -> None:
         "Comandos principales:",
         '  ci2lab agent "peticion"           Una tarea y sale',
         "  ci2lab chat                       Modo interactivo (REPL)",
+        "  ci2lab tools qwen:1.8b            Chat sencillo con herramientas",
+        "  ci2lab qwen:1.8b tools            Lo mismo, forma abreviada",
         "  ci2lab sessions [--json]          Lista sesiones guardadas",
         "  ci2lab doctor                     Comprueba Python, Ollama y modelos",
         "  ci2lab hardware [--json]          RAM, GPU, presupuesto de memoria",
@@ -65,6 +87,7 @@ def _print_global_help() -> None:
         "  ci2lab models install <modelo>    Comandos pull/run/chat para un modelo",
         "  ci2lab models run <modelo>        Abre el modelo con ollama run",
         "  ci2lab evals run                  Evaluaciones del arnes (mock)",
+        "  ci2lab permissions summary        Dashboard de permisos / auditoria",
         "  ci2lab ui                         Interfaz web local",
         "",
         "Flags del agente (atajo, agent y chat):",
@@ -81,6 +104,8 @@ def _print_global_help() -> None:
         "",
         "Importante: los flags del agente van ANTES del subcomando:",
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
+        "Atajo equivalente para uso normal:",
+        "  ci2lab qwen:1.8b tools",
         "",
         "Opciones por comando:",
         "  models recommend [--json] [--limit N] [consulta]",
@@ -110,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     if _is_global_help_request(raw_argv):
         _print_global_help()
         return 0
+
+    raw_argv = _expand_tools_shortcut(raw_argv)
 
     if raw_argv and not any(tok in _CLI_COMMANDS for tok in raw_argv):
         raw_argv = ["agent", *raw_argv]
@@ -162,6 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     evals_run.add_argument("--model", default=None)
     evals_run.add_argument("--live", action="store_true")
 
+    from ci2lab.cli_permissions import add_permissions_parser
+
+    add_permissions_parser(sub)
+
     ui_p = sub.add_parser("ui", help="Interfaz web local")
     ui_p.add_argument("--host", default="127.0.0.1", help="Host local")
     ui_p.add_argument("--port", type=int, default=8765, help="Puerto local")
@@ -192,11 +223,48 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_run(args)
     if args.command == "evals":
         return _cmd_evals(args)
+    if args.command == "permissions":
+        from ci2lab.cli_permissions import cmd_permissions
+
+        return cmd_permissions(args)
     if args.command == "ui":
         return _cmd_ui(args, runtime)
 
     parser.print_help()
     return 0
+
+
+def _expand_tools_shortcut(raw_argv: list[str]) -> list[str]:
+    """Expand friendly tools shortcuts into normal agent/chat invocations."""
+    if not raw_argv:
+        return raw_argv
+
+    if raw_argv[0] == "tools":
+        if any(arg in {"--help", "-h"} for arg in raw_argv[1:]):
+            return ["--help"]
+        model: str | None = None
+        rest = raw_argv[1:]
+        if rest and not rest[0].startswith("-"):
+            model = rest[0]
+            rest = rest[1:]
+        return _tools_args(model, rest)
+
+    if len(raw_argv) >= 2 and raw_argv[1] == "tools" and not raw_argv[0].startswith("-"):
+        return _tools_args(raw_argv[0], raw_argv[2:])
+
+    return raw_argv
+
+
+def _tools_args(model: str | None, rest: list[str]) -> list[str]:
+    args: list[str] = []
+    if model:
+        args.extend(["--model", model])
+    args.extend(["--tool-mode", "fenced", "--no-stream"])
+    if rest:
+        args.extend(["agent", " ".join(rest)])
+    else:
+        args.append("chat")
+    return args
 
 
 def _add_agent_flags(p: argparse.ArgumentParser) -> None:
@@ -222,6 +290,12 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         help="Directorio de trabajo del agente (alias semántico de --cwd)",
     )
     p.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
+    p.add_argument(
+        "--security-engine",
+        choices=["ci2lab", "opencode_experimental", "claude_experimental"],
+        default=None,
+        help="Motor de seguridad (default: ci2lab). opencode_experimental es INSEGURO.",
+    )
     p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
     p.add_argument("--max-rounds", type=int, default=None)
     p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
@@ -239,7 +313,7 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
 
 def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
     base = load_config()
-    return merge_cli_config(
+    merged = merge_cli_config(
         base,
         model=args.model,
         tool_mode=args.tool_mode,
@@ -251,6 +325,24 @@ def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
         runs_dir=args.runs_dir,
         no_log=args.no_log,
     )
+    if args.security_engine is not None:
+        from ci2lab.security.engine import normalize_security_engine
+
+        engine = normalize_security_engine(args.security_engine)
+        sec = merged.security
+        merged = Ci2LabConfig(
+            **{
+                **merged.__dict__,
+                "security": SecurityConfig(
+                    profile=sec.profile,
+                    engine=engine,
+                    bash_timeout_seconds=sec.bash_timeout_seconds,
+                    max_tool_output_chars=sec.max_tool_output_chars,
+                    permission=sec.permission,
+                ),
+            }
+        )
+    return merged
 
 
 def _build_config(
@@ -262,26 +354,30 @@ def _build_config(
     from ci2lab.harness.run_logger import build_config_snapshot
 
     cwd = runtime.workspace or os.getcwd()
-    base_agent = AgentConfig(
-        cwd=cwd,
-        max_rounds=runtime.max_rounds,
-        auto_confirm=runtime.auto_confirm,
-        stream=runtime.stream,
-        run_log_enabled=runtime.log_runs,
-        runs_dir=runtime.runs_dir,
-        write_tools_enabled=runtime.write_tools_enabled,
-        require_diff_preview=runtime.require_diff_preview,
+    security_limits = runtime.security.resolved_limits()
+    opencode_perms = resolved_opencode_permissions(
+        runtime.security,
+        root_permission=runtime.permission or None,
     )
-    agent = AgentConfig(
+    agent_fields = dict(
         cwd=cwd,
         max_rounds=runtime.max_rounds,
         auto_confirm=runtime.auto_confirm,
         stream=runtime.stream,
-        session_id=args.session,
         run_log_enabled=runtime.log_runs,
         runs_dir=runtime.runs_dir,
         write_tools_enabled=runtime.write_tools_enabled,
         require_diff_preview=runtime.require_diff_preview,
+        security_profile=runtime.security.profile,
+        security_engine=runtime.security.engine,
+        opencode_permissions=opencode_perms,
+        bash_timeout_seconds=security_limits.bash_timeout_seconds,
+        max_tool_output_chars=security_limits.max_tool_output_chars,
+    )
+    base_agent = AgentConfig(**agent_fields)
+    agent = AgentConfig(
+        **agent_fields,
+        session_id=args.session,
         config_snapshot=build_config_snapshot(
             runtime_fields={
                 "model": runtime.model,
@@ -295,6 +391,10 @@ def _build_config(
                 "runs_dir": runtime.runs_dir,
                 "write_tools_enabled": runtime.write_tools_enabled,
                 "require_diff_preview": runtime.require_diff_preview,
+                "security_profile": runtime.security.profile,
+                "security_engine": runtime.security.engine,
+                "bash_timeout_seconds": security_limits.bash_timeout_seconds,
+                "max_tool_output_chars": security_limits.max_tool_output_chars,
             },
             agent_config=base_agent,
             selection=selection,
@@ -335,6 +435,7 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
 
     selection = _resolve_selection(runtime, prompt, args)
     config = _build_config(runtime, args, selection)
+    _print_document_dependency_warning()
 
     console.print(f"[bold]Modelo:[/bold] {selection.ollama_tag}")
     console.print(f"[bold]Tool mode:[/bold] {selection.tool_mode}")
@@ -357,6 +458,7 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
 
     selection = _resolve_selection(runtime, "", args)
     config = _build_config(runtime, args, selection)
+    _print_document_dependency_warning()
     try:
         run_repl(selection, config, session_id=args.session)
     except LLMError as exc:
@@ -433,6 +535,20 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         console.print(f"[red]{_DOCTOR_ERROR}[/red] ci2lab: {exc}")
         ok = False
 
+    missing_document_deps = _missing_document_dependencies()
+    if missing_document_deps:
+        names = ", ".join(name for name, _label in missing_document_deps)
+        console.print(
+            f"[red]{_DOCTOR_ERROR}[/red] Faltan librerias de documentos: {names}"
+        )
+        console.print('  Ejecuta: pip install -e ".[dev]"')
+        ok = False
+    else:
+        labels = ", ".join(label for _name, label in _DOCUMENT_DEPENDENCIES)
+        console.print(
+            f"[green]{_DOCTOR_OK}[/green] Lectura de documentos disponible ({labels})"
+        )
+
     base_url = runtime.backend_url.removesuffix("/v1").rstrip("/")
     try:
         r = httpx.get(f"{base_url}/api/tags", timeout=3.0)
@@ -456,6 +572,25 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         ok = False
 
     return 0 if ok else 1
+
+
+def _missing_document_dependencies() -> list[tuple[str, str]]:
+    return [
+        (module_name, label)
+        for module_name, label in _DOCUMENT_DEPENDENCIES
+        if importlib.util.find_spec(module_name) is None
+    ]
+
+
+def _print_document_dependency_warning() -> None:
+    missing = _missing_document_dependencies()
+    if not missing:
+        return
+    names = ", ".join(name for name, _label in missing)
+    console.print(
+        f"[yellow]{_DOCTOR_WARN}[/yellow] Faltan librerias para leer documentos: {names}"
+    )
+    console.print('  Ejecuta: pip install -e ".[dev]"')
 
 
 def _cmd_hardware(args: argparse.Namespace) -> int:

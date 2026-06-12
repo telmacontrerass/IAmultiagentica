@@ -101,10 +101,22 @@ def compute_edit_result(
     return new_text, None
 
 
-def preview_write_file(cwd: str, path: str, content: str) -> WritePreview:
-    resolved = resolve_path(path, cwd)
+def preview_write_file(
+    cwd: str,
+    path: str,
+    content: str,
+    *,
+    enforce_hard_policy: bool = True,
+) -> WritePreview:
+    if enforce_hard_policy:
+        resolved = resolve_path(path, cwd)
+    else:
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(cwd) / candidate
+        resolved = candidate.resolve()
     rel = _display_path(resolved, cwd)
-    if is_sensitive_path(resolved):
+    if enforce_hard_policy and is_sensitive_path(resolved, workspace=cwd):
         return WritePreview(
             path=rel,
             is_new_file=not resolved.is_file(),
@@ -133,10 +145,18 @@ def preview_edit_file(
     old_string: str,
     new_string: str,
     replace_all: bool = False,
+    *,
+    enforce_hard_policy: bool = True,
 ) -> WritePreview:
-    resolved = resolve_path(path, cwd)
+    if enforce_hard_policy:
+        resolved = resolve_path(path, cwd)
+    else:
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(cwd) / candidate
+        resolved = candidate.resolve()
     rel = _display_path(resolved, cwd)
-    if is_sensitive_path(resolved):
+    if enforce_hard_policy and is_sensitive_path(resolved, workspace=cwd):
         return WritePreview(
             path=rel,
             is_new_file=False,

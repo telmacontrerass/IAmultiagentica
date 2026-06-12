@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import subprocess
 
-from ci2lab.harness.tools.bash_safety import check_bash_blocked
+from ci2lab.security.engine import enforce_ci2lab_hard_policy
+from ci2lab.security.decisions import DecisionAction
+from ci2lab.security.policy import check_command_allowed
 
 
 def _format_bash_block_message(blocked: str) -> str:
@@ -13,10 +15,20 @@ def _format_bash_block_message(blocked: str) -> str:
     return f"Error: comando bloqueado por politica de seguridad ({blocked})."
 
 
-def run_bash(cwd: str, command: str, timeout_seconds: int = 60) -> str:
-    blocked = check_bash_blocked(command, cwd=cwd)
-    if blocked:
-        return _format_bash_block_message(blocked)
+def run_bash(
+    cwd: str,
+    command: str,
+    timeout_seconds: int = 60,
+    *,
+    security_profile: str = "standard",
+    security_engine: str = "ci2lab",
+) -> str:
+    if enforce_ci2lab_hard_policy(security_engine):
+        decision = check_command_allowed(
+            command, cwd, security_profile=security_profile
+        )
+        if decision.action is DecisionAction.DENY:
+            return decision.message or _format_bash_block_message(decision.reason)
     try:
         proc = subprocess.run(
             command,

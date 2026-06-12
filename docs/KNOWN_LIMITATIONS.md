@@ -31,7 +31,12 @@ Ver politica detallada en [`SECURITY_POLICY.md`](SECURITY_POLICY.md).
 
 | Limitación | Detalle |
 |------------|---------|
-| `bash` con `shell=True` | Mitigado con confirmación interactiva, blocklist mínima; `--yes` no omite blocklist |
+| Perfiles en `ci2lab.json` | Solo `security.profile` y `security.limits` en esta fase; no mueven blocklists ni secret rules |
+| Reglas de secretos hardcodeadas | `secret_files.py` — no configurables en JSON todavia |
+| Blocklist `bash` hardcodeada | `bash_safety.py` — no configurable en JSON todavia |
+| Shell fence tags hardcodeados | `parsing.py` — no configurable en JSON todavia |
+| `confirm_tools` hardcodeado | `permissions.py` — no configurable en JSON todavia |
+| `bash` con `shell=True` | Mitigado con confirmación interactiva, blocklist mínima; `--yes` no omite blocklist ni perfiles |
 | Sin sandbox avanzado | No hay contenedores, seccomp ni restricción de red para tools |
 | Rutas | `resolve_path()` confina al `workspace`; symlinks no auditados en profundidad |
 | Archivos sensibles | `read_file`/`grep` bloquean u omiten `.env*`, claves y nombres con `secret`/`credentials`/`token`; heuristica, no clasificador perfecto |
