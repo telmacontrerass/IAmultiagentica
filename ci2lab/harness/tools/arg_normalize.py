@@ -39,6 +39,33 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     elif name == "ls":
         if "path" not in cleaned and "directory" in cleaned:
             cleaned["path"] = cleaned.pop("directory")
+    elif name == "web_fetch":
+        if "url" not in cleaned:
+            for alias in ("uri", "link", "href"):
+                if alias in cleaned:
+                    cleaned["url"] = cleaned.pop(alias)
+                    break
+        if "max_chars" in cleaned:
+            cleaned["max_chars"] = _coerce_int(cleaned["max_chars"])
+    elif name == "ask_user":
+        if "question" not in cleaned:
+            for alias in ("message", "prompt", "query"):
+                if alias in cleaned:
+                    cleaned["question"] = cleaned.pop(alias)
+                    break
+    elif name == "todo_write":
+        if "todos" not in cleaned and "items" in cleaned:
+            cleaned["todos"] = cleaned.pop("items")
+    elif name == "notebook_edit":
+        if "cell_index" not in cleaned and "index" in cleaned:
+            cleaned["cell_index"] = cleaned.pop("index")
+        if "cell_index" in cleaned:
+            cleaned["cell_index"] = _coerce_int(cleaned["cell_index"])
+        if "new_source" not in cleaned:
+            for alias in ("source", "content", "new_string"):
+                if alias in cleaned:
+                    cleaned["new_source"] = cleaned.pop(alias)
+                    break
 
     return cleaned
 

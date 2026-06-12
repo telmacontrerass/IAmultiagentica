@@ -66,6 +66,11 @@ _NAME_MAP = {
     "cat": "read_file",
     "write": "write_file",
     "edit": "edit_file",
+    "fetch": "web_fetch",
+    "web": "web_fetch",
+    "todo": "todo_write",
+    "notebook": "notebook_edit",
+    "git": "git_status",
 }
 
 
@@ -361,6 +366,44 @@ def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
         return {"path": body.strip()}
+    if tool == "web_fetch":
+        if body.startswith("http://") or body.startswith("https://"):
+            return {"url": body.strip()}
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"url": body}
+        except json.JSONDecodeError:
+            return {"url": body.strip()}
+    if tool == "ask_user":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"question": body}
+    if tool == "todo_write":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"raw": body}
+    if tool == "notebook_edit":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"raw": body}
+    if tool == "git_status":
+        if not body or body.strip() in {".", "{}"}:
+            return {"path": "."}
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"path": body.strip()}
+        except json.JSONDecodeError:
+            return {"path": body.strip()}
+    if tool == "git_diff":
+        if not body:
+            return {}
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"path": body.strip()}
     return {"raw": body}
 
 

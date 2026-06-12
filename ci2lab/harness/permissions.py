@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Callable
 
 # Herramientas que requieren confirmación explícita del usuario en MVP.
-CONFIRM_TOOLS = frozenset({"bash", "write_file", "edit_file"})
+CONFIRM_TOOLS = frozenset({
+    "bash",
+    "write_file",
+    "edit_file",
+    "web_fetch",
+    "notebook_edit",
+})
 
 
 def default_confirm(tool_name: str, summary: str) -> bool:

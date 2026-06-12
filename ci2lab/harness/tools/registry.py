@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from ci2lab.harness.tools import ask_user as ask_user_tool
 from ci2lab.harness.tools import bash as bash_tool
 from ci2lab.harness.tools import filesystem as fs
+from ci2lab.harness.tools import git_tools
 from ci2lab.harness.tools import inspection as inspection_tool
+from ci2lab.harness.tools import notebook as notebook_tool
+from ci2lab.harness.tools import todo as todo_tool
+from ci2lab.harness.tools import web as web_tool
 from ci2lab.harness.tools.bash import _format_bash_block_message
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
@@ -29,6 +34,12 @@ TOOL_NAMES = frozenset({
     "file_info",
     "tree",
     "inspect_file",
+    "todo_write",
+    "ask_user",
+    "web_fetch",
+    "notebook_edit",
+    "git_status",
+    "git_diff",
 })
 
 # Schemas compatibles con OpenAI function calling (extraídos/adaptados de Odysseus).
@@ -185,6 +196,135 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo_write",
+            "description": (
+                "Replace the workspace task list (.ci2lab/todos.json) for multi-step work. "
+                "Each item needs content and status (pending, in_progress, completed, cancelled)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "content": {"type": "string"},
+                                "status": {"type": "string"},
+                            },
+                            "required": ["content"],
+                        },
+                    },
+                },
+                "required": ["todos"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": (
+                "Ask the user a question when you need a decision. "
+                "Blocks until the user answers in the terminal."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional numbered choices",
+                    },
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": (
+                "Fetch a public http(s) URL and return text (HTML is stripped). "
+                "Use for docs or reference pages, not for secrets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Max characters to return (default 80000)",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notebook_edit",
+            "description": "Edit one cell in a Jupyter .ipynb notebook.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "cell_index": {
+                        "type": "integer",
+                        "description": "Zero-based cell index",
+                    },
+                    "new_source": {"type": "string"},
+                    "cell_type": {
+                        "type": "string",
+                        "description": "code, markdown, or raw",
+                    },
+                },
+                "required": ["path", "cell_index", "new_source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": "Show short git status for the workspace or a path inside it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to workspace (default .)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "Show git diff for the workspace or a specific file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "staged": {
+                        "type": "boolean",
+                        "description": "If true, show staged changes only",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 _DISPATCH: dict[str, Callable[..., str]] = {
@@ -227,6 +367,28 @@ _DISPATCH: dict[str, Callable[..., str]] = {
         a.get("start", 1),
         a.get("end"),
         a.get("max_lines", 120),
+    ),
+    "todo_write": lambda cfg, a: todo_tool.todo_write(cfg.cwd, a["todos"]),
+    "ask_user": lambda cfg, a: ask_user_tool.ask_user(
+        a["question"],
+        a.get("options"),
+    ),
+    "web_fetch": lambda cfg, a: web_tool.web_fetch(
+        a["url"],
+        a.get("max_chars", 80_000),
+    ),
+    "notebook_edit": lambda cfg, a: notebook_tool.notebook_edit(
+        cfg.cwd,
+        a["path"],
+        a["cell_index"],
+        a["new_source"],
+        a.get("cell_type"),
+    ),
+    "git_status": lambda cfg, a: git_tools.git_status(cfg.cwd, a.get("path", ".")),
+    "git_diff": lambda cfg, a: git_tools.git_diff(
+        cfg.cwd,
+        a.get("path"),
+        a.get("staged", False),
     ),
 }
 

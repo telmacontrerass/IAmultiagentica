@@ -349,10 +349,18 @@ def _summarize_args(args: dict) -> str:
     if "command" in args:
         cmd = args["command"]
         return cmd[:60] + ("..." if len(cmd) > 60 else "")
+    if "url" in args:
+        url = str(args["url"])
+        return url[:60] + ("..." if len(url) > 60 else "")
+    if "question" in args:
+        q = str(args["question"])
+        return q[:60] + ("..." if len(q) > 60 else "")
     if "path" in args:
         return str(args["path"])
     if "pattern" in args:
         return str(args["pattern"])
+    if "todos" in args and isinstance(args["todos"], list):
+        return f"{len(args['todos'])} items"
     return ""
 
 

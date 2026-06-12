@@ -78,11 +78,15 @@ The body MUST be a single JSON object with `path`, `old_string`, and `new_string
 {"path": "src/main.py", "old_string": "DEBUG = True", "new_string": "DEBUG = False"}
 ```
 
-File metadata (path in block):
+### file_info
+
+Path metadata without reading full content:
 
 ```file_info
 src/main.py
 ```
+
+### tree
 
 Directory tree (optional JSON for depth/limits):
 
@@ -90,10 +94,46 @@ Directory tree (optional JSON for depth/limits):
 {"path": ".", "depth": 2, "max_entries": 100}
 ```
 
+### inspect_file
+
 Inspect a line range from a text file:
 
 ```inspect_file
 {"path": "src/main.py", "start": 1, "end": 40}
 ```
 
-Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`.
+### todo_write
+
+```todo_write
+{"todos": [{"id": "1", "content": "Create snake.py", "status": "in_progress"}, {"id": "2", "content": "Run tests", "status": "pending"}]}
+```
+
+### ask_user
+
+```ask_user
+{"question": "Which Python version should I target?", "options": ["3.11", "3.12"]}
+```
+
+### web_fetch
+
+```web_fetch
+https://docs.python.org/3/library/random.html
+```
+
+### notebook_edit
+
+```notebook_edit
+{"path": "analysis.ipynb", "cell_index": 0, "new_source": "import pandas as pd\n", "cell_type": "code"}
+```
+
+### git_status / git_diff
+
+```git_status
+.
+```
+
+```git_diff
+{"path": "src/main.py", "staged": false}
+```
+
+Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`.
