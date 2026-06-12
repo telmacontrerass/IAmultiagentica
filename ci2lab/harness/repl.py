@@ -9,6 +9,8 @@ from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.loop import run_agent
 from ci2lab.harness.session import load_session, new_session_id, save_session
+from ci2lab.harness.skills.loader import load_skills
+from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
 
 console = Console()
@@ -36,7 +38,8 @@ def run_repl(
         f"Tool mode: {selection.tool_mode}\n"
         f"CWD: {config.cwd}\n"
         f"Sesión: {sid}\n\n"
-        "Escribe tu petición. Comandos: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold]",
+        "Escribe tu petición. Comandos: [bold]/exit[/bold], [bold]/save[/bold], "
+        "[bold]/clear[/bold], [bold]/skills[/bold], [bold]/skill-name[/bold]",
         title="Agente local",
         border_style="blue",
     ))
@@ -65,8 +68,39 @@ def run_repl(
             else:
                 console.print("[yellow]Nada que guardar aún.[/yellow]")
             continue
+        if line.lower() == "/skills":
+            skills = load_skills(config.cwd)
+            if not skills:
+                console.print("[dim]No skills found in .ci2lab/skills/ or ~/.ci2lab/skills/[/dim]")
+            else:
+                for name in sorted(skills):
+                    skill = skills[name]
+                    src = skill.source
+                    console.print(f"- [bold]{name}[/bold] ({src}): {skill.description}")
+            continue
+        if line.startswith("/"):
+            skill_line = line[1:].strip()
+            if skill_line and not skill_line.lower().startswith(("exit", "quit", "save", "clear")):
+                parts = skill_line.split(maxsplit=1)
+                skill_name = parts[0]
+                skill_args = parts[1] if len(parts) > 1 else ""
+                skills = load_skills(config.cwd)
+                if skill_name in skills:
+                    config.skill_allowed_tools = None
+                    body = invoke_skill_for_repl(config, skill_name, skill_args)
+                    prompt = f"{body}\n\n---\nUser request: {skill_args or '(use skill instructions above)'}"
+                    try:
+                        run_agent(prompt, selection, config=config, messages=history)
+                    except LLMError as exc:
+                        console.print(f"[red]{exc.user_message}[/red]")
+                        continue
+                    data = load_session(sid)
+                    if data:
+                        history = data.get("messages")
+                    continue
 
         try:
+            config.skill_allowed_tools = None
             if history is None:
                 run_agent(line, selection, config=config)
             else:

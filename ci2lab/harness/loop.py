@@ -41,7 +41,8 @@ from ci2lab.harness.policy import (
     is_policy_error,
     tool_call_signature,
 )
-from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS, execute_tool
+from ci2lab.harness.mcp.session import close_mcp_manager
+from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 console = Console()
@@ -77,7 +78,6 @@ def run_agent(
             history.insert(0, {"role": "system", "content": system})
         history.append({"role": "user", "content": user_prompt})
 
-    tools = FUNCTION_SCHEMAS if selection.supports_tools else None
     recent_sigs: deque[str] = deque(maxlen=6)
     policy_blocked_sigs: set[str] = set()
     policy_nudge_sent = False
@@ -114,6 +114,7 @@ def run_agent(
                 console.print(f"[dim]{event}[/dim]")
 
             trimmed = trim_messages(history, selection.context_length)
+            tools = get_function_schemas(cfg) if selection.supports_tools else None
 
             try:
                 llm_response = _call_llm(client, trimmed, tools=tools, stream=cfg.stream)
@@ -296,6 +297,7 @@ def run_agent(
         status = "interrupted"
         raise
     finally:
+        close_mcp_manager(cfg.cwd)
         if run_log:
             finalize_error = log_error
             if status == "max_rounds" and not finalize_error:

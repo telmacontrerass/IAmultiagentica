@@ -56,6 +56,15 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     elif name == "todo_write":
         if "todos" not in cleaned and "items" in cleaned:
             cleaned["todos"] = cleaned.pop("items")
+    elif name == "skill":
+        if "skill_name" not in cleaned:
+            for alias in ("name", "skill"):
+                if alias in cleaned:
+                    cleaned["skill_name"] = cleaned.pop(alias)
+                    break
+    elif name == "mcp_call":
+        if "arguments" not in cleaned and "args" in cleaned:
+            cleaned["arguments"] = cleaned.pop("args")
     elif name == "notebook_edit":
         if "cell_index" not in cleaned and "index" in cleaned:
             cleaned["cell_index"] = cleaned.pop("index")

@@ -58,3 +58,6 @@ class AgentConfig:
 
     require_diff_preview: bool = True
     """Si True, write/edit siempre muestran diff y piden confirmación (--yes no omite)."""
+
+    skill_allowed_tools: frozenset[str] | None = None
+    """When set by an invoked skill, only these tool names are exposed to the model."""

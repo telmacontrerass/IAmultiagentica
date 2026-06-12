@@ -12,6 +12,7 @@ from ci2lab.harness.tools import git_tools
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import todo as todo_tool
+from ci2lab.harness.tools import skill_tool
 from ci2lab.harness.tools import web as web_tool
 from ci2lab.harness.tools.bash import _format_bash_block_message
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
@@ -40,7 +41,15 @@ TOOL_NAMES = frozenset({
     "notebook_edit",
     "git_status",
     "git_diff",
+    "skill",
+    "mcp_call",
 })
+
+
+def is_known_tool(name: str) -> bool:
+    if name in TOOL_NAMES:
+        return True
+    return name.startswith("mcp__")
 
 # Schemas compatibles con OpenAI function calling (extraídos/adaptados de Odysseus).
 FUNCTION_SCHEMAS: list[dict[str, Any]] = [
@@ -325,7 +334,71 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill",
+            "description": (
+                "Load a workspace skill workflow by name. Returns instructions to follow "
+                "using the listed tools. Use when a skill in the catalog matches the task."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "Skill name from the Skills catalog",
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "Optional free-text arguments for the skill",
+                    },
+                },
+                "required": ["skill_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mcp_call",
+            "description": (
+                "Call a tool on a connected MCP server by server name and tool name. "
+                "Prefer dedicated mcp__* tools when listed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "server": {"type": "string"},
+                    "tool": {"type": "string"},
+                    "arguments": {
+                        "type": "object",
+                        "description": "Tool arguments object",
+                    },
+                },
+                "required": ["server", "tool"],
+            },
+        },
+    },
 ]
+
+
+def get_function_schemas(config: AgentConfig | None = None) -> list[dict[str, Any]]:
+    """Built-in tools plus dynamic MCP tools, optionally filtered by an active skill."""
+    schemas: list[dict[str, Any]] = list(FUNCTION_SCHEMAS)
+    if config is not None:
+        from ci2lab.harness.mcp.session import get_mcp_manager
+
+        mgr = get_mcp_manager(config.cwd, connect=True)
+        schemas.extend(mgr.build_function_schemas())
+    if config is not None and config.skill_allowed_tools is not None:
+        allowed = config.skill_allowed_tools
+        schemas = [
+            schema
+            for schema in schemas
+            if schema.get("function", {}).get("name") in allowed
+        ]
+    return schemas
 
 _DISPATCH: dict[str, Callable[..., str]] = {
     "bash": lambda cfg, a: bash_tool.run_bash(
@@ -390,7 +463,30 @@ _DISPATCH: dict[str, Callable[..., str]] = {
         a.get("path"),
         a.get("staged", False),
     ),
+    "skill": lambda cfg, a: skill_tool.invoke_skill(
+        cfg,
+        a["skill_name"],
+        a.get("args"),
+    ),
+    "mcp_call": lambda cfg, a: _execute_mcp_call(
+        cfg,
+        a["server"],
+        a["tool"],
+        a.get("arguments") or {},
+    ),
 }
+
+
+def _execute_mcp_call(
+    config: AgentConfig,
+    server: str,
+    tool: str,
+    arguments: dict[str, Any],
+) -> str:
+    from ci2lab.harness.mcp.session import get_mcp_manager
+
+    mgr = get_mcp_manager(config.cwd, connect=True)
+    return mgr.call(server, tool, arguments)
 
 
 def normalize_tool_arguments(
@@ -515,10 +611,11 @@ def _execute_write_tool(
 
 
 def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
+    from ci2lab.harness.mcp.session import get_mcp_manager
     from ci2lab.harness.permissions import check_permission
 
     name = call.name
-    if name not in TOOL_NAMES:
+    if not is_known_tool(name):
         return ToolResult(
             tool_name=name,
             content=f"Error: herramienta desconocida `{name}`",
@@ -526,10 +623,61 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
         )
 
+    if (
+        config.skill_allowed_tools is not None
+        and name not in config.skill_allowed_tools
+        and name != "skill"
+    ):
+        return ToolResult(
+            tool_name=name,
+            content=(
+                f"Error: tool `{name}` is not allowed by the active skill. "
+                f"Allowed: {', '.join(sorted(config.skill_allowed_tools))}"
+            ),
+            is_error=True,
+            call_id=call.call_id,
+        )
+
     args = normalize_tool_arguments(call.arguments, tool_name=name)
+
+    if name.startswith("mcp__"):
+        mgr = get_mcp_manager(config.cwd, connect=True)
+        output = mgr.call_by_id(name, args)
+        is_error = output.startswith("Error:")
+        if len(output) > config.max_tool_output_chars:
+            output = (
+                output[: config.max_tool_output_chars]
+                + f"\n... (truncado, {len(output)} caracteres totales)"
+            )
+        return ToolResult(
+            tool_name=name,
+            content=output,
+            is_error=is_error,
+            call_id=call.call_id,
+            outcome=outcome_for_tool_output(output) if is_error else None,
+        )
 
     if name in WRITE_TOOLS:
         return _execute_write_tool(name, args, config, call.call_id)
+
+    if name in {"skill", "mcp_call"}:
+        try:
+            output = _DISPATCH[name](config, args)
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(
+                tool_name=name,
+                content=f"Error: {exc}",
+                is_error=True,
+                call_id=call.call_id,
+            )
+        is_error = output.startswith("Error:")
+        return ToolResult(
+            tool_name=name,
+            content=output,
+            is_error=is_error,
+            call_id=call.call_id,
+            outcome=outcome_for_tool_output(output) if is_error else None,
+        )
 
     if name == "bash":
         blocked = check_bash_blocked(

@@ -137,4 +137,16 @@ https://docs.python.org/3/library/random.html
 {"path": "src/main.py", "staged": false}
 ```
 
-Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`.
+### skill
+
+```skill
+{"skill_name": "make-word-doc", "args": "report about Q1 sales"}
+```
+
+### mcp_call (fallback when no dedicated mcp__ tool is listed)
+
+```mcp_call
+{"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
+```
+
+Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
