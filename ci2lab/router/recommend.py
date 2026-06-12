@@ -68,6 +68,95 @@ class ModelMemoryClassification:
 class DownloadPlanItem:
     use_cases: tuple[IntentCategory, ...]
     recommendation: ScoredRecommendation
+    installed: bool = False
+
+
+@dataclass(frozen=True)
+class DisplayRecommendation:
+    item: ScoredRecommendation
+    installed: bool
+
+    @property
+    def installation_label(self) -> str:
+        return "Ya instalado" if self.installed else "Para descargar"
+
+
+def recommendation_pool_size(limit: int) -> int:
+    return max(limit * 4, 20)
+
+
+def pick_scored_recommendation(
+    scored: list[ScoredRecommendation],
+    installed_names: set[str],
+) -> tuple[ScoredRecommendation | None, ScoredRecommendation | None]:
+    """Return (download_pick, installed_match) from a score-ordered pool."""
+    from ci2lab.runtime.ollama import is_catalog_model_installed
+
+    installed_match: ScoredRecommendation | None = None
+    download_pick: ScoredRecommendation | None = None
+
+    for item in scored:
+        if is_catalog_model_installed(item.model.ollama_tag, installed_names):
+            if installed_match is None:
+                installed_match = item
+            continue
+        download_pick = item
+        break
+
+    if download_pick is None and scored:
+        download_pick = scored[0]
+        if installed_match is None and is_catalog_model_installed(
+            scored[0].model.ollama_tag,
+            installed_names,
+        ):
+            installed_match = scored[0]
+
+    return download_pick, installed_match
+
+
+def build_display_recommendations(
+    scored: list[ScoredRecommendation],
+    installed_names: set[str],
+    *,
+    limit: int,
+) -> list[DisplayRecommendation]:
+    """Combine installed matches with download suggestions for display."""
+    from ci2lab.runtime.ollama import is_catalog_model_installed
+
+    if not scored:
+        return []
+
+    tagged = [
+        (item, is_catalog_model_installed(item.model.ollama_tag, installed_names))
+        for item in scored
+    ]
+    installed_items = [item for item, is_installed in tagged if is_installed]
+    download_items = [item for item, is_installed in tagged if not is_installed]
+
+    result: list[DisplayRecommendation] = []
+    seen: set[str] = set()
+
+    def add(item: ScoredRecommendation, installed: bool) -> None:
+        if item.model.id in seen:
+            return
+        seen.add(item.model.id)
+        result.append(DisplayRecommendation(item=item, installed=installed))
+
+    for item in installed_items[:2]:
+        add(item, True)
+
+    for item in download_items:
+        if len(result) >= limit:
+            break
+        add(item, False)
+
+    if len(result) < limit:
+        for item, is_installed in tagged:
+            if len(result) >= limit:
+                break
+            add(item, is_installed)
+
+    return result[:limit]
 
 
 def recommend_models(
@@ -91,35 +180,58 @@ def score_recommendations(
     return _score_for_category(intent.category, profile=profile, limit=limit)
 
 
+def _sort_download_plan_entries(entries: list[DownloadPlanItem]) -> list[DownloadPlanItem]:
+    use_case_order = {use_case: index for index, use_case in enumerate(USE_CASES)}
+    return sorted(
+        entries,
+        key=lambda item: (
+            use_case_order.get(item.use_cases[0], len(USE_CASES)),
+            not item.installed,
+            -item.recommendation.total_score,
+        ),
+    )
+
+
 def recommend_download_plan(
     *,
     profile: HardwareProfile | None = None,
     use_cases: tuple[IntentCategory, ...] = USE_CASES,
+    installed_names: set[str] | None = None,
 ) -> list[DownloadPlanItem]:
     profile = profile or scan_hardware()
-    by_model_id: dict[str, tuple[list[IntentCategory], ScoredRecommendation]] = {}
+    installed_names = installed_names or set()
+    entries: list[DownloadPlanItem] = []
 
     for use_case in use_cases:
-        scored = _score_for_category(use_case, profile=profile, limit=1)
-        if not scored:
-            continue
-        chosen = scored[0]
-        existing = by_model_id.get(chosen.model.id)
-        if existing is None:
-            by_model_id[chosen.model.id] = ([use_case], chosen)
-            continue
+        scored = _score_for_category(
+            use_case,
+            profile=profile,
+            limit=recommendation_pool_size(1),
+        )
+        download_pick, installed_match = pick_scored_recommendation(scored, installed_names)
 
-        existing_cases, existing_choice = existing
-        existing_cases.append(use_case)
-        if chosen.total_score > existing_choice.total_score:
-            by_model_id[chosen.model.id] = (existing_cases, chosen)
+        if installed_match is not None:
+            entries.append(
+                DownloadPlanItem(
+                    use_cases=(use_case,),
+                    recommendation=installed_match,
+                    installed=True,
+                )
+            )
 
-    plan = [
-        DownloadPlanItem(use_cases=tuple(cases), recommendation=recommendation)
-        for cases, recommendation in by_model_id.values()
-    ]
-    plan.sort(key=lambda item: item.recommendation.total_score, reverse=True)
-    return plan
+        if download_pick is not None and (
+            installed_match is None
+            or download_pick.model.id != installed_match.model.id
+        ):
+            entries.append(
+                DownloadPlanItem(
+                    use_cases=(use_case,),
+                    recommendation=download_pick,
+                    installed=False,
+                )
+            )
+
+    return _sort_download_plan_entries(entries)
 
 
 def _score_for_category(

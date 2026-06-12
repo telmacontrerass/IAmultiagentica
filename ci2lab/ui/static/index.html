@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Florentino | Ci2Lab UI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="crest">ICAI</div>
+          <div>
+            <p class="eyebrow">Comillas ICAI</p>
+            <h1>Ci2Lab</h1>
+          </div>
+        </div>
+
+        <nav class="side-nav" aria-label="Navegación principal">
+          <button class="nav-button active" type="button" data-view="homeView">
+            <span>⌂</span> Inicio
+          </button>
+          <button id="openChat" class="nav-button" type="button" data-view="chatView">
+            <span>+</span> Chat
+          </button>
+          <button class="nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
+            <span>▦</span> Modelos locales
+          </button>
+          <button class="nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
+            <span>◷</span> Sesiones
+          </button>
+        </nav>
+
+        <div class="status-card">
+          <p class="label">Estado local</p>
+          <strong id="ollamaStatus">Comprobando...</strong>
+          <small id="workspaceLabel"></small>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Agente local multi-modelo</p>
+            <h2>Interactúa con Florentino sin abrir la terminal</h2>
+          </div>
+          <div class="top-actions">
+            <button
+              id="refreshButton"
+              class="ghost-button"
+              type="button"
+              title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+            >
+              Actualizar datos
+            </button>
+          </div>
+        </header>
+
+        <section id="homeView" class="view active-view">
+          <section id="systemPanel" class="panel system-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Tu equipo</p>
+                <h3>Capacidad local y modelos recomendados</h3>
+              </div>
+              <p id="systemSummary" class="panel-note">Escaneando hardware...</p>
+            </div>
+
+            <section class="system-section hardware-section">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Comprobación del ordenador</p>
+                  <h4>Memoria, disco y modo local</h4>
+                </div>
+              </div>
+
+              <div class="system-grid">
+                <article class="metric-card">
+                  <span>RAM disponible</span>
+                  <strong id="ramValue">--</strong>
+                  <div class="meter"><i id="ramBar"></i></div>
+                  <small id="ramMeta">--</small>
+                </article>
+
+                <article class="metric-card">
+                  <span>Disco libre</span>
+                  <strong id="diskValue">--</strong>
+                  <div class="meter"><i id="diskBar"></i></div>
+                  <small id="diskMeta">--</small>
+                </article>
+
+                <article class="metric-card">
+                  <span>Presupuesto IA</span>
+                  <strong id="budgetValue">--</strong>
+                  <div class="meter"><i id="budgetBar"></i></div>
+                  <small id="budgetMeta">--</small>
+                </article>
+
+                <article class="metric-card">
+                  <span>Modo de inferencia</span>
+                  <strong id="modeValue">--</strong>
+                  <small id="modeMeta">--</small>
+                </article>
+              </div>
+            </section>
+
+            <section class="system-section recommendation-section">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Modelos recomendados</p>
+                  <h4>Opciones que encajan mejor en este equipo</h4>
+                </div>
+              </div>
+              <div id="recommendationsStrip" class="recommendation-strip"></div>
+            </section>
+          </section>
+
+          <section class="grid">
+            <article id="modelsPanel" class="panel models-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Ollama + catálogo</p>
+                  <h3>Modelos</h3>
+                </div>
+                <input id="modelSearch" type="search" placeholder="Filtrar modelo..." />
+              </div>
+              <div id="modelsList" class="model-list"></div>
+            </article>
+
+            <article id="sessionsPanel" class="panel sessions-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Historial local</p>
+                  <h3>Sesiones</h3>
+                </div>
+              </div>
+              <div id="sessionsList" class="sessions-list"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="chatView" class="view" hidden>
+          <section class="panel chat-tools">
+            <div>
+              <p class="eyebrow">Chat local</p>
+              <h3>Selecciona un modelo y conversa con Florentino</h3>
+            </div>
+            <div class="chat-controls">
+              <div class="model-picker">
+                <label for="modelSelect">Modelo</label>
+                <select id="modelSelect"></select>
+              </div>
+              <label class="toggle technical-toggle" title="Permite herramientas con confirmación automática">
+                <input id="technicalMode" type="checkbox" />
+                <span id="technicalModeLabel">Modo técnico</span>
+              </label>
+              <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
+            </div>
+          </section>
+
+          <section class="chat-panel">
+            <div id="messages" class="messages" aria-live="polite"></div>
+            <form id="chatForm" class="composer">
+              <textarea id="messageInput" rows="2" placeholder="Escribe una petición para el agente local..."></textarea>
+              <button id="sendButton" type="submit">Enviar</button>
+            </form>
+          </section>
+
+          <pre id="commandPreview" class="sr-only">ci2lab --model &lt;modelo&gt; chat</pre>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

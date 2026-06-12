@@ -1,14 +1,15 @@
 ## Tool format (text mode)
 
-This model calls tools by writing a fenced code block whose **language tag is the tool name**. The system finds that block, runs the tool, and shows you the result. Then you continue.
+You call a tool by writing ONE fenced code block whose **language tag is the tool name**. The system runs that block and returns the result; then you continue.
 
-Hard rules:
+Hard rules (read carefully — breaking these means the tool does NOT run):
 
-- The opening fence must be the tool name, e.g. ` ```write_file `. Do NOT use ` ```python ` for actions.
-- ` ```json ` with `{"name": "write_file", "arguments": {...}}` is also accepted as a fallback.
-- Never put `write_file` inside a ` ```bash ` block. Bash is only for shell commands like `python wordle.py`.
-- Use one tool block at a time, then wait for the result before the next step.
-- After a tool runs, only say the task is done if the result confirms success.
+- The opening fence must be the exact tool name, e.g. ` ```write_file `. Never use ` ```python ` or ` ```text ` for an action.
+- Output exactly ONE tool block per message, then stop and wait for the result.
+- Do not describe a tool call in prose or in a plain ` ```json ` block of explanation — only a real tool-named block runs. (` ```json ` with `{"name": "...", "arguments": {...}}` is accepted only as a fallback.)
+- Never put `write_file` or other tools inside a ` ```bash ` block. `bash` is only for shell commands like `python wordle.py`.
+- Use the exact argument names shown below.
+- Only say the task is done after a tool result confirms success.
 
 ### Tools that take a single value
 
@@ -20,10 +21,16 @@ List a directory:
 .
 ```
 
-Read a text file or PDF with extractable text (one path per block):
+Read a text/code file with numbered lines (one path per block):
 
 ```read_file
 src/main.py
+```
+
+Read a document by format (PDF, DOCX, PPTX, XLSX, CSV, Markdown, plain text):
+
+```read_document
+rubrica.docx
 ```
 
 Find files by glob pattern:
@@ -78,11 +85,15 @@ The body MUST be a single JSON object with `path`, `old_string`, and `new_string
 {"path": "src/main.py", "old_string": "DEBUG = True", "new_string": "DEBUG = False"}
 ```
 
-File metadata (path in block):
+### file_info
+
+Path metadata without reading full content:
 
 ```file_info
 src/main.py
 ```
+
+### tree
 
 Directory tree (optional JSON for depth/limits):
 
@@ -90,10 +101,58 @@ Directory tree (optional JSON for depth/limits):
 {"path": ".", "depth": 2, "max_entries": 100}
 ```
 
+### inspect_file
+
 Inspect a line range from a text file:
 
 ```inspect_file
 {"path": "src/main.py", "start": 1, "end": 40}
 ```
 
-Available tools: `bash`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`.
+### todo_write
+
+```todo_write
+{"todos": [{"id": "1", "content": "Create snake.py", "status": "in_progress"}, {"id": "2", "content": "Run tests", "status": "pending"}]}
+```
+
+### ask_user
+
+```ask_user
+{"question": "Which Python version should I target?", "options": ["3.11", "3.12"]}
+```
+
+### web_fetch
+
+```web_fetch
+https://docs.python.org/3/library/random.html
+```
+
+### notebook_edit
+
+```notebook_edit
+{"path": "analysis.ipynb", "cell_index": 0, "new_source": "import pandas as pd\n", "cell_type": "code"}
+```
+
+### git_status / git_diff
+
+```git_status
+.
+```
+
+```git_diff
+{"path": "src/main.py", "staged": false}
+```
+
+### skill
+
+```skill
+{"skill_name": "make-word-doc", "args": "report about Q1 sales"}
+```
+
+### mcp_call (fallback when no dedicated mcp__ tool is listed)
+
+```mcp_call
+{"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
+```
+
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

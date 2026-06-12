@@ -70,3 +70,6 @@ class AgentConfig:
 
     opencode_permissions: OpenCodePermissionConfig | None = None
     """Reglas permission estilo OpenCode (solo motor experimental)."""
+
+    skill_allowed_tools: frozenset[str] | None = None
+    """When set by an invoked skill, only these tool names are exposed to the model."""

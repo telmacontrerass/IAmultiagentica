@@ -25,6 +25,12 @@ def test_parse_fenced_read_file():
     assert calls[0].arguments["path"] == "README.md"
 
 
+def test_parse_fenced_read_document():
+    calls = parse_fenced_blocks("```read_document\nrubrica.docx\n```")
+    assert calls[0].name == "read_document"
+    assert calls[0].arguments["path"] == "rubrica.docx"
+
+
 def test_parse_xml_invoke():
     text = '<invoke name="bash"><parameter name="command">echo hi</parameter></invoke>'
     calls = parse_xml_blocks(text)

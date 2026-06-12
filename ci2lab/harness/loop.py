@@ -15,6 +15,7 @@ import hashlib
 import re
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from rich.console import Console
@@ -22,7 +23,9 @@ from rich.live import Live
 from rich.text import Text
 
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
+from ci2lab.harness.compact import manage_context
 from ci2lab.harness.context import trim_messages
+from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
@@ -40,7 +43,8 @@ from ci2lab.harness.policy import (
     is_policy_error,
     tool_call_signature,
 )
-from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS, execute_tool
+from ci2lab.harness.mcp.session import close_mcp_manager
+from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 console = Console()
@@ -76,14 +80,14 @@ def run_agent(
             history.insert(0, {"role": "system", "content": system})
         history.append({"role": "user", "content": user_prompt})
 
-    tools = FUNCTION_SCHEMAS if selection.supports_tools else None
     recent_sigs: deque[str] = deque(maxlen=6)
     policy_blocked_sigs: set[str] = set()
     policy_nudge_sent = False
     stuck_rounds = 0
     unparsed_tool_nudges = 0
-    pdf_tool_nudges = 0
-    pdf_tool_used = False
+    summary_failures = 0
+    document_tool_nudges = 0
+    document_tool_used = False
     final_text = ""
     content = ""
     status = "success"
@@ -102,66 +106,120 @@ def run_agent(
             if run_log:
                 run_log.set_rounds_completed(round_num)
 
-            trimmed = trim_messages(history, selection.context_length)
-
-            try:
-                llm_response = _call_llm(client, trimmed, tools=tools, stream=cfg.stream)
-            except LLMError as exc:
-                status = "llm_error"
-                log_error = exc.user_message
-                _maybe_save(cfg, history, selection)
-                raise
-            except Exception as exc:  # noqa: BLE001
-                err = classify_request_error(
-                    exc, model=selection.ollama_tag, url=client.chat_url
-                )
-                console.print(f"[red]{err.user_message}[/red]")
-                status = "llm_error"
-                log_error = err.user_message
-                _maybe_save(cfg, history, selection)
-                raise err from exc
-
-            content = llm_response.content or ""
-            if on_round:
-                on_round(round_num, content)
-
-            calls = resolve_tool_calls(
-                content,
-                llm_response.tool_calls,
-                tool_mode=selection.tool_mode,
+            history, summary_failures, compact_events = manage_context(
+                history,
+                client,
+                selection.context_length,
+                summary_failures=summary_failures,
             )
-            forced_pdf_call = (
-                _forced_pdf_read_tool_call(user_prompt)
-                if not calls and not pdf_tool_used and pdf_tool_nudges >= 1
+            for event in compact_events:
+                console.print(f"[dim]{event}[/dim]")
+
+            content = ""
+            calls: list[ToolCall] = []
+            initial_document_call = (
+                _forced_document_read_tool_call(user_prompt, cfg.cwd)
+                if not document_tool_used and round_num == 1
                 else None
             )
-            if forced_pdf_call:
+
+            if initial_document_call:
+                console.print(
+                    "[yellow]Petición documental detectada; leyendo el documento "
+                    "con read_document.[/yellow]"
+                )
+                calls = [initial_document_call]
+            else:
+                missing_document_message = (
+                    _document_request_missing_message(
+                        user_prompt,
+                        cfg.cwd,
+                        document_tool_used=document_tool_used,
+                    )
+                    if not document_tool_used and round_num == 1
+                    else None
+                )
+                if missing_document_message:
+                    final_text = missing_document_message
+                    console.print(final_text)
+                    append_assistant_turn(history, final_text)
+                    _maybe_save(cfg, history, selection)
+                    break
+
+                trimmed = trim_messages(history, selection.context_length)
+                tools = get_function_schemas(cfg) if selection.supports_tools else None
+
+                try:
+                    llm_response = _call_llm(client, trimmed, tools=tools, stream=cfg.stream)
+                except LLMError as exc:
+                    status = "llm_error"
+                    log_error = exc.user_message
+                    _maybe_save(cfg, history, selection)
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    err = classify_request_error(
+                        exc, model=selection.ollama_tag, url=client.chat_url
+                    )
+                    console.print(f"[red]{err.user_message}[/red]")
+                    status = "llm_error"
+                    log_error = err.user_message
+                    _maybe_save(cfg, history, selection)
+                    raise err from exc
+
+                content = llm_response.content or ""
+                if on_round:
+                    on_round(round_num, content)
+
+                calls = resolve_tool_calls(
+                    content,
+                    llm_response.tool_calls,
+                    tool_mode=selection.tool_mode,
+                )
+            forced_document_call = (
+                _forced_document_read_tool_call(user_prompt, cfg.cwd)
+                if not calls and not document_tool_used and document_tool_nudges >= 1
+                else None
+            )
+            if forced_document_call:
                 console.print(
                     "[yellow]El modelo siguió sin usar herramientas; ejecutando "
-                    "read_file automáticamente para el PDF mencionado.[/yellow]"
+                    "read_document automáticamente para el documento mencionado.[/yellow]"
                 )
-                calls = [forced_pdf_call]
+                calls = [forced_document_call]
 
             if not calls:
-                pdf_hint = _pdf_tool_retry_hint(
+                document_hint = _document_tool_retry_hint(
                     user_prompt,
                     selection_tool_mode=selection.tool_mode,
+                    cwd=cfg.cwd,
                 )
                 if (
-                    pdf_hint
-                    and not pdf_tool_used
-                    and pdf_tool_nudges < 1
+                    document_hint
+                    and not document_tool_used
+                    and document_tool_nudges < 1
                     and selection.supports_tools
                 ):
-                    pdf_tool_nudges += 1
+                    document_tool_nudges += 1
                     console.print(
-                        "[yellow]La petición menciona un PDF pero el modelo no usó "
-                        "herramientas; reintentando con read_file/grep.[/yellow]"
+                        "[yellow]La petición menciona un documento pero el modelo no usó "
+                        "herramientas; reintentando con read_document/grep.[/yellow]"
                     )
                     append_assistant_turn(history, content)
-                    history.append({"role": "user", "content": pdf_hint})
+                    history.append({"role": "user", "content": document_hint})
                     _maybe_save(cfg, history, selection)
                     continue
+
+                missing_document_message = _document_request_missing_message(
+                    user_prompt,
+                    cfg.cwd,
+                    document_tool_used=document_tool_used,
+                )
+                if missing_document_message:
+                    final_text = missing_document_message
+                    console.print(final_text)
+                    append_assistant_turn(history, final_text)
+                    _maybe_save(cfg, history, selection)
+                    break
 
                 if (
                     looks_like_unparsed_tool_attempt(content)
@@ -207,8 +265,8 @@ def run_agent(
                 f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
                 for c in calls
             )
-            if any(_is_pdf_read_tool_call(c.name, c.arguments) for c in calls):
-                pdf_tool_used = True
+            if any(_is_document_read_tool_call(c.name, c.arguments) for c in calls):
+                document_tool_used = True
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -263,9 +321,16 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
-            pdf_followup = _pdf_tool_result_followup(results, user_prompt)
-            if pdf_followup:
-                history.append({"role": "user", "content": pdf_followup})
+            document_answer = _document_direct_answer(results, user_prompt)
+            if document_answer:
+                final_text = document_answer
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                _maybe_save(cfg, history, selection)
+                break
+            document_followup = _document_tool_result_followup(results, user_prompt)
+            if document_followup:
+                history.append({"role": "user", "content": document_followup})
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True
@@ -285,6 +350,7 @@ def run_agent(
         status = "interrupted"
         raise
     finally:
+        close_mcp_manager(cfg.cwd)
         if run_log:
             finalize_error = log_error
             if status == "max_rounds" and not finalize_error:
@@ -349,83 +415,321 @@ def _summarize_args(args: dict) -> str:
     if "command" in args:
         cmd = args["command"]
         return cmd[:60] + ("..." if len(cmd) > 60 else "")
+    if "url" in args:
+        url = str(args["url"])
+        return url[:60] + ("..." if len(url) > 60 else "")
+    if "question" in args:
+        q = str(args["question"])
+        return q[:60] + ("..." if len(q) > 60 else "")
     if "path" in args:
         return str(args["path"])
     if "pattern" in args:
         return str(args["pattern"])
+    if "todos" in args and isinstance(args["todos"], list):
+        return f"{len(args['todos'])} items"
     return ""
 
 
-_PDF_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.pdf)\b", re.IGNORECASE)
+_DOCUMENT_EXTENSIONS = (
+    "pdf",
+    "docx",
+    "pptx",
+    "xlsx",
+    "csv",
+    "tsv",
+    "md",
+    "rst",
+    "txt",
+    "text",
+    "json",
+    "yaml",
+    "yml",
+)
+_DOCUMENT_PATH_RE = re.compile(
+    rf"(?P<path>[^\s`\"']+\.({'|'.join(_DOCUMENT_EXTENSIONS)}))\b",
+    re.IGNORECASE,
+)
 
 
-def _pdf_tool_retry_hint(
+def _document_tool_retry_hint(
     user_prompt: str,
     *,
     selection_tool_mode: str,
+    cwd: str,
 ) -> str | None:
-    match = _PDF_PATH_RE.search(user_prompt)
-    if not match:
+    if not _looks_like_document_read_request(user_prompt):
+        return None
+    document_path = _document_path_from_prompt(user_prompt, cwd)
+    if not document_path:
         return None
 
-    pdf_path = match.group("path")
     if selection_tool_mode == "fenced":
         return (
-            "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+            "La petición del usuario requiere leer un documento del directorio de trabajo. "
             "No digas que no puedes acceder al archivo: tienes herramientas locales. "
-            "Llama ahora a la herramienta `read_file` con este bloque exacto, espera el "
+            "Llama ahora a la herramienta `read_document` con este bloque exacto, espera el "
             "resultado y después responde a la tarea del usuario:\n"
-            "```read_file\n"
-            f"{pdf_path}\n"
+            "```read_document\n"
+            f"{document_path}\n"
             "```"
         )
 
     return (
-        "La petición del usuario requiere leer un PDF del directorio de trabajo. "
+        "La petición del usuario requiere leer un documento del directorio de trabajo. "
         "No digas que no puedes acceder al archivo: tienes herramientas locales. "
-        f"Invoca ahora la herramienta read_file con path={pdf_path!r}, espera el "
+        f"Invoca ahora la herramienta read_document con path={document_path!r}, espera el "
         "resultado y después responde a la tarea del usuario."
     )
 
 
-def _is_pdf_read_tool_call(tool_name: str, args: dict[str, Any]) -> bool:
-    if tool_name == "read_file":
-        return str(args.get("path", "")).lower().endswith(".pdf")
+def _is_document_read_tool_call(tool_name: str, args: dict[str, Any]) -> bool:
+    if tool_name in {"read_file", "read_document"}:
+        return _is_supported_document_path(str(args.get("path", "")))
     if tool_name == "grep":
         path = str(args.get("path", "")).lower()
         glob = str(args.get("glob", "")).lower()
-        return path.endswith(".pdf") or ".pdf" in glob
+        return _is_supported_document_path(path) or any(
+            f".{ext}" in glob for ext in _DOCUMENT_EXTENSIONS
+        )
     return False
 
 
-def _forced_pdf_read_tool_call(user_prompt: str) -> ToolCall | None:
-    match = _PDF_PATH_RE.search(user_prompt)
-    if not match:
+def _forced_document_read_tool_call(user_prompt: str, cwd: str) -> ToolCall | None:
+    if not _looks_like_document_read_request(user_prompt):
+        return None
+    document_path = _document_path_from_prompt(user_prompt, cwd)
+    if not document_path:
         return None
     return ToolCall(
-        name="read_file",
-        arguments={"path": match.group("path")},
-        call_id="auto_pdf_read",
+        name="read_document",
+        arguments={"path": document_path},
+        call_id="auto_document_read",
     )
 
 
-def _pdf_tool_result_followup(
+def _document_tool_result_followup(
     results: list[ToolResult],
     original_user_prompt: str,
 ) -> str | None:
-    pdf_outputs = [
+    document_outputs = [
         result.content
         for result in results
-        if result.tool_name == "read_file"
+        if result.tool_name in {"read_file", "read_document"}
         and not result.is_error
-        and "[PDF page " in result.content
+        and ("Texto extraido:" in result.content or "[PDF page " in result.content)
     ]
-    if not pdf_outputs:
+    if not document_outputs:
         return None
-    content = "\n\n".join(pdf_outputs)
+    content = "\n\n".join(document_outputs)
     return (
-        "Contenido del PDF leído con la herramienta `read_file`:\n\n"
+        "Contenido del documento leido con la herramienta `read_document`:\n\n"
         f"{content}\n\n"
         "Ahora responde a la petición original usando exclusivamente ese contenido. "
         f"Petición original: {original_user_prompt}"
     )
+
+
+def _document_direct_answer(
+    results: list[ToolResult],
+    original_user_prompt: str,
+) -> str | None:
+    document_outputs = [
+        result.content
+        for result in results
+        if result.tool_name in {"read_file", "read_document"}
+        and not result.is_error
+        and ("Texto extraido:" in result.content or "[PDF page " in result.content)
+    ]
+    return maybe_answer_document_request(original_user_prompt, document_outputs)
+
+
+def _is_supported_document_path(path: str) -> bool:
+    low = path.lower()
+    return any(low.endswith(f".{ext}") for ext in _DOCUMENT_EXTENSIONS)
+
+
+_DOCUMENT_TYPE_EXTENSIONS = {
+    "pdf": {".pdf"},
+    "word": {".docx"},
+    "docx": {".docx"},
+    "excel": {".xlsx", ".csv", ".tsv"},
+    "xlsx": {".xlsx"},
+    "csv": {".csv"},
+    "powerpoint": {".pptx"},
+    "presentacion": {".pptx"},
+    "presentación": {".pptx"},
+    "pptx": {".pptx"},
+}
+_DOCUMENT_REQUEST_CUES = frozenset({
+    "archivo",
+    "documento",
+    "fichero",
+    "pdf",
+    "word",
+    "docx",
+    "excel",
+    "xlsx",
+    "csv",
+    "powerpoint",
+    "presentacion",
+    "presentación",
+    "pptx",
+})
+_SKIPPED_DOCUMENT_DIRS = frozenset({
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    "node_modules",
+    "runs",
+})
+
+
+def _document_path_from_prompt(user_prompt: str, cwd: str) -> str | None:
+    match = _DOCUMENT_PATH_RE.search(user_prompt)
+    if match:
+        return match.group("path")
+
+    candidates = _document_candidates(cwd, _requested_document_extensions(user_prompt))
+    if not candidates:
+        return None
+
+    prompt_tokens = set(_word_tokens(user_prompt))
+    scored: list[tuple[int, str]] = []
+    for candidate in candidates:
+        stem_tokens = set(_word_tokens(candidate.stem))
+        score = len(prompt_tokens & stem_tokens)
+        if candidate.stem.lower() in user_prompt.lower():
+            score += 3
+        if score:
+            scored.append((score, _relative_document_path(candidate, cwd)))
+
+    if scored:
+        scored.sort(key=lambda item: (-item[0], len(item[1]), item[1]))
+        if len(scored) == 1 or scored[0][0] > scored[1][0]:
+            return scored[0][1]
+
+    requested_exts = _requested_document_extensions(user_prompt)
+    if requested_exts and len(candidates) == 1:
+        return _relative_document_path(candidates[0], cwd)
+    return None
+
+
+def _document_request_missing_message(
+    user_prompt: str,
+    cwd: str,
+    *,
+    document_tool_used: bool,
+) -> str | None:
+    if document_tool_used or not _looks_like_document_read_request(user_prompt):
+        return None
+    if _document_path_from_prompt(user_prompt, cwd):
+        return None
+
+    candidates = _document_candidates(cwd, _requested_document_extensions(user_prompt))
+    if not candidates:
+        return (
+            "No encuentro un documento claro para leer. Escribe el nombre del archivo "
+            "con extension, por ejemplo: `resume prueba.pdf`."
+        )
+    shown = [
+        f"- {_relative_document_path(candidate, cwd)}"
+        for candidate in candidates[:8]
+    ]
+    more = "" if len(candidates) <= 8 else f"\n... y {len(candidates) - 8} mas"
+    return (
+        "No sé con seguridad qué documento quieres leer. Prueba con uno de estos:\n\n"
+        + "\n".join(shown)
+        + more
+    )
+
+
+def _requested_document_extensions(user_prompt: str) -> set[str] | None:
+    text = user_prompt.lower()
+    requested: set[str] = set()
+    for marker, extensions in _DOCUMENT_TYPE_EXTENSIONS.items():
+        if marker in text:
+            requested.update(extensions)
+    return requested or None
+
+
+def _document_candidates(cwd: str, extensions: set[str] | None = None) -> list[Path]:
+    root = Path(cwd).resolve()
+    candidates: list[Path] = []
+    for path in root.rglob("*"):
+        if any(part in _SKIPPED_DOCUMENT_DIRS for part in path.parts):
+            continue
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix not in {f".{ext}" for ext in _DOCUMENT_EXTENSIONS}:
+            continue
+        if extensions and suffix not in extensions:
+            continue
+        candidates.append(path)
+        if len(candidates) >= 100:
+            break
+    return sorted(candidates, key=lambda item: (len(item.parts), item.name.lower()))
+
+
+def _relative_document_path(path: Path, cwd: str) -> str:
+    try:
+        return path.relative_to(Path(cwd).resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _word_tokens(text: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[a-zA-ZÀ-ÿ0-9]+", text.lower())
+        if len(token) >= 3
+    ]
+
+
+def _looks_like_document_read_request(user_prompt: str) -> bool:
+    text = user_prompt.lower()
+    write_verbs = (
+        "crea",
+        "crear",
+        "guarda",
+        "guardar",
+        "escribe",
+        "escribir",
+        "edita",
+        "editar",
+        "modifica",
+        "modificar",
+        "sobrescribe",
+        "sobrescribir",
+    )
+    if any(verb in text for verb in write_verbs):
+        return False
+    read_verbs = (
+        "abre",
+        "abrir",
+        "analiza",
+        "analizar",
+        "busca",
+        "buscar",
+        "consulta",
+        "consultar",
+        "corrige",
+        "corregir",
+        "extrae",
+        "extraer",
+        "lee",
+        "leer",
+        "resume",
+        "resumir",
+        "revisa",
+        "revisar",
+    )
+    has_read_intent = any(verb in text for verb in read_verbs)
+    has_document_reference = (
+        bool(_DOCUMENT_PATH_RE.search(user_prompt))
+        or any(cue in text for cue in _DOCUMENT_REQUEST_CUES)
+    )
+    return has_read_intent and has_document_reference

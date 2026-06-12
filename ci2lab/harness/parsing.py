@@ -19,7 +19,7 @@ import uuid
 from typing import Any
 
 from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
-from ci2lab.harness.tools.registry import TOOL_NAMES
+from ci2lab.harness.tools.registry import TOOL_NAMES, is_known_tool
 from ci2lab.harness.types import ToolCall
 
 _FENCED_RE = re.compile(
@@ -66,6 +66,11 @@ _NAME_MAP = {
     "cat": "read_file",
     "write": "write_file",
     "edit": "edit_file",
+    "fetch": "web_fetch",
+    "web": "web_fetch",
+    "todo": "todo_write",
+    "notebook": "notebook_edit",
+    "git": "git_status",
 }
 
 
@@ -146,7 +151,7 @@ def _json_object_to_call(obj: dict[str, Any]) -> ToolCall | None:
     if not raw_name:
         return None
     name = _map_name(str(raw_name))
-    if name not in TOOL_NAMES:
+    if not is_known_tool(name):
         return None
     args = _args_from_payload(obj)
     if isinstance(fn := obj.get("function"), dict):
@@ -188,7 +193,7 @@ def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
 
 def _invoke_to_call(tool_name: str, body: str) -> ToolCall | None:
     tool_name = _map_name(tool_name)
-    if tool_name not in TOOL_NAMES:
+    if not is_known_tool(tool_name):
         return None
     params: dict[str, Any] = {}
     for pm in _XML_PARAM_RE.finditer(body):
@@ -307,7 +312,7 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
     calls: list[ToolCall] = []
     for match in _FENCED_RE.finditer(text):
         tag = _map_name(match.group(1))
-        if tag not in TOOL_NAMES:
+        if not is_known_tool(tag):
             continue
         body = match.group(2).strip()
         args = _fenced_body_to_args(tag, body)
@@ -318,7 +323,7 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
 def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
     if tool == "bash":
         return {"command": body}
-    if tool == "read_file":
+    if tool in ("read_file", "read_document"):
         if "\n" not in body and not body.startswith("{"):
             return {"path": body}
         try:
@@ -361,6 +366,66 @@ def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
         return {"path": body.strip()}
+    if tool == "web_fetch":
+        if body.startswith("http://") or body.startswith("https://"):
+            return {"url": body.strip()}
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"url": body}
+        except json.JSONDecodeError:
+            return {"url": body.strip()}
+    if tool == "ask_user":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"question": body}
+    if tool == "todo_write":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"raw": body}
+    if tool == "notebook_edit":
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"raw": body}
+    if tool == "git_status":
+        if not body or body.strip() in {".", "{}"}:
+            return {"path": "."}
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"path": body.strip()}
+        except json.JSONDecodeError:
+            return {"path": body.strip()}
+    if tool == "git_diff":
+        if not body:
+            return {}
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"path": body.strip()}
+    if tool == "skill":
+        try:
+            data = json.loads(body)
+            if isinstance(data, dict):
+                if "skill_name" not in data and "name" in data:
+                    data["skill_name"] = data["name"]
+                return data
+        except json.JSONDecodeError:
+            pass
+        return {"skill_name": body.strip(), "args": ""}
+    if tool == "mcp_call":
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"tool": body.strip()}
+        except json.JSONDecodeError:
+            return {"server": "", "tool": body.strip()}
+    if tool.startswith("mcp__"):
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
     return {"raw": body}
 
 
