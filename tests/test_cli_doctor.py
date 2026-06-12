@@ -6,7 +6,13 @@ from io import StringIO
 
 from rich.console import Console
 
-from ci2lab.cli import _DOCTOR_ERROR, _DOCTOR_OK, _DOCTOR_WARN, _cmd_doctor
+from ci2lab.cli import (
+    _DOCTOR_ERROR,
+    _DOCTOR_OK,
+    _DOCTOR_WARN,
+    _cmd_doctor,
+    _missing_document_dependencies,
+)
 from ci2lab.config import Ci2LabConfig
 
 
@@ -21,6 +27,7 @@ def test_doctor_markers_are_ascii():
 def test_cmd_doctor_output_encodes_cp1252(monkeypatch):
     buf = StringIO()
     monkeypatch.setattr("ci2lab.cli.console", Console(file=buf, width=120))
+    monkeypatch.setattr("importlib.util.find_spec", lambda _name: object())
 
     class FakeResponse:
         def raise_for_status(self) -> None:
@@ -45,6 +52,7 @@ def test_cmd_doctor_output_encodes_cp1252(monkeypatch):
 def test_cmd_doctor_ollama_error_encodes_cp1252(monkeypatch):
     buf = StringIO()
     monkeypatch.setattr("ci2lab.cli.console", Console(file=buf, width=120))
+    monkeypatch.setattr("importlib.util.find_spec", lambda _name: object())
 
     def fail_get(*args, **kwargs):
         raise ConnectionError("connection refused")
@@ -59,3 +67,14 @@ def test_cmd_doctor_ollama_error_encodes_cp1252(monkeypatch):
     assert code == 1
     assert _DOCTOR_ERROR in output
     assert "\u2717" not in output
+
+
+def test_missing_document_dependencies_reports_missing_modules(monkeypatch):
+    def fake_find_spec(name):
+        return None if name == "docx" else object()
+
+    monkeypatch.setattr("importlib.util.find_spec", fake_find_spec)
+
+    missing = _missing_document_dependencies()
+
+    assert missing == [("docx", "Word/DOCX")]

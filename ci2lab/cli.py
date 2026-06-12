@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -32,7 +33,14 @@ _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
 
 _CLI_COMMANDS = frozenset(
-    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals", "ui"}
+    {"agent", "chat", "sessions", "doctor", "hardware", "models", "evals", "ui", "tools"}
+)
+
+_DOCUMENT_DEPENDENCIES = (
+    ("pypdf", "PDF"),
+    ("docx", "Word/DOCX"),
+    ("pptx", "PowerPoint/PPTX"),
+    ("openpyxl", "Excel/XLSX"),
 )
 
 
@@ -57,6 +65,8 @@ def _print_global_help() -> None:
         "Comandos principales:",
         '  ci2lab agent "peticion"           Una tarea y sale',
         "  ci2lab chat                       Modo interactivo (REPL)",
+        "  ci2lab tools qwen:1.8b            Chat sencillo con herramientas",
+        "  ci2lab qwen:1.8b tools            Lo mismo, forma abreviada",
         "  ci2lab sessions [--json]          Lista sesiones guardadas",
         "  ci2lab doctor                     Comprueba Python, Ollama y modelos",
         "  ci2lab hardware [--json]          RAM, GPU, presupuesto de memoria",
@@ -81,6 +91,8 @@ def _print_global_help() -> None:
         "",
         "Importante: los flags del agente van ANTES del subcomando:",
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
+        "Atajo equivalente para uso normal:",
+        "  ci2lab qwen:1.8b tools",
         "",
         "Opciones por comando:",
         "  models recommend [--json] [--limit N] [consulta]",
@@ -110,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     if _is_global_help_request(raw_argv):
         _print_global_help()
         return 0
+
+    raw_argv = _expand_tools_shortcut(raw_argv)
 
     if raw_argv and not any(tok in _CLI_COMMANDS for tok in raw_argv):
         raw_argv = ["agent", *raw_argv]
@@ -197,6 +211,39 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 0
+
+
+def _expand_tools_shortcut(raw_argv: list[str]) -> list[str]:
+    """Expand friendly tools shortcuts into normal agent/chat invocations."""
+    if not raw_argv:
+        return raw_argv
+
+    if raw_argv[0] == "tools":
+        if any(arg in {"--help", "-h"} for arg in raw_argv[1:]):
+            return ["--help"]
+        model: str | None = None
+        rest = raw_argv[1:]
+        if rest and not rest[0].startswith("-"):
+            model = rest[0]
+            rest = rest[1:]
+        return _tools_args(model, rest)
+
+    if len(raw_argv) >= 2 and raw_argv[1] == "tools" and not raw_argv[0].startswith("-"):
+        return _tools_args(raw_argv[0], raw_argv[2:])
+
+    return raw_argv
+
+
+def _tools_args(model: str | None, rest: list[str]) -> list[str]:
+    args: list[str] = []
+    if model:
+        args.extend(["--model", model])
+    args.extend(["--tool-mode", "fenced", "--no-stream"])
+    if rest:
+        args.extend(["agent", " ".join(rest)])
+    else:
+        args.append("chat")
+    return args
 
 
 def _add_agent_flags(p: argparse.ArgumentParser) -> None:
@@ -335,6 +382,7 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
 
     selection = _resolve_selection(runtime, prompt, args)
     config = _build_config(runtime, args, selection)
+    _print_document_dependency_warning()
 
     console.print(f"[bold]Modelo:[/bold] {selection.ollama_tag}")
     console.print(f"[bold]Tool mode:[/bold] {selection.tool_mode}")
@@ -357,6 +405,7 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
 
     selection = _resolve_selection(runtime, "", args)
     config = _build_config(runtime, args, selection)
+    _print_document_dependency_warning()
     try:
         run_repl(selection, config, session_id=args.session)
     except LLMError as exc:
@@ -433,6 +482,20 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         console.print(f"[red]{_DOCTOR_ERROR}[/red] ci2lab: {exc}")
         ok = False
 
+    missing_document_deps = _missing_document_dependencies()
+    if missing_document_deps:
+        names = ", ".join(name for name, _label in missing_document_deps)
+        console.print(
+            f"[red]{_DOCTOR_ERROR}[/red] Faltan librerias de documentos: {names}"
+        )
+        console.print('  Ejecuta: pip install -e ".[dev]"')
+        ok = False
+    else:
+        labels = ", ".join(label for _name, label in _DOCUMENT_DEPENDENCIES)
+        console.print(
+            f"[green]{_DOCTOR_OK}[/green] Lectura de documentos disponible ({labels})"
+        )
+
     base_url = runtime.backend_url.removesuffix("/v1").rstrip("/")
     try:
         r = httpx.get(f"{base_url}/api/tags", timeout=3.0)
@@ -456,6 +519,25 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         ok = False
 
     return 0 if ok else 1
+
+
+def _missing_document_dependencies() -> list[tuple[str, str]]:
+    return [
+        (module_name, label)
+        for module_name, label in _DOCUMENT_DEPENDENCIES
+        if importlib.util.find_spec(module_name) is None
+    ]
+
+
+def _print_document_dependency_warning() -> None:
+    missing = _missing_document_dependencies()
+    if not missing:
+        return
+    names = ", ".join(name for name, _label in missing)
+    console.print(
+        f"[yellow]{_DOCTOR_WARN}[/yellow] Faltan librerias para leer documentos: {names}"
+    )
+    console.print('  Ejecuta: pip install -e ".[dev]"')
 
 
 def _cmd_hardware(args: argparse.Namespace) -> int:
