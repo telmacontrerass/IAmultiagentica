@@ -284,6 +284,7 @@ ci2lab ui --port 8766
 Arranca la interfaz en otro puerto local.
 
 La UI funciona solo en local, usa Ollama como motor y mantiene sesiones/logs en tu equipo.
+En el chat puedes adjuntar PDFs y archivos de texto; se copian a `ci2lab_uploads/` y el agente los lee con `read_file`.
 
 ### Modo terminal
 

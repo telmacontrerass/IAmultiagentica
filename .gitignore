@@ -22,6 +22,7 @@ tmp/
 .ci2lab/
 audit/deterministic_claude/
 audit/live_claude/
+ci2lab_uploads/
 
 # Local test leftovers
 /inside.txt

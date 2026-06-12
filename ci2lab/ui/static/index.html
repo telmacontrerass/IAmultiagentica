@@ -161,6 +161,17 @@
 
           <section class="chat-panel">
             <div id="messages" class="messages" aria-live="polite"></div>
+            <div class="attachment-bar">
+              <label class="file-button" for="fileInput">+ Adjuntar archivo</label>
+              <input
+                id="fileInput"
+                class="sr-only"
+                type="file"
+                multiple
+                accept=".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.text,.md,.rst,.json,.xml,.html,.py,.js,.ts,.css,.yml,.yaml,.toml,.ini,.log,.rtf"
+              />
+              <div id="attachmentsList" class="attachments-list" aria-live="polite"></div>
+            </div>
             <form id="chatForm" class="composer">
               <textarea id="messageInput" rows="2" placeholder="Escribe una petición para el agente local..."></textarea>
               <button id="sendButton" type="submit">Enviar</button>

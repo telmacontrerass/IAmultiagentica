@@ -3,6 +3,7 @@ const state = {
   installed: [],
   currentSession: null,
   chatMessages: [],
+  uploadedFiles: [],
   activeView: "homeView",
   pullTasks: {},
   pullPolls: {},
@@ -11,6 +12,15 @@ const state = {
 };
 
 const STORAGE_KEY = "ci2lab.ui.state.v1";
+
+const MODEL_SEARCH_SYNONYMS = {
+  coding: ["codigo", "código", "programar", "programacion", "programación", "code", "coder", "python", "javascript", "desarrollo", "software", "debug", "debugging"],
+  reasoning: ["razonar", "razonamiento", "matematicas", "matemáticas", "logica", "lógica", "problemas", "pensar", "analisis", "análisis", "reasoning"],
+  general: ["general", "chat", "conversacion", "conversación", "preguntas", "texto", "resumen", "resumir", "documentos", "pdf", "estudio", "ayuda"],
+  edge: ["rapido", "rápido", "ligero", "pequeno", "pequeño", "poca ram", "local", "portatil", "portátil", "edge"],
+  workstation: ["potente", "trabajo", "workstation", "calidad", "medio"],
+  enterprise: ["grande", "maximo", "máximo", "empresa", "enterprise", "servidor"],
+};
 
 const els = {
   views: document.querySelectorAll(".view"),
@@ -22,6 +32,8 @@ const els = {
   modelsList: document.querySelector("#modelsList"),
   sessionsList: document.querySelector("#sessionsList"),
   messages: document.querySelector("#messages"),
+  fileInput: document.querySelector("#fileInput"),
+  attachmentsList: document.querySelector("#attachmentsList"),
   chatForm: document.querySelector("#chatForm"),
   messageInput: document.querySelector("#messageInput"),
   sendButton: document.querySelector("#sendButton"),
@@ -100,6 +112,7 @@ function persistUiState() {
   const payload = {
     currentSession: state.currentSession,
     chatMessages: state.chatMessages,
+    uploadedFiles: state.uploadedFiles,
     activeView: state.activeView,
     selectedModel: els.modelSelect?.value || "",
     technicalMode: Boolean(els.technicalMode?.checked),
@@ -114,6 +127,7 @@ function restoreUiState() {
     const payload = JSON.parse(raw);
     state.currentSession = payload.currentSession || null;
     state.chatMessages = Array.isArray(payload.chatMessages) ? payload.chatMessages : [];
+    state.uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
     state.activeView = payload.activeView || "homeView";
     if (payload.selectedModel) {
       els.modelSelect.dataset.pendingValue = payload.selectedModel;
@@ -124,6 +138,7 @@ function restoreUiState() {
   } catch {
     state.currentSession = null;
     state.chatMessages = [];
+    state.uploadedFiles = [];
     state.activeView = "homeView";
   }
 }
@@ -185,13 +200,8 @@ function addThinkingMessage() {
   const node = document.createElement("div");
   node.className = "message assistant thinking";
   node.innerHTML = `
-    <span class="lion-loader" aria-hidden="true">
-      <span class="lion-body"></span>
-      <span class="lion-head"></span>
-      <span class="lion-mane"></span>
-      <span class="lion-tail"></span>
-      <span class="lion-leg front"></span>
-      <span class="lion-leg back"></span>
+    <span class="comillas-loader" aria-hidden="true">
+      <img class="comillas-emblem" src="/static/comillas-crest.svg" alt="" />
     </span>
     <span>Pensando</span>
   `;
@@ -236,6 +246,113 @@ function updateTechnicalModeState({ persist = true } = {}) {
   if (persist) persistUiState();
 }
 
+function renderAttachments() {
+  if (!els.attachmentsList) return;
+  if (!state.uploadedFiles.length) {
+    els.attachmentsList.innerHTML = `<span class="attachment-empty">PDF o texto local</span>`;
+    return;
+  }
+  els.attachmentsList.innerHTML = state.uploadedFiles.map((file) => `
+    <span class="attachment-chip">
+      <span>${escapeHtml(file.name)}</span>
+      <small>${escapeHtml(file.size_label || "")}</small>
+      <button type="button" data-remove-attachment="${escapeHtml(file.path)}" title="Quitar archivo">×</button>
+    </span>
+  `).join("");
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadSelectedFiles(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  els.fileInput.disabled = true;
+  for (const file of files) {
+    try {
+      const content = await readFileAsDataUrl(file);
+      const result = await api("/api/files/upload", {
+        method: "POST",
+        body: JSON.stringify({
+          name: file.name,
+          size: file.size,
+          content_base64: content,
+        }),
+      });
+      if (result.ok && result.file) {
+        state.uploadedFiles.push(result.file);
+        renderAttachments();
+        persistUiState();
+      } else {
+        addMessage("assistant", result.error || `No se pudo subir ${file.name}`, "error");
+      }
+    } catch (error) {
+      addMessage("assistant", error.message || `No se pudo subir ${file.name}`, "error");
+    }
+  }
+  els.fileInput.value = "";
+  els.fileInput.disabled = false;
+}
+
+function removeAttachment(path) {
+  state.uploadedFiles = state.uploadedFiles.filter((file) => file.path !== path);
+  renderAttachments();
+  persistUiState();
+}
+
+function buildDisplayMessage(message, files) {
+  const base = message || "Lee y resume los archivos adjuntos.";
+  if (!files.length) return base;
+  const list = files.map((file) => `- ${file.name}`).join("\n");
+  return `${base}\n\nAdjuntos:\n${list}`;
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function searchTerms(query) {
+  const normalized = normalizeSearchText(query).trim();
+  if (!normalized) return [];
+  const terms = new Set(normalized.split(/\s+/).filter(Boolean));
+  Object.entries(MODEL_SEARCH_SYNONYMS).forEach(([category, synonyms]) => {
+    const allWords = [category, ...synonyms].map(normalizeSearchText);
+    if (allWords.some((word) => normalized.includes(word))) {
+      terms.add(category);
+      allWords.forEach((word) => terms.add(word));
+    }
+  });
+  return [...terms];
+}
+
+function modelSearchHaystack(model) {
+  const categories = model.categories || [];
+  const synonymWords = categories.flatMap((category) => MODEL_SEARCH_SYNONYMS[category] || []);
+  const benchmarkUses = Object.entries(model.benchmark_score || {})
+    .filter(([, score]) => Number(score) >= 0.7)
+    .map(([use]) => use);
+  return normalizeSearchText([
+    model.display_name,
+    model.id,
+    model.ollama_tag,
+    model.family,
+    model.tier,
+    model.fit_label,
+    ...categories,
+    ...benchmarkUses,
+    ...synonymWords,
+  ].join(" "));
+}
+
 function orderedModels() {
   const installed = state.models.filter((model) => model.installed);
   const pending = state.models.filter((model) => !model.installed);
@@ -274,10 +391,10 @@ function renderTaskProgress(task, type) {
 }
 
 function renderModels() {
-  const query = els.modelSearch.value.toLowerCase().trim();
+  const terms = searchTerms(els.modelSearch.value);
   const models = orderedModels().filter((model) => {
-    const haystack = `${model.display_name} ${model.id} ${model.ollama_tag} ${model.categories.join(" ")}`.toLowerCase();
-    return !query || haystack.includes(query);
+    const haystack = modelSearchHaystack(model);
+    return !terms.length || terms.some((term) => haystack.includes(term));
   });
 
   els.modelsList.innerHTML = models.map((model) => `
@@ -378,10 +495,7 @@ function renderSystem(payload) {
   els.recommendationsStrip.innerHTML = recommendations.map((item) => `
     <article class="recommendation-card">
       <div>
-        <div class="recommendation-card-head">
-          <h4>${escapeHtml(item.display_name)}</h4>
-          <span class="badge ${item.installed ? "ok" : ""}">${escapeHtml(item.installation_label || (item.installed ? "Instalado" : "Para descargar"))}</span>
-        </div>
+        <h4>${escapeHtml(item.display_name)}</h4>
         <p>${escapeHtml(item.fit_label)} · ${escapeHtml(item.ollama_tag)}</p>
       </div>
       <div class="mini-meter">
@@ -390,6 +504,105 @@ function renderSystem(payload) {
       </div>
     </article>
   `).join("");
+}
+
+function groupBy(items, key) {
+  return items.reduce((groups, item) => {
+    const value = item[key] || "Otras";
+    if (!groups[value]) groups[value] = [];
+    groups[value].push(item);
+    return groups;
+  }, {});
+}
+
+function renderTools(payload) {
+  state.toolCatalog = payload;
+  if (!els.toolsSummary || !els.quickActions || !els.toolsList) return;
+  if (!payload || !payload.ok) {
+    els.toolsSummary.textContent = payload?.error || "No se pudieron cargar las herramientas.";
+    els.quickActions.innerHTML = "";
+    els.toolsList.innerHTML = "";
+    return;
+  }
+
+  const tools = payload.tools || [];
+  const skills = payload.skills || [];
+  const mcpServers = payload.mcp_servers || [];
+  els.toolsSummary.textContent = `${tools.length} herramientas · ${skills.length} skills · ${mcpServers.length} MCP`;
+
+  const actions = payload.actions || [];
+  els.quickActions.innerHTML = actions.map((action) => `
+    <button
+      type="button"
+      class="action-chip"
+      data-action-prompt="${escapeHtml(action.prompt)}"
+      title="${escapeHtml(action.tool)}"
+    >
+      <span>${escapeHtml(action.group)}</span>
+      ${escapeHtml(action.label)}
+    </button>
+  `).join("");
+
+  const grouped = groupBy(tools, "group");
+  const groupNames = ["Explorar", "Editar", "Git", "Planificación", "Web", "Notebook", "Skills", "MCP", "Sistema", "Otras"]
+    .filter((name) => grouped[name]?.length);
+  const toolGroups = groupNames.map((group) => `
+    <section class="tool-group">
+      <h4>${escapeHtml(group)}</h4>
+      <div class="tool-grid">
+        ${grouped[group].map((tool) => `
+          <article class="tool-card">
+            <div>
+              <strong>${escapeHtml(tool.name)}</strong>
+              <p>${escapeHtml(tool.description)}</p>
+            </div>
+            <small>${escapeHtml(tool.web_status || "")}</small>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `).join("");
+
+  const skillsHtml = skills.length ? `
+    <section class="tool-group">
+      <h4>Skills cargadas</h4>
+      <div class="tool-grid">
+        ${skills.map((skill) => `
+          <article class="tool-card compact">
+            <strong>${escapeHtml(skill.name)}</strong>
+            <p>${escapeHtml(skill.description)} · ${escapeHtml(skill.source)}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  ` : "";
+
+  const mcpHtml = mcpServers.length ? `
+    <section class="tool-group">
+      <h4>Servidores MCP configurados</h4>
+      <div class="tool-grid">
+        ${mcpServers.map((server) => `
+          <article class="tool-card compact">
+            <strong>${escapeHtml(server.name)}</strong>
+            <p>${escapeHtml(server.command)}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  ` : "";
+
+  els.toolsList.innerHTML = toolGroups + skillsHtml + mcpHtml;
+}
+
+function applyActionPrompt(prompt) {
+  const current = els.messageInput.value.trim();
+  els.messageInput.value = current ? `${current}\n\n${prompt}` : prompt;
+  switchView("chatView");
+  window.setTimeout(() => {
+    els.messageInput.focus();
+    els.messageInput.selectionStart = els.messageInput.value.length;
+    els.messageInput.selectionEnd = els.messageInput.value.length;
+  }, 60);
 }
 
 async function refreshAll() {
@@ -413,10 +626,15 @@ async function refreshAll() {
 async function sendMessage(event) {
   event.preventDefault();
   const message = els.messageInput.value.trim();
-  if (!message) return;
+  const files = [...state.uploadedFiles];
+  if (!message && !files.length) return;
   const model = els.modelSelect.value;
-  addMessage("user", message);
+  const prompt = message || "Lee y resume los archivos adjuntos.";
+  const sessionId = files.length ? null : state.currentSession;
+  addMessage("user", buildDisplayMessage(message, files));
   els.messageInput.value = "";
+  state.uploadedFiles = [];
+  renderAttachments();
   els.sendButton.disabled = true;
   els.sendButton.textContent = "Pensando";
   persistUiState();
@@ -426,9 +644,10 @@ async function sendMessage(event) {
     const result = await api("/api/chat", {
       method: "POST",
       body: JSON.stringify({
-        message,
+        message: prompt,
+        attachments: files,
         model,
-        session_id: state.currentSession,
+        session_id: sessionId,
         technical_mode: els.technicalMode.checked,
         stream: false,
       }),
@@ -463,6 +682,8 @@ async function loadSessionIntoChat(sessionId) {
   const session = result.session;
   state.currentSession = session.id;
   state.chatMessages = [];
+  state.uploadedFiles = [];
+  renderAttachments();
   els.messages.innerHTML = "";
   const sessionModel = state.models.find((model) => (
     model.id === session.model || model.ollama_tag === session.model
@@ -608,6 +829,12 @@ function handleModelSelectChange() {
 
 function bindEvents() {
   els.chatForm.addEventListener("submit", sendMessage);
+  els.fileInput.addEventListener("change", uploadSelectedFiles);
+  els.attachmentsList.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-remove-attachment]");
+    if (!button) return;
+    removeAttachment(button.dataset.removeAttachment);
+  });
   els.modelSelect.addEventListener("change", handleModelSelectChange);
   els.technicalMode.addEventListener("change", () => updateTechnicalModeState());
   els.modelSearch.addEventListener("input", renderModels);
@@ -625,6 +852,8 @@ function bindEvents() {
   els.newChat.addEventListener("click", () => {
     state.currentSession = null;
     state.chatMessages = [];
+    state.uploadedFiles = [];
+    renderAttachments();
     setEmptyChat();
     persistUiState();
     switchView("chatView");
@@ -644,6 +873,7 @@ function bindEvents() {
 
 restoreUiState();
 renderChatMessages();
+renderAttachments();
 bindEvents();
 updateTechnicalModeState({ persist: false });
 switchView(state.activeView || "homeView");

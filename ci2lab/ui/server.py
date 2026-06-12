@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import base64
+import binascii
 import shutil
 import threading
 import uuid
@@ -19,9 +21,20 @@ import httpx
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.harness import AgentConfig, run_agent
+from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.run_logger import build_config_snapshot
 from ci2lab.harness.session import list_sessions, load_session, new_session_id, save_session
+from ci2lab.harness.mcp.config import load_mcp_config
+from ci2lab.harness.permissions import CONFIRM_TOOLS
+from ci2lab.harness.skills.loader import load_skills
+from ci2lab.harness.tools.filesystem import (
+    SUPPORTED_DOCUMENT_SUFFIXES,
+    read_document,
+    read_file,
+)
+from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS
+from ci2lab.harness.tools.secret_files import is_sensitive_path
 from ci2lab.hardware import scan_hardware
 from ci2lab.pipeline import prepare_session
 from ci2lab.router.catalog import load_model_catalog
@@ -33,6 +46,108 @@ from ci2lab.router.recommend import (
 )
 
 STATIC_PACKAGE = "ci2lab.ui.static"
+UPLOAD_DIR_NAME = "ci2lab_uploads"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+SUPPORTED_UPLOAD_SUFFIXES = {
+    ".csv",
+    ".css",
+    ".docx",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".log",
+    ".md",
+    ".pdf",
+    ".pptx",
+    ".py",
+    ".rst",
+    ".rtf",
+    ".text",
+    ".toml",
+    ".ts",
+    ".tsv",
+    ".txt",
+    ".xml",
+    ".xlsx",
+    ".yaml",
+    ".yml",
+}
+
+DOCUMENT_UPLOAD_SUFFIXES = SUPPORTED_DOCUMENT_SUFFIXES | {".rtf"}
+
+UI_ACTIONS: list[dict[str, str]] = [
+    {
+        "id": "read_document",
+        "label": "Resumir adjunto",
+        "tool": "read_document",
+        "group": "Documentos",
+        "prompt": "Lee y resume los archivos adjuntos. Extrae ideas principales y puntos accionables.",
+    },
+    {
+        "id": "workspace_tree",
+        "label": "Mapa del proyecto",
+        "tool": "tree",
+        "group": "Explorar",
+        "prompt": "Haz un mapa breve del proyecto usando tree, file_info y read_file solo cuando haga falta.",
+    },
+    {
+        "id": "search_workspace",
+        "label": "Buscar en archivos",
+        "tool": "grep",
+        "group": "Explorar",
+        "prompt": "Busca en el workspace el texto o concepto que te indique y dime en qué archivos aparece.",
+    },
+    {
+        "id": "git_status",
+        "label": "Estado Git",
+        "tool": "git_status",
+        "group": "Git",
+        "prompt": "Muestra el estado git del workspace y resume los cambios pendientes.",
+    },
+    {
+        "id": "git_diff",
+        "label": "Revisar diff",
+        "tool": "git_diff",
+        "group": "Git",
+        "prompt": "Revisa el git diff actual. Señala riesgos, conflictos lógicos y pruebas recomendadas.",
+    },
+    {
+        "id": "todo_plan",
+        "label": "Plan de tareas",
+        "tool": "todo_write",
+        "group": "Planificación",
+        "prompt": "Crea o actualiza una lista de tareas para este trabajo usando todo_write.",
+    },
+    {
+        "id": "web_reference",
+        "label": "Consultar URL",
+        "tool": "web_fetch",
+        "group": "Web",
+        "prompt": "Consulta esta URL con web_fetch y resume lo importante: https://",
+    },
+    {
+        "id": "notebook_edit",
+        "label": "Editar notebook",
+        "tool": "notebook_edit",
+        "group": "Notebook",
+        "prompt": "Edita el notebook indicado con notebook_edit. Ruta, celda y contenido:",
+    },
+    {
+        "id": "skill",
+        "label": "Usar skill",
+        "tool": "skill",
+        "group": "Skills",
+        "prompt": "Si hay una skill adecuada, invócala con la herramienta skill y sigue sus instrucciones.",
+    },
+    {
+        "id": "mcp_call",
+        "label": "Usar MCP",
+        "tool": "mcp_call",
+        "group": "MCP",
+        "prompt": "Usa una herramienta MCP configurada si encaja. Servidor, herramienta y argumentos:",
+    },
+]
 
 
 def run_ui(
@@ -99,6 +214,9 @@ def _handler_factory(state: UIState):
             if parsed.path == "/api/system":
                 self._json(_system_payload(state))
                 return
+            if parsed.path == "/api/tools":
+                self._json(_tools_payload(state))
+                return
             if parsed.path.startswith("/api/models/pull/"):
                 task_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = _pull_task_payload(state, task_id)
@@ -133,6 +251,9 @@ def _handler_factory(state: UIState):
                 return
             if parsed.path == "/api/models/delete":
                 self._json(_delete_model(state, payload))
+                return
+            if parsed.path == "/api/files/upload":
+                self._json(_upload_file(state, payload))
                 return
             self._json({"error": "Not found"}, status=404)
 
@@ -228,9 +349,11 @@ def _models_payload(state: UIState) -> dict[str, Any]:
         catalog.append({
             "id": model.id,
             "display_name": model.display_name,
+            "family": model.family,
             "ollama_tag": model.ollama_tag,
             "categories": model.categories,
             "tier": model.tier,
+            "benchmark_score": model.benchmark_score,
             "ram_inference_gb": model.ram_inference_gb,
             "vram_min_gb": model.vram_min_gb,
             "installed": is_catalog_model_installed(model.ollama_tag, installed_names),
@@ -288,6 +411,79 @@ def _system_payload(state: UIState) -> dict[str, Any]:
         }
 
 
+def _tools_payload(state: UIState) -> dict[str, Any]:
+    workspace = str(state.runtime.workspace or os.getcwd())
+    skills = load_skills(workspace)
+    mcp_servers = load_mcp_config(workspace)
+    tools = []
+    for schema in FUNCTION_SCHEMAS:
+        function = schema.get("function", {})
+        name = str(function.get("name") or "")
+        if not name:
+            continue
+        group = _tool_group(name)
+        tools.append({
+            "name": name,
+            "group": group,
+            "description": str(function.get("description") or ""),
+            "requires_confirmation": name in CONFIRM_TOOLS,
+            "web_status": _tool_web_status(name),
+        })
+
+    return {
+        "ok": True,
+        "tools": tools,
+        "actions": UI_ACTIONS,
+        "skills": [
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "source": skill.source,
+                "user_invocable": skill.user_invocable,
+            }
+            for skill in sorted(skills.values(), key=lambda item: item.name)
+        ],
+        "mcp_servers": [
+            {
+                "name": server.name,
+                "command": server.command,
+                "configured": True,
+            }
+            for server in sorted(mcp_servers, key=lambda item: item.name)
+        ],
+        "supported_uploads": sorted(SUPPORTED_UPLOAD_SUFFIXES),
+        "document_uploads": sorted(DOCUMENT_UPLOAD_SUFFIXES),
+    }
+
+
+def _tool_group(name: str) -> str:
+    if name in {"read_document", "read_file", "ls", "grep", "glob", "file_info", "tree", "inspect_file"}:
+        return "Explorar"
+    if name in {"write_file", "edit_file", "notebook_edit"}:
+        return "Editar"
+    if name in {"git_status", "git_diff"}:
+        return "Git"
+    if name in {"todo_write", "ask_user"}:
+        return "Planificación"
+    if name == "web_fetch":
+        return "Web"
+    if name == "skill":
+        return "Skills"
+    if name == "mcp_call" or name.startswith("mcp__"):
+        return "MCP"
+    if name == "bash":
+        return "Sistema"
+    return "Otras"
+
+
+def _tool_web_status(name: str) -> str:
+    if name == "ask_user":
+        return "Solo terminal; en la web pregunta directamente en el chat."
+    if name in CONFIRM_TOOLS:
+        return "Requiere modo técnico para autoaprobar en la web."
+    return "Disponible desde el chat."
+
+
 def _disk_payload(workspace: str) -> dict[str, Any]:
     path = Path(workspace or os.getcwd())
     if not path.exists():
@@ -318,6 +514,8 @@ def _chat(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
 
     model = str(payload.get("model") or state.runtime.model).strip()
     workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    attachments = _normalize_attachments(payload.get("attachments"))
+    prompt_for_model = _prompt_with_uploaded_files(prompt, workspace, attachments)
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     technical_mode = bool(payload.get("technical_mode"))
     stream = bool(payload.get("stream", False))
@@ -330,10 +528,31 @@ def _chat(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
         model_tag=model,
         cwd=workspace,
     )
+    direct_answer = (
+        maybe_answer_document_request(prompt, [prompt_for_model])
+        if attachments
+        else None
+    )
+    if direct_answer:
+        _save_completed_session(
+            session_id=session_id,
+            messages=messages,
+            prompt=prompt,
+            answer=direct_answer,
+            model_tag=model,
+            cwd=workspace,
+        )
+        return {
+            "ok": True,
+            "answer": direct_answer,
+            "session_id": session_id,
+            "model": model,
+            "display_name": model,
+        }
 
     try:
         _, selection = prepare_session(
-            prompt,
+            prompt_for_model,
             force_model=model,
             tool_mode_override=None,
             backend_url=state.runtime.backend_url,
@@ -366,7 +585,7 @@ def _chat(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
                 selection=selection,
             ),
         )
-        answer = run_agent(prompt, selection, config=agent, messages=messages)
+        answer = run_agent(prompt_for_model, selection, config=agent, messages=messages)
         return {
             "ok": True,
             "answer": answer,
@@ -378,6 +597,153 @@ def _chat(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": exc.user_message, "session_id": session_id}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "session_id": session_id}
+
+
+def _normalize_attachments(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    attachments: list[dict[str, str]] = []
+    for item in raw[:5]:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "").strip()
+        name = str(item.get("name") or Path(path).name).strip() or Path(path).name
+        if path:
+            attachments.append({"name": name, "path": path})
+    return attachments
+
+
+def _prompt_with_uploaded_files(
+    prompt: str,
+    workspace: str,
+    attachments: list[dict[str, str]],
+) -> str:
+    if not attachments:
+        return prompt
+
+    blocks: list[str] = []
+    for file in attachments:
+        path = file["path"]
+        if not _is_upload_path(path):
+            blocks.append(
+                f"### {file['name']}\n"
+                f"Error: archivo adjunto rechazado porque no está en `{UPLOAD_DIR_NAME}/`."
+            )
+            continue
+        content = read_document(workspace, path)
+        if content.startswith("Error: formato no soportado"):
+            content = read_file(workspace, path)
+        if content.startswith("Error:"):
+            blocks.append(
+                f"### {file['name']}\n"
+                f"Ruta local: {path}\n"
+                f"No se pudo leer el archivo adjunto: {content}\n"
+                "Explica este problema al usuario y pide que instale las dependencias "
+                "o suba un PDF con texto extraible."
+            )
+            continue
+        blocks.append(
+            f"### {file['name']}\n"
+            f"Ruta local: {path}\n"
+            f"Contenido leído con read_document:\n{content}"
+        )
+
+    return (
+        f"{prompt}\n\n"
+        "Archivos adjuntos ya leídos localmente por Ci2Lab con read_document. "
+        "Responde usando el contenido siguiente; no digas que no puedes acceder a los archivos.\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def _is_upload_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lstrip("/")
+    return normalized == UPLOAD_DIR_NAME or normalized.startswith(f"{UPLOAD_DIR_NAME}/")
+
+
+def _upload_file(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
+    workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    name = str(payload.get("name") or "").strip()
+    encoded = str(payload.get("content_base64") or "").strip()
+    if not name:
+        return {"ok": False, "error": "Falta el nombre del archivo."}
+    if not encoded:
+        return {"ok": False, "error": "Falta el contenido del archivo."}
+
+    safe_name = _safe_upload_name(name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
+        allowed = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
+        return {
+            "ok": False,
+            "error": f"Formato no soportado. Usa uno de estos: {allowed}",
+        }
+
+    if "," in encoded and encoded.lower().startswith("data:"):
+        encoded = encoded.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return {"ok": False, "error": "El archivo no llegó con un contenido válido."}
+
+    if len(raw) > MAX_UPLOAD_BYTES:
+        return {
+            "ok": False,
+            "error": f"El archivo supera el límite de {_format_upload_size(MAX_UPLOAD_BYTES)}.",
+        }
+
+    base = Path(workspace or os.getcwd()).resolve()
+    upload_dir = base / UPLOAD_DIR_NAME
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = _unique_upload_path(upload_dir, safe_name)
+    if is_sensitive_path(target):
+        return {
+            "ok": False,
+            "error": "No se admiten nombres que parezcan contener secretos, tokens o credenciales.",
+        }
+
+    target.write_bytes(raw)
+    rel_path = target.relative_to(base).as_posix()
+    return {
+        "ok": True,
+        "file": {
+            "name": target.name,
+            "path": rel_path,
+            "size": len(raw),
+            "size_label": _format_upload_size(len(raw)),
+        },
+    }
+
+
+def _safe_upload_name(name: str) -> str:
+    raw = Path(name).name.strip().replace("\x00", "")
+    stem = Path(raw).stem[:90] or "archivo"
+    suffix = Path(raw).suffix[:16]
+    safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(" ._-") or "archivo"
+    safe_suffix = re.sub(r"[^A-Za-z0-9.]+", "", suffix)
+    return f"{safe_stem}{safe_suffix}".lower()
+
+
+def _unique_upload_path(upload_dir: Path, safe_name: str) -> Path:
+    candidate = upload_dir / safe_name
+    if not candidate.exists():
+        return candidate
+    path = Path(safe_name)
+    stem = path.stem or "archivo"
+    suffix = path.suffix
+    for index in range(2, 1000):
+        candidate = upload_dir / f"{stem}-{index}{suffix}"
+        if not candidate.exists():
+            return candidate
+    return upload_dir / f"{stem}-{uuid.uuid4().hex[:8]}{suffix}"
+
+
+def _format_upload_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    return f"{num_bytes / (1024 * 1024):.1f} MB"
 
 
 def _save_pending_session(
@@ -392,6 +758,25 @@ def _save_pending_session(
         history = list(messages or [])
         if not history or history[-1].get("role") != "user" or history[-1].get("content") != prompt:
             history.append({"role": "user", "content": prompt})
+        save_session(session_id, messages=history, model_tag=model_tag, cwd=cwd)
+    except Exception:  # noqa: BLE001
+        return
+
+
+def _save_completed_session(
+    *,
+    session_id: str,
+    messages: list[dict[str, Any]] | None,
+    prompt: str,
+    answer: str,
+    model_tag: str,
+    cwd: str,
+) -> None:
+    try:
+        history = list(messages or [])
+        if not history or history[-1].get("role") != "user" or history[-1].get("content") != prompt:
+            history.append({"role": "user", "content": prompt})
+        history.append({"role": "assistant", "content": answer})
         save_session(session_id, messages=history, model_tag=model_tag, cwd=cwd)
     except Exception:  # noqa: BLE001
         return

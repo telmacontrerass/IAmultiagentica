@@ -1,3 +1,5 @@
+import base64
+
 from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMModelNotFoundError
@@ -11,10 +13,13 @@ from ci2lab.ui.server import (
     _finish_delete_task,
     _health_payload,
     _pull_task_payload,
+    _prompt_with_uploaded_files,
     _record_pull_event,
     _session_payload,
     _sessions_payload,
     _system_payload,
+    _tools_payload,
+    _upload_file,
 )
 
 
@@ -76,6 +81,166 @@ def test_chat_saves_pending_session_when_model_setup_fails(tmp_path, monkeypatch
     assert data["messages"][-1]["content"] == "hola"
 
 
+def test_upload_file_saves_supported_file_inside_workspace(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    content = base64.b64encode(b"contenido local").decode("ascii")
+
+    payload = _upload_file(
+        state,
+        {"name": "../Mi Documento.PDF", "content_base64": content},
+    )
+
+    assert payload["ok"] is True
+    assert payload["file"]["path"] == "ci2lab_uploads/mi documento.pdf"
+    assert (tmp_path / payload["file"]["path"]).read_bytes() == b"contenido local"
+
+
+def test_upload_file_accepts_office_document_formats(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    content = base64.b64encode(b"fake docx bytes").decode("ascii")
+
+    payload = _upload_file(state, {"name": "Tema 1.DOCX", "content_base64": content})
+
+    assert payload["ok"] is True
+    assert payload["file"]["path"] == "ci2lab_uploads/tema 1.docx"
+
+
+def test_upload_file_rejects_unsupported_suffix(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    content = base64.b64encode(b"contenido").decode("ascii")
+
+    payload = _upload_file(state, {"name": "documento.exe", "content_base64": content})
+
+    assert payload["ok"] is False
+    assert "Formato no soportado" in payload["error"]
+
+
+def test_upload_file_rejects_sensitive_names(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    content = base64.b64encode(b"contenido").decode("ascii")
+
+    payload = _upload_file(state, {"name": "token.pdf", "content_base64": content})
+
+    assert payload["ok"] is False
+    assert "secretos" in payload["error"] or "tokens" in payload["error"]
+
+
+def test_prompt_with_uploaded_files_reads_attachment_content(tmp_path):
+    upload_dir = tmp_path / "ci2lab_uploads"
+    upload_dir.mkdir()
+    (upload_dir / "doc.txt").write_text("contenido importante", encoding="utf-8")
+
+    prompt = _prompt_with_uploaded_files(
+        "resume el documento",
+        str(tmp_path),
+        [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
+    )
+
+    assert "contenido importante" in prompt
+    assert "Responde usando el contenido" in prompt
+    assert "read_document" in prompt
+
+
+def test_prompt_with_uploaded_files_reports_read_errors(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "ci2lab_uploads"
+    upload_dir.mkdir()
+    (upload_dir / "doc.pdf").write_bytes(b"%PDF simulated")
+    monkeypatch.setattr(
+        "ci2lab.ui.server.read_document",
+        lambda *_args, **_kwargs: "Error: no se puede leer PDF porque falta pypdf",
+    )
+
+    prompt = _prompt_with_uploaded_files(
+        "resume el documento",
+        str(tmp_path),
+        [{"name": "doc.pdf", "path": "ci2lab_uploads/doc.pdf"}],
+    )
+
+    assert "No se pudo leer el archivo adjunto" in prompt
+    assert "Contenido leído" not in prompt
+    assert "Contenido leido" not in prompt
+
+
+def test_prompt_with_uploaded_files_rejects_non_upload_paths(tmp_path):
+    (tmp_path / "doc.txt").write_text("contenido privado", encoding="utf-8")
+
+    prompt = _prompt_with_uploaded_files(
+        "resume el documento",
+        str(tmp_path),
+        [{"name": "doc.txt", "path": "doc.txt"}],
+    )
+
+    assert "rechazado" in prompt
+    assert "contenido privado" not in prompt
+
+
+def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    upload_dir = tmp_path / "ci2lab_uploads"
+    upload_dir.mkdir()
+    (upload_dir / "doc.txt").write_text("contenido del pdf simulado", encoding="utf-8")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    captured: dict[str, str] = {}
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_agent(prompt, *args, **kwargs):
+        captured["prompt"] = prompt
+        return "resumen"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "usa este adjunto para contestar con detalle tecnico",
+            "model": "qwen2.5-coder:1.5b",
+            "attachments": [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
+        },
+    )
+
+    assert payload["ok"] is True
+    assert captured["prompt"].startswith("usa este adjunto")
+    assert "contenido del pdf simulado" in captured["prompt"]
+
+
+def test_chat_answers_simple_english_document_summary_without_llm(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    upload_dir = tmp_path / "ci2lab_uploads"
+    upload_dir.mkdir()
+    (upload_dir / "derivatives.txt").write_text(
+        "Lesson 5. Financial derivatives\n"
+        "A derivative is an instrument whose value depends on another asset.\n"
+        "The four basic derivatives are forwards, futures, swaps and options.\n",
+        encoding="utf-8",
+    )
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+
+    def fail_run_agent(*args, **kwargs):
+        raise AssertionError("run_agent should not be called for simple document summaries")
+
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fail_run_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "Summarise this document for me",
+            "model": "gemma2:2b",
+            "attachments": [{"name": "derivatives.txt", "path": "ci2lab_uploads/derivatives.txt"}],
+        },
+    )
+
+    assert payload["ok"] is True
+    assert "derivative" in payload["answer"].lower()
+    assert "ci2lab" not in payload["answer"].lower()
+
+
 def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     save_session(
@@ -130,6 +295,18 @@ def test_system_payload_includes_hardware_disk_and_recommendations(monkeypatch):
     assert payload["hardware"]["ram_total_gb"] == 16.0
     assert payload["disk"]["free_gb"] >= 0
     assert payload["recommendations"] == []
+
+
+def test_tools_payload_exposes_new_agent_tools(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+
+    payload = _tools_payload(state)
+
+    names = {tool["name"] for tool in payload["tools"]}
+    assert payload["ok"] is True
+    assert {"read_document", "todo_write", "web_fetch", "git_status", "mcp_call"} <= names
+    assert any(action["tool"] == "read_document" for action in payload["actions"])
+    assert ".docx" in payload["supported_uploads"]
 
 
 def test_pull_task_progress_is_computed_from_ollama_events():

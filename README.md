@@ -136,6 +136,8 @@ ci2lab ui --port 8766                      # usa otro puerto local
 
 La UI funciona solo en tu equipo, habla con Ollama local y reutiliza las mismas sesiones, modelos y logs del CLI. El modo tecnico permite herramientas con aprobacion; sin activarlo, la interfaz prioriza conversaciones seguras.
 
+En la vista de chat puedes adjuntar PDFs y archivos de texto. La UI los copia a `ci2lab_uploads/` dentro del workspace local y el agente los lee con la misma herramienta `read_file` que usa en terminal.
+
 **Importante:** los flags globales (`--model`, `--tool-mode`, `--yes`, etc.) van **antes** del subcomando:
 
 ```powershell

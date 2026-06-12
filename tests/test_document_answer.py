@@ -25,3 +25,24 @@ The table compares formal and informal equivalents such as friend and mate.
     assert "ideas principales" in answer.lower()
     assert "formal" in answer.lower()
     assert "informal" in answer.lower()
+
+
+def test_maybe_answer_document_request_detects_english_summary_prompt():
+    document = """Documento: derivatives.pdf
+Tipo: pdf
+Paginas/secciones: 2 paginas
+Texto extraido:
+
+Lesson 5. Financial derivatives
+A derivative is an instrument whose value depends on the value of another asset.
+The four basic derivatives are forwards, futures, swaps and options.
+Exchange traded derivatives are standardized and normally go through a clearing house.
+"""
+
+    answer = maybe_answer_document_request(
+        "Summarise this document for me",
+        [document],
+    )
+
+    assert answer is not None
+    assert "derivative" in answer.lower()

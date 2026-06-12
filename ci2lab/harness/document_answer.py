@@ -50,6 +50,15 @@ def _is_simple_document_answer_request(user_prompt: str) -> bool:
         "de qué trata",
         "analiza",
         "analizar",
+        "analyze",
+        "analyse",
+        "key points",
+        "main ideas",
+        "main points",
+        "read",
+        "summarise",
+        "summarize",
+        "summary",
     )
     return any(marker in text for marker in read_markers)
 
