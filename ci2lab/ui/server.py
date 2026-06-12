@@ -25,7 +25,12 @@ from ci2lab.harness.session import list_sessions, load_session, new_session_id, 
 from ci2lab.hardware import scan_hardware
 from ci2lab.pipeline import prepare_session
 from ci2lab.router.catalog import load_model_catalog
-from ci2lab.router.recommend import score_recommendations
+from ci2lab.runtime.ollama import fetch_installed_models, is_catalog_model_installed, ollama_base_url
+from ci2lab.router.recommend import (
+    build_display_recommendations,
+    recommendation_pool_size,
+    score_recommendations,
+)
 
 STATIC_PACKAGE = "ci2lab.ui.static"
 
@@ -67,24 +72,10 @@ class UIState:
 
     @property
     def ollama_base_url(self) -> str:
-        return self.runtime.backend_url.removesuffix("/v1").rstrip("/")
+        return ollama_base_url(self.runtime.backend_url)
 
     def list_installed_models(self) -> tuple[list[dict[str, Any]], str | None]:
-        try:
-            with httpx.Client(timeout=3.0) as client:
-                response = client.get(f"{self.ollama_base_url}/api/tags")
-                response.raise_for_status()
-                models = response.json().get("models", [])
-                return [
-                    {
-                        "name": model.get("name", ""),
-                        "size": model.get("size"),
-                        "modified_at": model.get("modified_at"),
-                    }
-                    for model in models
-                ], None
-        except Exception as exc:  # noqa: BLE001
-            return [], str(exc)
+        return fetch_installed_models(self.runtime.backend_url)
 
 
 def _handler_factory(state: UIState):
@@ -242,7 +233,7 @@ def _models_payload(state: UIState) -> dict[str, Any]:
             "tier": model.tier,
             "ram_inference_gb": model.ram_inference_gb,
             "vram_min_gb": model.vram_min_gb,
-            "installed": model.ollama_tag in installed_names,
+            "installed": is_catalog_model_installed(model.ollama_tag, installed_names),
             "fit_label": getattr(item, "fit_label", None),
             "recommendation_status": getattr(item, "recommendation_status", None),
         })
@@ -257,20 +248,29 @@ def _system_payload(state: UIState) -> dict[str, Any]:
     workspace = state.runtime.workspace or os.getcwd()
     try:
         profile = scan_hardware()
+        installed_names = {item["name"] for item in state.list_installed_models()[0]}
+        pool_limit = recommendation_pool_size(4)
+        scored = score_recommendations("", profile=profile, limit=pool_limit)
         recommendations = [
             {
-                "id": item.model.id,
-                "display_name": item.model.display_name,
-                "ollama_tag": item.model.ollama_tag,
-                "fit_label": item.fit_label,
-                "status": item.recommendation_status,
-                "reason": item.reason,
-                "memory_required_gb": item.memory_required_gb,
-                "memory_budget_gb": item.memory_budget_gb,
-                "memory_usage_percent": item.memory_usage_percent,
-                "remaining_memory_gb": item.remaining_memory_gb,
+                "id": entry.item.model.id,
+                "display_name": entry.item.model.display_name,
+                "ollama_tag": entry.item.model.ollama_tag,
+                "fit_label": entry.item.fit_label,
+                "status": entry.item.recommendation_status,
+                "reason": entry.item.reason,
+                "memory_required_gb": entry.item.memory_required_gb,
+                "memory_budget_gb": entry.item.memory_budget_gb,
+                "memory_usage_percent": entry.item.memory_usage_percent,
+                "remaining_memory_gb": entry.item.remaining_memory_gb,
+                "installed": entry.installed,
+                "installation_label": entry.installation_label,
             }
-            for item in score_recommendations("", profile=profile, limit=4)
+            for entry in build_display_recommendations(
+                scored,
+                installed_names,
+                limit=4,
+            )
         ]
         return {
             "ok": True,

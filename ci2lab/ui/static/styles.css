@@ -736,8 +736,16 @@ textarea:focus {
   min-width: 0;
 }
 
+.recommendation-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .recommendation-card h4 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 15px;
   line-height: 1.2;
 }

@@ -16,7 +16,13 @@ from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
-from ci2lab.router.recommend import recommend_download_plan, score_recommendations
+from ci2lab.runtime.ollama import fetch_installed_model_names, is_catalog_model_installed
+from ci2lab.router.recommend import (
+    build_display_recommendations,
+    recommend_download_plan,
+    recommendation_pool_size,
+    score_recommendations,
+)
 
 console = Console()
 
@@ -618,7 +624,18 @@ def _focused_recommend_command(
     limit: int,
 ) -> int:
     intent = classify_intent(prompt)
-    recommendations = score_recommendations(prompt, profile=profile, limit=limit)
+    runtime = load_config()
+    installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
+    pool = score_recommendations(
+        prompt,
+        profile=profile,
+        limit=recommendation_pool_size(limit),
+    )
+    recommendations = build_display_recommendations(
+        pool,
+        installed_names,
+        limit=limit,
+    )
 
     if json_output:
         payload = {
@@ -629,21 +646,24 @@ def _focused_recommend_command(
                 "signals": intent.signals,
                 "difficulty": intent.difficulty,
             },
+            "ollama_error": ollama_error,
             "models": [
                 {
-                    "id": item.model.id,
-                    "display_name": item.model.display_name,
-                    "ollama_tag": item.model.ollama_tag,
-                    "reason": item.reason,
-                    "score": item.total_score,
-                    "fit_label": item.fit_label,
-                    "recommendation_status": item.recommendation_status,
-                    "theoretical_fit": item.theoretical_fit,
-                    "current_fit": item.current_fit,
-                    "requires_memory_cleanup": item.requires_memory_cleanup,
-                    "criteria": _criteria_payload(item),
+                    "id": entry.item.model.id,
+                    "display_name": entry.item.model.display_name,
+                    "ollama_tag": entry.item.model.ollama_tag,
+                    "reason": entry.item.reason,
+                    "score": entry.item.total_score,
+                    "fit_label": entry.item.fit_label,
+                    "recommendation_status": entry.item.recommendation_status,
+                    "theoretical_fit": entry.item.theoretical_fit,
+                    "current_fit": entry.item.current_fit,
+                    "requires_memory_cleanup": entry.item.requires_memory_cleanup,
+                    "installed": entry.installed,
+                    "installation_label": entry.installation_label,
+                    "criteria": _criteria_payload(entry.item),
                 }
-                for item in recommendations
+                for entry in recommendations
             ],
         }
         console.print_json(json.dumps(payload))
@@ -651,6 +671,10 @@ def _focused_recommend_command(
 
     console.print(f"Intencion detectada: [bold]{intent.category}[/bold]")
     _print_memory_budget_context(profile)
+    if ollama_error:
+        console.print(
+            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+        )
 
     if not recommendations:
         console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
@@ -659,14 +683,22 @@ def _focused_recommend_command(
     table = Table(title="Modelos recomendados")
     table.add_column("Modelo")
     table.add_column("Ollama")
+    table.add_column("Instalacion")
     table.add_column("Estado")
     table.add_column("Score")
     table.add_column("Memoria")
     table.add_column("Motivo")
-    for item in recommendations:
+    for entry in recommendations:
+        item = entry.item
+        install_label = (
+            f"[green]{entry.installation_label}[/green]"
+            if entry.installed
+            else entry.installation_label
+        )
         table.add_row(
             item.model.display_name,
             item.model.ollama_tag,
+            install_label,
             item.fit_label,
             str(item.total_score),
             _memory_summary(item),
@@ -677,11 +709,14 @@ def _focused_recommend_command(
 
 
 def _download_plan_command(*, profile, json_output: bool) -> int:
-    plan = recommend_download_plan(profile=profile)
+    runtime = load_config()
+    installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
+    plan = recommend_download_plan(profile=profile, installed_names=installed_names)
 
     if json_output:
         payload = {
             "hardware": profile.to_dict(),
+            "ollama_error": ollama_error,
             "download_plan": [
                 {
                     "use_cases": item.use_cases,
@@ -695,6 +730,10 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
                     "theoretical_fit": item.recommendation.theoretical_fit,
                     "current_fit": item.recommendation.current_fit,
                     "requires_memory_cleanup": item.recommendation.requires_memory_cleanup,
+                    "installed": item.installed,
+                    "installation_label": (
+                        "Ya instalado" if item.installed else "Para descargar"
+                    ),
                     "criteria": _criteria_payload(item.recommendation),
                 }
                 for item in plan
@@ -704,25 +743,34 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
         return 0
 
     _print_memory_budget_context(profile)
+    if ollama_error:
+        console.print(
+            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+        )
 
     if not plan:
         console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
         return 1
 
-    table = Table(title="Modelos sugeridos para descargar")
+    table = Table(title="Modelos recomendados para tu equipo")
     table.add_column("Usos")
     table.add_column("Modelo")
     table.add_column("Ollama")
+    table.add_column("Instalacion")
     table.add_column("Estado")
     table.add_column("Score")
     table.add_column("Memoria")
     table.add_column("Motivo")
     for item in plan:
         recommendation = item.recommendation
+        install_label = (
+            "[green]Ya instalado[/green]" if item.installed else "Para descargar"
+        )
         table.add_row(
             ", ".join(item.use_cases),
             recommendation.model.display_name,
             recommendation.model.ollama_tag,
+            install_label,
             recommendation.fit_label,
             str(recommendation.total_score),
             _memory_summary(recommendation),

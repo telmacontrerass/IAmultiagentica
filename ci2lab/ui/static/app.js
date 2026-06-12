@@ -378,7 +378,10 @@ function renderSystem(payload) {
   els.recommendationsStrip.innerHTML = recommendations.map((item) => `
     <article class="recommendation-card">
       <div>
-        <h4>${escapeHtml(item.display_name)}</h4>
+        <div class="recommendation-card-head">
+          <h4>${escapeHtml(item.display_name)}</h4>
+          <span class="badge ${item.installed ? "ok" : ""}">${escapeHtml(item.installation_label || (item.installed ? "Instalado" : "Para descargar"))}</span>
+        </div>
         <p>${escapeHtml(item.fit_label)} · ${escapeHtml(item.ollama_tag)}</p>
       </div>
       <div class="mini-meter">
