@@ -352,6 +352,7 @@ def _build_config(
 ):
     from ci2lab.harness import AgentConfig
     from ci2lab.harness.run_logger import build_config_snapshot
+    from ci2lab.settings import load_settings, ToolSettings
 
     cwd = runtime.workspace or os.getcwd()
     security_limits = runtime.security.resolved_limits()
@@ -359,6 +360,15 @@ def _build_config(
         runtime.security,
         root_permission=runtime.permission or None,
     )
+
+    loaded_settings = load_settings(cwd)
+    # Solo adjuntar si hay alguna regla activa; None desactiva el check en registry
+    effective_settings: ToolSettings | None = (
+        loaded_settings
+        if (loaded_settings.allow or loaded_settings.deny)
+        else None
+    )
+
     agent_fields = dict(
         cwd=cwd,
         max_rounds=runtime.max_rounds,
@@ -373,6 +383,7 @@ def _build_config(
         opencode_permissions=opencode_perms,
         bash_timeout_seconds=security_limits.bash_timeout_seconds,
         max_tool_output_chars=security_limits.max_tool_output_chars,
+        tool_settings=effective_settings,
     )
     base_agent = AgentConfig(**agent_fields)
     agent = AgentConfig(

@@ -37,6 +37,7 @@ from ci2lab.harness.tools.write_preview import (
 )
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.harness.write_permissions import WRITE_TOOLS, check_write_permission
+from ci2lab.settings import check_tool_allowed
 
 TOOL_NAMES = frozenset({
     "bash",
@@ -59,6 +60,7 @@ TOOL_NAMES = frozenset({
     "git_diff",
     "skill",
     "mcp_call",
+    "fill_docx_template",
 })
 
 
@@ -213,6 +215,36 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["patch"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fill_docx_template",
+            "description": (
+                "Generate a Word (.docx) document by filling a template with {{field}} placeholders. "
+                "Use when you need to produce a structured Word report, letter, or form from a template. "
+                "Requires confirmation before writing. Not for plain-text files — use write_file for those."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template": {
+                        "type": "string",
+                        "description": "Relative path to the .docx template file (e.g. .ci2lab/documents/templates/informe.docx)",
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "Relative path where the filled document will be saved (must end in .docx)",
+                    },
+                    "fields": {
+                        "type": "object",
+                        "description": "Dictionary mapping placeholder names to their values, e.g. {\"nombre\": \"Clara\", \"fecha\": \"2026-06-14\"}",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+                "required": ["template", "output", "fields"],
             },
         },
     },
@@ -493,6 +525,7 @@ _DISPATCH: dict[str, Callable[..., str]] = {
         a.get("replace_all", False),
     ),
     "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
+    "fill_docx_template": lambda cfg, a: _run_fill_docx(cfg, a),
     "file_info": lambda cfg, a: inspection_tool.file_info(cfg.cwd, a["path"]),
     "tree": lambda cfg, a: inspection_tool.tree(
         cfg.cwd,
@@ -711,6 +744,9 @@ def _execute_write_tool(
             )
         elif name == "apply_patch":
             preview = preview_apply_patch(config.cwd, args["patch"])
+        elif name == "fill_docx_template":
+            from ci2lab.harness.tools.docx_writer import preview_fill_docx
+            preview = preview_fill_docx(config.cwd, args)
         else:
             preview = preview_edit_file(
                 config.cwd,
@@ -895,6 +931,20 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             outcome=outcome_for_tool_output(output) if is_error else None,
         )
 
+    # --- settings.json allow/deny (funciona con todos los motores) ---
+    if config.tool_settings is not None:
+        _settings_allowed, _settings_reason = check_tool_allowed(
+            config.tool_settings, name, args
+        )
+        if not _settings_allowed:
+            return ToolResult(
+                tool_name=name,
+                content=f"Error: {_settings_reason}",
+                is_error=True,
+                call_id=call.call_id,
+                outcome="blocked_by_settings",
+            )
+
     detail = permission_summary(name, args) or str(args)[:120]
     gate = evaluate_tool_gate(name, args, config)
 
@@ -1035,4 +1085,20 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         is_error=is_error,
         call_id=call.call_id,
         outcome=outcome_for_tool_output(output) if is_error else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers privados para tools específicas
+# ---------------------------------------------------------------------------
+
+def _run_fill_docx(config: AgentConfig, args: dict[str, Any]) -> str:
+    """Adaptador entre el dispatch y fill_docx_template."""
+    from ci2lab.harness.tools.docx_writer import fill_docx_template
+
+    return fill_docx_template(
+        cwd=config.cwd,
+        template=str(args.get("template", "")),
+        output=str(args.get("output", "")),
+        fields={str(k): str(v) for k, v in (args.get("fields") or {}).items()},
     )

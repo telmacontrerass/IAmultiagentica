@@ -12,7 +12,7 @@ from ci2lab.harness.tools.write_preview import WritePreview
 from ci2lab.harness.types import AgentConfig
 
 _console = Console()
-WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch", "fill_docx_template"})
 
 
 def check_write_permission(

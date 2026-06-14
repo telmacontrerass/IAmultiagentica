@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
+    from ci2lab.settings import ToolSettings
 
 
 @dataclass(frozen=True)
@@ -73,3 +74,7 @@ class AgentConfig:
 
     skill_allowed_tools: frozenset[str] | None = None
     """When set by an invoked skill, only these tool names are exposed to the model."""
+
+    tool_settings: ToolSettings | None = None
+    """Reglas allow/deny de settings.json (fusionadas global + proyecto).
+    Si es None, no se aplican reglas de settings y todo está permitido."""

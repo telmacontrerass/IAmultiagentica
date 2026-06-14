@@ -572,6 +572,8 @@ def permission_summary(tool_name: str, args: dict) -> str:
     if tool_name == "apply_patch":
         patch = str(args.get("patch", ""))
         return patch[:120] + ("..." if len(patch) > 120 else "")
+    if tool_name == "fill_docx_template":
+        return f"{args.get('template', '')} → {args.get('output', '')}"
     if tool_name == "web_fetch":
         return str(args.get("url", ""))[:120]
     if tool_name == "ask_user":
