@@ -46,14 +46,29 @@
             <h2>Interactúa con Florentino sin abrir la terminal</h2>
           </div>
           <div class="top-actions">
-            <button
-              id="refreshButton"
-              class="ghost-button"
-              type="button"
-              title="Actualizar estado de Ollama, hardware, modelos y sesiones"
-            >
-              Actualizar datos
-            </button>
+            <div class="control-with-help">
+              <div class="control-main-row">
+                <button
+                  id="refreshButton"
+                  class="ghost-button"
+                  type="button"
+                  title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+                >
+                  Actualizar datos
+                </button>
+                <button
+                  class="help-toggle"
+                  type="button"
+                  data-help-toggle="homeRefreshHelp"
+                  aria-expanded="false"
+                  aria-label="Explicar actualizar datos"
+                  title="Ver explicación"
+                ></button>
+              </div>
+              <p id="homeRefreshHelp" class="control-help-text" hidden>
+                Recarga modelos, sesiones, hardware y estado local de Ollama.
+              </p>
+            </div>
           </div>
         </header>
 
@@ -151,19 +166,64 @@
                 <label for="modelSelect">Modelo</label>
                 <select id="modelSelect"></select>
               </div>
-              <label class="toggle technical-toggle" title="Permite herramientas con confirmación automática">
-                <input id="technicalMode" type="checkbox" />
-                <span id="technicalModeLabel">Modo técnico</span>
-              </label>
-              <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
-              <button
-                id="chatRefreshButton"
-                class="ghost-button"
-                type="button"
-                title="Actualizar estado de Ollama, hardware, modelos y sesiones"
-              >
-                Actualizar datos
-              </button>
+              <div class="control-with-help">
+                <div class="control-main-row">
+                  <label class="toggle technical-toggle" title="Permite herramientas con confirmación automática">
+                    <input id="technicalMode" type="checkbox" />
+                    <span id="technicalModeLabel">Modo técnico</span>
+                  </label>
+                  <button
+                    class="help-toggle"
+                    type="button"
+                    data-help-toggle="technicalHelp"
+                    aria-expanded="false"
+                    aria-label="Explicar modo tecnico"
+                    title="Ver explicación"
+                  ></button>
+                </div>
+                <p id="technicalHelp" class="control-help-text" hidden>
+                  Activa herramientas avanzadas y confirmaciones automáticas para tareas técnicas.
+                </p>
+              </div>
+              <div class="control-with-help">
+                <div class="control-main-row">
+                  <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
+                  <button
+                    class="help-toggle"
+                    type="button"
+                    data-help-toggle="newChatHelp"
+                    aria-expanded="false"
+                    aria-label="Explicar nuevo chat"
+                    title="Ver explicación"
+                  ></button>
+                </div>
+                <p id="newChatHelp" class="control-help-text" hidden>
+                  Empieza una conversación limpia sin mezclarla con la sesión actual.
+                </p>
+              </div>
+              <div class="control-with-help">
+                <div class="control-main-row">
+                  <button
+                    id="chatRefreshButton"
+                    class="ghost-button"
+                    type="button"
+                    title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+                  >
+                    Actualizar datos
+                  </button>
+                  <button
+                    class="help-toggle"
+                    type="button"
+                    data-help-toggle="refreshHelp"
+                    aria-expanded="false"
+                    aria-label="Explicar actualizar datos"
+                    title="Ver explicación"
+                  ></button>
+                </div>
+                <p id="refreshHelp" class="control-help-text" hidden>
+                  Recarga modelos, sesiones, hardware y estado local de Ollama.
+                </p>
+              </div>
             </div>
           </section>
 

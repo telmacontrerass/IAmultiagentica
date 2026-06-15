@@ -202,9 +202,7 @@ function addThinkingMessage() {
   const node = document.createElement("div");
   node.className = "message assistant thinking";
   node.innerHTML = `
-    <span class="comillas-loader" aria-hidden="true">
-      <img class="comillas-emblem" src="/static/comillas-crest.svg" alt="" />
-    </span>
+    <span class="thinking-loader" aria-hidden="true"></span>
     <span>Pensando</span>
   `;
   els.messages.appendChild(node);
@@ -416,17 +414,36 @@ function renderTaskProgress(task, type) {
     ? (task.total ? `${formatBytes(task.completed)} de ${formatBytes(task.total)}` : "Calculando tamaño...")
     : (task.done ? "Ollama actualizado" : "Eliminando archivos locales...");
   const className = `${type} ${task.error ? "error" : task.done ? "done" : "active"}`;
+  const busyLoader = !task.done && !task.error
+    ? `<span class="tiny-loader" aria-hidden="true"></span>`
+    : "";
 
   return `
     <div class="download-progress ${className}">
       <div class="progress-row">
         <span>${escapeHtml(status)}</span>
-        <strong>${percent.toFixed(0)}%</strong>
+        <strong class="progress-value">${busyLoader}${percent.toFixed(0)}%</strong>
       </div>
       <div class="progress-bar"><i style="width: ${visiblePercent}%"></i></div>
       <small>${escapeHtml(detail)}</small>
     </div>
   `;
+}
+
+function renderModelActions(model) {
+  const buttons = [
+    `<button type="button" data-action="use" data-model="${escapeHtml(model.id)}">Usar</button>`,
+  ];
+  if (model.installed) {
+    buttons.push(
+      `<button class="danger-button" type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Eliminar</button>`,
+    );
+  } else {
+    buttons.push(
+      `<button type="button" data-action="pull" data-tag="${escapeHtml(model.ollama_tag)}">Descargar</button>`,
+    );
+  }
+  return `<div class="model-actions">${buttons.join("")}</div>`;
 }
 
 function renderModels() {
@@ -449,11 +466,7 @@ function renderModels() {
         ${escapeHtml(model.categories.join(", "))} · RAM aprox. ${model.ram_inference_gb} GB
         ${model.fit_label ? ` · ${escapeHtml(model.fit_label)}` : ""}
       </div>
-      <div class="model-actions">
-        <button type="button" data-action="use" data-model="${escapeHtml(model.id)}">Usar</button>
-        <button type="button" data-action="pull" data-tag="${escapeHtml(model.ollama_tag)}">Descargar</button>
-        <button class="danger-button" type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Eliminar</button>
-      </div>
+      ${renderModelActions(model)}
       ${renderModelProgress(model)}
     </article>
   `).join("");
@@ -652,10 +665,21 @@ function applyActionPrompt(prompt) {
   }, 60);
 }
 
+function renderOllamaLocation(health) {
+  const api = health.ollama_base_url || "Ollama API no configurada";
+  const executable = health.ollama_executable || "Ejecutable no encontrado en PATH";
+  const modelsDir = health.ollama_models_dir || "Carpeta de modelos no detectada";
+  return `
+    <span><b>API</b>${escapeHtml(api)}</span>
+    <span><b>App</b>${escapeHtml(executable)}</span>
+    <span><b>Modelos</b>${escapeHtml(modelsDir)}</span>
+  `;
+}
+
 async function refreshAll() {
   const health = await api("/api/health");
   els.ollamaStatus.textContent = health.ok ? `Ollama listo (${health.installed_count})` : "Ollama no disponible";
-  els.workspaceLabel.textContent = health.workspace || "";
+  els.workspaceLabel.innerHTML = renderOllamaLocation(health);
 
   const systemPayload = await api("/api/system");
   renderSystem(systemPayload);
@@ -672,13 +696,15 @@ async function refreshAll() {
 
 async function runRefreshFromButton(button) {
   if (!button) return;
+  const label = button.dataset.defaultLabel || button.textContent.trim() || "Actualizar datos";
+  button.dataset.defaultLabel = label;
   button.disabled = true;
-  button.textContent = "Actualizando...";
+  button.innerHTML = `<span class="tiny-loader button-loader" aria-hidden="true"></span><span>Actualizando</span>`;
   try {
     await refreshAll();
   } finally {
     button.disabled = false;
-    button.textContent = "Actualizar datos";
+    button.textContent = label;
   }
 }
 
@@ -915,6 +941,14 @@ function handleModelSelectChange() {
   persistUiState();
 }
 
+function toggleControlHelp(button) {
+  const target = document.getElementById(button.dataset.helpToggle || "");
+  if (!target) return;
+  const expanded = button.getAttribute("aria-expanded") === "true";
+  button.setAttribute("aria-expanded", String(!expanded));
+  target.hidden = expanded;
+}
+
 function bindEvents() {
   els.chatForm.addEventListener("submit", sendMessage);
   els.fileInput.addEventListener("change", uploadSelectedFiles);
@@ -929,6 +963,9 @@ function bindEvents() {
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
   els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
+  document.querySelectorAll("[data-help-toggle]").forEach((button) => {
+    button.addEventListener("click", () => toggleControlHelp(button));
+  });
   els.newChat.addEventListener("click", async () => {
     state.currentSession = null;
     state.chatMessages = [];

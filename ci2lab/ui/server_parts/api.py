@@ -14,7 +14,7 @@ from ci2lab.harness.mcp.config import load_mcp_config
 from ci2lab.harness.permissions import CONFIRM_TOOLS
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS
-from ci2lab.runtime.ollama import is_catalog_model_installed
+from ci2lab.runtime.ollama import is_catalog_model_installed, ollama_install_info
 from ci2lab.ui.server_parts.serializers import (
     disk_payload,
     list_runs,
@@ -102,10 +102,13 @@ UI_ACTIONS: list[dict[str, str]] = [
 
 def health_payload(state: Any) -> dict[str, Any]:
     installed, error = state.list_installed_models()
+    install_info = ollama_install_info()
     return {
         "ok": error is None,
         "ollama_error": error,
         "ollama_base_url": state.ollama_base_url,
+        "ollama_executable": install_info["executable"],
+        "ollama_models_dir": install_info["models_dir"],
         "installed_count": len(installed),
         "workspace": state.runtime.workspace or os.getcwd(),
         "model": state.runtime.model,
