@@ -45,7 +45,7 @@ def load_permission_config(path: str | Path) -> OpenCodePermissionConfig:
 
 def evaluate_security_gate(
     *,
-    engine: str,
+    engine: str | None = None,
     workspace: str,
     tool: str,
     target: str,

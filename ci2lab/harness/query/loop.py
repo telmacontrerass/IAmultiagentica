@@ -184,8 +184,16 @@ def run_agent(
 
                 trimmed = trim_messages(history, selection.context_length)
                 tools = get_function_schemas(cfg) if selection.supports_tools else None
+                # Evita mostrar texto tentativo en rondas con herramientas;
+                # solo mostramos contenido final cuando no hay tool calls.
+                stream_this_round = cfg.stream and not selection.supports_tools
                 try:
-                    llm_response = call_llm(client, trimmed, tools=tools, stream=cfg.stream)
+                    llm_response = call_llm(
+                        client,
+                        trimmed,
+                        tools=tools,
+                        stream=stream_this_round,
+                    )
                 except LLMError as exc:
                     status = "llm_error"
                     log_error = exc.user_message
@@ -210,6 +218,9 @@ def run_agent(
                     tool_mode=selection.tool_mode,
                 )
                 calls = _prepend_missing_reads(calls, user_prompt)
+                if calls:
+                    # No conservar texto libre del modelo antes del resultado real de tools.
+                    content = ""
             forced_pdf_call = (
                 forced_pdf_read_tool_call(user_prompt)
                 if not calls and not pdf_tool_used and pdf_tool_nudges >= 1

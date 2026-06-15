@@ -41,6 +41,34 @@ def test_run_agent_executes_tool_then_answers():
     assert client.chat.call_count == 2
 
 
+def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    with_tool = LLMResponse(
+        content="Result: Command executed successfully. Removed archivo.txt.",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "bash", "arguments": '{"command": "rm archivo.txt"}'},
+        }],
+    )
+    final = LLMResponse(content="La acción fue bloqueada por política de seguridad.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        result = run_agent("borra archivo.txt", selection, config=config)
+
+    assert "bloquead" in result.lower()
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert not any(
+        "executed successfully" in str(m.get("content", "")).lower()
+        or "removed archivo.txt" in str(m.get("content", "")).lower()
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+
+
 def test_run_agent_reads_exact_pdf_request_without_model_round(tmp_path, monkeypatch):
     selection = default_selection("test:1b", tool_mode="fenced")
     config = AgentConfig(

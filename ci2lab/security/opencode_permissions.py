@@ -44,6 +44,9 @@ for _t in _BASH_TOOLS:
 
 _DEFAULT_EXPERIMENTAL_RULES: dict[str, Any] = {
     "*": "ask",
+    "skill": "allow",
+    "ask_user": "allow",
+    "todo_write": "allow",
     "read": {
         "*": "allow",
         ".env": "deny",
@@ -59,6 +62,9 @@ _DEFAULT_EXPERIMENTAL_RULES: dict[str, Any] = {
         "pytest *": "allow",
         "rm *": "deny",
         "del *": "deny",
+        "rmdir *": "deny",
+        "rd *": "deny",
+        "erase *": "deny",
         "Remove-Item *": "deny",
     },
     "external_directory": {

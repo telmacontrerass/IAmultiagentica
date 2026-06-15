@@ -29,7 +29,7 @@ class AuditPersistContext:
     runs_dir: str = "runs"
     run_id: str | None = None
     run_subdir: str | None = None
-    security_engine: str = "ci2lab"
+    security_engine: str = "claude_experimental"
 
 
 _audit_log: list[SecurityAuditEntry] = []
@@ -96,7 +96,7 @@ def log_decision(
 
     engine = normalize_security_engine(
         security_engine
-        or (_persist_context.security_engine if _persist_context else "ci2lab")
+        or (_persist_context.security_engine if _persist_context else "claude_experimental")
     )
     hard = (
         hard_guards_enabled

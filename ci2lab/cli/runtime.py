@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 
 from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
+from ci2lab.harness.security_profiles import SecurityConfig
 
 
 def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
     base = load_config()
-    return merge_cli_config(
+    merged = merge_cli_config(
         base,
         model=args.model,
         tool_mode=args.tool_mode,
@@ -21,6 +22,25 @@ def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
         runs_dir=args.runs_dir,
         no_log=args.no_log,
     )
+    if getattr(args, "security_engine", None) is not None:
+        from ci2lab.security.engine import normalize_security_engine
+
+        sec = merged.security
+        engine = normalize_security_engine(args.security_engine)
+        merged = Ci2LabConfig(
+            **{
+                **merged.__dict__,
+                "security": SecurityConfig(
+                    profile=sec.profile,
+                    engine=engine,
+                    bash_timeout_seconds=sec.bash_timeout_seconds,
+                    max_tool_output_chars=sec.max_tool_output_chars,
+                    permission=sec.permission,
+                    permission_preset=sec.permission_preset,
+                ),
+            }
+        )
+    return merged
 
 
 def _build_config(

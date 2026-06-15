@@ -52,13 +52,19 @@ El router **sugiere** modelos; tú eliges cuál ejecutar con `--model`. Al arran
 
 | Motor | Rol |
 |-------|-----|
-| **`ci2lab`** (default) | Sandbox-first: workspace, secretos, blocklist, perfiles. |
-| **`claude_experimental`** | Hard guards de `ci2lab` + UX permission moderna, session approvals y audit. |
-| **`opencode_experimental`** | Laboratorio permission-first (sin hard guards) — solo comparación. |
+| **`claude_experimental`** (default) | Hard guards + capa `deny`/`ask`/`allow`, prompt moderno, session approvals |
+| **`ci2lab`** | Legacy: solo hard guards + confirmación `[s/N]` (sin reglas deny/ask/allow) |
+| **`opencode_experimental`** | Laboratorio inseguro (sin hard guards) — solo comparar con OpenCode |
 
 ```powershell
-ci2lab chat                                          # default
-ci2lab --security-engine claude_experimental chat    # experimental recomendado
+# Default: claude_experimental (deny/ask/allow + hard guards)
+ci2lab chat
+
+# Legacy sin capa de permisos por reglas
+ci2lab --security-engine ci2lab chat
+
+# Laboratorio inseguro — no usar en trabajo real
+ci2lab --security-engine opencode_experimental chat
 ```
 
 Validación: [`docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`](docs/CLAUDE_EXPERIMENTAL_VALIDATION.md) · Política: [`docs/SECURITY_POLICY.md`](docs/SECURITY_POLICY.md)
@@ -67,7 +73,7 @@ Validación: [`docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`](docs/CLAUDE_EXPERIMENTAL
 ci2lab-audit-live                                    # auditoría live de modelos
 python scripts/audit_claude_experimental_live.py --all
 python scripts/compare_security_engines.py
-python scripts/security_gate_check.py --engine ci2lab --workspace . --tool read_file --target "../outside.txt"
+python scripts/security_gate_check.py --workspace . --tool bash --target "rm archivo.txt"
 ```
 
 ## Instalación

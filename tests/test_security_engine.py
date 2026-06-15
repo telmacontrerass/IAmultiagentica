@@ -44,8 +44,8 @@ def _clear_audit():
     clear_audit_log()
 
 
-def test_default_engine_is_ci2lab():
-    assert normalize_security_engine(None) == SecurityEngineName.CI2LAB.value
+def test_default_engine_is_claude_experimental():
+    assert normalize_security_engine(None) == SecurityEngineName.CLAUDE_EXPERIMENTAL.value
     assert normalize_security_engine("standard") == SecurityEngineName.CI2LAB.value
 
 
@@ -148,4 +148,5 @@ def test_audit_logs_engine(workspace: Path, outside_secret: Path):
 
 def test_enforce_ci2lab_hard_policy_flag():
     assert enforce_ci2lab_hard_policy("ci2lab") is True
+    assert enforce_ci2lab_hard_policy("claude_experimental") is True
     assert enforce_ci2lab_hard_policy("opencode_experimental") is False

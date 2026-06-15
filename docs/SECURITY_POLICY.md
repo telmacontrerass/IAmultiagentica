@@ -52,11 +52,18 @@ Ejemplo minimo en `ci2lab.json`:
 
 | Valor | Comportamiento |
 |-------|----------------|
-| `ci2lab` (default) | Politica dura actual: workspace, secretos, bash blocklist, perfiles |
-| `opencode_experimental` | **INSEGURO / solo pruebas**: permisos `allow`/`ask`/`deny` estilo OpenCode; desactiva hard-checks para comparar |
-| `claude_experimental` | **Experimental seguro**: UX permission tipo Claude + hard guards CI2Lab (workspace, secretos, bash blocklist, perfiles) |
+| **`claude_experimental`** (default) | Hard guards CI2Lab + capa `allow`/`ask`/`deny` + prompt moderno + session approvals |
+| `ci2lab` | **Legacy**: solo hard guards + confirmación `[s/N]` en bash/write/edit. **Sin** reglas deny/ask/allow |
+| `opencode_experimental` | **INSEGURO / solo laboratorio**: permission layer sin hard guards |
 
-#### `claude_experimental` (P2.8)
+**Importante:** un `deny` de política (regla en config) solo existe en motores con permission layer (`claude_experimental`, `opencode_experimental`). El motor legacy `ci2lab` no tiene `permission deny`; las tools peligrosas pasan a confirmación `[s/N]` si superan los hard guards.
+
+**No confundir:**
+
+- **`deny` en la política** = bloqueo permanente por regla (no aprobable).
+- **`[d] Deny once` en el prompt** = el usuario rechaza una acción en `ask` (no es un deny de política).
+
+#### `claude_experimental` (motor seguro por defecto)
 
 Precedencia obligatoria:
 
@@ -85,7 +92,7 @@ Precedencia obligatoria:
 }
 ```
 
-CLI: `--security-engine claude_experimental`
+CLI: `ci2lab chat` (default `claude_experimental`). Legacy: `--security-engine ci2lab`.
 
 Validacion live (P2.9) y modo experimental recomendado (P3.0, no default): [`CLAUDE_EXPERIMENTAL_VALIDATION.md`](CLAUDE_EXPERIMENTAL_VALIDATION.md), resumen [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude/P2_9_SUMMARY.md).
 

@@ -41,7 +41,13 @@ class SecurityEngineName(str, Enum):
     CLAUDE_EXPERIMENTAL = "claude_experimental"
 
 
-DEFAULT_SECURITY_ENGINE = SecurityEngineName.CI2LAB.value
+DEFAULT_SECURITY_ENGINE = SecurityEngineName.CLAUDE_EXPERIMENTAL.value
+
+CLI_SECURITY_ENGINE_CHOICES = (
+    SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+    SecurityEngineName.CI2LAB.value,
+    SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
+)
 
 _ENGINE_ALIASES = {
     "ci2lab": SecurityEngineName.CI2LAB.value,

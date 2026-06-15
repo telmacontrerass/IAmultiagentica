@@ -99,6 +99,7 @@ def _build_agent_config(
         write_tools_enabled=write_enabled,
         require_diff_preview=True,
         confirm_callback=confirm_callback,
+        security_engine="ci2lab",
     )
 
 

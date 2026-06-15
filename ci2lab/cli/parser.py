@@ -60,6 +60,8 @@ def _print_global_help() -> None:
         "  --workspace PATH                  Directorio de trabajo del agente",
         "  --cwd PATH                        Alias legacy de --workspace",
         "  --yes                             Auto-confirmar bash (no omite preview)",
+        "  --security-engine ENGINE          Motor: claude_experimental (default),",
+        "                                    ci2lab (legacy), opencode_experimental (lab)",
         "  --no-stream                       Desactivar streaming de tokens",
         "  --max-rounds N                    Maximo de vueltas del agente",
         "  --session ID                      Reanudar sesion en chat",
@@ -115,6 +117,18 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         help="Directorio de trabajo del agente (alias semántico de --cwd)",
     )
     p.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
+    from ci2lab.security.engine import CLI_SECURITY_ENGINE_CHOICES
+
+    p.add_argument(
+        "--security-engine",
+        choices=list(CLI_SECURITY_ENGINE_CHOICES),
+        default=None,
+        metavar="ENGINE",
+        help=(
+            "Motor de seguridad (default: claude_experimental). "
+            "ci2lab=legacy sin deny/ask/allow; opencode_experimental=lab inseguro."
+        ),
+    )
     p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
     p.add_argument("--max-rounds", type=int, default=None)
     p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")

@@ -75,8 +75,15 @@ def build_agent_config(
     config runtime. El snapshot se calcula una sola vez sobre el config final.
     """
     from ci2lab.harness.run_logger import build_config_snapshot
+    from ci2lab.harness.security_profiles import resolved_opencode_permissions
 
     effective_cwd = cwd or runtime.workspace or os.getcwd()
+    sec = runtime.security
+    limits = sec.resolved_limits()
+    opencode_perms = resolved_opencode_permissions(
+        sec,
+        root_permission=runtime.permission or None,
+    )
     agent = AgentConfig(
         cwd=effective_cwd,
         max_rounds=runtime.max_rounds,
@@ -88,6 +95,11 @@ def build_agent_config(
         write_tools_enabled=runtime.write_tools_enabled,
         require_diff_preview=runtime.require_diff_preview,
         confirm_callback=confirm_callback,
+        security_engine=sec.engine,
+        security_profile=sec.profile,
+        opencode_permissions=opencode_perms,
+        bash_timeout_seconds=limits.bash_timeout_seconds,
+        max_tool_output_chars=limits.max_tool_output_chars,
     )
     agent.config_snapshot = build_config_snapshot(
         runtime_fields={

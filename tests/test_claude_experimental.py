@@ -102,8 +102,8 @@ def test_claude_engine_cli_flag():
     assert proc.returncode == 0
 
 
-def test_default_engine_ci2lab():
-    assert normalize_security_engine(None) == SecurityEngineName.CI2LAB.value
+def test_default_engine_claude_experimental():
+    assert normalize_security_engine(None) == SecurityEngineName.CLAUDE_EXPERIMENTAL.value
 
 
 def test_unknown_engine_fails():
@@ -198,6 +198,66 @@ def test_claude_permission_deny(workspace: Path):
     assert gate.blocked
     assert gate.matched_rule is not None
     assert not str(gate.matched_rule or "").startswith("hard:")
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_rule_prefix"),
+    [
+        ("rm archivo.txt", "bash:rm *"),
+        ("rm otra_cosa.txt", "bash:rm *"),
+        ("rm carpeta", "bash:rm *"),
+        ("del archivo.txt", "bash:del *"),
+        ("rmdir carpeta", "bash:rmdir *"),
+        ("rd carpeta", "bash:rd *"),
+        ("erase archivo.txt", "bash:erase *"),
+        ("Remove-Item archivo.txt", "bash:Remove-Item *"),
+        ("Remove-Item -Recurse carpeta", "bash:Remove-Item *"),
+        ("Remove-Item -Force archivo.txt", "bash:Remove-Item *"),
+        ("Remove-Item -Recurse -Force carpeta", "bash:Remove-Item *"),
+    ],
+)
+def test_claude_default_deny_patterns_generalized(
+    workspace: Path, command: str, expected_rule_prefix: str
+):
+    config = AgentConfig(
+        cwd=str(workspace),
+        security_engine="claude_experimental",
+    )
+    gate = evaluate_tool_gate("bash", {"command": command}, config)
+    assert gate.blocked
+    assert (gate.matched_rule or "").startswith(expected_rule_prefix)
+    assert not str(gate.matched_rule or "").startswith("hard:")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rmdir /s carpeta",
+        "rd /s carpeta",
+    ],
+)
+def test_claude_recursive_cmd_variants_blocked(workspace: Path, command: str):
+    """rmdir /s y rd /s deben bloquearse (hard guard o permission deny)."""
+    config = AgentConfig(
+        cwd=str(workspace),
+        security_engine="claude_experimental",
+    )
+    gate = evaluate_tool_gate("bash", {"command": command}, config)
+    assert gate.blocked
+
+
+def test_claude_safe_commands_not_denied(workspace: Path):
+    config = AgentConfig(
+        cwd=str(workspace),
+        security_engine="claude_experimental",
+    )
+    git = evaluate_tool_gate("bash", {"command": "git status"}, config)
+    assert not git.blocked
+    assert git.matched_rule == "bash:git *"
+
+    echo = evaluate_tool_gate("bash", {"command": "echo safe"}, config)
+    assert not echo.blocked
+    assert echo.matched_rule == "bash:*"
 
 
 def test_security_permission_over_root():
@@ -409,3 +469,40 @@ def test_dry_gate_claude_git(workspace: Path):
 def test_enforce_hard_policy_includes_claude():
     assert enforce_ci2lab_hard_policy("claude_experimental")
     assert not enforce_ci2lab_hard_policy("opencode_experimental")
+
+
+def test_build_agent_config_uses_runtime_security():
+    from ci2lab.harness import default_selection
+    from ci2lab.pipeline import build_agent_config
+
+    runtime = Ci2LabConfig(
+        security=SecurityConfig(engine="claude_experimental", profile="standard"),
+    )
+    selection = default_selection("test:1b")
+    agent = build_agent_config(runtime, selection, cwd=str(Path.cwd()))
+    assert agent.security_engine == "claude_experimental"
+    assert agent.opencode_permissions is not None
+
+
+def test_security_gate_check_default_engine(workspace: Path):
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "security_gate_check.py"),
+            "--workspace",
+            str(workspace),
+            "--tool",
+            "bash",
+            "--target",
+            "rm archivo.txt",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+    )
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads(proc.stdout)
+    assert data["engine"] == "claude_experimental"
+    assert data["decision"] == "deny"
+    assert data["blocked"] is True

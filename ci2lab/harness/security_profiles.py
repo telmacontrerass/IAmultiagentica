@@ -37,7 +37,7 @@ class SecurityLimits:
 @dataclass(frozen=True)
 class SecurityConfig:
     profile: str = DEFAULT_PROFILE
-    engine: str = "ci2lab"
+    engine: str = "claude_experimental"
     bash_timeout_seconds: int | None = None
     max_tool_output_chars: int | None = None
     permission: dict[str, Any] = field(default_factory=dict)
@@ -83,9 +83,9 @@ def parse_security_config(raw: Mapping[str, Any] | None) -> SecurityConfig:
 
     profile = validate_profile(str(raw.get("profile", DEFAULT_PROFILE)))
 
-    from ci2lab.security.engine import normalize_security_engine
+    from ci2lab.security.engine import DEFAULT_SECURITY_ENGINE, normalize_security_engine
 
-    engine = normalize_security_engine(str(raw.get("engine", "ci2lab")))
+    engine = normalize_security_engine(str(raw.get("engine", DEFAULT_SECURITY_ENGINE)))
 
     permission_raw = raw.get("permission")
     permission: dict[str, Any] = {}

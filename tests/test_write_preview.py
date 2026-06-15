@@ -73,6 +73,7 @@ def test_deny_does_not_modify_file(tmp_path):
     (tmp_path / "a.txt").write_text("original", encoding="utf-8")
     config = AgentConfig(
         cwd=str(tmp_path),
+        security_engine="ci2lab",
         require_diff_preview=True,
         confirm_callback=lambda _n, _s: False,
     )
@@ -96,6 +97,7 @@ def test_approve_modifies_file(tmp_path):
     (tmp_path / "a.txt").write_text("original", encoding="utf-8")
     config = AgentConfig(
         cwd=str(tmp_path),
+        security_engine="ci2lab",
         require_diff_preview=True,
         confirm_callback=lambda _n, _s: True,
     )
@@ -119,6 +121,7 @@ def test_yes_does_not_skip_diff_preview(tmp_path):
     (tmp_path / "a.txt").write_text("x", encoding="utf-8")
     config = AgentConfig(
         cwd=str(tmp_path),
+        security_engine="ci2lab",
         auto_confirm=True,
         require_diff_preview=True,
         confirm_callback=lambda _n, _s: False,
@@ -139,6 +142,7 @@ def test_logging_records_write_outcome(tmp_path):
     runs = tmp_path / "runs"
     config = AgentConfig(
         cwd=str(tmp_path),
+        security_engine="ci2lab",
         stream=False,
         run_log_enabled=True,
         runs_dir=str(runs),

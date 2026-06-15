@@ -12,17 +12,28 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from ci2lab.security.engine import (
+    DEFAULT_SECURITY_ENGINE,
+    UnknownSecurityEngineError,
+    normalize_security_engine,
+)
 from ci2lab.security.gate_check import evaluate_security_gate, load_permission_config
 from ci2lab.security.opencode_config_io import load_opencode_config_bundle
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=f"Motor por defecto: {DEFAULT_SECURITY_ENGINE}.",
+    )
     parser.add_argument(
         "--engine",
-        required=True,
-        choices=["ci2lab", "opencode_experimental", "opencode", "claude_experimental", "claude"],
-        help="Motor de seguridad",
+        default=DEFAULT_SECURITY_ENGINE,
+        metavar="ENGINE",
+        help=(
+            f"Motor de seguridad (default: {DEFAULT_SECURITY_ENGINE}). "
+            "Valores: claude_experimental, ci2lab, opencode_experimental."
+        ),
     )
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--tool", required=True, help="Nombre de la tool")
@@ -48,7 +59,7 @@ def main() -> int:
     parser.add_argument(
         "--security-profile",
         default="standard",
-        help="Perfil ci2lab (solo motor ci2lab)",
+        help="Perfil de seguridad (strict, standard, dev, audit)",
     )
     args = parser.parse_args()
 
@@ -63,6 +74,7 @@ def main() -> int:
         return 1
 
     try:
+        engine = normalize_security_engine(args.engine)
         perm = None
         bundle = None
         if args.opencode_config is not None:
@@ -71,7 +83,7 @@ def main() -> int:
             perm = load_permission_config(args.permission_config)
 
         result = evaluate_security_gate(
-            engine=args.engine,
+            engine=engine,
             workspace=str(args.workspace.resolve()),
             tool=args.tool,
             target=args.target,
@@ -81,6 +93,9 @@ def main() -> int:
             security_profile=args.security_profile,
             show_effective_config=args.show_effective_config,
         )
+    except UnknownSecurityEngineError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 1
     except (ValueError, FileNotFoundError, OSError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
