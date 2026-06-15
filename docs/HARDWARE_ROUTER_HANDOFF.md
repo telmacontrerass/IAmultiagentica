@@ -8,7 +8,7 @@
 
 ---
 
-## Estado de implementación (2026-06-10)
+## Estado de implementación (2026-06-12)
 
 Resumen de lo que **ya existe** frente a lo que **falta** según este handoff.
 
@@ -17,22 +17,22 @@ Resumen de lo que **ya existe** frente a lo que **falta** según este handoff.
 | `hardware/profile.py` | ✅ Implementado | `scan_hardware()` — RAM, VRAM, GPU, CPU, presupuesto inferencia |
 | `router/catalog.py` | ✅ Implementado | Carga `ci2lab/catalog/models.json` (21 modelos) |
 | `router/intent.py` | ✅ Implementado | Clasificador por keywords (`coding`, `reasoning`, `rag`, …) |
-| `router/recommend.py` | ✅ Implementado | Scoring por categoría, memoria, plan de descarga |
-| `router/resolve.py` | ✅ Implementado | `resolve_model()` → `ModelSelection` |
+| `router/recommend.py` | ✅ Implementado | Scoring, `model_fits()`, plan de descarga |
+| `router/selection.py` | ✅ Implementado | `build_model_selection()` — **ruta de producción** |
+| `router/resolve.py` | ⚠️ Opcional | `resolve_model()` auto-elige; no usado en chat/agent/UI |
 | CLI `ci2lab hardware` | ✅ Implementado | Tabla o `--json` |
 | CLI `ci2lab models recommend` | ✅ Implementado | Con/sin prompt; plan de descarga |
 | CLI `ci2lab models install` | ✅ Implementado | Comandos pull/run/chat |
 | CLI `ci2lab models run` | ✅ Implementado | `ollama run` del tag elegido |
+| `pipeline.py` | ✅ Implementado | `prepare_session()`, `build_agent_config()` |
 | `runtime/ensure.py` | 🔲 Pendiente | Sin auto-pull ni comprobación de modelo instalado |
-| `pipeline.py` integración | ⚠️ Parcial | Importa módulos inexistentes; cae en fallback del arnés |
 | Tests hardware/router | ✅ Parcial | `test_hardware_profile.py`, `test_cli_models.py` |
 
 ### Qué falta para cerrar el handoff
 
 1. **`ci2lab/runtime/ensure.py`** — `ensure_model_ready(selection)` con `ollama pull` opcional.
-2. **Corregir `pipeline.py`** — importar `scan_hardware` desde `ci2lab.hardware` (no `hardware.profiler`); llamar a `resolve_model()` en `chat`/`agent`.
-3. **`prefer_installed`** — hoy ignorado en `resolve_model()`; debería priorizar modelos ya en `ollama list`.
-4. **Validación live por modelo** — solo `llama3.1:8b` validado en evals del arnés.
+2. **`prefer_installed` en `resolve_model()`** — o retirar `resolve_model` si se confirma el flujo usuario-elige-modelo.
+3. **Validación live por modelo** — solo `llama3.1:8b` validado en evals del arnés.
 
 ---
 
@@ -151,52 +151,51 @@ def ensure_model_ready(selection: ModelSelection, *, pull: bool = True) -> None:
     """
 ```
 
-### 3.5 Pipeline unificado (para CLI final)
+### 3.5 Pipeline unificado (implementado)
 
-En `ci2lab/pipeline.py` (puedes crearlo tú; el arnés lo reutilizará):
+En `ci2lab/pipeline.py`:
 
 ```python
-def prepare_session(user_prompt: str, **kwargs) -> tuple[HardwareProfile, ModelSelection]:
+def prepare_session(user_prompt, *, force_model=None, tool_mode_override=None, ...) -> tuple[HardwareProfile, ModelSelection]:
     profile = scan_hardware()
-    selection = resolve_model(user_prompt, profile=profile, **kwargs)
-    ensure_model_ready(selection)
+    selection = build_model_selection(force_model or DEFAULT_MODEL, tool_mode_override=..., profile=profile)
     return profile, selection
+
+def build_agent_config(runtime: Ci2LabConfig, selection: ModelSelection, **overrides) -> AgentConfig:
+    ...
 ```
 
-El compañero del arnés hará:
+El usuario elige el modelo (`--model`, UI o config). `resolve_model()` queda como API opcional para auto-selección futura.
+
+El arnés recibe:
 
 ```python
-profile, selection = prepare_session("programar muy bien")
-await harness.run(user_prompt, selection=selection, profile=profile)
+from ci2lab.harness import run_agent
+
+_, selection = prepare_session(prompt, force_model=runtime.model, ...)
+config = build_agent_config(runtime, selection, session_id=...)
+run_agent(prompt, selection, config=config)
 ```
 
 ---
 
 ## 4. Estructura de carpetas
 
-Todo dentro de **`IAmultiagentica/`**:
+Ver [`STRUCTURE.md`](STRUCTURE.md) para el árbol actualizado. Resumen:
 
 ```text
-IAmultiagentica/
-├── pyproject.toml              # pip install -e .
-├── README.md
-├── docs/
-│   ├── STRUCTURE.md
-│   └── HARDWARE_ROUTER_HANDOFF.md
-├── references/                 # Notas (no código de terceros)
-├── tests/
-└── ci2lab/                     # Paquete Python
-    ├── __init__.py
-    ├── __main__.py
-    ├── cli.py
-    ├── pipeline.py
-    ├── contracts/              # ⚠️ COMPARTIDO con arnés
-    ├── hardware/
-    ├── router/
-    ├── runtime/
-    ├── catalog/
-    ├── harness/                # Lo implementa el compañero
-    └── config/
+ci2lab/
+├── cli/              # parser, runtime, commands/*
+├── pipeline.py       # prepare_session, build_agent_config
+├── console.py        # salida Rich compartida
+├── contracts/, hardware/, router/, runtime/, catalog/
+├── security/         # motores de permisos
+├── harness/
+│   ├── query/        # run_agent (ReAct)
+│   ├── context/, security/, tools/, mcp/, skills/
+│   └── repl.py, session.py, …
+├── evals/, ui/, scripts/
+└── config.py
 ```
 
 Los repos de referencia están **fuera**, en `Ci2Lab/claude-code-main/`, etc.

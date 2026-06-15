@@ -1,4 +1,4 @@
-"""MCP client integration for external tool servers."""
+"""MCP client integration — loads `.ci2lab/mcp.json` and exposes dynamic tools."""
 
 from ci2lab.harness.mcp.config import McpServerConfig, load_mcp_config
 from ci2lab.harness.mcp.session import (

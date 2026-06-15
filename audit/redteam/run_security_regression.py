@@ -598,12 +598,11 @@ def main() -> int:
     repeat_call = LLMResponse(content="", tool_calls=[read_call.tool_calls[0]])
     final = LLMResponse(content="No puedo acceder fuera del workspace.", tool_calls=[])
 
-    quiet = Console(file=StringIO(), width=120, force_terminal=False)
-    with patch("ci2lab.harness.loop.console", quiet):
-        with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+    with patch("ci2lab.console.console.print"):
+        with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
             client = mock_cls.return_value
             client.chat.side_effect = [read_call, repeat_call, final]
-            with patch("ci2lab.harness.loop.execute_tool", wraps=execute_tool) as ex:
+            with patch("ci2lab.harness.query.loop.execute_tool", wraps=execute_tool) as ex:
                 run_agent("lee externo", selection, config=agent_cfg)
                 c1 = ex.call_count
     record("LOOP", "no repite read externo", "policy block repeat", ok=c1 == 1, result=f"calls={c1}")

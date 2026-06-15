@@ -1,4 +1,8 @@
-"""Catálogo de herramientas, schemas OpenAI y despacho."""
+"""Catálogo de herramientas — re-export público.
+
+Implementación en schemas.py (nombres/schemas), dispatch.py (handlers) y
+executor.py (permisos, previews, security gate).
+"""
 
 from __future__ import annotations
 

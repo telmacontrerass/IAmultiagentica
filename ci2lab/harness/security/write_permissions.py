@@ -11,8 +11,6 @@ from ci2lab.harness.security.permissions import check_permission, default_confir
 from ci2lab.harness.tools.write_preview import WritePreview
 from ci2lab.harness.types import AgentConfig
 
-_console = console
-
 WRITE_TOOLS = frozenset(
     {"write_file", "edit_file", "write_docx", "apply_patch", "fill_docx_template"}
 )
@@ -45,7 +43,7 @@ def _confirm_with_preview(
     confirm_callback: Callable[[str, str], bool] | None,
 ) -> tuple[bool, str | None]:
     body = preview.format_for_display()
-    _console.print(Panel(body, title=f"Preview: {tool_name}", border_style="yellow"))
+    console.print(Panel(body, title=f"Preview: {tool_name}", border_style="yellow"))
 
     if confirm_callback is not None:
         approved = confirm_callback(tool_name, body)

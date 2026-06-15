@@ -4,7 +4,7 @@ Sistema mínimo para comprobar de forma repetible que el agente usa herramientas
 
 ## Estado validado
 
-A fecha **2026-06-09**, la suite mock pasa **7/7** y la suite live con `llama3.1:8b` ha sido validada **7/7**. Detalle en [`docs/audits/live_eval_status.md`](audits/live_eval_status.md).
+A fecha **2026-06-12**, la suite mock pasa **7/7** y la suite live con `llama3.1:8b` ha sido validada **7/7**. Detalle en [`docs/audits/live_eval_status.md`](audits/live_eval_status.md).
 
 ## Ubicación
 

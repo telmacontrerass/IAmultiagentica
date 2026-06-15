@@ -1,4 +1,4 @@
-"""Permission and workspace policy helpers."""
+"""Permission and workspace policy helpers for the harness tool executor."""
 
 from ci2lab.harness.security.permissions import CONFIRM_TOOLS, check_permission, default_confirm
 from ci2lab.harness.security.policy import (

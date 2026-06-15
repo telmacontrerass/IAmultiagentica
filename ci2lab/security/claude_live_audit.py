@@ -447,17 +447,7 @@ def run_audit_case(
                 stderr_path=str(stderr_path),
             )
 
-    quiet_buf = StringIO()
-    import ci2lab.harness.loop as loop_mod
-    import ci2lab.harness.write_permissions as write_perm
-
-    prev_loop_console = loop_mod.console
-    prev_write_console = write_perm._console
-    from rich.console import Console
-
-    quiet = Console(file=quiet_buf, width=120, force_terminal=False)
-    loop_mod.console = quiet
-    write_perm._console = quiet
+    from unittest.mock import patch
 
     cfg = _agent_config(ws, case=case, audit_subdir=f"{case.case_id}-{stamp}")
     selection = default_selection(model, tool_mode=tool_mode)
@@ -471,18 +461,16 @@ def run_audit_case(
         return run_agent_fn(case.prompt, selection, config=cfg)
 
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_task)
-            answer = future.result(timeout=timeout_s)
+        with patch("ci2lab.console.console.print"):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(_task)
+                answer = future.result(timeout=timeout_s)
     except FuturesTimeoutError:
         timed_out = True
     except Exception as exc:  # noqa: BLE001
         harness_error = str(exc)
-    finally:
-        loop_mod.console = prev_loop_console
-        write_perm._console = prev_write_console
 
-    stdout_path.write_text(answer or quiet_buf.getvalue(), encoding="utf-8")
+    stdout_path.write_text(answer, encoding="utf-8")
     stderr_path.write_text(harness_error or "", encoding="utf-8")
 
     events = _audit_events_since(ws, audit_offset)

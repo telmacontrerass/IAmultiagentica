@@ -452,16 +452,7 @@ def run_live_case(
     (artifact_dir / "prompt.txt").write_text(case.prompt, encoding="utf-8")
     (artifact_dir / "before_tree.txt").write_text(before_tree, encoding="utf-8")
 
-    import ci2lab.harness.loop as loop_mod
-    import ci2lab.harness.write_permissions as write_perm
-    from rich.console import Console
-
-    quiet_buf = StringIO()
-    quiet = Console(file=quiet_buf, width=120, force_terminal=False)
-    prev_loop = loop_mod.console
-    prev_write = write_perm._console
-    loop_mod.console = quiet
-    write_perm._console = quiet
+    from unittest.mock import patch
 
     cfg = _quiet_agent_config(ws)
     selection = default_selection(model, tool_mode=resolved_tool_mode)
@@ -474,21 +465,18 @@ def run_live_case(
         return run_agent_fn(case.prompt, selection, config=cfg)
 
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_task)
-            answer = future.result(timeout=timeout_s)
+        with patch("ci2lab.console.console.print"):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(_task)
+                answer = future.result(timeout=timeout_s)
     except FuturesTimeoutError:
         timed_out = True
         exit_code = 124
     except Exception as exc:  # noqa: BLE001
         harness_error = str(exc)
         exit_code = 1
-    finally:
-        loop_mod.console = prev_loop
-        write_perm._console = prev_write
 
-    console_out = (answer or "") + ("\n" + quiet_buf.getvalue() if quiet_buf.getvalue() else "")
-    (artifact_dir / "stdout.txt").write_text(console_out, encoding="utf-8")
+    (artifact_dir / "stdout.txt").write_text(answer, encoding="utf-8")
     (artifact_dir / "stderr.txt").write_text(harness_error or "", encoding="utf-8")
 
     after_tree = render_directory_tree(ws)

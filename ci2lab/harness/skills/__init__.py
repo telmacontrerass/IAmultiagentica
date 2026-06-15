@@ -1,4 +1,4 @@
-"""Workspace skills discovery and formatting."""
+"""Workspace skills — `.ci2lab/skills/*/SKILL.md` discovery and catalog formatting."""
 
 from ci2lab.harness.skills.loader import (
     Skill,

@@ -1,4 +1,8 @@
-"""Capa central de seguridad y permisos de Ci2Lab."""
+"""Capa central de seguridad y permisos de Ci2Lab.
+
+Motores: `ci2lab` (default), `claude_experimental`, `opencode_experimental`.
+El arnés aplica el gate vía `harness/tools/executor.py` según `AgentConfig.security_engine`.
+"""
 
 from ci2lab.security.audit import SecurityAuditEntry, clear_audit_log, get_audit_log, log_decision
 from ci2lab.security.paths import (

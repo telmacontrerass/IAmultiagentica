@@ -572,6 +572,26 @@ python -m ci2lab.cli --no-log --no-stream --yes "lista los archivos"
 ```
 Ejecuta sin logs ni streaming desde Python.
 
+## Extensiones del workspace
+
+Skills, MCP y memoria de proyecto se configuran en el directorio de trabajo (no son flags de CLI).
+
+```text
+.ci2lab/skills/<nombre>/SKILL.md
+```
+Define una skill invocable en REPL con `/nombre` o la tool `skill`.
+
+```text
+.ci2lab/mcp.json
+```
+Configura servidores MCP; las tools aparecen como `mcp__<servidor>__<tool>`.
+
+```text
+CI2LAB.md
+AGENTS.md
+```
+Instrucciones persistentes inyectadas en el system prompt (project memory).
+
 ## Logging de ejecuciones
 
 ```powershell
@@ -708,42 +728,15 @@ Desactiva logging desde YAML.
 
 ## Herramientas internas del agente
 
-Estas no se ejecutan normalmente a mano; el modelo las invoca durante una tarea.
+El modelo las invoca durante una tarea (22 built-in + MCP dinámico). Ver `docs/TOOLS_ROADMAP.md`.
 
-```text
-ls
-```
-Lista directorios del workspace.
+**Lectura / exploración:** `ls`, `read_file`, `read_document`, `grep`, `glob`, `file_info`, `tree`, `inspect_file`
 
-```text
-read_file
-```
-Lee archivos con lineas numeradas.
+**Escritura:** `write_file`, `edit_file`, `write_docx`, `apply_patch`, `fill_docx_template`, `notebook_edit`
 
-```text
-grep
-```
-Busca regex en archivos.
+**Shell / git:** `bash`, `git_status`, `git_diff`
 
-```text
-glob
-```
-Encuentra archivos por patron.
-
-```text
-bash
-```
-Ejecuta comandos shell con confirmacion y blocklist.
-
-```text
-write_file
-```
-Crea o sobrescribe archivos con supervision.
-
-```text
-edit_file
-```
-Edita por reemplazo exacto con diff preview.
+**Flujo:** `todo_write`, `ask_user`, `web_fetch`, `skill`, `mcp_call`, `mcp__*`
 
 ## Tareas de eval incluidas
 

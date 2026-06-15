@@ -1,4 +1,8 @@
-"""CLI de Ci2Lab. Punto de entrada: `ci2lab` → main()."""
+"""CLI de Ci2Lab.
+
+Entry point: `ci2lab` → `ci2lab.cli.main.main`.
+Subcommands live in `ci2lab.cli.commands.*`; shared config in `runtime.py`.
+"""
 
 from ci2lab.cli.commands.doctor import (
     _DOCTOR_ERROR,

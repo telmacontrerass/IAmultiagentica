@@ -2,7 +2,7 @@
 
 CLI local que detecta las capacidades del ordenador, recomienda modelos open source que quepan en tu hardware y ejecuta un agente con herramientas en terminal (VS Code, PowerShell, CMD).
 
-Incluye una interfaz web local (`ci2lab ui`) para usar el agente desde el navegador sin perder el funcionamiento local de Ollama, sesiones y logs.
+Incluye interfaz web local (`ci2lab ui`), skills de workspace, cliente MCP y memoria de proyecto opcional.
 
 ## Estructura
 
@@ -10,59 +10,61 @@ Todo el código del producto está **aquí**. Los repos de referencia (claude-co
 
 Ver [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
-## Estado actual (2026-06-10)
+## Estado actual (2026-06-12)
 
 | Módulo | Estado | Descripción |
 |--------|--------|-------------|
 | `ci2lab/contracts/` | ✅ | Tipos compartidos router ↔ arnés |
-| `ci2lab/hardware/` | ✅ | Perfilador RAM/VRAM/GPU/CPU (CLI `ci2lab hardware`) |
-| `ci2lab/router/` | ✅ | Catálogo, intención, scoring y selección de modelo (CLI `ci2lab models …`) |
-| `ci2lab/catalog/` | ✅ | `models.json` con 21 modelos y metadatos (VRAM, tool_mode, benchmarks) |
-| `ci2lab/harness/` | ✅ | Arnés ReAct, 7 tools, REPL, sesiones, streaming, run logs |
+| `ci2lab/hardware/` | ✅ | Perfilador RAM/VRAM/GPU/CPU (`ci2lab hardware`) |
+| `ci2lab/router/` | ✅ | Catálogo, intención, scoring, `model_fits()` |
+| `ci2lab/catalog/` | ✅ | `models.json` — 21 modelos con VRAM, tool_mode, benchmarks |
+| `ci2lab/pipeline.py` | ✅ | `prepare_session()`, `build_agent_config()` (CLI + UI) |
+| `ci2lab/harness/` | ✅ | Arnés ReAct, REPL, sesiones, streaming, run logs |
+| `ci2lab/harness/query/` | ✅ | Bucle ReAct (`run_agent`), nudges, streaming LLM |
+| `ci2lab/harness/tools/` | ✅ | 22 herramientas built-in + MCP dinámico (`mcp__*`) |
+| `ci2lab/harness/mcp/` | ✅ | Cliente MCP stdio (`.ci2lab/mcp.json`) |
+| `ci2lab/harness/skills/` | ✅ | Skills workspace (`.ci2lab/skills/*/SKILL.md`) |
+| `ci2lab/ui/` | ✅ | Interfaz web local en `127.0.0.1:8765` |
+| `ci2lab/security/` | ✅ | Motores de permisos (`ci2lab`, `claude_experimental`, …) |
 | `ci2lab/runtime/` | 🔲 | Sin `ensure_model_ready` — no hay `ollama pull` automático |
-| Integración pipeline | ✅ | `chat`/`agent` aplican `tool_mode` del catálogo para el modelo elegido |
 
-### Harness (validado 2026-06-09)
+### Harness
 
-- Mock evals: **7/7 PASS**
-- Live evals con `llama3.1:8b`: **7/7 PASS**
-- Tests automatizados: **70 passed**
+- **22 herramientas** built-in: lectura, escritura, bash, git, web, notebook, skills, MCP, etc.
+- Mock evals: **7/7 PASS** · Live evals (`llama3.1:8b`): **7/7 PASS**
+- Tests automatizados: **562 passed** (`python -m pytest -q`)
 - Logging estructurado en `runs/`
-- Edición supervisada (`write_file` / `edit_file` + diff preview)
-- `bash` con confirmación + blocklist
+- Edición supervisada (`write_file` / `edit_file` / `write_docx` + diff preview)
+- Compactación de contexto (micro-compact + resumen LLM + trim)
+- Project memory: `CI2LAB.md`, `AGENTS.md` en el workspace
 - System prompts del agente en **inglés** (mejor compatibilidad con modelos locales)
 
-### Router y hardware (implementados, uso parcial)
+### Router y hardware
 
 - `ci2lab hardware` — escaneo del sistema
-- `ci2lab models rec<!--  -->ommend` — recomendaciones por intención y VRAM/RAM
+- `ci2lab models recommend` — recomendaciones por intención y VRAM/RAM
 - `ci2lab models install <id>` — comandos para pull/run/chat
 - `ci2lab models run <id>` — abre el modelo con `ollama run`
 
-El router **sugiere** modelos (`ci2lab models recommend`); tú eliges cuál ejecutar con `--model`. Al arrancar chat/agent, se aplica el `tool_mode` guardado en el catálogo para ese modelo (override con `--tool-mode`). Ver [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+El router **sugiere** modelos; tú eliges cuál ejecutar con `--model`. Al arrancar `chat`/`agent`/UI, `pipeline.prepare_session()` aplica el `tool_mode` del catálogo (override con `--tool-mode`). Ver [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
 ### Motores de seguridad
 
 | Motor | Rol |
 |-------|-----|
-| **`ci2lab`** (default) | Sandbox-first clásico: workspace, secretos, blocklist, perfiles. Sin activación explícita. |
-| **`claude_experimental`** | **Recomendado para pruebas reales** (experimental, no default): hard guards de `ci2lab` + UX permission moderna, session approvals y audit/dashboard. |
-| **`opencode_experimental`** | **Laboratorio inseguro** permission-first (sin hard guards) — solo para comparar con OpenCode. |
+| **`ci2lab`** (default) | Sandbox-first: workspace, secretos, blocklist, perfiles. |
+| **`claude_experimental`** | Hard guards de `ci2lab` + UX permission moderna, session approvals y audit. |
+| **`opencode_experimental`** | Laboratorio permission-first (sin hard guards) — solo comparación. |
 
 ```powershell
-# Default (no hace falta flag)
-ci2lab chat
-
-# Modo experimental recomendado (P2.9 validado live)
-ci2lab --security-engine claude_experimental chat
-
-# Laboratorio inseguro — no usar en trabajo real
-ci2lab --security-engine opencode_experimental chat
+ci2lab chat                                          # default
+ci2lab --security-engine claude_experimental chat    # experimental recomendado
 ```
 
-Validación live y checklist: [`docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`](docs/CLAUDE_EXPERIMENTAL_VALIDATION.md). Política: [`docs/SECURITY_POLICY.md`](docs/SECURITY_POLICY.md).
+Validación: [`docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`](docs/CLAUDE_EXPERIMENTAL_VALIDATION.md) · Política: [`docs/SECURITY_POLICY.md`](docs/SECURITY_POLICY.md)
 
 ```powershell
+ci2lab-audit-live                                    # auditoría live de modelos
 python scripts/audit_claude_experimental_live.py --all
 python scripts/compare_security_engines.py
 python scripts/security_gate_check.py --engine ci2lab --workspace . --tool read_file --target "../outside.txt"
@@ -70,10 +72,7 @@ python scripts/security_gate_check.py --engine ci2lab --workspace . --tool read_
 
 ## Instalación
 
-Requisitos:
-
-- Python 3.11 o superior
-- [Ollama](https://ollama.com/download) instalado y en marcha
+Requisitos: Python 3.11+, [Ollama](https://ollama.com/download) en marcha.
 
 ### Windows PowerShell
 
@@ -87,7 +86,7 @@ ci2lab hardware
 ci2lab models recommend
 ```
 
-> **Nota:** Si el proyecto está en OneDrive, evita sincronizar `.venv/` (miles de archivos pequeños; puede corromper el entorno).
+> **Nota:** Si el proyecto está en OneDrive, evita sincronizar `.venv/`.
 
 ### macOS / Linux
 
@@ -97,95 +96,58 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ci2lab doctor
-ci2lab hardware
-ci2lab models recommend
 ```
 
 ### Descargar y probar un modelo
 
 ```powershell
 ollama pull qwen2.5-coder:7b
-ci2lab models install qwen2.5-coder-7b    # muestra comandos
-ci2lab --model qwen2.5-coder:7b chat      # agente interactivo
+ci2lab --model qwen2.5-coder:7b chat
 ```
-
-`ci2lab models recommend` muestra modelos que caben en tu equipo. Puedes usar el ID del catálogo (`qwen2.5-coder-7b`) o el tag Ollama (`qwen2.5-coder:7b`).
 
 ## Uso del agente
 
-### Comandos principales
-
 ```powershell
-ci2lab doctor                                          # comprobar entorno
-ci2lab hardware                                        # perfil de hardware
-ci2lab models recommend                                # modelos recomendados
-ci2lab ui                                              # interfaz web local
-ci2lab --model qwen2.5-coder:7b chat                   # REPL agéntico
-ci2lab --model llama3.1:8b "lista los archivos Python" # una petición
-ci2lab sessions                                        # sesiones guardadas
+ci2lab doctor
+ci2lab hardware
+ci2lab models recommend
+ci2lab ui                                              # http://127.0.0.1:8765
+ci2lab --model qwen2.5-coder:7b chat                   # REPL (carga sesiones)
+ci2lab --model llama3.1:8b "lista los archivos Python" # un turno
+ci2lab sessions
 ```
 
-### Interfaz web local
+**Flags globales** van **antes** del subcomando: `ci2lab --model X chat` (no `ci2lab chat --model X`).
 
-```powershell
-ci2lab ui                                  # abre http://127.0.0.1:8765
-ci2lab --model qwen2.5-coder:7b ui         # arranca la UI con un modelo por defecto
-ci2lab ui --no-open                        # no abre el navegador automaticamente
-ci2lab ui --port 8766                      # usa otro puerto local
-```
+### Extensiones de workspace
 
-La UI funciona solo en tu equipo, habla con Ollama local y reutiliza las mismas sesiones, modelos y logs del CLI. El modo tecnico permite herramientas con aprobacion; sin activarlo, la interfaz prioriza conversaciones seguras.
-
-En la vista de chat puedes adjuntar PDFs y archivos de texto. La UI los copia a `ci2lab_uploads/` dentro del workspace local y el agente los lee con la misma herramienta `read_file` que usa en terminal.
-
-**Importante:** los flags globales (`--model`, `--tool-mode`, `--yes`, etc.) van **antes** del subcomando:
-
-```powershell
-# Correcto
-ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat
-
-# Incorrecto (falla)
-ci2lab chat --model qwen2.5-coder:7b
-```
+| Recurso | Ubicación | Uso |
+|---------|-----------|-----|
+| Skills | `.ci2lab/skills/<nombre>/SKILL.md` | Comandos `/skill-name` en REPL |
+| MCP | `.ci2lab/mcp.json` | Servidores de herramientas externos |
+| Project memory | `CI2LAB.md`, `AGENTS.md` | Instrucciones persistentes en el prompt |
 
 ### Modos de herramientas (`tool_mode`)
 
-Cada modelo del catálogo tiene un `tool_mode` guardado (`native` o `fenced`). Se aplica automáticamente al ejecutar:
-
-```powershell
-ci2lab --model qwen2.5-coder:7b chat      # usa native (catálogo)
-ci2lab --model deepseek-coder:6.7b chat   # usa fenced (catálogo)
-```
-
-Override manual solo si quieres experimentar:
-
-```powershell
-ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat
-```
-
-El modelo validado en live evals es `llama3.1:8b`. Otros modelos pueden comportarse distinto en tool use.
+Cada modelo del catálogo define `native` o `fenced`. Override: `--tool-mode fenced`.
 
 ### Logging en `runs/`
 
-Cada ejecución guarda artefactos en `runs/` (desactivar con `--no-log`):
-
 ```powershell
 ci2lab --workspace . "lista los archivos"     # log en runs/
-ci2lab --no-log "lista los archivos"           # sin carpeta de run
-ci2lab --runs-dir ./_runs "hola"               # directorio personalizado
+ci2lab --no-log "lista los archivos"
 ```
 
-Config opcional en `ci2lab.yaml` (modelo, workspace, `runs_dir`, `log_runs`, etc.). Ver [`docs/audits/run_logging.md`](docs/audits/run_logging.md).
+Config opcional: `ci2lab.yaml`. Ver [`docs/audits/run_logging.md`](docs/audits/run_logging.md).
 
 ### Edición supervisada
 
-`write_file` y `edit_file` están habilitadas en modo supervisado: diff preview obligatorio por defecto, aprobación humana; `--yes` no omite el preview. Desactivar con `write_tools_enabled: false` en yaml. Ver [`docs/WRITE_POLICY.md`](docs/WRITE_POLICY.md).
+Ver [`docs/WRITE_POLICY.md`](docs/WRITE_POLICY.md).
 
 ### Evaluación del arnés
 
 ```bash
 python -m ci2lab.evals.run    # mock, sin Ollama
-ci2lab evals run              # equivalente
 ci2lab evals run --live       # requiere Ollama
 ```
 
@@ -194,15 +156,13 @@ Ver [`docs/evals.md`](docs/evals.md).
 ## Documentación
 
 - [Estructura del proyecto](docs/STRUCTURE.md)
-- [Handoff hardware + router](docs/HARDWARE_ROUTER_HANDOFF.md) (especificación e estado de implementación)
+- [Comandos (guía práctica)](COMANDOS.md)
+- [Handoff hardware + router](docs/HARDWARE_ROUTER_HANDOFF.md)
 - [Limitaciones conocidas](docs/KNOWN_LIMITATIONS.md)
-- [Validación live del harness](docs/audits/live_eval_status.md)
+- [Hoja de ruta de herramientas](docs/TOOLS_ROADMAP.md)
 - [Política de edición supervisada](docs/WRITE_POLICY.md)
 - [Checklist de regresión](docs/regression_checklist.md)
 - [Evaluación del arnés](docs/evals.md)
-- [Logging en `runs/`](docs/audits/run_logging.md)
-- [Pruebas manuales](docs/manual_tests.md)
-- [Repos externos de referencia](references/EXTERNAL_REPOS.md)
 
 ## Workspace
 

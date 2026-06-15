@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ci2lab"
 version = "0.1.0"
-description = "Agente local multi-modelo: hardware profiling, router de modelos y arnés agéntico"
+description = "Agente local: hardware profiling, router de modelos, arnés ReAct con MCP/skills/UI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

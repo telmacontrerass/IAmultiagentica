@@ -110,20 +110,21 @@ No copiamos código ni usamos esos proyectos como dependencias: leímos, entendi
 
 | Fecha | Origen | Qué se extrajo | Destino en ci2lab/ |
 |-------|--------|----------------|-------------------|
-| 2026-06 | Odysseus | Bucle ReAct multi-ronda | `harness/loop.py` |
+| 2026-06 | Odysseus | Bucle ReAct multi-ronda | `harness/query/loop.py` |
 | 2026-06 | Odysseus | Parser de herramientas (varios formatos) | `harness/parsing.py` |
-| 2026-06 | Odysseus | Schemas y catálogo de 7 tools | `harness/tools/` |
+| 2026-06 | Odysseus | Schemas y catálogo de tools | `harness/tools/` (schemas, dispatch, executor) |
 | 2026-06 | Odysseus | Formato de mensajes con historial de tools | `harness/messages.py` |
 | 2026-06 | Odysseus | Límite de carpeta de trabajo | `harness/tools/paths.py` |
 | 2026-06-09 | Odysseus (README + `services/hwfit/`) | Idea de "escaneo de hardware + puntuación de encaje + catálogo de modelos"; no se copió código | `hardware/`, `router/`, `catalog/models.json` |
 | 2026-06 | Deep Agents | Comportamiento y tono del agente | `harness/prompts/system.md` |
 | 2026-06 | Deep Agents | Set mínimo de tools de archivos | `harness/tools/filesystem.py` |
-| 2026-06 | Deep Agents | Confirmación en acciones delicadas | `harness/permissions.py` |
+| 2026-06 | Deep Agents | Confirmación en acciones delicadas | `harness/security/permissions.py` |
 | 2026-06 | Claude Code | Reglas de uso de tools en el prompt | `harness/prompts/system.md` |
 | 2026-06 | Claude Code | Lectura con líneas numeradas | `harness/tools/filesystem.py` |
-| 2026-06 | OpenCode | Preguntar permiso antes de ejecutar | `harness/permissions.py` |
+| 2026-06 | OpenCode | Preguntar permiso antes de ejecutar | `harness/security/permissions.py` |
 | 2026-06 | OpenCode | Registry unificado + truncar salidas | `harness/tools/registry.py` |
-| 2026-06 | — (propio) | CLI, REPL, sesiones, cliente LLM | `cli.py`, `harness/repl.py`, etc. |
+| 2026-06 | — (propio) | CLI, REPL, sesiones, cliente LLM | `cli/`, `harness/repl.py`, `pipeline.py` |
+| 2026-06-12 | — (propio) | Refactor arnés + integración | `harness/query/`, `harness/context/`, `harness/security/`, `console.py` |
 
 ---
 

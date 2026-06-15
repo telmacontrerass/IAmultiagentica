@@ -8,13 +8,15 @@
 
 **Cierre de hito (2026-06-09):** harness validado mock + live — ver [§18](#18-cierre-de-hito--validación-mocklive) y [`live_eval_status.md`](live_eval_status.md). Las secciones §3–§15 son snapshot histórico de la primera auditoría; §16–§18 reflejan el estado actual.
 
-**Actualización (2026-06-10):** `hardware/` y `router/` ya no son esqueletos — están implementados y expuestos en CLI. `runtime/` sigue vacío. `pipeline.py` aún no conecta el router a `chat`/`agent`. Ver [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md) y [`HARDWARE_ROUTER_HANDOFF.md`](../HARDWARE_ROUTER_HANDOFF.md#estado-de-implementación-2026-06-10).
+**Actualización (2026-06-12):** refactor estructural — CLI en `ci2lab/cli/`, bucle en `harness/query/loop.py`, `pipeline.build_agent_config()`, consola en `ci2lab/console.py`, MCP/skills/UI integrados. Ver [`STRUCTURE.md`](../STRUCTURE.md). Las secciones §3–§15 siguen siendo snapshot histórico salvo rutas de archivo obsoletas (`cli.py`, `harness/loop.py`).
+
+**Actualización (2026-06-10):** `hardware/` y `router/` implementados en CLI. Ver [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
 
 ---
 
 ## 1. Resumen ejecutivo
 
-El proyecto tiene un **arnés agéntico ReAct funcional** integrado en el paquete `ci2lab`. El usuario invoca la CLI (`python -m ci2lab.cli "…"` o `ci2lab "…"` tras `pip install -e .`), que prepara una sesión vía `pipeline.prepare_session`, construye un `AgentConfig`, y delega en `harness.loop.run_agent`. El bucle llama a Ollama por HTTP (API OpenAI-compatible en `http://localhost:11434/v1/chat/completions`), parsea tool calls (nativas, XML o fenced), ejecuta herramientas, y devuelve resultados al modelo hasta obtener una respuesta final o alcanzar `max_rounds`.
+El proyecto tiene un **arnés agéntico ReAct funcional** integrado en el paquete `ci2lab`. El usuario invoca la CLI (`ci2lab` o `python -m ci2lab.cli`), que resuelve config en `cli/runtime.py`, prepara sesión vía `pipeline.prepare_session`, construye `AgentConfig` con `pipeline.build_agent_config`, y delega en `harness.query.loop.run_agent`. El bucle llama a Ollama por HTTP (API OpenAI-compatible), parsea tool calls (nativas, XML o fenced), ejecuta herramientas, y devuelve resultados al modelo hasta respuesta final o `max_rounds`.
 
 **Estado general:**
 

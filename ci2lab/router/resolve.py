@@ -1,4 +1,9 @@
-"""Public model resolution API."""
+"""Public model resolution API (optional).
+
+Auto-selects the top recommended model for a prompt. Production CLI/UI use
+`router.selection.build_model_selection()` with an explicit user-chosen tag
+via `pipeline.prepare_session()`.
+"""
 
 from __future__ import annotations
 

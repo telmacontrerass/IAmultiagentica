@@ -1,4 +1,4 @@
-"""Resolución de configuración runtime y AgentConfig."""
+"""Resolución de configuración runtime y delegación a pipeline.build_agent_config."""
 
 from __future__ import annotations
 

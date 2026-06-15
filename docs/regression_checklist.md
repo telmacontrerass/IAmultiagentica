@@ -1,8 +1,8 @@
 # Checklist de regresión — harness Ci2Lab
 
-Usar antes de merges relevantes al arnés o tras cambios en `ci2lab/harness/`, `ci2lab/cli.py`, `ci2lab/config.py` o `evals/`.
+Usar antes de merges relevantes al arnés o tras cambios en `ci2lab/harness/`, `ci2lab/cli/`, `ci2lab/pipeline.py`, `ci2lab/config.py` o `evals/`.
 
-**Última validación de referencia:** 2026-06-10 — mock 7/7, live 7/7 con `llama3.1:8b`, 70 tests `pytest`.
+**Última validación de referencia:** 2026-06-12 — mock 7/7, live 7/7 con `llama3.1:8b`, 562 tests `pytest`.
 
 ## Requisitos previos
 
@@ -25,7 +25,7 @@ ci2lab doctor
 python -m pytest tests/ -q
 ```
 
-**Esperado:** todos PASS (70+ según versión actual).
+**Esperado:** todos PASS (560+ según versión actual).
 
 **Si falla:** revisar el test concreto; no mergear hasta corregir o actualizar el test con justificación.
 

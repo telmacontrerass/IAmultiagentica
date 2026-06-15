@@ -1,4 +1,8 @@
-"""Router de intención y selección de modelos."""
+"""Router de intención, scoring y construcción de ModelSelection.
+
+Producción: `selection.build_model_selection()` + `recommend.model_fits()`.
+Opcional: `resolve.resolve_model()` para auto-selección.
+"""
 
 from ci2lab.router.catalog import find_model_by_tag, load_model_catalog
 from ci2lab.router.intent import classify_intent

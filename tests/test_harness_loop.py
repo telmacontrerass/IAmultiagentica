@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
-from ci2lab.harness.loop import _prepend_missing_reads
+from ci2lab.harness.query.loop import _prepend_missing_reads
 from ci2lab.harness.types import ToolCall
 
 
@@ -59,7 +59,7 @@ def test_run_agent_reads_exact_pdf_request_without_model_round(tmp_path, monkeyp
         lambda _path: "1 paginas",
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         result = run_agent("resume el pdf prueba.pdf", selection, config=config)
 
@@ -85,7 +85,7 @@ def test_run_agent_resolves_natural_pdf_reference(tmp_path, monkeypatch):
         lambda _path: "1 paginas",
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         result = run_agent("resume el contenido del pdf de prueba", selection, config=config)
 
@@ -104,7 +104,7 @@ def test_run_agent_asks_for_document_name_when_reference_is_ambiguous(tmp_path):
     (tmp_path / "uno.pdf").write_text("fake pdf", encoding="utf-8")
     (tmp_path / "dos.pdf").write_text("fake pdf", encoding="utf-8")
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         result = run_agent("resume el contenido del pdf", selection, config=config)
 
