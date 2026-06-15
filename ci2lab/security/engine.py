@@ -12,18 +12,22 @@ from ci2lab.security.policy import check_command_allowed, check_path_allowed
 
 _PATH_ARG_TOOLS = frozenset({
     "read_file",
+    "read_document",
     "ls",
     "glob",
     "grep",
     "write_file",
     "edit_file",
+    "write_docx",
     "file_info",
     "tree",
     "inspect_file",
 })
 
-_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
-_CONFIRM_TOOLS = frozenset({"bash", "write_file", "edit_file"})
+_WRITE_TOOLS = frozenset(
+    {"write_file", "edit_file", "write_docx", "apply_patch", "fill_docx_template"}
+)
+_CONFIRM_TOOLS = frozenset({"bash", *_WRITE_TOOLS})
 
 CLAUDE_EXTERNAL_ALLOW_IGNORED = (
     "external_directory=allow ignored by claude_experimental hard workspace policy"

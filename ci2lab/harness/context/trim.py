@@ -46,7 +46,6 @@ def trim_messages(
     if not rest:
         return system_msgs
 
-    # Conservar siempre el último turno de usuario (o el último mensaje).
     tail: list[dict[str, Any]] = []
     while rest:
         candidate = system_msgs + rest

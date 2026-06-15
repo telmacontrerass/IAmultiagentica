@@ -119,9 +119,11 @@ def test_hardware_profile_dict_values_are_ascii_safe():
 def test_recommend_budget_messages_are_ascii_safe(monkeypatch):
     profile = build_cpu_profile_for_testing(ram_total_gb=16.0, ram_available_gb=2.0)
     buf = StringIO()
-    monkeypatch.setattr("ci2lab.cli.console", Console(file=buf, width=160))
+    monkeypatch.setattr(
+        "ci2lab.cli.commands.hardware.console", Console(file=buf, width=160)
+    )
 
-    from ci2lab.cli import _print_memory_budget_context
+    from ci2lab.cli.commands.hardware import _print_memory_budget_context
 
     _print_memory_budget_context(profile)
 

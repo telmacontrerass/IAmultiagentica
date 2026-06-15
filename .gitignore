@@ -9,14 +9,18 @@ build/
 .venv/
 venv/
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 *.log
 .env
 runs/
 evals/results/
+tests/fixtures/redteam_sandbox/
+audit/redteam_sandbox/
+audit/reports/
 
-# Generated harness / audit output (regenerable; see audit/repo_cleanup/)
+# Generated harness / audit output
 artifacts/
 tmp/
 .ci2lab/
@@ -24,9 +28,7 @@ audit/deterministic_claude/
 audit/live_claude/
 ci2lab_uploads/
 
-# Local test leftovers
+# Local test leftovers and tool configuration
 /inside.txt
 generated_ok.md
-
-# Local OpenCode config
 /opencode.json

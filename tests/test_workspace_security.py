@@ -11,7 +11,7 @@ import pytest
 from ci2lab.harness import default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
 
-from ci2lab.harness.policy import (
+from ci2lab.harness.security.policy import (
     POLICY_REPEAT_MESSAGE,
     is_policy_error,
     tool_call_signature,
@@ -105,7 +105,7 @@ def test_execute_tool_bash_blocked_without_confirmation(
         arguments={"command": f"type {outside_secret}"},
         call_id="c1",
     )
-    with patch("ci2lab.harness.permissions.check_permission") as perm:
+    with patch("ci2lab.harness.tools.executor.check_permission") as perm:
         result = execute_tool(call, config)
     perm.assert_not_called()
     assert result.is_error
@@ -186,11 +186,11 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
         tool_calls=[],
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as mock_client_cls:
+    with patch("ci2lab.harness.query.loop.LLMClient") as mock_client_cls:
         client = mock_client_cls.return_value
         client.chat.side_effect = [read_call, read_call, final]
         with patch(
-            "ci2lab.harness.loop.execute_tool", wraps=execute_tool
+            "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
         ) as execute_mock:
             result = run_agent("lee el secreto externo", selection, config=config)
 

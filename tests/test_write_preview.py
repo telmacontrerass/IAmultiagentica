@@ -85,7 +85,7 @@ def test_deny_does_not_modify_file(tmp_path):
         },
         call_id="e1",
     )
-    with patch("ci2lab.harness.write_permissions._console.print"):
+    with patch("ci2lab.console.console.print"):
         result = execute_tool(call, config)
     assert result.is_error
     assert result.outcome == "denied"
@@ -108,7 +108,7 @@ def test_approve_modifies_file(tmp_path):
         },
         call_id="e2",
     )
-    with patch("ci2lab.harness.write_permissions._console.print"):
+    with patch("ci2lab.console.console.print"):
         result = execute_tool(call, config)
     assert not result.is_error
     assert result.outcome == "approved"
@@ -128,7 +128,7 @@ def test_yes_does_not_skip_diff_preview(tmp_path):
         arguments={"path": "a.txt", "content": "y"},
         call_id="w2",
     )
-    with patch("ci2lab.harness.write_permissions._console.print"):
+    with patch("ci2lab.console.console.print"):
         result = execute_tool(call, config)
     assert result.outcome == "denied"
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "x"
@@ -162,9 +162,9 @@ def test_logging_records_write_outcome(tmp_path):
     )
     final = LLMResponse(content="Hecho.", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.side_effect = [with_tool, final]
-        with patch("ci2lab.harness.write_permissions._console.print"):
+        with patch("ci2lab.console.console.print"):
             run_agent("edita a.txt", selection, config=config)
 
     run_dir = next(runs.iterdir())

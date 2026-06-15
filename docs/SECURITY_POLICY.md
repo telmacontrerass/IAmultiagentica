@@ -317,7 +317,7 @@ ci2lab permissions approve-session <event_id> --workspace .
 - Escribir **fuera del workspace** esta bloqueado (`blocked_by_workspace`). `--yes` no lo omite.
 - Escribir en rutas **sensibles** (`.env*`, claves, `*secret*`, `*credentials*`, `*token*`) esta bloqueado (`POLICY_SECRET_FILE_BLOCKED` / `blocked_by_secret_policy`).
 - Tras un bloqueo de herramienta, el modelo **no debe** crear archivos de error/log por iniciativa propia (`ci2lab_error.txt`, etc.); debe explicar el bloqueo al usuario. Eso es politica de prompt, no un bloqueo adicional en el loop.
-- El script `scripts/audit_live_models.py` usa `write_tools_enabled=false` solo para auditorias live no interactivas; el agente normal mantiene write/edit habilitados segun configuracion.
+- El script `ci2lab-audit-live` (`ci2lab/scripts/audit_live_models.py`) usa `write_tools_enabled=false` solo para auditorias live no interactivas; el agente normal mantiene write/edit habilitados segun configuracion.
 
 ## Herramientas de inspeccion (fase 1)
 
@@ -325,7 +325,7 @@ ci2lab permissions approve-session <event_id> --workspace .
 
 ## Auditoria live
 
-El script `scripts/audit_live_models.py` ejecuta pruebas contra Ollama con configuracion no interactiva (`write_tools_enabled=false`, `confirm_callback` automatico, timeout por caso).
+El script `ci2lab-audit-live` (o `python -m ci2lab.scripts.audit_live_models`) ejecuta pruebas contra Ollama con configuracion no interactiva (`write_tools_enabled=false`, `confirm_callback` automatico, timeout por caso).
 
 Estados del informe:
 

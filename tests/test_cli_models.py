@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-from ci2lab.cli import _install_commands, _resolve_allowed_model, main
+from ci2lab.cli import main
+from ci2lab.cli.commands.models import _install_commands, _resolve_allowed_model
 from ci2lab.contracts import HardwareProfile
 from ci2lab.router.catalog import load_model_catalog
 
@@ -46,8 +47,8 @@ def test_models_run_opens_ollama_with_selected_tag():
     completed = MagicMock(returncode=0)
 
     with (
-        patch("ci2lab.cli.scan_hardware", return_value=_profile()),
-        patch("ci2lab.cli.subprocess.run", return_value=completed) as run,
+        patch("ci2lab.cli.commands.models.scan_hardware", return_value=_profile()),
+        patch("ci2lab.cli.commands.models.subprocess.run", return_value=completed) as run,
     ):
         result = main(["models", "run", "qwen2.5-coder-1.5b"])
 

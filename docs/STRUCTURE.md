@@ -12,74 +12,54 @@ Ci2Lab/                              # Workspace (no es el paquete Python)
 └── IAmultiagentica/                 # ← PROYECTO (este repo git)
     ├── pyproject.toml
     ├── README.md
-    ├── ci2lab.yaml                  # Config opcional (no versionado por defecto)
     ├── ci2lab/                      # Paquete Python instalable
+    │   ├── cli/                     # CLI (parser, runtime, commands/*)
     │   ├── contracts/               # Tipos compartidos router ↔ arnés
-    │   ├── hardware/                # Perfilador de sistema (profile.py)
-    │   ├── router/                  # Intención, catálogo, scoring, resolve
+    │   ├── hardware/                # Perfilador de sistema
+    │   ├── router/                  # Intención, catálogo, scoring
     │   ├── catalog/                 # models.json
-    │   ├── runtime/                 # Vacío (ensure_model pendiente)
-    │   ├── harness/                 # Arnés agéntico (ReAct + tools)
-    │   ├── evals/                   # Tareas de evaluación del arnés
-    │   ├── config.py                # Config centralizada (yaml + env + CLI)
-    │   ├── cli.py                   # CLI principal
-    │   └── pipeline.py              # Integración router ↔ arnés (parcial)
-    ├── docs/
-    ├── references/                  # Notas de extracción (no código externo)
-    ├── runs/                        # Logs de ejecución (gitignored)
-    └── tests/
+    │   ├── runtime/                 # ollama.py (ensure pull pendiente)
+    │   ├── harness/
+    │   │   ├── query/               # Bucle ReAct (loop, nudges, llm_io)
+    │   │   ├── context/             # trim + compactación
+    │   │   ├── security/            # permisos y política workspace
+    │   │   ├── tools/               # schemas, dispatch, executor + tools/*
+    │   │   ├── mcp/, skills/, prompts/
+    │   ├── evals/, ui/, scripts/
+    │   ├── config.py, pipeline.py
+    ├── docs/, references/
+    ├── evals/tasks/                 # JSON de evaluación
+    ├── tests/                       # pytest (+ fixtures/redteam_sandbox)
+    ├── audit/redteam/               # runner ofensivo (regenera sandbox)
+    └── runs/                        # Logs (gitignored)
 ```
 
 ## División de módulos
 
-| Módulo | Responsable lógico | Entrada | Salida |
-|--------|-------------------|---------|--------|
+| Módulo | Responsable | Entrada | Salida |
+|--------|-------------|---------|--------|
 | `hardware/` | Router | — | `HardwareProfile` |
-| `router/` | Router | `user_prompt`, `HardwareProfile` | `ModelSelection` |
-| `runtime/` | Router | `ModelSelection` | modelo listo en Ollama (pendiente) |
-| `harness/` | Arnés | `user_prompt`, `ModelSelection` | acciones + respuesta |
+| `router/` | Router | prompt, perfil | `ModelSelection` |
+| `runtime/` | Router | tag Ollama | `fetch_installed_models` |
+| `harness/query/` | Arnés | prompt, selección | respuesta final |
+| `harness/tools/` | Arnés | `ToolCall` | `ToolResult` |
 | `contracts/` | Ambos | — | tipos compartidos |
 
 ## Flujo de datos
 
 ```text
-Usuario
-  │
-  ├─ ci2lab hardware ──────────────► hardware.scan_hardware() ──► tabla CLI
-  │
-  ├─ ci2lab models recommend ──────► router.recommend / resolve ──► tabla CLI
-  │
-  └─ ci2lab chat / agent ──────────► pipeline.prepare_session()
-                                        │
-                                        ├─ modelo = --model / config / default
-                                        ├─ tool_mode = catálogo para ese tag
-                                        │     (override: --tool-mode o yaml)
-                                        └─ build_model_selection()
-                                              │
-                                              ▼
-                                        harness.run_agent() / run_repl()
+Usuario → ci2lab chat/agent → pipeline.prepare_session()
+         → harness.query.run_agent() / repl
 ```
 
-El router (`models recommend`) **sugiere** modelos; no auto-selecciona en chat. Al ejecutar, el catálogo define el `tool_mode` del modelo elegido.
-
-## Integración (objetivo)
-
-```python
-from ci2lab.pipeline import prepare_session
-from ci2lab.harness import run_agent
-
-profile, selection = prepare_session("write a Python script", force_model=None)
-run_agent("write a Python script", selection, hardware=profile)
-```
-
-Cuando `pipeline.py` esté corregido, `selection` incluirá `tool_mode`, `supports_tools` y `context_length` del catálogo.
+El router (`models recommend`) **sugiere** modelos; el usuario elige con `--model`.
 
 ## Desarrollo local
 
 ```powershell
 cd IAmultiagentica
 py -m venv .venv
-.\.venv\Scripts\Activate.ps1          # Windows
+.\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 python -m pytest -q
 ```

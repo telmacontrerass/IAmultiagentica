@@ -1,0 +1,129 @@
+"""Tool name → implementation dispatch table."""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from ci2lab.harness.tools import ask_user as ask_user_tool
+from ci2lab.harness.tools import bash as bash_tool
+from ci2lab.harness.tools import docx as docx_tool
+from ci2lab.harness.tools import filesystem as fs
+from ci2lab.harness.tools import git_tools
+from ci2lab.harness.tools import inspection as inspection_tool
+from ci2lab.harness.tools import notebook as notebook_tool
+from ci2lab.harness.tools import patch as patch_tool
+from ci2lab.harness.tools import skill_tool
+from ci2lab.harness.tools import todo as todo_tool
+from ci2lab.harness.tools import web as web_tool
+from ci2lab.harness.types import AgentConfig
+
+DISPATCH: dict[str, Callable[..., str]] = {
+    "bash": lambda cfg, a: bash_tool.run_bash(
+        cfg.cwd,
+        a["command"],
+        cfg.bash_timeout_seconds,
+        security_profile=cfg.security_profile,
+        security_engine=cfg.security_engine,
+    ),
+    "read_file": lambda cfg, a: fs.read_file(
+        cfg.cwd,
+        a["path"],
+        a.get("offset", 1),
+        a.get("limit"),
+        security_engine=cfg.security_engine,
+    ),
+    "read_document": lambda cfg, a: fs.read_document(cfg.cwd, a["path"]),
+    "ls": lambda cfg, a: fs.ls(cfg.cwd, a.get("path", ".")),
+    "grep": lambda cfg, a: fs.grep_search(
+        cfg.cwd,
+        a["pattern"],
+        a.get("path", "."),
+        a.get("glob"),
+        a.get("ignore_case", False),
+        a.get("max_results", 50),
+    ),
+    "glob": lambda cfg, a: fs.glob_search(
+        cfg.cwd, a["pattern"], a.get("path", ".")
+    ),
+    "write_file": lambda cfg, a: fs.write_file(cfg.cwd, a["path"], a["content"]),
+    "write_docx": lambda cfg, a: docx_tool.write_docx(cfg.cwd, a["path"], a["content"]),
+    "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
+    "fill_docx_template": lambda cfg, a: _run_fill_docx(cfg, a),
+    "edit_file": lambda cfg, a: fs.edit_file(
+        cfg.cwd,
+        a["path"],
+        a["old_string"],
+        a["new_string"],
+        a.get("replace_all", False),
+    ),
+    "file_info": lambda cfg, a: inspection_tool.file_info(cfg.cwd, a["path"]),
+    "tree": lambda cfg, a: inspection_tool.tree(
+        cfg.cwd,
+        a.get("path", "."),
+        a.get("depth", 2),
+        a.get("max_entries", 200),
+    ),
+    "inspect_file": lambda cfg, a: inspection_tool.inspect_file(
+        cfg.cwd,
+        a["path"],
+        a.get("start", 1),
+        a.get("end"),
+        a.get("max_lines", 120),
+    ),
+    "todo_write": lambda cfg, a: todo_tool.todo_write(cfg.cwd, a["todos"]),
+    "ask_user": lambda cfg, a: ask_user_tool.ask_user(
+        a["question"],
+        a.get("options"),
+    ),
+    "web_fetch": lambda cfg, a: web_tool.web_fetch(
+        a["url"],
+        a.get("max_chars", 80_000),
+    ),
+    "notebook_edit": lambda cfg, a: notebook_tool.notebook_edit(
+        cfg.cwd,
+        a["path"],
+        a["cell_index"],
+        a["new_source"],
+        a.get("cell_type"),
+    ),
+    "git_status": lambda cfg, a: git_tools.git_status(cfg.cwd, a.get("path", ".")),
+    "git_diff": lambda cfg, a: git_tools.git_diff(
+        cfg.cwd,
+        a.get("path"),
+        a.get("staged", False),
+    ),
+    "skill": lambda cfg, a: skill_tool.invoke_skill(
+        cfg,
+        a["skill_name"],
+        a.get("args"),
+    ),
+    "mcp_call": lambda cfg, a: execute_mcp_call(
+        cfg,
+        a["server"],
+        a["tool"],
+        a.get("arguments") or {},
+    ),
+}
+
+
+def execute_mcp_call(
+    config: AgentConfig,
+    server: str,
+    tool: str,
+    arguments: dict[str, Any],
+) -> str:
+    from ci2lab.harness.mcp.session import get_mcp_manager
+
+    mgr = get_mcp_manager(config.cwd, connect=True)
+    return mgr.call(server, tool, arguments)
+
+
+def _run_fill_docx(config: AgentConfig, args: dict[str, Any]) -> str:
+    from ci2lab.harness.tools.docx_writer import fill_docx_template
+
+    return fill_docx_template(
+        cwd=config.cwd,
+        template=str(args.get("template", "")),
+        output=str(args.get("output", "")),
+        fields={str(k): str(v) for k, v in (args.get("fields") or {}).items()},
+    )

@@ -8,7 +8,7 @@ from typing import Any
 def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     cleaned = {k: v for k, v in args.items() if v is not None}
 
-    if name == "write_file":
+    if name in ("write_file", "write_docx"):
         if "content" not in cleaned:
             for alias in ("new_string", "text", "body", "file_content"):
                 if alias in cleaned:

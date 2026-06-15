@@ -20,10 +20,9 @@ from urllib.parse import unquote, urlparse
 import httpx
 
 from ci2lab.config import Ci2LabConfig
-from ci2lab.harness import AgentConfig, run_agent
+from ci2lab.harness import run_agent
 from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_errors import LLMError
-from ci2lab.harness.run_logger import build_config_snapshot
 from ci2lab.harness.session import list_sessions, load_session, new_session_id, save_session
 from ci2lab.harness.mcp.config import load_mcp_config
 from ci2lab.harness.permissions import CONFIRM_TOOLS
@@ -36,7 +35,7 @@ from ci2lab.harness.tools.filesystem import (
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS
 from ci2lab.harness.tools.secret_files import is_sensitive_path
 from ci2lab.hardware import scan_hardware
-from ci2lab.pipeline import prepare_session
+from ci2lab.pipeline import build_agent_config, prepare_session
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.runtime.ollama import fetch_installed_models, is_catalog_model_installed, ollama_base_url
 from ci2lab.router.recommend import (
@@ -558,32 +557,14 @@ def _chat(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
             backend_url=state.runtime.backend_url,
             pull=False,
         )
-        agent = AgentConfig(
+        agent = build_agent_config(
+            state.runtime,
+            selection,
             cwd=workspace,
-            max_rounds=state.runtime.max_rounds,
-            auto_confirm=technical_mode,
-            stream=stream,
             session_id=session_id,
-            run_log_enabled=state.runtime.log_runs,
-            runs_dir=state.runtime.runs_dir,
-            write_tools_enabled=state.runtime.write_tools_enabled,
-            require_diff_preview=state.runtime.require_diff_preview,
+            stream=stream,
+            auto_confirm=technical_mode,
             confirm_callback=(lambda _tool, _summary: technical_mode),
-            config_snapshot=build_config_snapshot(
-                runtime_fields={
-                    "model": model,
-                    "backend_url": state.runtime.backend_url,
-                    "workspace": workspace,
-                    "stream": stream,
-                    "auto_confirm": technical_mode,
-                    "log_runs": state.runtime.log_runs,
-                    "runs_dir": state.runtime.runs_dir,
-                    "write_tools_enabled": state.runtime.write_tools_enabled,
-                    "require_diff_preview": state.runtime.require_diff_preview,
-                },
-                agent_config=AgentConfig(cwd=workspace, stream=stream),
-                selection=selection,
-            ),
         )
         answer = run_agent(prompt_for_model, selection, config=agent, messages=messages)
         return {

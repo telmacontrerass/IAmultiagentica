@@ -147,7 +147,7 @@ def _args_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _infer_tool_from_bare_args(obj: dict[str, Any]) -> str | None:
-    """Modelos que emiten solo los argumentos sin name/command."""
+    """Infer a tool when a model emits only an argument object."""
     keys = set(obj.keys())
     if "old_string" in keys and "new_string" in keys:
         return "edit_file"
@@ -159,31 +159,32 @@ def _infer_tool_from_bare_args(obj: dict[str, Any]) -> str | None:
         return "web_fetch"
     if "pattern" in keys:
         return "grep"
-    if "path" in keys and keys <= {"path", "offset", "limit", "file", "filename", "filepath"}:
+    if "path" in keys and keys <= {
+        "path", "offset", "limit", "file", "filename", "filepath"
+    }:
         return "read_file"
     if "command" in keys and isinstance(obj.get("command"), str):
-        cmd = str(obj["command"])
-        if " " in cmd or "\n" in cmd:
+        command = str(obj["command"])
+        if " " in command or "\n" in command:
             return "bash"
-        mapped = _map_name(cmd)
+        mapped = _map_name(command)
         if is_known_tool(mapped) and mapped != "bash":
             return mapped
     return None
 
 
 def _command_field_as_tool_name(obj: dict[str, Any]) -> str | None:
-    """Algunos modelos usan {"command": "edit_file", "args": {...}} en lugar de name."""
-    cmd = obj.get("command")
-    if not isinstance(cmd, str):
+    command = obj.get("command")
+    if not isinstance(command, str):
         return None
-    stripped = cmd.strip()
+    stripped = command.strip()
     if not stripped or " " in stripped or "\n" in stripped:
         return None
     mapped = _map_name(stripped)
     if not is_known_tool(mapped):
         return None
     if mapped == "bash" and not any(
-        k in obj for k in ("arguments", "parameters", "args", "input")
+        key in obj for key in ("arguments", "parameters", "args", "input")
     ):
         return None
     return stripped
@@ -329,7 +330,9 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
                             calls.append(call)
                 except json.JSONDecodeError:
                     if mapped == "bash" and json_part:
-                        call = redirect_bash_call(_new_call("bash", {"command": json_part}))
+                        call = redirect_bash_call(
+                            _new_call("bash", {"command": json_part})
+                        )
                         if _remember_call(call, seen):
                             calls.append(call)
                     else:
@@ -387,22 +390,22 @@ def _fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return data if isinstance(data, dict) else {"path": body}
         except json.JSONDecodeError:
             return {"path": body.splitlines()[0]}
-    if tool == "apply_patch":
-        if body.strip().startswith("{"):
-            try:
-                data = json.loads(body)
-                return data if isinstance(data, dict) else {"patch": body}
-            except json.JSONDecodeError:
-                pass
-        return {"patch": body}
-    if tool in ("write_file", "edit_file"):
+    if tool in ("write_file", "write_docx", "edit_file", "fill_docx_template"):
         try:
             data = json.loads(body)
             return data if isinstance(data, dict) else {"content": body}
         except json.JSONDecodeError:
-            if tool == "write_file":
+            if tool in ("write_file", "write_docx"):
                 return {"path": "unknown", "content": body}
+            if tool == "fill_docx_template":
+                return {"template": "", "output": "", "fields": {}}
             return {"path": "unknown", "old_string": "", "new_string": body}
+    if tool == "apply_patch":
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"patch": body}
+        except json.JSONDecodeError:
+            return {"patch": body}
     if tool == "grep":
         if "\n" not in body:
             return {"pattern": body}

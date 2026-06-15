@@ -115,7 +115,7 @@ def test_run_agent_writes_run_artifacts(tmp_path):
     )
     final = LLMResponse(content="Hay archivos.", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
         run_agent("lista archivos", selection, config=config)
@@ -134,7 +134,7 @@ def test_no_log_skips_run_folder(tmp_path):
     config = _agent_config(tmp_path, run_log_enabled=False)
     mock_response = LLMResponse(content="ok", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
         run_agent("hola", selection, config=config)
 
@@ -146,7 +146,7 @@ def test_logger_failure_does_not_break_agent(tmp_path):
     config = _agent_config(tmp_path)
     mock_response = LLMResponse(content="respuesta final", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
         with patch.object(Path, "mkdir", side_effect=OSError("permission denied")):
             result = run_agent("hola", selection, config=config)

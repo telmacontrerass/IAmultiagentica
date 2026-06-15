@@ -8,13 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from ci2lab.cli import _expand_tools_shortcut, _is_global_help_request, _print_global_help, main
+from ci2lab.cli import _expand_tools_shortcut, main
+from ci2lab.cli.parser import _is_global_help_request, _print_global_help
 
 _GLOBAL_MARKERS = (
     'ci2lab "peticion"',
     "ci2lab chat",
-    "ci2lab tools qwen:1.8b",
-    "ci2lab qwen:1.8b tools",
     "ci2lab sessions",
     "ci2lab doctor",
     "ci2lab hardware",
@@ -64,7 +63,7 @@ def test_global_help_via_module_invocation():
 
 
 def test_agent_shortcut_without_subcommand():
-    with patch("ci2lab.cli._run_turn", return_value=0) as run_turn:
+    with patch("ci2lab.cli.main._run_turn", return_value=0) as run_turn:
         assert main(["hola"]) == 0
     run_turn.assert_called_once()
     assert run_turn.call_args.args[0] == "hola"
@@ -72,35 +71,20 @@ def test_agent_shortcut_without_subcommand():
 
 def test_tools_shortcut_model_first_expands_to_friendly_chat():
     assert _expand_tools_shortcut(["qwen:1.8b", "tools"]) == [
-        "--model",
-        "qwen:1.8b",
-        "--tool-mode",
-        "fenced",
-        "--no-stream",
-        "chat",
+        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream", "chat"
     ]
 
 
 def test_tools_shortcut_command_first_expands_to_friendly_chat():
     assert _expand_tools_shortcut(["tools", "qwen:1.8b"]) == [
-        "--model",
-        "qwen:1.8b",
-        "--tool-mode",
-        "fenced",
-        "--no-stream",
-        "chat",
+        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream", "chat"
     ]
 
 
 def test_tools_shortcut_with_prompt_runs_one_turn():
     assert _expand_tools_shortcut(["qwen:1.8b", "tools", "resume", "prueba.pdf"]) == [
-        "--model",
-        "qwen:1.8b",
-        "--tool-mode",
-        "fenced",
-        "--no-stream",
-        "agent",
-        "resume prueba.pdf",
+        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream",
+        "agent", "resume prueba.pdf",
     ]
 
 

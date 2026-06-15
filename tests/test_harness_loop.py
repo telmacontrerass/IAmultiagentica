@@ -12,7 +12,7 @@ def test_run_agent_single_turn_no_tools():
 
     mock_response = LLMResponse(content="Listo, aquí está el resumen.", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
         result = run_agent("resume el proyecto", selection, config=config)
 
@@ -32,7 +32,7 @@ def test_run_agent_executes_tool_then_answers():
     )
     final = LLMResponse(content="Hay varios archivos.", tool_calls=[])
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
         result = run_agent("lista archivos", selection, config=config)
@@ -136,7 +136,7 @@ def test_run_agent_answers_simple_document_summary_without_extra_model_round(tmp
         tool_calls=[],
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [refusal, refusal]
         result = run_agent("resume prueba.md", selection, config=config)
@@ -188,7 +188,7 @@ def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
         session_id=sid,
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         result = run_agent(
             "elimina lo que acabas de guardar",
@@ -231,7 +231,7 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
         tool_calls=[],
     )
 
-    with patch("ci2lab.harness.loop.LLMClient") as MockClient:
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [edit_call, final]
         result = run_agent(

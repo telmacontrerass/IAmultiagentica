@@ -8,10 +8,12 @@ Al arrancar chat/agent se aplica el tool_mode del catálogo para ese modelo.
 from __future__ import annotations
 
 import os
+from typing import Callable
 
-from ci2lab.config import DEFAULT_MODEL
+from ci2lab.config import DEFAULT_MODEL, Ci2LabConfig
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.hardware import scan_hardware
+from ci2lab.harness.types import AgentConfig
 from ci2lab.router.selection import build_model_selection
 
 
@@ -53,3 +55,48 @@ def _maybe_ensure_model_ready(selection: ModelSelection) -> None:
     except ImportError:
         return
     ensure_model_ready(selection)
+
+
+def build_agent_config(
+    runtime: Ci2LabConfig,
+    selection: ModelSelection,
+    *,
+    cwd: str | None = None,
+    session_id: str | None = None,
+    stream: bool | None = None,
+    auto_confirm: bool | None = None,
+    confirm_callback: Callable[[str, str], bool] | None = None,
+) -> AgentConfig:
+    """
+    AgentConfig efectivo para una ejecución (CLI, UI o scripts).
+
+    Los kwargs permiten que cada superficie sobrescriba solo lo que le aplica
+    (p. ej. la UI pasa stream/auto_confirm por petición); el resto sale de la
+    config runtime. El snapshot se calcula una sola vez sobre el config final.
+    """
+    from ci2lab.harness.run_logger import build_config_snapshot
+
+    effective_cwd = cwd or runtime.workspace or os.getcwd()
+    agent = AgentConfig(
+        cwd=effective_cwd,
+        max_rounds=runtime.max_rounds,
+        auto_confirm=runtime.auto_confirm if auto_confirm is None else auto_confirm,
+        stream=runtime.stream if stream is None else stream,
+        session_id=session_id,
+        run_log_enabled=runtime.log_runs,
+        runs_dir=runtime.runs_dir,
+        write_tools_enabled=runtime.write_tools_enabled,
+        require_diff_preview=runtime.require_diff_preview,
+        confirm_callback=confirm_callback,
+    )
+    agent.config_snapshot = build_config_snapshot(
+        runtime_fields={
+            "model": selection.ollama_tag,
+            "backend_url": runtime.backend_url,
+            "tool_mode": selection.tool_mode,
+            "workspace": effective_cwd,
+        },
+        agent_config=agent,
+        selection=selection,
+    )
+    return agent

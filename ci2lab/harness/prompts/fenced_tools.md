@@ -78,6 +78,14 @@ User-requested doc example:
 
 Do not create error/log files (e.g. `ci2lab_error.txt`) on your own after a tool block unless the user asked for that file.
 
+### write_docx (create or overwrite a Word document)
+
+Use for `.docx` files. The body is markdown; pandoc converts it to Word.
+
+```write_docx
+{"path": "informe.docx", "content": "# Título\n\nPárrafo del documento.\n"}
+```
+
 ### edit_file (replace exact text in an existing file)
 
 The body MUST be a single JSON object with `path`, `old_string`, and `new_string`. `old_string` must match the existing text exactly.
@@ -171,4 +179,4 @@ https://docs.python.org/3/library/random.html
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

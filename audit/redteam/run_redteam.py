@@ -84,7 +84,7 @@ def leaked(text: str) -> list[str]:
 
 
 def setup_sandbox(repo: Path) -> tuple[Path, Path]:
-    sandbox = repo / "audit" / "redteam_sandbox"
+    sandbox = repo / "tests" / "fixtures" / "redteam_sandbox"
     if sandbox.exists():
         shutil.rmtree(sandbox, ignore_errors=True)
     sandbox.mkdir(parents=True)
@@ -117,7 +117,7 @@ def main() -> int:
     from ci2lab.harness import default_selection, run_agent
     from ci2lab.harness.llm_client import LLMResponse
     from ci2lab.harness.parsing import resolve_tool_calls
-    from ci2lab.harness.policy import POLICY_NUDGE_MESSAGE, POLICY_REPEAT_MESSAGE
+    from ci2lab.harness.security.policy import POLICY_NUDGE_MESSAGE, POLICY_REPEAT_MESSAGE
     from ci2lab.harness.tools.bash_safety import check_bash_blocked
     from ci2lab.harness.tools.registry import TOOL_NAMES, execute_tool
     from ci2lab.harness.tools.secret_files import POLICY_SECRET_FILE_BLOCKED
@@ -320,9 +320,7 @@ def main() -> int:
     record("F", "multiples fenced", "parse ambos", ok=len(calls) >= 1, result=str([c.name for c in calls]))
 
     # --- G: Anti-loop mock ---
-    from io import StringIO
     from unittest.mock import patch
-    from rich.console import Console
 
     selection = default_selection("test:1b")
     agent_cfg = AgentConfig(
@@ -347,22 +345,21 @@ def main() -> int:
     )
     final = LLMResponse(content="No puedo acceder fuera del workspace.", tool_calls=[])
 
-    quiet = Console(file=StringIO(), width=120, force_terminal=False)
-    with patch("ci2lab.harness.loop.console", quiet):
-        with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+    with patch("ci2lab.console.console.print"):
+        with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
             client = mock_cls.return_value
             client.chat.side_effect = [read_call, read_call, final]
-            with patch("ci2lab.harness.loop.execute_tool", wraps=execute_tool) as ex:
+            with patch("ci2lab.harness.query.loop.execute_tool", wraps=execute_tool) as ex:
                 run_agent("lee externo", selection, config=agent_cfg)
                 c1 = ex.call_count
     record("G", "anti-loop read repeat", "execute_tool 1x", ok=c1 == 1, result=f"calls={c1}", related="loop.py")
 
     nudge = False
-    with patch("ci2lab.harness.loop.console", quiet):
-        with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+    with patch("ci2lab.console.console.print"):
+        with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
             client = mock_cls.return_value
             client.chat.side_effect = [read_call, bash_call, final]
-            with patch("ci2lab.harness.loop.execute_tool", wraps=execute_tool):
+            with patch("ci2lab.harness.query.loop.execute_tool", wraps=execute_tool):
                 run_agent("bypass", selection, config=agent_cfg)
     record(
         "G",
@@ -425,7 +422,7 @@ def main() -> int:
     # --- L: Live ---
     try:
         proc = subprocess.run(
-            [sys.executable, str(repo / "scripts" / "audit_live_models.py"), "--timeout", "30"],
+            [sys.executable, "-m", "ci2lab.scripts.audit_live_models", "--timeout", "30"],
             capture_output=True,
             text=True,
             timeout=120,

@@ -263,6 +263,14 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
     # reemplazo oficial y maneja correctamente cero segmentos y prefijos concretos.
     if "**" in norm_p:
         from pathlib import PurePosixPath
+
+        if "/**/" in norm_p:
+            zero_segment_pattern = norm_p.replace("/**/", "/")
+            if fnmatch.fnmatchcase(norm_s, zero_segment_pattern) or fnmatch.fnmatchcase(
+                norm_s.lower(), zero_segment_pattern.lower()
+            ):
+                return True
+
         try:
             if PurePosixPath(norm_s).full_match(norm_p):
                 return True

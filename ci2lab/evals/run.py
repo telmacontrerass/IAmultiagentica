@@ -12,12 +12,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from rich.console import Console
-
+from ci2lab.console import console
 from ci2lab.evals.runner import print_summary_table, run_eval_suite
 from ci2lab.evals.task import default_tasks_dir
-
-console = Console()
 
 
 def main(argv: list[str] | None = None) -> int:

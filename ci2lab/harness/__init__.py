@@ -8,7 +8,7 @@ from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.types import AgentConfig
 
 if TYPE_CHECKING:
-    from ci2lab.harness.loop import run_agent
+    from ci2lab.harness.query.loop import run_agent
     from ci2lab.harness.repl import run_repl
     from ci2lab.harness.session import (
         list_sessions,
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     )
 
 _LAZY_EXPORTS = {
-    "run_agent": ("ci2lab.harness.loop", "run_agent"),
+    "run_agent": ("ci2lab.harness.query.loop", "run_agent"),
     "run_repl": ("ci2lab.harness.repl", "run_repl"),
     "list_sessions": ("ci2lab.harness.session", "list_sessions"),
     "load_session": ("ci2lab.harness.session", "load_session"),
@@ -29,11 +29,10 @@ _LAZY_EXPORTS = {
 
 def __getattr__(name: str):
     if name in _LAZY_EXPORTS:
-        module_path, attr = _LAZY_EXPORTS[name]
         import importlib
 
-        module = importlib.import_module(module_path)
-        return getattr(module, attr)
+        module_path, attr = _LAZY_EXPORTS[name]
+        return getattr(importlib.import_module(module_path), attr)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

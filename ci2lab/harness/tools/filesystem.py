@@ -240,10 +240,9 @@ def extract_docx_text(path: Path) -> str:
     try:
         from docx import Document
     except ImportError:
-        return (
-            "Error: no se puede leer DOCX porque falta la dependencia `python-docx`. "
-            "Instala el proyecto de nuevo para activar soporte Word."
-        )
+        from ci2lab.harness.tools.docx import extract_docx_markdown
+
+        return extract_docx_markdown(path)
 
     try:
         document = Document(str(path))

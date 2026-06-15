@@ -101,6 +101,44 @@ def compute_edit_result(
     return new_text, None
 
 
+def preview_write_docx(cwd: str, path: str, content: str) -> WritePreview:
+    """Preview creating or replacing a DOCX from markdown source."""
+    resolved = resolve_path(path, cwd)
+    rel = _display_path(resolved, cwd)
+    if resolved.suffix.lower() != ".docx":
+        return WritePreview(
+            path=rel,
+            is_new_file=not resolved.is_file(),
+            diff="",
+            validation_error="Error: write_docx solo admite rutas .docx",
+        )
+    if is_sensitive_path(resolved, workspace=cwd):
+        return WritePreview(
+            path=rel,
+            is_new_file=not resolved.is_file(),
+            diff="",
+            validation_error=secret_file_block_message(),
+        )
+    if resolved.is_file():
+        from ci2lab.harness.tools.docx import extract_docx_markdown
+
+        current = extract_docx_markdown(resolved)
+        if current.startswith("Error:"):
+            current = "(no se pudo extraer el .docx actual para diff)"
+        return WritePreview(
+            path=rel,
+            is_new_file=False,
+            diff=_unified_diff(current, content, rel),
+            new_content="[Se convertirá markdown -> .docx con pandoc]\n" + content,
+        )
+    return WritePreview(
+        path=rel,
+        is_new_file=True,
+        diff="",
+        new_content="[Nuevo .docx desde markdown vía pandoc]\n" + content,
+    )
+
+
 def preview_write_file(
     cwd: str,
     path: str,

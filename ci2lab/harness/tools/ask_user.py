@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ci2lab.harness.terminal_input import read_prompt_line
+
 
 def ask_user(question: str, options: list[str] | None = None) -> str:
     if not question or not str(question).strip():
@@ -18,7 +20,7 @@ def ask_user(question: str, options: list[str] | None = None) -> str:
         print("(Enter a number or free text)")  # noqa: T201
 
     try:
-        answer = input("> ").strip()  # noqa: T201
+        answer = read_prompt_line("> ")
     except EOFError:
         return "Error: no user input (session ended)"
 

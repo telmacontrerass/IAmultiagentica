@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ci2lab.harness.compact import (
+from ci2lab.harness.context.compact import (
     KEEP_RECENT_TOOL_RESULTS,
     SUMMARY_PREFIX,
     TOOL_RESULT_STUB,

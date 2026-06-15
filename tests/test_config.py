@@ -14,6 +14,8 @@ from ci2lab.config import (
 def test_load_config_defaults(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("CI2LAB_MODEL", raising=False)
+    # Aísla también el fallback a ~/.ci2lab/ci2lab.yaml de la máquina local.
+    monkeypatch.setattr("ci2lab.config.Path.home", lambda: tmp_path)
     cfg = load_config()
     assert cfg.model == DEFAULT_MODEL
     assert cfg.tool_mode == "native"

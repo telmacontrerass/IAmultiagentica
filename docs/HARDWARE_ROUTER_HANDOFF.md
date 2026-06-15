@@ -383,7 +383,7 @@ Repos en `Ci2Lab/` (carpeta **padre** de `IAmultiagentica/`):
 
 ```python
 from ci2lab.pipeline import prepare_session
-from ci2lab.harness.loop import run_agent
+from ci2lab.harness import run_agent
 
 profile, selection = prepare_session(prompt)
 await run_agent(user_prompt=prompt, selection=selection, hardware=profile)

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from rich.console import Console
 
 from ci2lab.harness import default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
@@ -131,23 +129,21 @@ def test_run_agent_explicit_create_calls_write_file(workspace: Path):
     )
     final = LLMResponse(content="Archivo docs/hello.md creado.", tool_calls=[])
 
-    quiet = Console(file=StringIO(), width=120, force_terminal=False)
-    with patch("ci2lab.harness.loop.console", quiet):
-        with patch("ci2lab.harness.write_permissions._console", quiet):
-            with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
-                client = mock_cls.return_value
-                client.chat.side_effect = [write_call, final]
-                with patch(
-                    "ci2lab.harness.loop.execute_tool", wraps=execute_tool
-                ) as execute_mock:
-                    run_agent(
-                        "Crea docs/hello.md con un titulo Hello",
-                        selection,
-                        config=config,
-                    )
-                write_calls = [
-                    c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
-                ]
+    with patch("ci2lab.console.console.print"):
+        with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
+            client = mock_cls.return_value
+            client.chat.side_effect = [write_call, final]
+            with patch(
+                "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
+            ) as execute_mock:
+                run_agent(
+                    "Crea docs/hello.md con un titulo Hello",
+                    selection,
+                    config=config,
+                )
+            write_calls = [
+                c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
+            ]
 
     assert len(write_calls) == 1
     assert (workspace / "docs" / "hello.md").read_text(encoding="utf-8") == "# Hello\n"
@@ -187,13 +183,12 @@ def test_run_agent_blocked_read_without_spontaneous_error_file(
         tool_calls=[],
     )
 
-    quiet = Console(file=StringIO(), width=120, force_terminal=False)
-    with patch("ci2lab.harness.loop.console", quiet):
-        with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+    with patch("ci2lab.console.console.print"):
+        with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
             client = mock_cls.return_value
             client.chat.side_effect = [read_call, final]
             with patch(
-                "ci2lab.harness.loop.execute_tool", wraps=execute_tool
+                "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
             ) as execute_mock:
                 run_agent("Lee el secreto externo", selection, config=config)
             write_calls = [

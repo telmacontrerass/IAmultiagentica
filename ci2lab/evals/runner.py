@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import patch
 
-from rich.console import Console
 from rich.table import Table
 
+from ci2lab.console import console
 from ci2lab.evals.task import (
     CheckResult,
     EvalTask,
@@ -25,8 +25,6 @@ from ci2lab.evals.task import (
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.llm_errors import LLMError
-
-_console = Console()
 
 
 @dataclass
@@ -139,22 +137,19 @@ def run_single_task(
     final_answer = ""
     error: str | None = None
 
-    console_patches = (
-        patch("ci2lab.harness.loop.console.print"),
-        patch("ci2lab.harness.write_permissions._console.print"),
-        patch("ci2lab.harness.run_logger._console.print"),
-    )
+    # Silencia toda la salida del agente durante la tarea (consola compartida).
+    quiet_console = patch("ci2lab.console.console.print")
     try:
         if use_mock:
             responses = _mock_responses_to_llm(task.mock_responses)
-            with console_patches[0], console_patches[1], console_patches[2]:
-                with patch("ci2lab.harness.loop.LLMClient") as mock_cls:
+            with quiet_console:
+                with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
                     mock_cls.return_value.chat.side_effect = responses
                     final_answer = run_agent(
                         task.prompt, selection, config=config
                     )
         else:
-            with console_patches[0], console_patches[1], console_patches[2]:
+            with quiet_console:
                 final_answer = run_agent(task.prompt, selection, config=config)
     except LLMError as exc:
         error = exc.user_message
@@ -177,7 +172,12 @@ def run_single_task(
     result.error = error
     if error:
         result.checks.append(
-            CheckResult(name="agent_error", passed=False, detail=error)
+            CheckResult(
+                check_type="agent_error",
+                name="agent_error",
+                passed=False,
+                detail=error,
+            )
         )
         result.passed = False
     return result
@@ -212,7 +212,7 @@ def run_eval_suite(
         task_runs = results_dir / "runs" / task.id
         task_runs.mkdir(parents=True, exist_ok=True)
 
-        _console.print(f"[bold]> {task.id}[/bold] {task.name}")
+        console.print(f"[bold]> {task.id}[/bold] {task.name}")
         result = run_single_task(
             task,
             workspace=workspace,
@@ -222,10 +222,10 @@ def run_eval_suite(
         )
 
         status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
-        _console.print(f"  {status}")
+        console.print(f"  {status}")
         if not result.passed:
             for reason in result.failure_reasons:
-                _console.print(f"    [red]-[/red] {reason}")
+                console.print(f"    [red]-[/red] {reason}")
         results.append(result)
 
         with (results_dir / "results.jsonl").open("a", encoding="utf-8") as fh:
@@ -263,4 +263,4 @@ def print_summary_table(results: list[TaskEvalResult]) -> None:
             f"[{style}]{state}[/{style}]",
             ", ".join(row.tools_used) or "-",
         )
-    _console.print(table)
+    console.print(table)

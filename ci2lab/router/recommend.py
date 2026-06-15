@@ -244,7 +244,7 @@ def _score_for_category(
     scored = [
         _score_recommendation(model, profile, category)
         for model in models
-        if _model_fits(model, profile)
+        if model_fits(model, profile)
     ]
     scored.sort(key=lambda item: item.total_score, reverse=True)
     return scored[:limit]
@@ -307,7 +307,11 @@ def _effective_available_budget(profile: HardwareProfile) -> float:
     return profile.inference_budget_gb
 
 
-def _model_fits(model: ModelSpec, profile: HardwareProfile) -> bool:
+def model_fits(model: ModelSpec, profile: HardwareProfile) -> bool:
+    """True si el modelo cabe en el presupuesto teórico de este equipo.
+
+    Única fuente de verdad para CLI, router y UI.
+    """
     required_gb = _memory_required_gb(model, profile)
     return classify_model_memory(required_gb, profile).theoretical_fit
 

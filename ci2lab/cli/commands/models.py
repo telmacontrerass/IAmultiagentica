@@ -1,0 +1,327 @@
+"""Comandos models (recommend, install, run)."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+
+from rich.table import Table
+
+from ci2lab.console import console
+from ci2lab.cli.commands.hardware import _print_memory_budget_context
+from ci2lab.config import load_config
+from ci2lab.contracts import HardwareProfile, ModelSpec
+from ci2lab.hardware import scan_hardware
+from ci2lab.router.catalog import load_model_catalog
+from ci2lab.router.intent import classify_intent
+from ci2lab.router.recommend import (
+    build_display_recommendations,
+    model_fits,
+    recommend_download_plan,
+    recommendation_pool_size,
+    score_recommendations,
+)
+from ci2lab.runtime.ollama import fetch_installed_model_names
+
+
+def _cmd_models_recommend(args: argparse.Namespace) -> int:
+    profile = scan_hardware()
+    prompt = " ".join(args.model_prompt)
+    if prompt:
+        return _focused_recommend_command(
+            prompt=prompt,
+            profile=profile,
+            json_output=args.json,
+            limit=args.limit,
+        )
+    return _download_plan_command(profile=profile, json_output=args.json)
+
+
+def _cmd_models_install(args: argparse.Namespace) -> int:
+    profile = scan_hardware()
+    model = _resolve_allowed_model(args.model, profile=profile)
+    if model is None:
+        return 1
+
+    commands = _install_commands(model)
+    if args.json:
+        console.print_json(json.dumps({
+            "id": model.id,
+            "display_name": model.display_name,
+            "ollama_tag": model.ollama_tag,
+            "commands": commands,
+        }))
+        return 0
+
+    console.print(f"[bold]Modelo elegido:[/bold] {model.display_name}")
+    console.print(f"[bold]Ollama:[/bold] {model.ollama_tag}\n")
+    console.print("[bold]1. Instalar/descargar el modelo:[/bold]")
+    console.print(f"  {commands['pull']}")
+    console.print("\n[bold]2. Abrir chat directo con Ollama:[/bold]")
+    console.print(f"  {commands['ollama_run']}")
+    console.print("\n[bold]3. Abrir chat agéntico desde ci2lab:[/bold]")
+    console.print(f"  {commands['ci2lab_chat']}")
+    return 0
+
+
+def _cmd_models_run(args: argparse.Namespace) -> int:
+    profile = scan_hardware()
+    model = _resolve_allowed_model(args.model, profile=profile)
+    if model is None:
+        return 1
+
+    console.print(f"[bold]Abriendo:[/bold] {model.display_name} ({model.ollama_tag})")
+    console.print("[dim]Sal con /bye o Ctrl+C.[/dim]\n")
+    try:
+        completed = subprocess.run(["ollama", "run", model.ollama_tag], check=False)
+    except FileNotFoundError:
+        console.print("[red]No encuentro el comando `ollama`.[/red]")
+        console.print("Instala Ollama y después ejecuta:")
+        console.print(f"  {_install_commands(model)['pull']}")
+        return 1
+    return completed.returncode
+
+
+def _install_commands(model: ModelSpec) -> dict[str, str]:
+    return {
+        "pull": f"ollama pull {model.ollama_tag}",
+        "ollama_run": f"ollama run {model.ollama_tag}",
+        "ci2lab_chat": f"ci2lab --model {model.id} chat",
+    }
+
+
+def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> ModelSpec | None:
+    normalized = model_name.strip().lower()
+    models = load_model_catalog()
+    exact = [
+        model
+        for model in models
+        if normalized in {
+            model.id.lower(),
+            model.ollama_tag.lower(),
+            model.display_name.lower(),
+        }
+    ]
+
+    if not exact:
+        console.print(f"[red]Modelo no reconocido:[/red] {model_name}")
+        _print_allowed_models(profile)
+        return None
+
+    model = exact[0]
+    if not model_fits(model, profile):
+        console.print(f"[red]Ese modelo existe, pero no cabe en este equipo:[/red] {model.display_name}")
+        console.print(
+            "Presupuesto aproximado para inferencia: "
+            f"[bold]{profile.inference_budget_gb:g} GB[/bold]."
+        )
+        _print_allowed_models(profile)
+        return None
+
+    return model
+
+
+def _print_allowed_models(profile: HardwareProfile) -> None:
+    allowed = [model for model in load_model_catalog() if model_fits(model, profile)]
+    if not allowed:
+        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        return
+
+    table = Table(title="Modelos permitidos en este equipo")
+    table.add_column("Escribe esto")
+    table.add_column("Ollama")
+    table.add_column("Nombre")
+    for model in allowed:
+        table.add_row(model.id, model.ollama_tag, model.display_name)
+    console.print(table)
+
+
+def _focused_recommend_command(
+    *,
+    prompt: str,
+    profile,
+    json_output: bool,
+    limit: int,
+) -> int:
+    intent = classify_intent(prompt)
+    runtime = load_config()
+    installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
+    pool = score_recommendations(
+        prompt,
+        profile=profile,
+        limit=recommendation_pool_size(limit),
+    )
+    recommendations = build_display_recommendations(
+        pool,
+        installed_names,
+        limit=limit,
+    )
+
+    if json_output:
+        payload = {
+            "hardware": profile.to_dict(),
+            "intent": {
+                "category": intent.category,
+                "confidence": intent.confidence,
+                "signals": intent.signals,
+                "difficulty": intent.difficulty,
+            },
+            "ollama_error": ollama_error,
+            "models": [
+                {
+                    "id": entry.item.model.id,
+                    "display_name": entry.item.model.display_name,
+                    "ollama_tag": entry.item.model.ollama_tag,
+                    "reason": entry.item.reason,
+                    "score": entry.item.total_score,
+                    "fit_label": entry.item.fit_label,
+                    "recommendation_status": entry.item.recommendation_status,
+                    "theoretical_fit": entry.item.theoretical_fit,
+                    "current_fit": entry.item.current_fit,
+                    "requires_memory_cleanup": entry.item.requires_memory_cleanup,
+                    "installed": entry.installed,
+                    "installation_label": entry.installation_label,
+                    "criteria": _criteria_payload(entry.item),
+                }
+                for entry in recommendations
+            ],
+        }
+        console.print_json(json.dumps(payload))
+        return 0
+
+    console.print(f"Intencion detectada: [bold]{intent.category}[/bold]")
+    _print_memory_budget_context(profile)
+    if ollama_error:
+        console.print(
+            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+        )
+
+    if not recommendations:
+        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        return 1
+
+    table = Table(title="Modelos recomendados")
+    table.add_column("Modelo")
+    table.add_column("Ollama")
+    table.add_column("Instalacion")
+    table.add_column("Estado")
+    table.add_column("Score")
+    table.add_column("Memoria")
+    table.add_column("Motivo")
+    for entry in recommendations:
+        item = entry.item
+        install_label = (
+            f"[green]{entry.installation_label}[/green]"
+            if entry.installed
+            else entry.installation_label
+        )
+        table.add_row(
+            item.model.display_name,
+            item.model.ollama_tag,
+            install_label,
+            item.fit_label,
+            str(item.total_score),
+            _memory_summary(item),
+            item.reason,
+        )
+    console.print(table)
+    return 0
+
+
+def _download_plan_command(*, profile, json_output: bool) -> int:
+    runtime = load_config()
+    installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
+    plan = recommend_download_plan(profile=profile, installed_names=installed_names)
+
+    if json_output:
+        payload = {
+            "hardware": profile.to_dict(),
+            "ollama_error": ollama_error,
+            "download_plan": [
+                {
+                    "use_cases": item.use_cases,
+                    "id": item.recommendation.model.id,
+                    "display_name": item.recommendation.model.display_name,
+                    "ollama_tag": item.recommendation.model.ollama_tag,
+                    "reason": item.recommendation.reason,
+                    "score": item.recommendation.total_score,
+                    "fit_label": item.recommendation.fit_label,
+                    "recommendation_status": item.recommendation.recommendation_status,
+                    "theoretical_fit": item.recommendation.theoretical_fit,
+                    "current_fit": item.recommendation.current_fit,
+                    "requires_memory_cleanup": item.recommendation.requires_memory_cleanup,
+                    "installed": item.installed,
+                    "installation_label": (
+                        "Ya instalado" if item.installed else "Para descargar"
+                    ),
+                    "criteria": _criteria_payload(item.recommendation),
+                }
+                for item in plan
+            ],
+        }
+        console.print_json(json.dumps(payload))
+        return 0
+
+    _print_memory_budget_context(profile)
+    if ollama_error:
+        console.print(
+            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+        )
+
+    if not plan:
+        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        return 1
+
+    table = Table(title="Modelos recomendados para tu equipo")
+    table.add_column("Usos")
+    table.add_column("Modelo")
+    table.add_column("Ollama")
+    table.add_column("Instalacion")
+    table.add_column("Estado")
+    table.add_column("Score")
+    table.add_column("Memoria")
+    table.add_column("Motivo")
+    for item in plan:
+        recommendation = item.recommendation
+        install_label = (
+            "[green]Ya instalado[/green]" if item.installed else "Para descargar"
+        )
+        table.add_row(
+            ", ".join(item.use_cases),
+            recommendation.model.display_name,
+            recommendation.model.ollama_tag,
+            install_label,
+            recommendation.fit_label,
+            str(recommendation.total_score),
+            _memory_summary(recommendation),
+            recommendation.reason,
+        )
+    console.print(table)
+    return 0
+
+
+def _criteria_payload(item) -> dict[str, float | str | bool]:
+    return {
+        "quality": item.quality_score,
+        "speed": item.speed_score,
+        "fit": item.fit_score,
+        "context": item.context_score,
+        "memory_required_gb": item.memory_required_gb,
+        "memory_budget_gb": item.memory_budget_gb,
+        "remaining_memory_gb": item.remaining_memory_gb,
+        "memory_usage_percent": item.memory_usage_percent,
+        "memory_fit_status": item.memory_fit_status,
+        "recommendation_status": item.recommendation_status,
+        "theoretical_fit": item.theoretical_fit,
+        "current_fit": item.current_fit,
+        "requires_memory_cleanup": item.requires_memory_cleanup,
+    }
+
+
+def _memory_summary(item) -> str:
+    return (
+        f"usa ~{item.memory_required_gb:g} GB "
+        f"({item.memory_usage_percent:g}%); "
+        f"queda ~{item.remaining_memory_gb:g} GB"
+    )

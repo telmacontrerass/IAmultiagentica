@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from rich.console import Console
 from rich.panel import Panel
 
+from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
-from ci2lab.harness.loop import run_agent
+from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.session import (
     delete_session,
     is_delete_session_request,
@@ -15,11 +15,10 @@ from ci2lab.harness.session import (
     new_session_id,
     save_session,
 )
+from ci2lab.harness.terminal_input import read_prompt_line
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
-
-console = Console()
 
 
 def run_repl(
@@ -44,15 +43,18 @@ def run_repl(
         f"Tool mode: {selection.tool_mode}\n"
         f"CWD: {config.cwd}\n"
         f"Sesión: {sid}\n\n"
-        "Escribe tu petición. Comandos: [bold]/exit[/bold], [bold]/save[/bold], "
-        "[bold]/clear[/bold], [bold]/delete[/bold], [bold]/skills[/bold], [bold]/skill-name[/bold]",
+        "Escribe tu petición. [bold]Ctrl+V[/bold] pega; [bold]Enter[/bold] envía; "
+        "[bold]Alt+Enter[/bold] nueva línea.\n"
+        "Comandos: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
+        "[bold]/delete[/bold], "
+        "[bold]/skills[/bold], [bold]/skill-name[/bold]",
         title="Agente local",
         border_style="blue",
     ))
 
     while True:
         try:
-            line = console.input("\n[bold]Tú>[/bold] ").strip()
+            line = read_prompt_line("Tú> ")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Hasta luego.[/dim]")
             break
@@ -94,7 +96,9 @@ def run_repl(
             continue
         if line.startswith("/"):
             skill_line = line[1:].strip()
-            if skill_line and not skill_line.lower().startswith(("exit", "quit", "save", "clear", "delete", "forget")):
+            if skill_line and not skill_line.lower().startswith(
+                ("exit", "quit", "save", "clear", "delete", "forget")
+            ):
                 parts = skill_line.split(maxsplit=1)
                 skill_name = parts[0]
                 skill_args = parts[1] if len(parts) > 1 else ""

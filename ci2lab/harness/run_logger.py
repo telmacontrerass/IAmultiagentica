@@ -13,8 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from rich.console import Console
-
+from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.security.audit import AuditPersistContext, set_audit_persist_context
@@ -23,7 +22,6 @@ from ci2lab.security.session_permissions import (
     clear_session_permissions,
 )
 
-_console = Console()
 LOG_OUTPUT_MAX_CHARS = 2000
 
 RunStatus = str  # success | llm_error | max_rounds | interrupted
@@ -190,7 +188,7 @@ class RunLogger:
                 final_answer or "",
                 encoding="utf-8",
             )
-            _console.print(f"[dim]Run guardado: {self._run_dir}[/dim]")
+            console.print(f"[dim]Run guardado: {self._run_dir}[/dim]")
         except Exception as exc:  # noqa: BLE001
             self._warn(f"No se pudo finalizar el log de ejecución: {exc}")
         finally:
@@ -218,7 +216,7 @@ class RunLogger:
 
     @staticmethod
     def _warn(message: str) -> None:
-        _console.print(f"[yellow]Aviso (run log): {message}[/yellow]")
+        console.print(f"[yellow]Aviso (run log): {message}[/yellow]")
 
 
 def _iso(dt: datetime) -> str:
