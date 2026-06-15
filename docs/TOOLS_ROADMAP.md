@@ -1,11 +1,11 @@
 # Hoja de ruta de herramientas Ci2Lab
 
-## Estado actual (22 herramientas built-in + MCP dinámico)
+## Estado actual (24 herramientas built-in + MCP dinámico)
 
 | Herramienta | Tipo |
 |-------------|------|
 | `read_file`, `read_document`, `inspect_file`, `file_info`, `tree`, `ls`, `glob`, `grep` | lectura / exploración |
-| `write_file`, `write_docx`, `edit_file`, `apply_patch`, `fill_docx_template`, `notebook_edit` | escritura |
+| `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `fill_docx_template`, `notebook_edit` | escritura / conversión |
 | `bash`, `git_status`, `git_diff` | shell / git |
 | `todo_write`, `ask_user`, `web_fetch` | flujo / usuario |
 | `skill`, `mcp_call` | skills + MCP fallback |

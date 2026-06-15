@@ -12,7 +12,9 @@ from ci2lab.harness.tools.executor_parts.confirmation import resolve_tool_confir
 from ci2lab.harness.tools.paths import PathViolationError
 from ci2lab.harness.tools.write_preview import (
     preview_apply_patch,
+    preview_docx_to_pdf,
     preview_edit_file,
+    preview_pdf_to_docx,
     preview_write_file,
 )
 from ci2lab.harness.types import AgentConfig, ToolResult
@@ -60,6 +62,10 @@ def execute_write_tool(
             from ci2lab.harness.tools.docx_writer import preview_fill_docx
 
             preview = preview_fill_docx(config.cwd, args)
+        elif name == "docx_to_pdf":
+            preview = preview_docx_to_pdf(config.cwd, args["source"], args["output"])
+        elif name == "pdf_to_docx":
+            preview = preview_pdf_to_docx(config.cwd, args["source"], args["output"])
         else:
             preview = preview_edit_file(
                 config.cwd,

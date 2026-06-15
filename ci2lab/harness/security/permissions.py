@@ -11,6 +11,8 @@ CONFIRM_TOOLS = frozenset({
     "write_docx",
     "apply_patch",
     "fill_docx_template",
+    "docx_to_pdf",
+    "pdf_to_docx",
     "web_fetch",
     "notebook_edit",
 })

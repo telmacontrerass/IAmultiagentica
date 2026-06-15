@@ -97,6 +97,54 @@ EDIT_SCHEMAS: list[dict[str, Any]] = [
     {
             "type": "function",
             "function": {
+                "name": "docx_to_pdf",
+                "description": (
+                    "Convert a Word .docx file to PDF using pandoc. "
+                    "Requires pandoc on PATH and a PDF engine (e.g. wkhtmltopdf, weasyprint)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "Path to the source .docx file",
+                        },
+                        "output": {
+                            "type": "string",
+                            "description": "Path for the output .pdf file",
+                        },
+                    },
+                    "required": ["source", "output"],
+                },
+            },
+        },
+    {
+            "type": "function",
+            "function": {
+                "name": "pdf_to_docx",
+                "description": (
+                    "Convert a PDF file to a Word .docx file using pdf2docx. "
+                    "Preserves layout, images, and tables. Requires `pdf2docx` installed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "Path to the source .pdf file",
+                        },
+                        "output": {
+                            "type": "string",
+                            "description": "Path for the output .docx file",
+                        },
+                    },
+                    "required": ["source", "output"],
+                },
+            },
+        },
+    {
+            "type": "function",
+            "function": {
                 "name": "notebook_edit",
                 "description": "Edit one cell in a Jupyter .ipynb notebook.",
                 "parameters": {

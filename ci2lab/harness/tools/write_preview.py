@@ -250,6 +250,81 @@ def preview_apply_patch(cwd: str, patch_text: str) -> WritePreview:
     )
 
 
+def _conversion_preview(
+    cwd: str,
+    source: str,
+    output: str,
+    source_ext: str,
+    output_ext: str,
+    tool_name: str,
+) -> WritePreview:
+    """Shared preview builder for docx_to_pdf and pdf_to_docx."""
+    from ci2lab.harness.tools.paths import PathViolationError
+
+    try:
+        source_path = resolve_path(source, cwd)
+        output_path = resolve_path(output, cwd)
+    except PathViolationError as exc:
+        return WritePreview(
+            path=output or "(sin output)",
+            is_new_file=True,
+            diff="",
+            validation_error=str(exc),
+        )
+
+    if source_path.suffix.lower() != source_ext:
+        return WritePreview(
+            path=output,
+            is_new_file=True,
+            diff="",
+            validation_error=(
+                f"Error: {tool_name} requiere un archivo fuente {source_ext}, "
+                f"no '{source_path.suffix}'"
+            ),
+        )
+    if output_path.suffix.lower() != output_ext:
+        return WritePreview(
+            path=output,
+            is_new_file=True,
+            diff="",
+            validation_error=(
+                f"Error: {tool_name} requiere una ruta de salida {output_ext}, "
+                f"no '{output_path.suffix}'"
+            ),
+        )
+    if not source_path.is_file():
+        return WritePreview(
+            path=output,
+            is_new_file=True,
+            diff="",
+            validation_error=f"Error: archivo fuente no encontrado: {source}",
+        )
+
+    rel_out = _display_path(output_path, cwd)
+    overwrite_note = "existente — se sobreescribirá" if output_path.is_file() else "archivo nuevo"
+    summary = (
+        f"Fuente : {source}\n"
+        f"Salida : {output} ({overwrite_note})\n"
+        f"Método : {source_ext} → {output_ext}"
+    )
+    return WritePreview(
+        path=rel_out,
+        is_new_file=not output_path.is_file(),
+        diff="",
+        new_content=summary,
+    )
+
+
+def preview_docx_to_pdf(cwd: str, source: str, output: str) -> WritePreview:
+    """Preview for docx_to_pdf conversion."""
+    return _conversion_preview(cwd, source, output, ".docx", ".pdf", "docx_to_pdf")
+
+
+def preview_pdf_to_docx(cwd: str, source: str, output: str) -> WritePreview:
+    """Preview for pdf_to_docx conversion."""
+    return _conversion_preview(cwd, source, output, ".pdf", ".docx", "pdf_to_docx")
+
+
 def _display_path(resolved: Path, cwd: str) -> str:
     try:
         return str(resolved.relative_to(Path(cwd).resolve()))
