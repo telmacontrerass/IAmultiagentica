@@ -23,7 +23,7 @@ from ci2lab.config import Ci2LabConfig
 from ci2lab.harness import run_agent
 from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_errors import LLMError
-from ci2lab.harness.session import list_sessions, load_session, new_session_id, save_session
+from ci2lab.harness.session import delete_session, list_sessions, load_session, new_session_id, save_session
 from ci2lab.harness.mcp.config import load_mcp_config
 from ci2lab.harness.permissions import CONFIRM_TOOLS
 from ci2lab.harness.skills.loader import load_skills
@@ -242,6 +242,9 @@ def _handler_factory(state: UIState):
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             payload = self._read_json()
+            if parsed.path == "/api/chat/start":
+                self._json(_chat_start(state, payload))
+                return
             if parsed.path == "/api/chat":
                 self._json(_chat(state, payload))
                 return
@@ -253,6 +256,15 @@ def _handler_factory(state: UIState):
                 return
             if parsed.path == "/api/files/upload":
                 self._json(_upload_file(state, payload))
+                return
+            self._json({"error": "Not found"}, status=404)
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path.startswith("/api/sessions/"):
+                session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                payload, status = _delete_session_payload(session_id)
+                self._json(payload, status=status)
                 return
             self._json({"error": "Not found"}, status=404)
 
@@ -452,6 +464,44 @@ def _tools_payload(state: UIState) -> dict[str, Any]:
         ],
         "supported_uploads": sorted(SUPPORTED_UPLOAD_SUFFIXES),
         "document_uploads": sorted(DOCUMENT_UPLOAD_SUFFIXES),
+    }
+
+
+def _chat_start(state: UIState, payload: dict[str, Any]) -> dict[str, Any]:
+    model = str(payload.get("model") or state.runtime.model).strip()
+    workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    session_id = str(payload.get("session_id") or "").strip() or new_session_id()
+    technical_mode = bool(payload.get("technical_mode"))
+    warnings: list[str] = []
+
+    try:
+        _, selection = prepare_session(
+            "",
+            force_model=model,
+            tool_mode_override=None,
+            backend_url=state.runtime.backend_url,
+            pull=False,
+        )
+        model = selection.ollama_tag
+        display_name = selection.display_name
+        tool_mode = selection.tool_mode
+        warnings = list(selection.warnings)
+    except Exception as exc:  # noqa: BLE001
+        display_name = model
+        tool_mode = state.runtime.tool_mode
+        warnings = [str(exc)]
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "model": model,
+        "display_name": display_name,
+        "tool_mode": tool_mode,
+        "cwd": workspace,
+        "ui_mode": "tecnico" if technical_mode else "protegido",
+        "security_profile": state.runtime.security.profile,
+        "security_engine": state.runtime.security.engine,
+        "warnings": warnings,
     }
 
 
@@ -802,6 +852,15 @@ def _session_payload(session_id: str) -> tuple[dict[str, Any], int]:
             "messages": messages,
         },
     }, 200
+
+
+def _delete_session_payload(session_id: str) -> tuple[dict[str, Any], int]:
+    if not session_id or not all(ch.isalnum() or ch in "-_" for ch in session_id):
+        return {"ok": False, "error": "Sesion no valida."}, 400
+    deleted = delete_session(session_id)
+    if not deleted:
+        return {"ok": False, "error": "Sesion no encontrada."}, 404
+    return {"ok": True, "session_id": session_id}, 200
 
 
 def _session_title(messages: list[dict[str, Any]]) -> str:

@@ -42,6 +42,7 @@ const els = {
   technicalModeLabel: document.querySelector("#technicalModeLabel"),
   chatTools: document.querySelector(".chat-tools"),
   refreshButton: document.querySelector("#refreshButton"),
+  chatRefreshButton: document.querySelector("#chatRefreshButton"),
   openChat: document.querySelector("#openChat"),
   newChat: document.querySelector("#newChat"),
   systemSummary: document.querySelector("#systemSummary"),
@@ -128,7 +129,7 @@ function restoreUiState() {
     state.currentSession = payload.currentSession || null;
     state.chatMessages = Array.isArray(payload.chatMessages) ? payload.chatMessages : [];
     state.uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
-    state.activeView = payload.activeView || "homeView";
+    state.activeView = "homeView";
     if (payload.selectedModel) {
       els.modelSelect.dataset.pendingValue = payload.selectedModel;
     }
@@ -145,6 +146,7 @@ function restoreUiState() {
 
 function switchView(viewId, scrollTarget = null) {
   state.activeView = viewId;
+  document.body.classList.toggle("chat-view-active", viewId === "chatView");
   els.views.forEach((view) => {
     const active = view.id === viewId;
     view.hidden = !active;
@@ -226,6 +228,43 @@ function setEmptyChat() {
       </div>
     </div>
   `;
+}
+
+function buildSessionInfoMessage(payload) {
+  const warnings = Array.isArray(payload.warnings) && payload.warnings.length
+    ? `\nAviso: ${payload.warnings.join(" ")}`
+    : "";
+  return [
+    "ci2lab UI",
+    `Modelo: ${payload.model || payload.display_name || "?"}`,
+    `Tool mode: ${payload.tool_mode || "?"}`,
+    `CWD: ${payload.cwd || "?"}`,
+    `Sesion: ${payload.session_id || "?"}`,
+    `Modo UI: ${payload.ui_mode || "protegido"}`,
+    `Seguridad: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
+    "",
+    "Listo. Escribe tu peticion, adjunta archivos o activa Modo tecnico si necesitas herramientas.",
+  ].join("\n") + warnings;
+}
+
+async function startChatSession({ forceNew = false } = {}) {
+  if (!forceNew && state.currentSession && state.chatMessages.length) return;
+  setEmptyChat();
+  const result = await api("/api/chat/start", {
+    method: "POST",
+    body: JSON.stringify({
+      model: els.modelSelect.value,
+      technical_mode: els.technicalMode.checked,
+    }),
+  });
+  if (!result.ok) {
+    addMessage("assistant", result.error || "No se pudo iniciar el chat local.", "error");
+    return;
+  }
+
+  state.currentSession = result.session_id;
+  state.chatMessages = [];
+  addMessage("assistant", buildSessionInfoMessage(result), "session-info");
 }
 
 function updateCommandPreview() {
@@ -413,7 +452,7 @@ function renderModels() {
       <div class="model-actions">
         <button type="button" data-action="use" data-model="${escapeHtml(model.id)}">Usar</button>
         <button type="button" data-action="pull" data-tag="${escapeHtml(model.ollama_tag)}">Descargar</button>
-        <button type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Eliminar</button>
+        <button class="danger-button" type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Eliminar</button>
       </div>
       ${renderModelProgress(model)}
     </article>
@@ -446,7 +485,15 @@ function renderSessions(sessions) {
       <div class="session-tag">Tag interno: <code>${escapeHtml(session.internal_tag || session.id)}</code></div>
       <div class="meta">${escapeHtml(session.model)} · ${escapeHtml(formatDate(session.updated_at))}</div>
       <div class="meta">${escapeHtml(session.cwd)}</div>
-      <button type="button" data-session="${escapeHtml(session.id)}">Reanudar</button>
+      <div class="session-actions">
+        <button type="button" data-session="${escapeHtml(session.id)}">Reanudar</button>
+        <button
+          class="danger-button"
+          type="button"
+          data-delete-session="${escapeHtml(session.id)}"
+          title="Eliminar conversacion guardada"
+        >Eliminar</button>
+      </div>
     </article>
   `).join("");
 }
@@ -623,6 +670,18 @@ async function refreshAll() {
   renderSessions(sessions.sessions || []);
 }
 
+async function runRefreshFromButton(button) {
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = "Actualizando...";
+  try {
+    await refreshAll();
+  } finally {
+    button.disabled = false;
+    button.textContent = "Actualizar datos";
+  }
+}
+
 async function sendMessage(event) {
   event.preventDefault();
   const message = els.messageInput.value.trim();
@@ -630,7 +689,7 @@ async function sendMessage(event) {
   if (!message && !files.length) return;
   const model = els.modelSelect.value;
   const prompt = message || "Lee y resume los archivos adjuntos.";
-  const sessionId = files.length ? null : state.currentSession;
+  const sessionId = state.currentSession;
   addMessage("user", buildDisplayMessage(message, files));
   els.messageInput.value = "";
   state.uploadedFiles = [];
@@ -706,6 +765,32 @@ async function loadSessionIntoChat(sessionId) {
     addMessage(message.role === "user" ? "user" : "assistant", message.content);
   });
   switchView("chatView");
+}
+
+async function deleteSavedSession(sessionId, button) {
+  const confirmed = window.confirm("Eliminar esta conversacion guardada? Se borrara su archivo local.");
+  if (!confirmed) return;
+
+  button.disabled = true;
+  button.textContent = "Eliminando...";
+  const result = await api(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+
+  if (!result.ok) {
+    button.disabled = false;
+    button.textContent = "Eliminar";
+    addMessage("assistant", result.error || "No se pudo eliminar la sesion.", "error");
+    return;
+  }
+
+  if (state.currentSession === sessionId) {
+    state.currentSession = null;
+    state.chatMessages = [];
+    setEmptyChat();
+    persistUiState();
+  }
+  await refreshAll();
 }
 
 function delay(ms) {
@@ -795,6 +880,9 @@ async function handleModelAction(event) {
     els.modelSelect.value = button.dataset.model;
     updateCommandPreview();
     switchView("chatView");
+    if (!state.currentSession && !state.chatMessages.length) {
+      await startChatSession({ forceNew: true });
+    }
     return;
   }
   button.disabled = true;
@@ -839,17 +927,9 @@ function bindEvents() {
   els.technicalMode.addEventListener("change", () => updateTechnicalModeState());
   els.modelSearch.addEventListener("input", renderModels);
   els.modelsList.addEventListener("click", handleModelAction);
-  els.refreshButton.addEventListener("click", async () => {
-    els.refreshButton.disabled = true;
-    els.refreshButton.textContent = "Actualizando...";
-    try {
-      await refreshAll();
-    } finally {
-      els.refreshButton.disabled = false;
-      els.refreshButton.textContent = "Actualizar datos";
-    }
-  });
-  els.newChat.addEventListener("click", () => {
+  els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
+  els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
+  els.newChat.addEventListener("click", async () => {
     state.currentSession = null;
     state.chatMessages = [];
     state.uploadedFiles = [];
@@ -857,16 +937,25 @@ function bindEvents() {
     setEmptyChat();
     persistUiState();
     switchView("chatView");
+    await startChatSession({ forceNew: true });
   });
   els.sessionsList.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("button[data-delete-session]");
+    if (deleteButton) {
+      deleteSavedSession(deleteButton.dataset.deleteSession, deleteButton);
+      return;
+    }
     const button = event.target.closest("button[data-session]");
     if (!button) return;
     loadSessionIntoChat(button.dataset.session);
   });
   els.navButtons.forEach((button) => {
     if (button.id === "newChat") return;
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       switchView(button.dataset.view || "homeView", button.dataset.scroll || null);
+      if (button.id === "openChat" && !state.currentSession && !state.chatMessages.length) {
+        await startChatSession({ forceNew: true });
+      }
     });
   });
 }

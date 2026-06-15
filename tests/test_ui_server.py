@@ -8,7 +8,9 @@ from ci2lab.hardware.profile import build_cpu_profile_for_testing
 from ci2lab.ui.server import (
     UIState,
     _chat,
+    _chat_start,
     _content_type,
+    _delete_session_payload,
     _delete_task_payload,
     _finish_delete_task,
     _health_payload,
@@ -38,6 +40,29 @@ def test_health_payload_reports_local_only(monkeypatch):
     assert payload["ok"] is True
     assert payload["installed_count"] == 1
     assert payload["local_only"] is True
+
+
+def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path), model="qwen2.5-coder:1.5b"))
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+            tool_mode="fenced",
+        )
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+
+    payload = _chat_start(state, {"technical_mode": True})
+
+    assert payload["ok"] is True
+    assert payload["model"] == "qwen2.5-coder:1.5b"
+    assert payload["tool_mode"] == "fenced"
+    assert payload["cwd"] == str(tmp_path)
+    assert payload["session_id"]
+    assert payload["ui_mode"] == "tecnico"
 
 
 def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
@@ -266,6 +291,27 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
         "user",
         "assistant",
     ]
+
+
+def test_delete_session_payload_removes_saved_session_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    save_session(
+        "abc123",
+        messages=[{"role": "user", "content": "hola"}],
+        model_tag="qwen2.5-coder:1.5b",
+        cwd="/tmp",
+    )
+
+    payload, status = _delete_session_payload("abc123")
+
+    assert status == 200
+    assert payload["ok"] is True
+    assert load_session("abc123") is None
+
+    payload, status = _delete_session_payload("abc123")
+
+    assert status == 404
+    assert payload["ok"] is False
 
 
 def test_sessions_payload_includes_short_title_and_internal_tag(tmp_path, monkeypatch):

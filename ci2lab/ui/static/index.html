@@ -142,7 +142,7 @@
 
         <section id="chatView" class="view" hidden>
           <section class="panel chat-tools">
-            <div>
+            <div class="chat-tools-heading">
               <p class="eyebrow">Chat local</p>
               <h3>Selecciona un modelo y conversa con Florentino</h3>
             </div>
@@ -156,6 +156,14 @@
                 <span id="technicalModeLabel">Modo técnico</span>
               </label>
               <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
+              <button
+                id="chatRefreshButton"
+                class="ghost-button"
+                type="button"
+                title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+              >
+                Actualizar datos
+              </button>
             </div>
           </section>
 

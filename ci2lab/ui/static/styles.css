@@ -222,6 +222,10 @@ button {
   border-top: 4px solid var(--ink);
 }
 
+.chat-view-active .topbar {
+  display: none;
+}
+
 .topbar h2 {
   max-width: 720px;
   font-size: clamp(23px, 2.6vw, 32px);
@@ -350,9 +354,9 @@ textarea:focus {
 
 .chat-tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 460px);
-  gap: 18px;
-  align-items: end;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
   border-top: 5px solid var(--gold);
 }
 
@@ -361,19 +365,21 @@ textarea:focus {
   font-family: Georgia, "Times New Roman", serif;
   font-style: italic;
   font-weight: 500;
-  font-size: clamp(28px, 3.8vw, 48px);
-  line-height: 1.04;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.08;
 }
 
 .chat-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 360px) auto auto auto;
   gap: 14px;
   align-items: end;
+  justify-content: start;
 }
 
 .chat-tools .model-picker {
-  align-self: stretch;
+  align-self: end;
+  min-width: 0;
 }
 
 .messages {
@@ -427,6 +433,36 @@ textarea:focus {
 .message.assistant {
   align-self: flex-start;
   border-bottom-left-radius: 4px;
+}
+
+.message.session-info {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  margin-top: 8px;
+  padding: 20px 18px 16px;
+  border-color: var(--blue);
+  border-radius: 4px;
+  background: #050505;
+  color: var(--white);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 0 0 1px rgba(31, 111, 191, 0.18);
+}
+
+.message.session-info::before {
+  content: "Agente local";
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  padding: 0 8px;
+  background: #050505;
+  color: #7aa7ff;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .message.error {
@@ -834,7 +870,8 @@ textarea:focus {
   color: var(--success);
 }
 
-.model-actions {
+.model-actions,
+.session-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -892,6 +929,18 @@ textarea:focus {
   background: var(--ink);
   color: var(--white);
   font-size: 13px;
+}
+
+.model-card .danger-button,
+.session-card .danger-button {
+  border: 1px solid rgba(159, 29, 32, 0.35);
+  background: #fff5f3;
+  color: var(--danger);
+}
+
+.model-card .danger-button:hover,
+.session-card .danger-button:hover {
+  background: rgba(159, 29, 32, 0.08);
 }
 
 .tool-panel {
