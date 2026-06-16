@@ -39,5 +39,6 @@ def call_llm(
             content=buffer.plain,
             tool_calls=llm_response.tool_calls,
             raw=llm_response.raw,
+            usage=llm_response.usage,
         )
     return llm_response

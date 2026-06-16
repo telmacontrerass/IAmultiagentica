@@ -25,6 +25,7 @@ def save_session(
     messages: list[dict[str, Any]],
     model_tag: str,
     cwd: str,
+    token_usage: dict[str, Any] | None = None,
 ) -> Path:
     payload = {
         "id": session_id,
@@ -33,6 +34,8 @@ def save_session(
         "cwd": cwd,
         "messages": normalize_messages_for_storage(messages),
     }
+    if token_usage is not None:
+        payload["token_usage"] = token_usage
     path = sessions_dir() / f"{session_id}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path

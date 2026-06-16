@@ -22,5 +22,6 @@ def maybe_save_session(
         messages=messages,
         model_tag=selection.ollama_tag,
         cwd=cfg.cwd,
+        token_usage=cfg.token_usage.to_dict(),
     )
     console.print(f"[dim]Sesión guardada: {path}[/dim]")

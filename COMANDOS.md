@@ -285,6 +285,7 @@ Arranca la interfaz en otro puerto local.
 
 La UI funciona solo en local, usa Ollama como motor y mantiene sesiones/logs en tu equipo.
 En el chat puedes adjuntar PDFs y archivos de texto; se copian a `ci2lab_uploads/` y el agente los lee con `read_file`.
+La pagina de chat muestra un contador permanente de tokens por turno y por conversacion. Pulsa la flecha del contador para ver como se calcula para el modelo seleccionado y enlaces a la documentacion de Ollama.
 
 ### Modo terminal
 
@@ -292,6 +293,7 @@ En el chat puedes adjuntar PDFs y archivos de texto; se copian a `ci2lab_uploads
 ci2lab chat
 ```
 Abre el modo interactivo con el modelo por defecto.
+Despues de cada interaccion muestra los tokens de entrada, salida, turno y conversacion cuando Ollama devuelve esos datos.
 
 ```powershell
 ci2lab --model <MODELO_ID> chat

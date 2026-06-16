@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.security.audit import AuditPersistContext, set_audit_persist_context
 from ci2lab.security.session_permissions import (
@@ -43,6 +44,17 @@ class ToolCallLogEntry:
 
 
 @dataclass
+class TokenUsageLogEntry:
+    round: int
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    source: str
+    estimated: bool
+
+
+@dataclass
 class RunLogger:
     """Persiste artefactos de una ejecución en runs/<timestamp>_<id>/."""
 
@@ -58,6 +70,7 @@ class RunLogger:
         default_factory=lambda: datetime.now(timezone.utc), init=False
     )
     _tool_entries: list[ToolCallLogEntry] = field(default_factory=list, init=False)
+    _token_entries: list[TokenUsageLogEntry] = field(default_factory=list, init=False)
     _rounds_completed: int = field(default=0, init=False)
 
     @classmethod
@@ -146,6 +159,32 @@ class RunLogger:
         except Exception as exc:  # noqa: BLE001
             self._warn(f"No se pudo registrar tool call: {exc}")
 
+    def record_token_usage(self, *, round_num: int, usage: TokenUsage | None) -> None:
+        if (
+            not self._active
+            or self._run_dir is None
+            or usage is None
+            or not usage.available
+        ):
+            return
+        entry = TokenUsageLogEntry(
+            round=round_num,
+            model=usage.model or self.selection.ollama_tag,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            source=usage.source,
+            estimated=usage.estimated,
+        )
+        self._token_entries.append(entry)
+        try:
+            line = json.dumps(asdict(entry), ensure_ascii=False)
+            path = self._run_dir / "token_usage.jsonl"
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"No se pudo registrar token usage: {exc}")
+
     def finalize(
         self,
         *,
@@ -159,6 +198,9 @@ class RunLogger:
         ended_at = datetime.now(timezone.utc)
         duration_s = (ended_at - self._started_at).total_seconds()
         tools_used = sorted({e.tool for e in self._tool_entries})
+        prompt_tokens = sum(e.prompt_tokens for e in self._token_entries)
+        completion_tokens = sum(e.completion_tokens for e in self._token_entries)
+        total_tokens = sum(e.total_tokens for e in self._token_entries)
         summary = {
             "started_at": _iso(self._started_at),
             "ended_at": _iso(ended_at),
@@ -176,6 +218,15 @@ class RunLogger:
             "rounds": self._rounds_completed,
             "tool_call_count": len(self._tool_entries),
             "tools_used": tools_used,
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "call_count": len(self._token_entries),
+                "available": total_tokens > 0,
+                "source": "provider",
+                "estimated": False,
+            },
             "status": status,
             "error": error,
             "user_prompt": self.user_prompt,

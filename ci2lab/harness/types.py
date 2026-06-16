@@ -1,9 +1,11 @@
-"""Tipos internos del arnés (no forman parte del contrato público)."""
+"""Tipos internos del arnes (no forman parte del contrato publico)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
+
+from ci2lab.harness.token_usage import TokenUsageState
 
 if TYPE_CHECKING:
     from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
@@ -33,7 +35,7 @@ class ToolResult:
 
 @dataclass
 class AgentConfig:
-    """Configuración de una ejecución del arnés."""
+    """Configuracion de una ejecucion del arnes."""
 
     cwd: str
     max_rounds: int = 25
@@ -49,10 +51,10 @@ class AgentConfig:
     confirm_callback: Callable[[str, str], bool] | None = None
 
     run_log_enabled: bool = True
-    """Persistir artefactos de la ejecución en runs/."""
+    """Persistir artefactos de la ejecucion en runs/."""
 
     runs_dir: str = "runs"
-    """Directorio base para logs de ejecución."""
+    """Directorio base para logs de ejecucion."""
 
     config_snapshot: dict[str, Any] | None = None
     """Config efectiva para config_snapshot.json (sin secretos)."""
@@ -61,7 +63,7 @@ class AgentConfig:
     """Si False, write_file y edit_file devuelven error sin ejecutar."""
 
     require_diff_preview: bool = True
-    """Si True, write/edit siempre muestran diff y piden confirmación (--yes no omite)."""
+    """Si True, write/edit siempre muestran diff y piden confirmacion (--yes no omite)."""
 
     security_profile: str = "standard"
     """Perfil de seguridad (strict, standard, dev, audit)."""
@@ -77,4 +79,7 @@ class AgentConfig:
 
     tool_settings: ToolSettings | None = None
     """Reglas allow/deny de settings.json (fusionadas global + proyecto).
-    Si es None, no se aplican reglas de settings y todo está permitido."""
+    Si es None, no se aplican reglas de settings y todo esta permitido."""
+
+    token_usage: TokenUsageState = field(default_factory=TokenUsageState)
+    """Contadores de tokens del turno y de la sesion actual."""

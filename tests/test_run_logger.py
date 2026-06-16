@@ -7,6 +7,7 @@ import pytest
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.run_logger import RunLogger, build_config_snapshot
+from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import ToolCall
 
@@ -100,6 +101,41 @@ def test_tool_call_logged_to_jsonl(tmp_path):
     entry = json.loads(lines[0])
     assert entry["tool"] == "ls"
     assert entry["round"] == 1
+
+
+def test_token_usage_logged_to_jsonl_and_summary(tmp_path):
+    runs = tmp_path / "runs"
+    selection = default_selection("test:1b")
+    agent = AgentConfig(cwd=str(tmp_path), runs_dir=str(runs), auto_confirm=True)
+    logger = RunLogger(
+        runs_dir=runs,
+        selection=selection,
+        agent_config=agent,
+        config_snapshot={},
+        user_prompt="x",
+    )
+    run_dir = logger.start()
+    logger.record_token_usage(
+        round_num=1,
+        usage=TokenUsage(
+            prompt_tokens=11,
+            completion_tokens=5,
+            total_tokens=16,
+            model="test:1b",
+        ),
+    )
+    logger.finalize(
+        status="success",
+        final_answer="ok",
+        conversation=[{"role": "user", "content": "x"}],
+    )
+
+    lines = (run_dir / "token_usage.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["prompt_tokens"] == 11
+    summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
+    assert summary["token_usage"]["total_tokens"] == 16
 
 
 def test_run_agent_writes_run_artifacts(tmp_path):

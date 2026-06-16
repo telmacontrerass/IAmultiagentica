@@ -78,6 +78,7 @@ def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
             "cwd": data.get("cwd", "?"),
             "updated_at": data.get("updated_at", "?"),
             "messages": messages,
+            "token_usage": data.get("token_usage") or {},
         },
     }, 200
 

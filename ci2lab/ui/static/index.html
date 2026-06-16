@@ -225,6 +225,17 @@
                 </p>
               </div>
             </div>
+            <button
+              id="tokenCounter"
+              class="token-counter"
+              type="button"
+              title="Ver como se calculan los tokens"
+            >
+              <span class="token-counter-label">Tokens</span>
+              <strong id="tokenTurnValue">Turno 0</strong>
+              <span id="tokenSessionValue">Conversacion 0</span>
+              <span class="token-arrow" aria-hidden="true">›</span>
+            </button>
           </section>
 
           <section class="chat-panel">
@@ -247,6 +258,67 @@
           </section>
 
           <pre id="commandPreview" class="sr-only">ci2lab --model &lt;modelo&gt; chat</pre>
+        </section>
+
+        <section id="tokenInfoView" class="view" hidden>
+          <section class="panel token-info-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Uso de tokens</p>
+                <h3 id="tokenInfoTitle">Contador de la conversacion</h3>
+              </div>
+              <button id="backToChatFromTokens" class="ghost-button" type="button">Volver al chat</button>
+            </div>
+            <div class="token-info-grid">
+              <article class="metric-card">
+                <span>Entrada ultimo turno</span>
+                <strong id="tokenInfoInput">0</strong>
+                <small>Prompt, historial y contexto enviado al modelo.</small>
+              </article>
+              <article class="metric-card">
+                <span>Salida ultimo turno</span>
+                <strong id="tokenInfoOutput">0</strong>
+                <small>Texto generado por el modelo.</small>
+              </article>
+              <article class="metric-card">
+                <span>Total ultimo turno</span>
+                <strong id="tokenInfoTurn">0</strong>
+                <small>Entrada + salida.</small>
+              </article>
+              <article class="metric-card">
+                <span>Total conversacion</span>
+                <strong id="tokenInfoSession">0</strong>
+                <small>Suma acumulada de llamadas del chat actual.</small>
+              </article>
+            </div>
+            <section class="token-info-section">
+              <h4>Calculo</h4>
+              <p id="tokenInfoFormula">
+                Total = tokens de entrada + tokens de salida. Los valores vienen del proveedor local cuando Ollama los devuelve.
+              </p>
+              <dl class="token-model-facts">
+                <div><dt>Modelo</dt><dd id="tokenInfoModel">--</dd></div>
+                <div><dt>Familia</dt><dd id="tokenInfoFamily">--</dd></div>
+                <div><dt>Contexto maximo</dt><dd id="tokenInfoContext">--</dd></div>
+                <div><dt>Modo de herramientas</dt><dd id="tokenInfoToolMode">--</dd></div>
+              </dl>
+            </section>
+            <section class="token-info-section">
+              <h4>Buenas practicas</h4>
+              <ul class="token-tips">
+                <li>Empieza un chat nuevo cuando el historial anterior ya no aporte contexto.</li>
+                <li>Resume documentos largos antes de pedir varias tareas sobre ellos.</li>
+                <li>Adjunta solo los archivos y fragmentos necesarios para la pregunta.</li>
+                <li>Evita pegar el mismo contenido varias veces en la conversacion.</li>
+              </ul>
+              <p class="meta">
+                Mas informacion:
+                <a href="https://docs.ollama.com/api/openai-compatibility" target="_blank" rel="noreferrer">Ollama OpenAI compatibility</a>
+                y
+                <a href="https://github.com/ollama/ollama/blob/main/docs/api.md" target="_blank" rel="noreferrer">Ollama API stats</a>.
+              </p>
+            </section>
+          </section>
         </section>
       </main>
     </div>

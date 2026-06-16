@@ -47,7 +47,7 @@ from ci2lab.harness.query.nudges import (
 )
 from ci2lab.harness.query.session_hooks import maybe_save_session
 from ci2lab.harness.run_logger import RunLogger
-from ci2lab.harness.session import delete_session, is_delete_session_request
+from ci2lab.harness.session import delete_session, is_delete_session_request, load_session
 from ci2lab.harness.security.policy import (
     POLICY_NUDGE_MESSAGE,
     POLICY_REPEAT_MESSAGE,
@@ -55,6 +55,7 @@ from ci2lab.harness.security.policy import (
     tool_call_signature,
 )
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
+from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 
@@ -96,6 +97,11 @@ def run_agent(
     on_round: Callable[[int, str], None] | None = None,
 ) -> str:
     cfg = config or AgentConfig(cwd=".")
+    cfg.token_usage.reset_turn()
+    if cfg.session_id:
+        stored_session = load_session(cfg.session_id)
+        if stored_session:
+            cfg.token_usage.hydrate_session(stored_session.get("token_usage"))
     if cfg.session_id and is_delete_session_request(user_prompt):
         deleted = delete_session(cfg.session_id)
         final_text = (
@@ -210,6 +216,12 @@ def run_agent(
                     raise err from exc
 
                 content = llm_response.content or ""
+                cfg.token_usage.record_call(llm_response.usage)
+                if run_log:
+                    run_log.record_token_usage(
+                        round_num=round_num,
+                        usage=llm_response.usage,
+                    )
                 if on_round:
                     on_round(round_num, content)
                 calls = resolve_tool_calls(
@@ -387,6 +399,7 @@ def run_agent(
             )
             maybe_save_session(cfg, history, selection)
 
+        console.print(f"[dim]{format_token_usage_line(cfg.token_usage)}[/dim]")
         return final_text
     except KeyboardInterrupt:
         status = "interrupted"

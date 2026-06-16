@@ -9,6 +9,7 @@ const state = {
   pullPolls: {},
   deleteTasks: {},
   deletePolls: {},
+  tokenUsage: null,
 };
 
 const STORAGE_KEY = "ci2lab.ui.state.v1";
@@ -38,11 +39,23 @@ const els = {
   messageInput: document.querySelector("#messageInput"),
   sendButton: document.querySelector("#sendButton"),
   commandPreview: document.querySelector("#commandPreview"),
-  technicalMode: document.querySelector("#technicalMode"),
-  technicalModeLabel: document.querySelector("#technicalModeLabel"),
   chatTools: document.querySelector(".chat-tools"),
   refreshButton: document.querySelector("#refreshButton"),
   chatRefreshButton: document.querySelector("#chatRefreshButton"),
+  tokenCounter: document.querySelector("#tokenCounter"),
+  tokenTurnValue: document.querySelector("#tokenTurnValue"),
+  tokenSessionValue: document.querySelector("#tokenSessionValue"),
+  tokenInfoTitle: document.querySelector("#tokenInfoTitle"),
+  tokenInfoInput: document.querySelector("#tokenInfoInput"),
+  tokenInfoOutput: document.querySelector("#tokenInfoOutput"),
+  tokenInfoTurn: document.querySelector("#tokenInfoTurn"),
+  tokenInfoSession: document.querySelector("#tokenInfoSession"),
+  tokenInfoFormula: document.querySelector("#tokenInfoFormula"),
+  tokenInfoModel: document.querySelector("#tokenInfoModel"),
+  tokenInfoFamily: document.querySelector("#tokenInfoFamily"),
+  tokenInfoContext: document.querySelector("#tokenInfoContext"),
+  tokenInfoToolMode: document.querySelector("#tokenInfoToolMode"),
+  backToChatFromTokens: document.querySelector("#backToChatFromTokens"),
   openChat: document.querySelector("#openChat"),
   newChat: document.querySelector("#newChat"),
   systemSummary: document.querySelector("#systemSummary"),
@@ -101,6 +114,57 @@ function formatBytes(value) {
   return `${(number / 1024 / 1024).toFixed(0)} MB`;
 }
 
+function emptyTokenUsage() {
+  return {
+    last_call: null,
+    last_turn: {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      model: "",
+      available: false,
+    },
+    session_total: {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      model: "",
+      available: false,
+    },
+    calls: [],
+  };
+}
+
+function normalizeTokenUsage(usage) {
+  const base = emptyTokenUsage();
+  if (!usage || typeof usage !== "object") return base;
+  const normalize = (part) => ({
+    ...base.last_turn,
+    ...(part && typeof part === "object" ? part : {}),
+    prompt_tokens: Number(part?.prompt_tokens || 0),
+    completion_tokens: Number(part?.completion_tokens || 0),
+    total_tokens: Number(part?.total_tokens || 0),
+    available: Boolean(part?.available) || Number(part?.total_tokens || 0) > 0,
+  });
+  return {
+    last_call: usage.last_call ? normalize(usage.last_call) : null,
+    last_turn: normalize(usage.last_turn),
+    session_total: normalize(usage.session_total),
+    calls: Array.isArray(usage.calls) ? usage.calls.map(normalize) : [],
+  };
+}
+
+function formatTokenCompact(value) {
+  const number = Number(value || 0);
+  if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`;
+  if (number >= 1000) return `${(number / 1000).toFixed(1)}k`;
+  return String(number);
+}
+
+function formatTokenExact(value) {
+  return new Intl.NumberFormat("es").format(Number(value || 0));
+}
+
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value || 0)));
 }
@@ -115,8 +179,8 @@ function persistUiState() {
     chatMessages: state.chatMessages,
     uploadedFiles: state.uploadedFiles,
     activeView: state.activeView,
+    tokenUsage: state.tokenUsage,
     selectedModel: els.modelSelect?.value || "",
-    technicalMode: Boolean(els.technicalMode?.checked),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
@@ -129,17 +193,16 @@ function restoreUiState() {
     state.currentSession = payload.currentSession || null;
     state.chatMessages = Array.isArray(payload.chatMessages) ? payload.chatMessages : [];
     state.uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
+    state.tokenUsage = normalizeTokenUsage(payload.tokenUsage);
     state.activeView = "homeView";
     if (payload.selectedModel) {
       els.modelSelect.dataset.pendingValue = payload.selectedModel;
-    }
-    if (els.technicalMode) {
-      els.technicalMode.checked = Boolean(payload.technicalMode);
     }
   } catch {
     state.currentSession = null;
     state.chatMessages = [];
     state.uploadedFiles = [];
+    state.tokenUsage = emptyTokenUsage();
     state.activeView = "homeView";
   }
 }
@@ -147,6 +210,7 @@ function restoreUiState() {
 function switchView(viewId, scrollTarget = null) {
   state.activeView = viewId;
   document.body.classList.toggle("chat-view-active", viewId === "chatView");
+  document.body.classList.toggle("token-info-view-active", viewId === "tokenInfoView");
   els.views.forEach((view) => {
     const active = view.id === viewId;
     view.hidden = !active;
@@ -168,6 +232,66 @@ function switchView(viewId, scrollTarget = null) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function currentModelInfo() {
+  const selected = els.modelSelect?.value || "";
+  return state.models.find((model) => (
+    model.id === selected || model.ollama_tag === selected
+  )) || null;
+}
+
+function applyTokenUsage(usage) {
+  state.tokenUsage = normalizeTokenUsage(usage);
+  updateTokenDisplay();
+  renderTokenInfo();
+  persistUiState();
+}
+
+function updateTokenDisplay() {
+  const usage = normalizeTokenUsage(state.tokenUsage);
+  state.tokenUsage = usage;
+  const turn = usage.last_turn;
+  const session = usage.session_total;
+  if (els.tokenTurnValue) {
+    setRollingText(els.tokenTurnValue, `Turno ${formatTokenCompact(turn.total_tokens)}`);
+  }
+  if (els.tokenSessionValue) {
+    setRollingText(els.tokenSessionValue, `Conversacion ${formatTokenCompact(session.total_tokens)}`);
+  }
+}
+
+function setRollingText(node, value) {
+  if (!node || node.textContent === value) return;
+  node.textContent = value;
+  node.classList.remove("token-roll");
+  void node.offsetWidth;
+  node.classList.add("token-roll");
+}
+
+function renderTokenInfo() {
+  if (!els.tokenInfoTitle) return;
+  const usage = normalizeTokenUsage(state.tokenUsage);
+  const turn = usage.last_turn;
+  const session = usage.session_total;
+  const model = currentModelInfo();
+  const modelName = model?.display_name || usage.session_total.model || els.modelSelect?.value || "Modelo local";
+  els.tokenInfoTitle.textContent = `Tokens de ${modelName}`;
+  els.tokenInfoInput.textContent = formatTokenExact(turn.prompt_tokens);
+  els.tokenInfoOutput.textContent = formatTokenExact(turn.completion_tokens);
+  els.tokenInfoTurn.textContent = formatTokenExact(turn.total_tokens);
+  els.tokenInfoSession.textContent = formatTokenExact(session.total_tokens);
+  els.tokenInfoFormula.textContent = turn.available
+    ? `Total del ultimo turno = ${formatTokenExact(turn.prompt_tokens)} entrada + ${formatTokenExact(turn.completion_tokens)} salida = ${formatTokenExact(turn.total_tokens)} tokens.`
+    : "Todavia no hay datos de tokens para este turno. Apareceran despues de la proxima respuesta del modelo si Ollama los devuelve.";
+  els.tokenInfoModel.textContent = model
+    ? `${model.display_name} (${model.ollama_tag})`
+    : (usage.session_total.model || els.modelSelect?.value || "--");
+  els.tokenInfoFamily.textContent = model?.family || "--";
+  els.tokenInfoContext.textContent = model?.context_length
+    ? `${formatTokenExact(model.context_length)} tokens`
+    : "--";
+  els.tokenInfoToolMode.textContent = model?.tool_mode || "--";
+}
+
 function renderChatMessages() {
   els.messages.innerHTML = "";
   if (!state.chatMessages.length) {
@@ -175,24 +299,37 @@ function renderChatMessages() {
     return;
   }
   state.chatMessages.forEach((message) => {
-    appendMessageNode(message.role, message.text, message.extraClass || "");
+    appendMessageNode(
+      message.role,
+      message.text,
+      message.extraClass || "",
+      { duration_ms: message.duration_ms },
+    );
   });
 }
 
-function appendMessageNode(role, text, extraClass = "") {
+function appendMessageNode(role, text, extraClass = "", meta = {}) {
   const empty = els.messages.querySelector(".empty-state");
   if (empty) empty.remove();
   const node = document.createElement("div");
   node.className = `message ${role} ${extraClass}`.trim();
-  node.textContent = text;
+  const body = document.createElement("div");
+  body.textContent = text;
+  node.appendChild(body);
+  if (meta.duration_ms) {
+    const detail = document.createElement("small");
+    detail.className = "message-meta";
+    detail.textContent = `Respondido en ${formatElapsed(meta.duration_ms)}`;
+    node.appendChild(detail);
+  }
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return node;
 }
 
-function addMessage(role, text, extraClass = "") {
-  state.chatMessages.push({ role, text, extraClass });
-  appendMessageNode(role, text, extraClass);
+function addMessage(role, text, extraClass = "", meta = {}) {
+  state.chatMessages.push({ role, text, extraClass, ...meta });
+  appendMessageNode(role, text, extraClass, meta);
   persistUiState();
 }
 
@@ -201,19 +338,35 @@ function addThinkingMessage() {
   if (empty) empty.remove();
   const node = document.createElement("div");
   node.className = "message assistant thinking";
+  const startedAt = Date.now();
   node.innerHTML = `
     <span class="thinking-loader" aria-hidden="true"></span>
-    <span>Pensando</span>
+    <span class="thinking-copy">
+      <span>Pensando</span>
+      <small class="thinking-time">0.0s</small>
+    </span>
   `;
+  const timer = node.querySelector(".thinking-time");
+  node._startedAt = startedAt;
+  node._timerId = window.setInterval(() => {
+    if (timer) timer.textContent = formatElapsed(Date.now() - startedAt);
+  }, 100);
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return node;
 }
 
 function removeThinkingMessage(node) {
+  if (node?._timerId) {
+    window.clearInterval(node._timerId);
+  }
   if (node && node.parentNode) {
     node.remove();
   }
+}
+
+function formatElapsed(ms) {
+  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 }
 
 function setEmptyChat() {
@@ -238,10 +391,9 @@ function buildSessionInfoMessage(payload) {
     `Tool mode: ${payload.tool_mode || "?"}`,
     `CWD: ${payload.cwd || "?"}`,
     `Sesion: ${payload.session_id || "?"}`,
-    `Modo UI: ${payload.ui_mode || "protegido"}`,
     `Seguridad: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
     "",
-    "Listo. Escribe tu peticion, adjunta archivos o activa Modo tecnico si necesitas herramientas.",
+    "Listo. Escribe tu peticion o adjunta archivos.",
   ].join("\n") + warnings;
 }
 
@@ -252,7 +404,6 @@ async function startChatSession({ forceNew = false } = {}) {
     method: "POST",
     body: JSON.stringify({
       model: els.modelSelect.value,
-      technical_mode: els.technicalMode.checked,
     }),
   });
   if (!result.ok) {
@@ -262,14 +413,14 @@ async function startChatSession({ forceNew = false } = {}) {
 
   state.currentSession = result.session_id;
   state.chatMessages = [];
+  applyTokenUsage(result.usage);
   addMessage("assistant", buildSessionInfoMessage(result), "session-info");
 }
 
 function updateCommandPreview() {
   const model = els.modelSelect.value || "<modelo>";
   if (els.commandPreview) {
-    const technicalFlag = els.technicalMode?.checked ? "--yes " : "";
-    els.commandPreview.textContent = `ci2lab ${technicalFlag}--model ${model} chat`;
+    els.commandPreview.textContent = `ci2lab --model ${model} chat`;
   }
 }
 
@@ -479,8 +630,16 @@ function renderModelSelect() {
     <option value="${escapeHtml(model.id)}">${escapeHtml(model.display_name)} ${model.installed ? "" : "(no instalado)"}</option>
   `).join("");
 
-  if (current && models.some((model) => model.id === current)) {
-    els.modelSelect.value = current;
+  const currentModel = models.find((model) => model.id === current || model.ollama_tag === current);
+  const firstInstalled = models.find((model) => model.installed);
+  const fallback = firstInstalled || models[0];
+  if (currentModel?.installed) {
+    els.modelSelect.value = currentModel.id;
+    delete els.modelSelect.dataset.pendingValue;
+  } else if (fallback) {
+    els.modelSelect.value = fallback.id;
+    delete els.modelSelect.dataset.pendingValue;
+  } else {
     delete els.modelSelect.dataset.pendingValue;
   }
   updateCommandPreview();
@@ -689,6 +848,7 @@ async function refreshAll() {
   state.installed = modelsPayload.installed || [];
   renderModelSelect();
   renderModels();
+  renderTokenInfo();
 
   const sessions = await api("/api/sessions");
   renderSessions(sessions.sessions || []);
@@ -724,6 +884,7 @@ async function sendMessage(event) {
   els.sendButton.textContent = "Pensando";
   persistUiState();
   const thinkingNode = addThinkingMessage();
+  const requestStartedAt = Date.now();
 
   try {
     const result = await api("/api/chat", {
@@ -733,7 +894,6 @@ async function sendMessage(event) {
         attachments: files,
         model,
         session_id: sessionId,
-        technical_mode: els.technicalMode.checked,
         stream: false,
       }),
     });
@@ -742,14 +902,30 @@ async function sendMessage(event) {
     removeThinkingMessage(thinkingNode);
 
     if (result.ok) {
-      addMessage("assistant", result.answer || "(sin respuesta)");
+      applyTokenUsage(result.usage);
+      addMessage(
+        "assistant",
+        result.answer || "(sin respuesta)",
+        "",
+        { duration_ms: Date.now() - requestStartedAt },
+      );
     } else {
-      addMessage("assistant", result.error || "Error desconocido", "error");
+      addMessage(
+        "assistant",
+        result.error || "Error desconocido",
+        "error",
+        { duration_ms: Date.now() - requestStartedAt },
+      );
     }
     refreshAll();
   } catch (error) {
     removeThinkingMessage(thinkingNode);
-    addMessage("assistant", error.message || "No se pudo contactar con Ci2Lab.", "error");
+    addMessage(
+      "assistant",
+      error.message || "No se pudo contactar con Ci2Lab.",
+      "error",
+      { duration_ms: Date.now() - requestStartedAt },
+    );
   } finally {
     els.sendButton.disabled = false;
     els.sendButton.textContent = "Enviar";
@@ -768,6 +944,7 @@ async function loadSessionIntoChat(sessionId) {
   state.currentSession = session.id;
   state.chatMessages = [];
   state.uploadedFiles = [];
+  applyTokenUsage(session.token_usage);
   renderAttachments();
   els.messages.innerHTML = "";
   const sessionModel = state.models.find((model) => (
@@ -938,6 +1115,7 @@ async function handleModelAction(event) {
 
 function handleModelSelectChange() {
   updateCommandPreview();
+  renderTokenInfo();
   persistUiState();
 }
 
@@ -958,11 +1136,15 @@ function bindEvents() {
     removeAttachment(button.dataset.removeAttachment);
   });
   els.modelSelect.addEventListener("change", handleModelSelectChange);
-  els.technicalMode.addEventListener("change", () => updateTechnicalModeState());
   els.modelSearch.addEventListener("input", renderModels);
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
   els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
+  els.tokenCounter?.addEventListener("click", () => {
+    renderTokenInfo();
+    switchView("tokenInfoView");
+  });
+  els.backToChatFromTokens?.addEventListener("click", () => switchView("chatView"));
   document.querySelectorAll("[data-help-toggle]").forEach((button) => {
     button.addEventListener("click", () => toggleControlHelp(button));
   });
@@ -970,6 +1152,8 @@ function bindEvents() {
     state.currentSession = null;
     state.chatMessages = [];
     state.uploadedFiles = [];
+    state.tokenUsage = emptyTokenUsage();
+    updateTokenDisplay();
     renderAttachments();
     setEmptyChat();
     persistUiState();
@@ -998,10 +1182,12 @@ function bindEvents() {
 }
 
 restoreUiState();
+state.tokenUsage = normalizeTokenUsage(state.tokenUsage);
+updateTokenDisplay();
 renderChatMessages();
 renderAttachments();
 bindEvents();
-updateTechnicalModeState({ persist: false });
+renderTokenInfo();
 switchView(state.activeView || "homeView");
 refreshAll().catch((error) => {
   els.ollamaStatus.textContent = "Error de UI";

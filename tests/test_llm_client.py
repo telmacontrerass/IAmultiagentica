@@ -38,7 +38,14 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
                 )
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"content": "ok"}}]},
+                json={
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {
+                        "prompt_tokens": 7,
+                        "completion_tokens": 2,
+                        "total_tokens": 9,
+                    },
+                },
                 request=request,
             )
 
@@ -49,6 +56,10 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
 
     assert isinstance(result, LLMResponse)
     assert result.content == "ok"
+    assert result.usage is not None
+    assert result.usage.prompt_tokens == 7
+    assert result.usage.completion_tokens == 2
+    assert result.usage.total_tokens == 9
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
 
@@ -78,6 +89,15 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
         def iter_lines(self):
             chunk = {"choices": [{"delta": {"content": "ok"}}]}
             yield f"data: {json.dumps(chunk)}"
+            usage = {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 1,
+                    "total_tokens": 4,
+                },
+            }
+            yield f"data: {json.dumps(usage)}"
             yield "data: [DONE]"
 
     class FakeClient:
@@ -112,5 +132,7 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
     assert events[0].text == "ok"
     assert isinstance(events[-1], LLMResponse)
     assert events[-1].content == "ok"
+    assert events[-1].usage is not None
+    assert events[-1].usage.total_tokens == 4
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"

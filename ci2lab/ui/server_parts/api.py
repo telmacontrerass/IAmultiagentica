@@ -111,7 +111,7 @@ def health_payload(state: Any) -> dict[str, Any]:
         "ollama_models_dir": install_info["models_dir"],
         "installed_count": len(installed),
         "workspace": state.runtime.workspace or os.getcwd(),
-        "model": state.runtime.model,
+        "model": None,
         "runs_dir": state.runtime.runs_dir,
         "local_only": True,
     }
@@ -122,13 +122,7 @@ def models_payload(state: Any) -> dict[str, Any]:
     installed_names = {item["name"] for item in installed}
     profile = None
     try:
-        profile, _ = _facade().prepare_session(
-            "",
-            force_model=state.runtime.model,
-            tool_mode_override=None,
-            backend_url=state.runtime.backend_url,
-            pull=False,
-        )
+        profile = _facade().scan_hardware()
     except Exception:  # noqa: BLE001
         profile = None
 
@@ -159,6 +153,9 @@ def models_payload(state: Any) -> dict[str, Any]:
             "benchmark_score": model.benchmark_score,
             "ram_inference_gb": model.ram_inference_gb,
             "vram_min_gb": model.vram_min_gb,
+            "context_length": model.context_length,
+            "tool_mode": model.tool_mode,
+            "supports_tools": model.supports_tools,
             "installed": is_catalog_model_installed(model.ollama_tag, installed_names),
             "fit_label": getattr(item, "fit_label", None),
             "recommendation_status": getattr(item, "recommendation_status", None),

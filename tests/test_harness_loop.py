@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
+from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.query.loop import _prepend_missing_reads
 from ci2lab.harness.types import ToolCall
 
@@ -17,6 +18,45 @@ def test_run_agent_single_turn_no_tools():
         result = run_agent("resume el proyecto", selection, config=config)
 
     assert "resumen" in result.lower()
+
+
+def test_run_agent_accumulates_token_usage_across_rounds():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "ls", "arguments": '{"path": "."}'},
+        }],
+        usage=TokenUsage(
+            prompt_tokens=10,
+            completion_tokens=3,
+            total_tokens=13,
+            model="test:1b",
+        ),
+    )
+    final = LLMResponse(
+        content="Hay varios archivos.",
+        tool_calls=[],
+        usage=TokenUsage(
+            prompt_tokens=20,
+            completion_tokens=4,
+            total_tokens=24,
+            model="test:1b",
+        ),
+    )
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent("lista archivos", selection, config=config)
+
+    assert config.token_usage.turn.prompt_tokens == 30
+    assert config.token_usage.turn.completion_tokens == 7
+    assert config.token_usage.turn.total_tokens == 37
+    assert config.token_usage.session.total_tokens == 37
 
 
 def test_run_agent_executes_tool_then_answers():

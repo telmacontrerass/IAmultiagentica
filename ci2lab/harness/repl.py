@@ -71,7 +71,13 @@ def run_repl(
             continue
         if line.lower() == "/save":
             if history:
-                path = save_session(sid, messages=history, model_tag=selection.ollama_tag, cwd=config.cwd)
+                path = save_session(
+                    sid,
+                    messages=history,
+                    model_tag=selection.ollama_tag,
+                    cwd=config.cwd,
+                    token_usage=config.token_usage.to_dict(),
+                )
                 console.print(f"[green]Guardado en {path}[/green]")
             else:
                 console.print("[yellow]Nada que guardar aún.[/yellow]")

@@ -11,6 +11,7 @@ import httpx
 
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMModelNotFoundError, classify_request_error
+from ci2lab.harness.token_usage import TokenUsage
 
 
 @dataclass
@@ -18,6 +19,7 @@ class LLMResponse:
     content: str
     tool_calls: list[dict[str, Any]]
     raw: dict[str, Any] = field(default_factory=dict)
+    usage: TokenUsage | None = None
 
 
 @dataclass
@@ -49,6 +51,8 @@ class LLMClient:
         }
         if tools and self.selection.supports_tools and self.selection.tool_mode == "native":
             payload["tools"] = tools
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         return payload
 
     def _model_candidates(self) -> list[str]:
@@ -63,11 +67,15 @@ class LLMClient:
         return unique
 
     @staticmethod
-    def _parse_message(choice: dict[str, Any]) -> LLMResponse:
+    def _parse_message(
+        choice: dict[str, Any],
+        *,
+        usage: TokenUsage | None = None,
+    ) -> LLMResponse:
         message = choice.get("message") or choice.get("delta") or {}
         content = message.get("content") or ""
         tool_calls = message.get("tool_calls") or []
-        return LLMResponse(content=content, tool_calls=tool_calls, raw=choice)
+        return LLMResponse(content=content, tool_calls=tool_calls, raw=choice, usage=usage)
 
     def chat(
         self,
@@ -88,7 +96,8 @@ class LLMClient:
                     response.raise_for_status()
                     data = response.json()
                     self.selection.ollama_tag = model
-                    return self._parse_message(data["choices"][0])
+                    usage = TokenUsage.from_provider(data.get("usage"), model=model)
+                    return self._parse_message(data["choices"][0], usage=usage)
                 except Exception as exc:
                     err = classify_request_error(
                         exc,
@@ -114,6 +123,7 @@ class LLMClient:
             for model in self._model_candidates():
                 content_parts: list[str] = []
                 tool_calls_acc: dict[int, dict[str, Any]] = {}
+                usage: TokenUsage | None = None
                 emitted_tokens = False
                 payload = self._build_payload(
                     messages,
@@ -139,6 +149,12 @@ class LLMClient:
                             except json.JSONDecodeError:
                                 continue
                             choices = chunk.get("choices") or []
+                            chunk_usage = TokenUsage.from_provider(
+                                chunk.get("usage"),
+                                model=model,
+                            )
+                            if chunk_usage is not None:
+                                usage = chunk_usage
                             if not choices:
                                 continue
                             delta = choices[0].get("delta") or {}
@@ -179,6 +195,7 @@ class LLMClient:
                     content="".join(content_parts),
                     tool_calls=tool_calls,
                     raw={},
+                    usage=usage,
                 )
                 return
 

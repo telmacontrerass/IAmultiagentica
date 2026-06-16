@@ -4,6 +4,7 @@ from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMModelNotFoundError
 from ci2lab.harness.session import load_session, save_session
+from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.hardware.profile import build_cpu_profile_for_testing
 from ci2lab.ui.server import (
     UIState,
@@ -44,6 +45,11 @@ def test_health_payload_reports_local_only(monkeypatch):
 
 def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path), model="qwen2.5-coder:1.5b"))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
 
     def fake_prepare_session(*args, **kwargs):
         return None, ModelSelection(
@@ -55,19 +61,27 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
 
-    payload = _chat_start(state, {"technical_mode": True})
+    payload = _chat_start(
+        state,
+        {"technical_mode": True, "model": "qwen2.5-coder-1.5b"},
+    )
 
     assert payload["ok"] is True
     assert payload["model"] == "qwen2.5-coder:1.5b"
     assert payload["tool_mode"] == "fenced"
     assert payload["cwd"] == str(tmp_path)
     assert payload["session_id"]
-    assert payload["ui_mode"] == "tecnico"
+    assert payload["ui_mode"] == "herramientas_activas"
 
 
 def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     state = UIState(runtime=Ci2LabConfig())
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "missing:1b"}], None),
+    )
 
     def fake_prepare_session(*args, **kwargs):
         return None, ModelSelection(
@@ -92,6 +106,11 @@ def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
 def test_chat_saves_pending_session_when_model_setup_fails(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     state = UIState(runtime=Ci2LabConfig())
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "missing:1b"}], None),
+    )
 
     def fail_prepare_session(*args, **kwargs):
         raise RuntimeError("modelo roto")
@@ -104,6 +123,22 @@ def test_chat_saves_pending_session_when_model_setup_fails(tmp_path, monkeypatch
     data = load_session(payload["session_id"])
     assert data is not None
     assert data["messages"][-1]["content"] == "hola"
+
+
+def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    state = UIState(runtime=Ci2LabConfig(model="llama3.1:8b"))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    payload = _chat(state, {"message": "hola", "model": ""})
+
+    assert payload["ok"] is False
+    assert "Selecciona un modelo instalado" in payload["error"]
+    assert "llama3.1:8b" not in payload["error"]
 
 
 def test_upload_file_saves_supported_file_inside_workspace(tmp_path):
@@ -205,6 +240,11 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     upload_dir.mkdir()
     (upload_dir / "doc.txt").write_text("contenido del pdf simulado", encoding="utf-8")
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
     captured: dict[str, str] = {}
 
     def fake_prepare_session(*args, **kwargs):
@@ -235,6 +275,47 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     assert "contenido del pdf simulado" in captured["prompt"]
 
 
+def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_agent(_prompt, _selection, *, config, **_kwargs):
+        assert config.auto_confirm is True
+        config.token_usage.record_call(
+            TokenUsage(
+                prompt_tokens=12,
+                completion_tokens=4,
+                total_tokens=16,
+                model="qwen2.5-coder:1.5b",
+            )
+        )
+        return "respuesta"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
+
+    payload = _chat(
+        state,
+        {"message": "hola", "model": "qwen2.5-coder:1.5b"},
+    )
+
+    assert payload["ok"] is True
+    assert payload["usage"]["last_turn"]["total_tokens"] == 16
+    assert payload["usage"]["session_total"]["prompt_tokens"] == 12
+
+
 def test_chat_answers_simple_english_document_summary_without_llm(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
     upload_dir = tmp_path / "ci2lab_uploads"
@@ -246,6 +327,11 @@ def test_chat_answers_simple_english_document_summary_without_llm(tmp_path, monk
         encoding="utf-8",
     )
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "gemma2:2b"}], None),
+    )
 
     def fail_run_agent(*args, **kwargs):
         raise AssertionError("run_agent should not be called for simple document summaries")
