@@ -53,6 +53,25 @@ def test_run_subagent_uses_isolated_system_context_and_role_tools():
     assert "isolated subagent context" in messages[0]["content"]
 
 
+def test_run_subagent_passes_user_selected_model_to_run_agent():
+    selection = default_selection("user-selected:7b")
+    config = AgentConfig(cwd=".")
+
+    with patch("ci2lab.harness.multiagent.runner.run_agent") as mock_run_agent:
+        mock_run_agent.return_value = "done"
+
+        run_subagent(
+            AgentRole.RESEARCHER,
+            "Research this",
+            selection,
+            config,
+        )
+
+    _, args, kwargs = mock_run_agent.mock_calls[0]
+    assert args[1] is selection
+    assert kwargs["messages"][0]["content"].count("user-selected:7b") >= 1
+
+
 def test_run_subagent_captures_internal_console_output(capsys):
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=True, session_id="session-1")

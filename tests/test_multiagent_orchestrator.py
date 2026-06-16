@@ -46,6 +46,7 @@ def test_should_run_security_review_for_sensitive_terms():
 
 def test_run_multi_agent_sequential_flow(monkeypatch):
     calls: list[tuple[AgentRole, int]] = []
+    selections = []
     outputs = {
         AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
         AgentRole.RESEARCHER: "Relevant Python file: ci2lab/harness/example.py",
@@ -56,6 +57,7 @@ def test_run_multi_agent_sequential_flow(monkeypatch):
 
     def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
         calls.append((role, attempt))
+        selections.append(selection)
         return _result(role, outputs[role], attempt=attempt)
 
     monkeypatch.setattr(
@@ -63,9 +65,10 @@ def test_run_multi_agent_sequential_flow(monkeypatch):
         fake_run_subagent,
     )
 
+    selected = default_selection("user-selected:7b")
     result = run_multi_agent(
         "Make a Python change",
-        default_selection("test:1b"),
+        selected,
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
 
@@ -76,6 +79,7 @@ def test_run_multi_agent_sequential_flow(monkeypatch):
         (AgentRole.VALIDATOR, 1),
         (AgentRole.REVIEWER, 1),
     ]
+    assert selections == [selected] * len(calls)
     assert "Selected implementer: python_coder" in result
     assert "pytest passed" in result
 
