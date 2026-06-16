@@ -18,7 +18,7 @@ def _repo_root() -> Path:
 
 
 def _mount_skill(workspace: Path, skill_name: str) -> None:
-    src = _repo_root() / "tests" / "fixtures" / "skills" / skill_name / "SKILL.md"
+    src = _repo_root() / "ci2lab" / "harness" / "skills" / "builtin" / skill_name / "SKILL.md"
     dst = workspace / ".ci2lab" / "skills" / skill_name
     dst.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst / "SKILL.md")

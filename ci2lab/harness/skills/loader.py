@@ -1,4 +1,4 @@
-"""Load workspace and user skills from SKILL.md files."""
+"""Load built-in, workspace and user skills from SKILL.md files."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class Skill:
     name: str
     description: str
     body: str
-    source: str  # "workspace" | "user"
+    source: str  # "builtin" | "workspace" | "user"
     path: Path
     when_to_use: str | None = None
     allowed_tools: list[str] = field(default_factory=list)
@@ -30,6 +30,10 @@ def _user_skills_root() -> Path:
 
 def _workspace_skills_root(cwd: str) -> Path:
     return Path(cwd).resolve() / ".ci2lab" / "skills"
+
+
+def _builtin_skills_root() -> Path:
+    return Path(__file__).resolve().parent / "builtin"
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -105,8 +109,9 @@ def _scan_skills_dir(root: Path, source: str) -> dict[str, Skill]:
 
 
 def load_skills(cwd: str) -> dict[str, Skill]:
-    """Load skills; workspace overrides user skills with the same name."""
+    """Load skills; user overrides built-in, workspace overrides both."""
     merged: dict[str, Skill] = {}
+    merged.update(_scan_skills_dir(_builtin_skills_root(), "builtin"))
     merged.update(_scan_skills_dir(_user_skills_root(), "user"))
     merged.update(_scan_skills_dir(_workspace_skills_root(cwd), "workspace"))
     return merged

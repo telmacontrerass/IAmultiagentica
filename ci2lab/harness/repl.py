@@ -158,7 +158,16 @@ def run_repl(
                 if skill_name in skills:
                     config.skill_allowed_tools = None
                     body = invoke_skill_for_repl(config, skill_name, skill_args)
-                    prompt = f"{body}\n\n---\nUser request: {skill_args or '(use skill instructions above)'}"
+                    user_request = skill_args.strip()
+                    if (
+                        user_request.startswith("http://")
+                        or user_request.startswith("https://")
+                    ) and " " not in user_request:
+                        user_request = f"URL: {user_request}"
+                    prompt = (
+                        f"{body}\n\n---\nUser request: "
+                        f"{user_request or '(use skill instructions above)'}"
+                    )
                     try:
                         last_user_prompt = line
                         run_agent(prompt, selection, config=config, messages=history)
