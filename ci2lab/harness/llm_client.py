@@ -18,6 +18,9 @@ class LLMResponse:
     content: str
     tool_calls: list[dict[str, Any]]
     raw: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, int] = field(default_factory=dict)
+    # {"prompt_tokens": N, "completion_tokens": N, "total_tokens": N}
+    # Relleno por LLMClient con los valores reales del tokenizador del modelo.
 
 
 @dataclass
@@ -47,6 +50,10 @@ class LLMClient:
             "max_tokens": self.selection.max_tokens,
             "stream": stream,
         }
+        if stream:
+            # Solicita a Ollama que incluya el recuento real de tokens
+            # en el chunk final del stream (antes de [DONE]).
+            payload["stream_options"] = {"include_usage": True}
         if tools and self.selection.supports_tools and self.selection.tool_mode == "native":
             payload["tools"] = tools
         return payload
@@ -88,7 +95,9 @@ class LLMClient:
                     response.raise_for_status()
                     data = response.json()
                     self.selection.ollama_tag = model
-                    return self._parse_message(data["choices"][0])
+                    resp = self._parse_message(data["choices"][0])
+                    resp.usage = data.get("usage") or {}
+                    return resp
                 except Exception as exc:
                     err = classify_request_error(
                         exc,
@@ -122,6 +131,7 @@ class LLMClient:
                     model=model,
                 )
 
+                usage_acc: dict[str, int] = {}
                 try:
                     with client.stream("POST", self.chat_url, json=payload) as response:
                         if getattr(response, "is_error", False):
@@ -138,6 +148,12 @@ class LLMClient:
                                 chunk = json.loads(data_str)
                             except json.JSONDecodeError:
                                 continue
+                            # Capturar usage del chunk final (Ollama lo incluye antes
+                            # de [DONE] cuando stream_options.include_usage=True).
+                            # Puede llegar en un chunk con choices vacío o en el último
+                            # chunk con finish_reason="stop".
+                            if "usage" in chunk:
+                                usage_acc = chunk["usage"]
                             choices = chunk.get("choices") or []
                             if not choices:
                                 continue
@@ -179,6 +195,7 @@ class LLMClient:
                     content="".join(content_parts),
                     tool_calls=tool_calls,
                     raw={},
+                    usage=usage_acc,
                 )
                 return
 

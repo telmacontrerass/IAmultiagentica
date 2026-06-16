@@ -135,6 +135,10 @@ def run_agent(
     log_error: str | None = None
     rounds_completed = 0
     hit_max_rounds = False
+    # Contadores de tokens reales (rellenados por Ollama tras cada llamada LLM).
+    tokens_prompt_last: int = 0       # prompt_tokens de la última ronda
+    tokens_prompt_peak: int = 0       # máximo de prompt_tokens visto en cualquier ronda
+    tokens_completion_total: int = 0  # completion_tokens acumulados (generación real)
 
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
@@ -210,6 +214,13 @@ def run_agent(
                     raise err from exc
 
                 content = llm_response.content or ""
+                if llm_response.usage:
+                    pt = llm_response.usage.get("prompt_tokens", 0)
+                    ct = llm_response.usage.get("completion_tokens", 0)
+                    tokens_prompt_last = pt
+                    tokens_completion_total += ct
+                    if pt > tokens_prompt_peak:
+                        tokens_prompt_peak = pt
                 if on_round:
                     on_round(round_num, content)
                 calls = resolve_tool_calls(
@@ -393,7 +404,22 @@ def run_agent(
         raise
     finally:
         close_mcp_manager(cfg.cwd)
+        if tokens_prompt_peak > 0:
+            ctx = selection.context_length
+            pct = tokens_prompt_peak / ctx * 100 if ctx else 0.0
+            color = "green" if pct < 60 else "yellow" if pct < 85 else "red"
+            console.print(
+                f"[dim]Tokens: {tokens_prompt_last:,} prompt | "
+                f"{tokens_completion_total:,} generados | "
+                f"[{color}]{tokens_prompt_peak:,}/{ctx:,} pico contexto "
+                f"({pct:.0f}%)[/{color}][/dim]"
+            )
         if run_log:
+            run_log.record_token_stats(
+                tokens_prompt_last=tokens_prompt_last,
+                tokens_prompt_peak=tokens_prompt_peak,
+                tokens_completion_total=tokens_completion_total,
+            )
             finalize_error = log_error
             if status == "max_rounds" and not finalize_error:
                 finalize_error = final_text or "Se alcanzó el límite de rondas sin respuesta final."
