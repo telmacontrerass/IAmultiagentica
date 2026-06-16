@@ -81,6 +81,24 @@ def test_run_agent_executes_tool_then_answers():
     assert client.chat.call_count == 2
 
 
+def test_run_agent_stream_true_prints_final_text_when_not_streamed():
+    selection = default_selection("test:1b")
+    selection.supports_tools = True
+    config = AgentConfig(cwd=".", stream=True, auto_confirm=True, run_log_enabled=False)
+
+    final = LLMResponse(content="hola mundo", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.call_llm", return_value=final),
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        result = run_agent("Responde exactamente: hola mundo", selection, config=config)
+
+    assert result == "hola mundo"
+    printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+    assert any("hola mundo" in text for text in printed_texts)
+
+
 def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)

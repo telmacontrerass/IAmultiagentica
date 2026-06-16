@@ -203,6 +203,7 @@ def run_agent(
             rounds_completed = round_num
             if run_log:
                 run_log.set_rounds_completed(round_num)
+            streamed_this_round = False
 
             history, summary_failures, compact_events = manage_context(
                 history,
@@ -245,6 +246,7 @@ def run_agent(
                 # solo mostramos contenido final cuando no hay tool calls.
                 stream_this_round = cfg.stream and not selection.supports_tools
                 _status("Thinking...")
+                streamed_this_round = stream_this_round
                 try:
                     llm_response = call_llm(
                         client,
@@ -361,10 +363,10 @@ def run_agent(
 
                 final_text = strip_tool_markup(content).strip() or content.strip()
                 _status("Finalizing answer...")
-                if final_text and not cfg.stream:
-                    console.print(final_text)
-                elif final_text and cfg.stream:
+                if final_text and streamed_this_round:
                     console.print()
+                elif final_text:
+                    console.print(final_text)
                 append_assistant_turn(history, final_text or content)
                 maybe_save_session(cfg, history, selection)
                 break
