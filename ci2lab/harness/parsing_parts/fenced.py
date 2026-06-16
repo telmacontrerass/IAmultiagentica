@@ -146,6 +146,12 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return data if isinstance(data, dict) else {"patch": body}
         except json.JSONDecodeError:
             return {"patch": body}
+    if tool in ("docx_to_pdf", "pdf_to_docx"):
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            return {}
     if tool == "grep":
         if "\n" not in body:
             return {"pattern": body}
@@ -181,6 +187,12 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return data if isinstance(data, dict) else {"url": body}
         except json.JSONDecodeError:
             return {"url": body.strip()}
+    if tool == "web_search":
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"query": body.strip()}
+        except json.JSONDecodeError:
+            return {"query": body.strip()}
     if tool == "ask_user":
         try:
             return json.loads(body)
@@ -234,4 +246,3 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {}
     return {"raw": body}
-

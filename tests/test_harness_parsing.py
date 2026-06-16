@@ -31,6 +31,30 @@ def test_parse_fenced_read_document():
     assert calls[0].arguments["path"] == "rubrica.docx"
 
 
+def test_parse_fenced_web_search_plain_query():
+    calls = parse_fenced_blocks("```web_search\nyesterday's soccer match Spain score\n```")
+    assert calls[0].name == "web_search"
+    assert calls[0].arguments["query"] == "yesterday's soccer match Spain score"
+
+
+def test_parse_fenced_docx_to_pdf_json_args():
+    calls = parse_fenced_blocks(
+        '```docx_to_pdf\n{"source": "Prueba/informe.docx", "output": "Prueba/informe.pdf"}\n```'
+    )
+    assert calls[0].name == "docx_to_pdf"
+    assert calls[0].arguments["source"] == "Prueba/informe.docx"
+    assert calls[0].arguments["output"] == "Prueba/informe.pdf"
+
+
+def test_parse_fenced_pdf_to_docx_json_args():
+    calls = parse_fenced_blocks(
+        '```pdf_to_docx\n{"source": "Prueba/informe.pdf", "output": "Prueba/informe.docx"}\n```'
+    )
+    assert calls[0].name == "pdf_to_docx"
+    assert calls[0].arguments["source"] == "Prueba/informe.pdf"
+    assert calls[0].arguments["output"] == "Prueba/informe.docx"
+
+
 def test_parse_xml_invoke():
     text = '<invoke name="bash"><parameter name="command">echo hi</parameter></invoke>'
     calls = parse_xml_blocks(text)

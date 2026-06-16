@@ -7,6 +7,7 @@ explicitly enabled by a later CLI/config integration.
 
 from __future__ import annotations
 
+from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.multiagent.runner import run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
@@ -56,6 +57,36 @@ _SECURITY_REVIEW_MARKERS = (
 
 def _combined_output(*results: SubAgentResult) -> str:
     return "\n\n".join(result.output for result in results if result.output)
+
+
+def _role_label(role: AgentRole, attempt: int) -> str:
+    suffix = f" attempt {attempt}" if attempt > 1 else ""
+    return f"{role.value}{suffix}"
+
+
+def _run_subagent_stage(
+    role: AgentRole,
+    task_prompt: str,
+    selection: ModelSelection,
+    config: AgentConfig,
+    *,
+    attempt: int = 1,
+) -> SubAgentResult:
+    label = _role_label(role, attempt)
+    console.print(f"[cyan][multi-agent][/cyan] starting {label}")
+    try:
+        result = run_subagent(
+            role,
+            task_prompt,
+            selection,
+            config,
+            attempt=attempt,
+        )
+    except Exception:
+        console.print(f"[red][multi-agent][/red] failed {label}")
+        raise
+    console.print(f"[green][multi-agent][/green] completed {label}")
+    return result
 
 
 def choose_coder_role(plan: SubAgentResult, research: SubAgentResult) -> AgentRole:
@@ -221,7 +252,7 @@ def run_multi_agent(
     cfg = config or AgentConfig(cwd=".")
     state = MultiAgentRun(user_prompt=user_prompt)
 
-    plan = run_subagent(
+    plan = _run_subagent_stage(
         AgentRole.PLANNER,
         _build_planner_prompt(user_prompt),
         selection,
@@ -229,7 +260,7 @@ def run_multi_agent(
     )
     state.add_result(plan)
 
-    research = run_subagent(
+    research = _run_subagent_stage(
         AgentRole.RESEARCHER,
         _build_research_prompt(user_prompt, plan),
         selection,
@@ -240,7 +271,7 @@ def run_multi_agent(
     coder_role = choose_coder_role(plan, research)
     state.selected_coder_role = coder_role
 
-    implementation = run_subagent(
+    implementation = _run_subagent_stage(
         coder_role,
         _build_implementation_prompt(user_prompt, plan, research),
         selection,
@@ -248,7 +279,7 @@ def run_multi_agent(
     )
     state.add_result(implementation)
 
-    validation = run_subagent(
+    validation = _run_subagent_stage(
         AgentRole.VALIDATOR,
         _build_validation_prompt(user_prompt, plan, research, implementation),
         selection,
@@ -259,7 +290,7 @@ def run_multi_agent(
     repair_attempt = 0
     while validation_failed(validation) and repair_attempt < max_repair_attempts:
         repair_attempt += 1
-        implementation = run_subagent(
+        implementation = _run_subagent_stage(
             coder_role,
             _build_repair_prompt(
                 user_prompt,
@@ -274,7 +305,7 @@ def run_multi_agent(
         )
         state.add_result(implementation)
 
-        validation = run_subagent(
+        validation = _run_subagent_stage(
             AgentRole.VALIDATOR,
             _build_validation_prompt(user_prompt, plan, research, implementation),
             selection,
@@ -283,7 +314,7 @@ def run_multi_agent(
         )
         state.add_result(validation)
 
-    review = run_subagent(
+    review = _run_subagent_stage(
         AgentRole.REVIEWER,
         _build_review_prompt(state),
         selection,
@@ -292,7 +323,7 @@ def run_multi_agent(
     state.add_result(review)
 
     if should_run_security_review(state):
-        security_review = run_subagent(
+        security_review = _run_subagent_stage(
             AgentRole.SECURITY_REVIEWER,
             _build_security_review_prompt(state),
             selection,

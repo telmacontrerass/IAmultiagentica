@@ -53,6 +53,14 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
                     break
         if "max_chars" in cleaned:
             cleaned["max_chars"] = _coerce_int(cleaned["max_chars"])
+    elif name == "web_search":
+        if "query" not in cleaned:
+            for alias in ("raw", "q", "search", "prompt"):
+                if alias in cleaned:
+                    cleaned["query"] = cleaned.pop(alias)
+                    break
+        if "max_results" in cleaned:
+            cleaned["max_results"] = _coerce_int(cleaned["max_results"])
     elif name == "ask_user":
         if "question" not in cleaned:
             for alias in ("message", "prompt", "query"):

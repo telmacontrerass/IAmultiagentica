@@ -84,7 +84,7 @@ def test_run_agent_executes_tool_then_answers():
 def test_run_agent_stream_true_prints_final_text_when_not_streamed():
     selection = default_selection("test:1b")
     selection.supports_tools = True
-    config = AgentConfig(cwd=".", stream=True, auto_confirm=True, run_log_enabled=False)
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
     final = LLMResponse(content="hola mundo", tool_calls=[])
 
@@ -97,6 +97,31 @@ def test_run_agent_stream_true_prints_final_text_when_not_streamed():
     assert result == "hola mundo"
     printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
     assert any("hola mundo" in text for text in printed_texts)
+
+
+def test_run_agent_prints_model_text_before_tool_execution():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    with_tool = LLMResponse(
+        content="I will inspect the workspace first.",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "ls", "arguments": '{"path": "."}'},
+        }],
+    )
+    final = LLMResponse(content="Hay varios archivos.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent("lista archivos", selection, config=config)
+
+    printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+    assert any("Modelo:" in text and "inspect the workspace" in text for text in printed_texts)
 
 
 def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
@@ -125,6 +150,82 @@ def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
         for m in second_turn_messages
         if isinstance(m, dict)
     )
+
+
+def test_run_agent_loop_break_nudge_restates_original_prompt():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    original = "tell me the score of spains soccer match from yesterday"
+    repeated_call = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "ls", "arguments": '{"path": "."}'},
+        }],
+    )
+    final = LLMResponse(content="No hay marcador en los resultados disponibles.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [repeated_call, repeated_call, repeated_call, final]
+        run_agent(original, selection, config=config)
+
+    fourth_round_messages = client.chat.call_args_list[3].args[0]
+    assert any(
+        m.get("role") == "user"
+        and "Petición original:" in str(m.get("content", ""))
+        and original in str(m.get("content", ""))
+        for m in fourth_round_messages
+    )
+
+
+def test_run_agent_forces_docx_conversion_after_repeated_discovery(tmp_path, monkeypatch):
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        run_log_enabled=False,
+    )
+    prueba = tmp_path / "Prueba"
+    prueba.mkdir()
+    (prueba / "piramides_egipto.docx").write_bytes(b"fake docx")
+    converted: dict[str, str] = {}
+
+    def fake_docx_to_pdf(cwd: str, source: str, output: str) -> str:
+        converted["cwd"] = cwd
+        converted["source"] = source
+        converted["output"] = output
+        return f"Creado {output} desde {source}"
+
+    monkeypatch.setattr(
+        "ci2lab.harness.tools.convert.docx_to_pdf",
+        fake_docx_to_pdf,
+    )
+
+    repeated_discovery = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "bash", "arguments": '{"command": "ls Prueba"}'},
+        }],
+    )
+    final = LLMResponse(content="Convertido a PDF.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [repeated_discovery, repeated_discovery, final]
+        result = run_agent(
+            "inside the Prueba folder, find the docx file and convert it to pdf",
+            selection,
+            config=config,
+        )
+
+    assert "Convertido" in result
+    assert converted["source"] == "Prueba/piramides_egipto.docx"
+    assert converted["output"] == "Prueba/piramides_egipto.pdf"
+    assert client.chat.call_count == 3
 
 
 def test_run_agent_reads_exact_pdf_request_without_model_round(tmp_path, monkeypatch):

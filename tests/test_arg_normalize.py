@@ -19,3 +19,13 @@ def test_read_file_coerces_numeric_strings():
     )
     assert args["offset"] == 10
     assert args["limit"] == 50
+
+
+def test_web_search_maps_raw_to_query():
+    args = normalize_args_for_tool(
+        "web_search",
+        {"raw": "yesterday's soccer match Spain score", "max_results": "3"},
+    )
+    assert args["query"] == "yesterday's soccer match Spain score"
+    assert args["max_results"] == 3
+    assert "raw" not in args

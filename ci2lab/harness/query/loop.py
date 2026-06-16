@@ -65,6 +65,89 @@ def _status(label: str) -> None:
 
 
 _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
+_DOCX_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.docx)\b", re.IGNORECASE)
+_LS_DIR_RE = re.compile(r"(?:^|\s)ls\s+(?P<path>[^\s;&|]+)")
+
+
+def _print_model_step(content: str, *, already_streamed: bool) -> None:
+    """Show non-tool text from a model round before executing tools."""
+    display = strip_tool_markup(content).strip()
+    if not display or already_streamed:
+        return
+    console.print(f"[dim]Modelo:[/dim] {display}")
+
+
+def _looks_like_docx_to_pdf_goal(user_prompt: str) -> bool:
+    text = user_prompt.lower()
+    convert_words = ("convert", "convierte", "convertir", "pasar", "export")
+    docx_words = ("docx", "word")
+    return (
+        any(word in text for word in convert_words)
+        and any(word in text for word in docx_words)
+        and "pdf" in text
+    )
+
+
+def _output_pdf_for_docx(source: str) -> str:
+    return re.sub(r"\.docx$", ".pdf", source, flags=re.IGNORECASE)
+
+
+def _first_docx_path_from_result(call: ToolCall, result: ToolResult) -> str | None:
+    if result.is_error:
+        return None
+    matches = [match.group("path") for match in _DOCX_PATH_RE.finditer(result.content)]
+    if not matches:
+        return None
+    for match in matches:
+        if "/" in match or "\\" in match:
+            return match
+
+    dirname: str | None = None
+    if call.name in {"ls", "tree", "glob"}:
+        dirname = str(call.arguments.get("path") or "").strip()
+    elif call.name == "bash":
+        command = str(call.arguments.get("command") or "")
+        ls_match = _LS_DIR_RE.search(command)
+        if ls_match:
+            dirname = ls_match.group("path").strip()
+
+    filename = matches[0]
+    if dirname and dirname not in {".", "./"}:
+        return f"{dirname.rstrip('/')}/{filename}"
+    return filename
+
+
+def _is_repeated_discovery_call(calls: list[ToolCall]) -> bool:
+    if len(calls) != 1:
+        return False
+    call = calls[0]
+    if call.name in {"ls", "glob", "grep", "tree"}:
+        return True
+    if call.name == "bash":
+        command = str(call.arguments.get("command") or "").strip().lower()
+        return command.startswith(("ls ", "find ", "dir "))
+    return False
+
+
+def _forced_docx_to_pdf_call(
+    user_prompt: str,
+    calls: list[ToolCall],
+    found_docx_path: str | None,
+) -> ToolCall | None:
+    if (
+        not found_docx_path
+        or not _looks_like_docx_to_pdf_goal(user_prompt)
+        or not _is_repeated_discovery_call(calls)
+    ):
+        return None
+    return ToolCall(
+        name="docx_to_pdf",
+        arguments={
+            "source": found_docx_path,
+            "output": _output_pdf_for_docx(found_docx_path),
+        },
+        call_id=f"auto_docx_to_pdf_{uuid.uuid4().hex[:8]}",
+    )
 
 
 def _redirect_fetch_to_search(
@@ -181,6 +264,7 @@ def run_agent(
     pdf_tool_nudges = 0
     pdf_tool_used = False
     web_search_used = False  # becomes True once web_search runs in this turn
+    found_docx_path: str | None = None
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -242,9 +326,7 @@ def run_agent(
 
                 trimmed = trim_messages(history, selection.context_length)
                 tools = get_function_schemas(cfg) if selection.supports_tools else None
-                # Evita mostrar texto tentativo en rondas con herramientas;
-                # solo mostramos contenido final cuando no hay tool calls.
-                stream_this_round = cfg.stream and not selection.supports_tools
+                stream_this_round = cfg.stream
                 _status("Thinking...")
                 streamed_this_round = stream_this_round
                 try:
@@ -294,6 +376,7 @@ def run_agent(
                     calls, user_prompt, web_search_used
                 )
                 if calls:
+                    _print_model_step(content, already_streamed=streamed_this_round)
                     # No conservar texto libre del modelo antes del resultado real de tools.
                     content = ""
             forced_pdf_call = (
@@ -371,6 +454,19 @@ def run_agent(
                 maybe_save_session(cfg, history, selection)
                 break
 
+            forced_conversion_call = _forced_docx_to_pdf_call(
+                user_prompt,
+                calls,
+                found_docx_path,
+            )
+            if forced_conversion_call:
+                console.print(
+                    "[yellow]Ya se encontró un .docx; avanzando a docx_to_pdf "
+                    "en vez de repetir la búsqueda.[/yellow]"
+                )
+                calls = [forced_conversion_call]
+                stuck_rounds = 0
+
             sig = "|".join(
                 f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
                 for c in calls
@@ -390,8 +486,11 @@ def run_agent(
                 history.append({
                     "role": "user",
                     "content": (
-                        "Deja de repetir la misma herramienta. "
-                        "Responde al usuario con lo que ya sabes."
+                        "Deja de repetir la misma herramienta. No respondas a esta "
+                        "instrucción ni expliques que vas a cambiar de estrategia. "
+                        "Responde ahora a la petición original del usuario usando "
+                        "los resultados de herramientas ya disponibles.\n\n"
+                        f"Petición original: {user_prompt}"
                     ),
                 })
                 continue
@@ -437,6 +536,10 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            for call, result in zip(calls, results, strict=False):
+                docx_path = _first_docx_path_from_result(call, result)
+                if docx_path:
+                    found_docx_path = docx_path
             direct_answer = document_direct_answer(results, user_prompt)
             if direct_answer:
                 final_text = direct_answer

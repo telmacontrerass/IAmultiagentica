@@ -84,6 +84,42 @@ def test_run_multi_agent_sequential_flow(monkeypatch):
     assert "pytest passed" in result
 
 
+def test_run_multi_agent_prints_subagent_progress(monkeypatch):
+    outputs = {
+        AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
+        AgentRole.RESEARCHER: "Relevant Python file: ci2lab/harness/example.py",
+        AgentRole.PYTHON_CODER: "Implemented Python change.",
+        AgentRole.VALIDATOR: "pytest passed",
+        AgentRole.REVIEWER: "No issues found.",
+    }
+    printed: list[str] = []
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.console.print",
+        lambda message: printed.append(str(message)),
+    )
+
+    run_multi_agent(
+        "Make a Python change",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert any("starting planner" in message for message in printed)
+    assert any("completed planner" in message for message in printed)
+    assert any("starting researcher" in message for message in printed)
+    assert any("completed python_coder" in message for message in printed)
+    assert any("starting validator" in message for message in printed)
+    assert any("completed reviewer" in message for message in printed)
+
+
 def test_run_multi_agent_repairs_with_same_coder(monkeypatch):
     calls: list[tuple[AgentRole, int]] = []
     validator_outputs = iter(["pytest failed: assertion error", "pytest passed"])
