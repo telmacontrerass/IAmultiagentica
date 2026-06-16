@@ -25,6 +25,7 @@ _GLOBAL_MARKERS = (
     "--tool-mode",
     "--session",
     "--no-log",
+    "--multi-agent",
     "evals run [--live]",
     "python -m ci2lab.evals.run",
     "read_file, ls, glob, grep",

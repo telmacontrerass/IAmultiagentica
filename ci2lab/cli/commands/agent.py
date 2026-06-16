@@ -52,7 +52,14 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
     _workspace_startup_hint(args, config.cwd)
 
     try:
-        run_agent(prompt, selection, config=config, messages=history)
+        if getattr(args, "multi_agent", False):
+            from ci2lab.harness.multiagent import run_multi_agent
+
+            final_text = run_multi_agent(prompt, selection, config=config)
+            if final_text:
+                console.print(final_text)
+        else:
+            run_agent(prompt, selection, config=config, messages=history)
     except LLMError as exc:
         console.print(f"[red]{exc.user_message}[/red]")
         console.print(

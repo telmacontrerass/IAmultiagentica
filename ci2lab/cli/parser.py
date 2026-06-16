@@ -64,6 +64,7 @@ def _print_global_help() -> None:
         "                                    ci2lab (legacy), opencode_experimental (lab)",
         "  --no-stream                       Desactivar streaming de tokens",
         "  --max-rounds N                    Maximo de vueltas del agente",
+        "  --multi-agent                     Usar orquestador secuencial de subagentes",
         "  --session ID                      Reanudar sesion en chat/agent",
         "  --runs-dir PATH                   Directorio de logs (default: runs)",
         "  --no-log                          No guardar artefactos en runs/",
@@ -131,6 +132,11 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
     p.add_argument("--max-rounds", type=int, default=None)
+    p.add_argument(
+        "--multi-agent",
+        action="store_true",
+        help="Usar orquestador secuencial de subagentes para una tarea",
+    )
     p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
     p.add_argument(
         "--runs-dir",
