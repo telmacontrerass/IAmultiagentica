@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 
 from ci2lab.console import console
 from ci2lab.config import Ci2LabConfig
@@ -17,6 +18,7 @@ _DOCUMENT_DEPENDENCIES = (
     ("docx", "Word/DOCX"),
     ("pptx", "PowerPoint/PPTX"),
     ("openpyxl", "Excel/XLSX"),
+    ("pdf2docx", "PDF a DOCX"),
 )
 
 
@@ -46,6 +48,15 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         console.print(
             f"[green]{_DOCTOR_OK}[/green] Lectura de documentos disponible ({labels})"
         )
+
+    if shutil.which("pandoc"):
+        console.print(f"[green]{_DOCTOR_OK}[/green] pandoc disponible en PATH")
+    else:
+        console.print(
+            f"[yellow]{_DOCTOR_WARN}[/yellow] pandoc no encontrado en PATH"
+            " (necesario para write_docx y docx_to_pdf)"
+        )
+        console.print("  Instálalo con: winget install JohnMacFarlane.Pandoc")
 
     base_url = runtime.backend_url.removesuffix("/v1").rstrip("/")
     try:

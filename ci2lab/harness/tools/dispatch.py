@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from ci2lab.harness.tools import ask_user as ask_user_tool
 from ci2lab.harness.tools import bash as bash_tool
+from ci2lab.harness.tools import convert as convert_tool
 from ci2lab.harness.tools import docx as docx_tool
 from ci2lab.harness.tools import filesystem as fs
 from ci2lab.harness.tools import git_tools
@@ -49,6 +50,8 @@ DISPATCH: dict[str, Callable[..., str]] = {
     "write_docx": lambda cfg, a: docx_tool.write_docx(cfg.cwd, a["path"], a["content"]),
     "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
     "fill_docx_template": lambda cfg, a: _run_fill_docx(cfg, a),
+    "docx_to_pdf": lambda cfg, a: convert_tool.docx_to_pdf(cfg.cwd, a["source"], a["output"]),
+    "pdf_to_docx": lambda cfg, a: convert_tool.pdf_to_docx(cfg.cwd, a["source"], a["output"]),
     "edit_file": lambda cfg, a: fs.edit_file(
         cfg.cwd,
         a["path"],

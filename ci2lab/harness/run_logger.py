@@ -72,6 +72,9 @@ class RunLogger:
     _tool_entries: list[ToolCallLogEntry] = field(default_factory=list, init=False)
     _token_entries: list[TokenUsageLogEntry] = field(default_factory=list, init=False)
     _rounds_completed: int = field(default=0, init=False)
+    _tokens_prompt_last: int = field(default=0, init=False, repr=False)
+    _tokens_prompt_peak: int = field(default=0, init=False, repr=False)
+    _tokens_completion_total: int = field(default=0, init=False, repr=False)
 
     @classmethod
     def maybe_create(
@@ -119,6 +122,18 @@ class RunLogger:
 
     def set_rounds_completed(self, round_num: int) -> None:
         self._rounds_completed = round_num
+
+    def record_token_stats(
+        self,
+        *,
+        tokens_prompt_last: int,
+        tokens_prompt_peak: int,
+        tokens_completion_total: int,
+    ) -> None:
+        """Registra los contadores de tokens reales devueltos por Ollama."""
+        self._tokens_prompt_last = tokens_prompt_last
+        self._tokens_prompt_peak = tokens_prompt_peak
+        self._tokens_completion_total = tokens_completion_total
 
     def record_tool_call(
         self,
@@ -201,6 +216,13 @@ class RunLogger:
         prompt_tokens = sum(e.prompt_tokens for e in self._token_entries)
         completion_tokens = sum(e.completion_tokens for e in self._token_entries)
         total_tokens = sum(e.total_tokens for e in self._token_entries)
+        ctx_len = self.selection.context_length or 0
+        tokens_available = self._tokens_prompt_peak > 0
+        context_used_pct = (
+            round(self._tokens_prompt_peak / ctx_len * 100, 1)
+            if tokens_available and ctx_len
+            else None
+        )
         summary = {
             "started_at": _iso(self._started_at),
             "ended_at": _iso(ended_at),
@@ -231,6 +253,14 @@ class RunLogger:
             "error": error,
             "user_prompt": self.user_prompt,
             "run_dir": str(self._run_dir),
+            "tokens": {
+                "available": tokens_available,
+                "prompt_last_round": self._tokens_prompt_last,
+                "prompt_peak": self._tokens_prompt_peak,
+                "completion_total": self._tokens_completion_total,
+                "context_length": ctx_len,
+                "context_used_pct": context_used_pct,
+            },
         }
         try:
             self._write_json("run_summary.json", summary)

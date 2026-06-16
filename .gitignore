@@ -1,34 +1,61 @@
-__pycache__/
+# OS / editor
 .DS_Store
-/prueba.pdf
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+# Python build / cache
+__pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
 dist/
 build/
+pip-wheel-metadata/
+
+# Virtual envs
 .venv/
 venv/
+.python-version
+
+# Tool caches
 .pytest_cache/
 .pytest_tmp/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Logs / local env / databases
 *.log
 .env
+.env.*
+*.db
+*.sqlite3
+
+# Runtime outputs
 runs/
 evals/results/
+artifacts/
+tmp/
+ci2lab_uploads/
+
+# Red-team / security audit generated data
 tests/fixtures/redteam_sandbox/
 audit/redteam_sandbox/
 audit/reports/
-
-# Generated harness / audit output
-artifacts/
-tmp/
-.ci2lab/
 audit/deterministic_claude/
 audit/live_claude/
-ci2lab_uploads/
+.ci2lab/
 
-# Local test leftovers and tool configuration
+# Local test leftovers / manual scratch files
+/prueba.pdf
+/drones-10-00361-v2.pdf
 /inside.txt
 generated_ok.md
 /opencode.json

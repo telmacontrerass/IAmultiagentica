@@ -25,6 +25,21 @@ Write-Host "==========================================" -ForegroundColor White
 Write-Host ""
 Info "Directorio del proyecto: $RepoDir"
 
+function Ensure-PathContains([string]$dir) {
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $parts = @()
+    if ($userPath) {
+        $parts = $userPath -split ";" | Where-Object { $_ -and $_.Trim() -ne "" }
+    }
+    if ($parts -contains $dir) {
+        return $false
+    }
+    $newPath = if ($userPath -and $userPath.Trim()) { "$userPath;$dir" } else { $dir }
+    [System.Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    $env:Path = $env:Path + ";" + $dir
+    return $true
+}
+
 # Paso 1: Python
 Step "1/5 - Comprobando Python"
 
@@ -128,8 +143,25 @@ Info "Ejecutando: pip install -e '.[dev]'"
 python -m pip install -e (Join-Path $RepoDir ".[dev]")
 Ok "Dependencias instaladas."
 
-# Paso 5: Verificacion
-Step "5/5 - Verificando la instalacion"
+# Paso 5: Comando global + verificacion
+Step "5/5 - Registrando comando global y verificando"
+
+$Ci2labBin = Join-Path $env:USERPROFILE ".ci2lab\bin"
+New-Item -ItemType Directory -Force -Path $Ci2labBin | Out-Null
+$LauncherCmd = Join-Path $Ci2labBin "ci2lab.cmd"
+$LauncherShim = @"
+@echo off
+setlocal
+"$RepoDir\.venv\Scripts\python.exe" -m ci2lab.cli %*
+"@
+$LauncherShim | Set-Content -Path $LauncherCmd -Encoding ASCII
+Ok "Lanzador global creado: $LauncherCmd"
+
+if (Ensure-PathContains $Ci2labBin) {
+    Ok "PATH de usuario actualizado con: $Ci2labBin"
+} else {
+    Ok "PATH ya contiene: $Ci2labBin"
+}
 
 Info "Ejecutando ci2lab doctor..."
 Write-Host ""
@@ -165,13 +197,14 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host "        Instalacion completada!           " -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Para usar ci2lab en una nueva terminal, activa primero el entorno:"
+Write-Host "  Ya puedes usar ci2lab desde cualquier carpeta (sin activar .venv)."
 Write-Host ""
-Write-Host "    .\.venv\Scripts\Activate.ps1" -ForegroundColor Cyan
+Write-Host "  Si no se reconoce el comando en una terminal antigua, abre una nueva."
 Write-Host ""
 Write-Host "  Luego puedes usar:"
 Write-Host "    ci2lab chat              -> conversacion interactiva" -ForegroundColor Cyan
 Write-Host "    ci2lab ui                -> interfaz web local" -ForegroundColor Cyan
+Write-Host "    ci2lab --workspace . chat -> usar el proyecto abierto en VS Code" -ForegroundColor Cyan
 Write-Host "    ci2lab models recommend  -> ver modelos disponibles" -ForegroundColor Cyan
 Write-Host ""
 Read-Host "Pulsa Enter para cerrar"

@@ -11,6 +11,7 @@ from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.session import (
     delete_session,
     is_delete_session_request,
+    list_sessions,
     load_session,
     new_session_id,
     save_session,
@@ -31,6 +32,8 @@ def run_repl(
     config.session_id = sid
 
     history = None
+    last_user_prompt: str | None = None
+    last_error_message: str | None = None
     if session_id:
         data = load_session(session_id)
         if data:
@@ -46,7 +49,8 @@ def run_repl(
         "Escribe tu petición. [bold]Ctrl+V[/bold] pega; [bold]Enter[/bold] envía; "
         "[bold]Alt+Enter[/bold] nueva línea.\n"
         "Comandos: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
-        "[bold]/delete[/bold], "
+        "[bold]/delete[/bold], [bold]/sessions[/bold], [bold]/resume ID[/bold], "
+        "[bold]/retry[/bold], [bold]/why[/bold], "
         "[bold]/skills[/bold], [bold]/skill-name[/bold]",
         title="Agente local",
         border_style="blue",
@@ -63,6 +67,48 @@ def run_repl(
             continue
         if line.lower() in {"/exit", "/quit", "exit", "quit"}:
             break
+        if line.lower() == "/sessions":
+            rows = list_sessions()
+            if not rows:
+                console.print("[dim]No hay sesiones guardadas.[/dim]")
+            else:
+                for row in rows[:20]:
+                    console.print(
+                        f"- [bold]{row['id']}[/bold] · {row['model']} · "
+                        f"{row['updated_at'][:19]} · {row['cwd']}"
+                    )
+            continue
+        if line.lower().startswith("/resume "):
+            target = line.split(maxsplit=1)[1].strip()
+            if not target:
+                console.print("[yellow]Uso: /resume <session_id>[/yellow]")
+                continue
+            data = load_session(target)
+            if not data:
+                console.print(f"[yellow]No existe la sesión {target}.[/yellow]")
+                continue
+            sid = target
+            config.session_id = sid
+            history = data.get("messages")
+            console.print(f"[green]Sesión {sid} cargada.[/green]")
+            continue
+        if line.lower() == "/retry":
+            if not last_user_prompt:
+                console.print("[yellow]No hay petición anterior para reintentar.[/yellow]")
+                continue
+            line = last_user_prompt
+            console.print(f"[dim]Reintentando: {line}[/dim]")
+        if line.lower() == "/why":
+            if not last_error_message:
+                console.print("[dim]No hay fallo reciente registrado.[/dim]")
+            else:
+                console.print(
+                    "[yellow]Último error:[/yellow]\n"
+                    f"{last_error_message}\n\n"
+                    "[dim]Siguiente paso: corrige el problema y usa /retry "
+                    "o ejecuta `ci2lab doctor`.[/dim]"
+                )
+            continue
         if line.lower() == "/clear":
             history = [
                 {"role": "system", "content": history[0]["content"]}
@@ -114,9 +160,12 @@ def run_repl(
                     body = invoke_skill_for_repl(config, skill_name, skill_args)
                     prompt = f"{body}\n\n---\nUser request: {skill_args or '(use skill instructions above)'}"
                     try:
+                        last_user_prompt = line
                         run_agent(prompt, selection, config=config, messages=history)
+                        last_error_message = None
                     except LLMError as exc:
                         console.print(f"[red]{exc.user_message}[/red]")
+                        last_error_message = exc.user_message
                         continue
                     data = load_session(sid)
                     if data:
@@ -125,12 +174,15 @@ def run_repl(
 
         try:
             config.skill_allowed_tools = None
+            last_user_prompt = line
             if history is None:
                 run_agent(line, selection, config=config)
             else:
                 run_agent(line, selection, config=config, messages=history)
+            last_error_message = None
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
+            last_error_message = exc.user_message
             continue
 
         data = load_session(sid)

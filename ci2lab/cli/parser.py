@@ -64,7 +64,7 @@ def _print_global_help() -> None:
         "                                    ci2lab (legacy), opencode_experimental (lab)",
         "  --no-stream                       Desactivar streaming de tokens",
         "  --max-rounds N                    Maximo de vueltas del agente",
-        "  --session ID                      Reanudar sesion en chat",
+        "  --session ID                      Reanudar sesion en chat/agent",
         "  --runs-dir PATH                   Directorio de logs (default: runs)",
         "  --no-log                          No guardar artefactos en runs/",
         "",

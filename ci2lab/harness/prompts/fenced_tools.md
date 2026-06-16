@@ -86,6 +86,22 @@ Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 {"path": "informe.docx", "content": "# Título\n\nPárrafo del documento.\n"}
 ```
 
+### docx_to_pdf (convert Word to PDF)
+
+Convert a `.docx` file to PDF using pandoc. Requires pandoc on PATH and a PDF engine (e.g. wkhtmltopdf, weasyprint).
+
+```docx_to_pdf
+{"source": "informe.docx", "output": "informe.pdf"}
+```
+
+### pdf_to_docx (convert PDF to Word)
+
+Convert a `.pdf` file to a `.docx` file using pdf2docx. Preserves layout, images, and tables.
+
+```pdf_to_docx
+{"source": "documento.pdf", "output": "documento.docx"}
+```
+
 ### edit_file (replace exact text in an existing file)
 
 The body MUST be a single JSON object with `path`, `old_string`, and `new_string`. `old_string` must match the existing text exactly.
@@ -179,4 +195,4 @@ https://docs.python.org/3/library/random.html
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

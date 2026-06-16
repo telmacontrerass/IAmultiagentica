@@ -228,7 +228,15 @@ def resolve_workspace(
         raise ValueError(
             "Usa solo uno de --workspace o --cwd, no ambos."
         )
-    raw = workspace or cwd or config.workspace or os.getcwd()
+    raw = workspace or cwd or config.workspace
+    if not raw:
+        # Portable startup: when ci2lab is launched from its own repository,
+        # allow an explicit workspace hint so models can be used "from anywhere".
+        hinted = os.environ.get("CI2LAB_WORKSPACE_HINT", "").strip()
+        if hinted and os.path.isdir(hinted):
+            raw = hinted
+    if not raw:
+        raw = os.getcwd()
     return os.path.abspath(raw)
 
 

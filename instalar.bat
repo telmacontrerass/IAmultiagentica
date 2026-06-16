@@ -6,6 +6,7 @@ cd /d "%~dp0"
 
 echo.
 echo  Iniciando instalador de ci2lab...
+echo  (Al terminar, ci2lab quedara disponible desde cualquier carpeta)
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0instalar.ps1"

@@ -12,7 +12,15 @@ from ci2lab.harness.tools.write_preview import WritePreview
 from ci2lab.harness.types import AgentConfig
 
 WRITE_TOOLS = frozenset(
-    {"write_file", "edit_file", "write_docx", "apply_patch", "fill_docx_template"}
+    {
+        "write_file",
+        "edit_file",
+        "write_docx",
+        "apply_patch",
+        "fill_docx_template",
+        "docx_to_pdf",
+        "pdf_to_docx",
+    }
 )
 
 

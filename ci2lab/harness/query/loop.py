@@ -59,6 +59,10 @@ from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 
+def _status(label: str) -> None:
+    console.print(f"[dim cyan]{label}[/dim cyan]")
+
+
 def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
     """Read an edited file first when the user explicitly requested that sequence."""
     if not calls or not re.search(r"\bread\b", user_prompt, re.IGNORECASE):
@@ -141,6 +145,10 @@ def run_agent(
     log_error: str | None = None
     rounds_completed = 0
     hit_max_rounds = False
+    # Contadores de tokens reales (rellenados por Ollama tras cada llamada LLM).
+    tokens_prompt_last: int = 0       # prompt_tokens de la última ronda
+    tokens_prompt_peak: int = 0       # máximo de prompt_tokens visto en cualquier ronda
+    tokens_completion_total: int = 0  # completion_tokens acumulados (generación real)
 
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
@@ -193,6 +201,7 @@ def run_agent(
                 # Evita mostrar texto tentativo en rondas con herramientas;
                 # solo mostramos contenido final cuando no hay tool calls.
                 stream_this_round = cfg.stream and not selection.supports_tools
+                _status("Thinking...")
                 try:
                     llm_response = call_llm(
                         client,
@@ -216,11 +225,17 @@ def run_agent(
                     raise err from exc
 
                 content = llm_response.content or ""
-                cfg.token_usage.record_call(llm_response.usage)
+                usage = llm_response.usage
+                cfg.token_usage.record_call(usage)
+                if usage and usage.available:
+                    tokens_prompt_last = usage.prompt_tokens
+                    tokens_completion_total += usage.completion_tokens
+                    if usage.prompt_tokens > tokens_prompt_peak:
+                        tokens_prompt_peak = usage.prompt_tokens
                 if run_log:
                     run_log.record_token_usage(
                         round_num=round_num,
-                        usage=llm_response.usage,
+                        usage=usage,
                     )
                 if on_round:
                     on_round(round_num, content)
@@ -239,6 +254,7 @@ def run_agent(
                 else None
             )
             if forced_pdf_call:
+                _status("Reading files...")
                 console.print(
                     "[yellow]El modelo siguió sin usar herramientas; ejecutando "
                     "read_file automáticamente para el PDF mencionado.[/yellow]"
@@ -298,6 +314,7 @@ def run_agent(
                     continue
 
                 final_text = strip_tool_markup(content).strip() or content.strip()
+                _status("Finalizing answer...")
                 if final_text and not cfg.stream:
                     console.print(final_text)
                 elif final_text and cfg.stream:
@@ -332,6 +349,10 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
+            if any(c.name in {"read_file", "read_document", "grep", "glob", "ls"} for c in calls):
+                _status("Reading files...")
+            else:
+                _status("Running tools...")
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
@@ -369,6 +390,7 @@ def run_agent(
             direct_answer = document_direct_answer(results, user_prompt)
             if direct_answer:
                 final_text = direct_answer
+                _status("Finalizing answer...")
                 console.print(final_text)
                 append_assistant_turn(history, final_text)
                 maybe_save_session(cfg, history, selection)
@@ -406,7 +428,22 @@ def run_agent(
         raise
     finally:
         close_mcp_manager(cfg.cwd)
+        if tokens_prompt_peak > 0:
+            ctx = selection.context_length
+            pct = tokens_prompt_peak / ctx * 100 if ctx else 0.0
+            color = "green" if pct < 60 else "yellow" if pct < 85 else "red"
+            console.print(
+                f"[dim]Tokens: {tokens_prompt_last:,} prompt | "
+                f"{tokens_completion_total:,} generados | "
+                f"[{color}]{tokens_prompt_peak:,}/{ctx:,} pico contexto "
+                f"({pct:.0f}%)[/{color}][/dim]"
+            )
         if run_log:
+            run_log.record_token_stats(
+                tokens_prompt_last=tokens_prompt_last,
+                tokens_prompt_peak=tokens_prompt_peak,
+                tokens_completion_total=tokens_completion_total,
+            )
             finalize_error = log_error
             if status == "max_rounds" and not finalize_error:
                 finalize_error = final_text or "Se alcanzó el límite de rondas sin respuesta final."
