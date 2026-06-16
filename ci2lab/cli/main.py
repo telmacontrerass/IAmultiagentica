@@ -43,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
+    if (
+        args.command == "agent"
+        and getattr(args, "multi_agent", False)
+        and args.agent_prompt == "chat"
+    ):
+        return _run_repl(args, runtime)
     if args.command == "agent":
         return _run_turn(args.agent_prompt, args, runtime)
     if args.command == "chat":

@@ -14,6 +14,7 @@ from ci2lab.cli.parser import _is_global_help_request, _print_global_help
 _GLOBAL_MARKERS = (
     'ci2lab "peticion"',
     "ci2lab chat",
+    "ci2lab --multi-agent chat",
     "ci2lab sessions",
     "ci2lab doctor",
     "ci2lab hardware",

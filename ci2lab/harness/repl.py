@@ -7,6 +7,7 @@ from rich.panel import Panel
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
+from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.session import (
     delete_session,
@@ -27,6 +28,7 @@ def run_repl(
     config: AgentConfig,
     *,
     session_id: str | None = None,
+    multi_agent: bool = False,
 ) -> None:
     sid = session_id or new_session_id()
     config.session_id = sid
@@ -44,6 +46,7 @@ def run_repl(
         f"[bold]ci2lab REPL[/bold]\n"
         f"Modelo: {selection.ollama_tag}\n"
         f"Tool mode: {selection.tool_mode}\n"
+        f"Modo: {'multi-agent' if multi_agent else 'classic'}\n"
         f"CWD: {config.cwd}\n"
         f"Sesión: {sid}\n\n"
         "Escribe tu petición. [bold]Ctrl+V[/bold] pega; [bold]Enter[/bold] envía; "
@@ -170,7 +173,27 @@ def run_repl(
                     )
                     try:
                         last_user_prompt = line
-                        run_agent(prompt, selection, config=config, messages=history)
+                        if multi_agent:
+                            final_text = run_multi_agent(
+                                prompt,
+                                selection,
+                                config=config,
+                            )
+                            if final_text:
+                                console.print(final_text)
+                                history = (history or []) + [
+                                    {"role": "user", "content": prompt},
+                                    {"role": "assistant", "content": final_text},
+                                ]
+                                save_session(
+                                    sid,
+                                    messages=history,
+                                    model_tag=selection.ollama_tag,
+                                    cwd=config.cwd,
+                                    token_usage=config.token_usage.to_dict(),
+                                )
+                        else:
+                            run_agent(prompt, selection, config=config, messages=history)
                         last_error_message = None
                     except LLMError as exc:
                         console.print(f"[red]{exc.user_message}[/red]")
@@ -184,7 +207,22 @@ def run_repl(
         try:
             config.skill_allowed_tools = None
             last_user_prompt = line
-            if history is None:
+            if multi_agent:
+                final_text = run_multi_agent(line, selection, config=config)
+                if final_text:
+                    console.print(final_text)
+                    history = (history or []) + [
+                        {"role": "user", "content": line},
+                        {"role": "assistant", "content": final_text},
+                    ]
+                    save_session(
+                        sid,
+                        messages=history,
+                        model_tag=selection.ollama_tag,
+                        cwd=config.cwd,
+                        token_usage=config.token_usage.to_dict(),
+                    )
+            elif history is None:
                 run_agent(line, selection, config=config)
             else:
                 run_agent(line, selection, config=config, messages=history)

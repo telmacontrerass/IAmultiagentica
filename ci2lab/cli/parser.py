@@ -41,6 +41,7 @@ def _print_global_help() -> None:
         "Comandos principales:",
         '  ci2lab agent "peticion"           Una tarea y sale',
         "  ci2lab chat                       Modo interactivo (REPL)",
+        "  ci2lab --multi-agent chat         REPL con orquestador de subagentes",
         "  ci2lab tools qwen:1.8b            Chat sencillo con herramientas",
         "  ci2lab qwen:1.8b tools            Lo mismo, forma abreviada",
         "  ci2lab sessions [--json]          Lista sesiones guardadas",

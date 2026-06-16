@@ -81,7 +81,12 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     config = _build_config(runtime, args, selection)
     _workspace_startup_hint(args, config.cwd)
     try:
-        run_repl(selection, config, session_id=args.session)
+        run_repl(
+            selection,
+            config,
+            session_id=args.session,
+            multi_agent=getattr(args, "multi_agent", False),
+        )
     except LLMError as exc:
         console.print(f"[red]{exc.user_message}[/red]")
         console.print(

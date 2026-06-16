@@ -55,3 +55,34 @@ def test_agent_multi_agent_prints_final_answer(capsys):
         assert main(["agent", "--multi-agent", "hello"]) == 0
 
     assert "multi final" in capsys.readouterr().out
+
+
+def test_multi_agent_chat_command_uses_repl_alias():
+    with patch("ci2lab.cli.main._run_repl", return_value=0) as run_repl:
+        assert main([
+            "agent",
+            "--multi-agent",
+            "--model",
+            "qwen2.5-coder:7b",
+            "chat",
+        ]) == 0
+
+    run_repl.assert_called_once()
+    args = run_repl.call_args.args[0]
+    assert args.multi_agent is True
+    assert args.model == "qwen2.5-coder:7b"
+
+
+def test_global_multi_agent_chat_uses_repl():
+    with patch("ci2lab.cli.main._run_repl", return_value=0) as run_repl:
+        assert main([
+            "--multi-agent",
+            "--model",
+            "qwen2.5-coder:7b",
+            "chat",
+        ]) == 0
+
+    run_repl.assert_called_once()
+    args = run_repl.call_args.args[0]
+    assert args.multi_agent is True
+    assert args.model == "qwen2.5-coder:7b"
