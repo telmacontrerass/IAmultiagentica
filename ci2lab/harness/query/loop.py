@@ -58,6 +58,10 @@ from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 
+def _status(label: str) -> None:
+    console.print(f"[dim cyan]{label}[/dim cyan]")
+
+
 def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
     """Read an edited file first when the user explicitly requested that sequence."""
     if not calls or not re.search(r"\bread\b", user_prompt, re.IGNORECASE):
@@ -191,6 +195,7 @@ def run_agent(
                 # Evita mostrar texto tentativo en rondas con herramientas;
                 # solo mostramos contenido final cuando no hay tool calls.
                 stream_this_round = cfg.stream and not selection.supports_tools
+                _status("Thinking...")
                 try:
                     llm_response = call_llm(
                         client,
@@ -238,6 +243,7 @@ def run_agent(
                 else None
             )
             if forced_pdf_call:
+                _status("Reading files...")
                 console.print(
                     "[yellow]El modelo siguió sin usar herramientas; ejecutando "
                     "read_file automáticamente para el PDF mencionado.[/yellow]"
@@ -297,6 +303,7 @@ def run_agent(
                     continue
 
                 final_text = strip_tool_markup(content).strip() or content.strip()
+                _status("Finalizing answer...")
                 if final_text and not cfg.stream:
                     console.print(final_text)
                 elif final_text and cfg.stream:
@@ -331,6 +338,10 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
+            if any(c.name in {"read_file", "read_document", "grep", "glob", "ls"} for c in calls):
+                _status("Reading files...")
+            else:
+                _status("Running tools...")
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
@@ -368,6 +379,7 @@ def run_agent(
             direct_answer = document_direct_answer(results, user_prompt)
             if direct_answer:
                 final_text = direct_answer
+                _status("Finalizing answer...")
                 console.print(final_text)
                 append_assistant_turn(history, final_text)
                 maybe_save_session(cfg, history, selection)

@@ -23,6 +23,18 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=11
 
+ensure_line_in_file() {
+    local line="$1"
+    local file="$2"
+    mkdir -p "$(dirname "$file")"
+    touch "$file"
+    if ! grep -Fq "$line" "$file"; then
+        printf "\n%s\n" "$line" >> "$file"
+        return 0
+    fi
+    return 1
+}
+
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════╗${RESET}"
 echo -e "${BOLD}║       Instalador de ci2lab               ║${RESET}"
@@ -111,8 +123,33 @@ pip install --quiet --upgrade pip
 pip install -e "$REPO_DIR/.[dev]"
 ok "Dependencias instaladas."
 
-# ── Paso 5: Verificación ───────────────────────────────────────────────────────
-step "5/5 · Verificando la instalación"
+# ── Paso 5: Comando global + verificación ─────────────────────────────────────
+step "5/5 · Registrando comando global y verificando la instalación"
+
+CI2LAB_BIN="$HOME/.local/bin"
+mkdir -p "$CI2LAB_BIN"
+LAUNCHER="$CI2LAB_BIN/ci2lab"
+cat > "$LAUNCHER" <<EOF
+#!/usr/bin/env bash
+"$REPO_DIR/.venv/bin/python" -m ci2lab.cli "\$@"
+EOF
+chmod +x "$LAUNCHER"
+ok "Lanzador global creado: $LAUNCHER"
+
+if [[ ":$PATH:" != *":$CI2LAB_BIN:"* ]]; then
+    export PATH="$CI2LAB_BIN:$PATH"
+fi
+
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+    RC_FILE="$HOME/.zshrc"
+else
+    RC_FILE="$HOME/.bashrc"
+fi
+if ensure_line_in_file 'export PATH="$HOME/.local/bin:$PATH"' "$RC_FILE"; then
+    ok "PATH persistente actualizado en $RC_FILE"
+else
+    ok "PATH ya configurado en $RC_FILE"
+fi
 
 info "Ejecutando ci2lab doctor..."
 echo ""
@@ -143,12 +180,13 @@ echo -e "${BOLD}${GREEN}╔═════════════════�
 echo -e "${BOLD}${GREEN}║        ¡Instalación completada!          ║${RESET}"
 echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════╝${RESET}"
 echo ""
-echo "  Para usar ci2lab, activa primero el entorno virtual:"
+echo "  Ya puedes usar ci2lab desde cualquier carpeta (sin activar .venv)."
 echo ""
-echo -e "    ${CYAN}source .venv/bin/activate${RESET}"
+echo "  Si no se reconoce el comando en una terminal antigua, abre una nueva."
 echo ""
 echo "  Luego puedes usar:"
 echo -e "    ${CYAN}ci2lab chat${RESET}              → conversación interactiva"
 echo -e "    ${CYAN}ci2lab ui${RESET}                → interfaz web local"
+echo -e "    ${CYAN}ci2lab --workspace . chat${RESET} -> usar el proyecto abierto en VS Code"
 echo -e "    ${CYAN}ci2lab models recommend${RESET}  → ver modelos disponibles"
 echo ""
