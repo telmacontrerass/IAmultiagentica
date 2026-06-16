@@ -93,6 +93,25 @@ def test_builtin_research_skills_available() -> None:
     skills = load_skills(".")
     assert "research_web_doc_review" in skills
     assert "research_web_vs_repo" in skills
+    assert "live_fact_lookup" in skills
+
+
+def test_live_fact_lookup_skill_contract() -> None:
+    skills = load_skills(".")
+    skill = skills["live_fact_lookup"]
+    assert skill.source == "builtin"
+    assert skill.allowed_tools == ["web_search", "web_fetch"]
+
+    cfg = AgentConfig(cwd=".")
+    prompt = invoke_skill(cfg, "live_fact_lookup", "latest stable Python version")
+    assert cfg.skill_allowed_tools == frozenset({"web_search", "web_fetch"})
+    assert "web_search" in prompt
+    assert "web_fetch" in prompt
+    assert "plain text" in prompt.lower()
+    assert '{"text": "..."}' in prompt
+    assert "Fuente:" in prompt
+    assert "Do not invent" in prompt
+    assert "not present in search/fetch" in prompt.lower()
 
 
 def test_repl_slash_skill_forwards_url_argument(tmp_path: Path) -> None:

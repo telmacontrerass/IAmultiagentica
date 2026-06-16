@@ -167,6 +167,16 @@ Inspect a line range from a text file:
 https://docs.python.org/3/library/random.html
 ```
 
+### web_search
+
+Use this when the user asks for live/current info and did not provide a URL:
+
+```web_search
+{"query": "Spain vs Cape Verde latest result", "max_results": 5}
+```
+
+Then fetch selected sources with `web_fetch`.
+
 ### notebook_edit
 
 ```notebook_edit
@@ -195,4 +205,4 @@ https://docs.python.org/3/library/random.html
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_search`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

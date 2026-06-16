@@ -150,6 +150,14 @@ def _forced_docx_to_pdf_call(
     )
 
 
+_NO_INTERNET_RE = re.compile(
+    r"(no tengo acceso a internet|"
+    r"no puedo buscar en tiempo real|"
+    r"no tengo capacidad de acceder a la web)",
+    re.IGNORECASE,
+)
+
+
 def _redirect_fetch_to_search(
     calls: list[ToolCall],
     user_prompt: str,
@@ -265,6 +273,7 @@ def run_agent(
     pdf_tool_used = False
     web_search_used = False  # becomes True once web_search runs in this turn
     found_docx_path: str | None = None
+    web_capability_nudge_sent = False
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -326,6 +335,13 @@ def run_agent(
 
                 trimmed = trim_messages(history, selection.context_length)
                 tools = get_function_schemas(cfg) if selection.supports_tools else None
+                web_search_available = bool(
+                    tools
+                    and any(
+                        (t.get("function") or {}).get("name") == "web_search"
+                        for t in tools
+                    )
+                )
                 stream_this_round = cfg.stream
                 _status("Thinking...")
                 streamed_this_round = stream_this_round
@@ -445,6 +461,24 @@ def run_agent(
                     continue
 
                 final_text = strip_tool_markup(content).strip() or content.strip()
+                if (
+                    final_text
+                    and not calls
+                    and web_search_available
+                    and not web_capability_nudge_sent
+                    and _NO_INTERNET_RE.search(final_text)
+                ):
+                    web_capability_nudge_sent = True
+                    append_assistant_turn(history, final_text or content)
+                    history.append({
+                        "role": "user",
+                        "content": (
+                            "You can use `web_search` for live info without a URL, "
+                            "then `web_fetch` for selected sources."
+                        ),
+                    })
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 _status("Finalizing answer...")
                 if final_text and streamed_this_round:
                     console.print()

@@ -124,6 +124,34 @@ def test_run_agent_prints_model_text_before_tool_execution():
     assert any("Modelo:" in text and "inspect the workspace" in text for text in printed_texts)
 
 
+def test_run_agent_nudges_web_search_once_after_no_internet_reply():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    first = LLMResponse(
+        content="No tengo acceso a internet en tiempo real ahora mismo.",
+        tool_calls=[],
+    )
+    second = LLMResponse(content="Perfecto, usaré web_search.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [first, second]
+        result = run_agent("dime un resultado live", selection, config=config)
+
+    assert "usaré web_search" in result.lower() or "usare web_search" in result.lower()
+    assert client.chat.call_count == 2
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    nudge_messages = [
+        m.get("content", "")
+        for m in second_turn_messages
+        if isinstance(m, dict) and m.get("role") == "user"
+    ]
+    assert sum(
+        "You can use `web_search` for live info without a URL" in str(msg)
+        for msg in nudge_messages
+    ) == 1
+
+
 def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
@@ -208,7 +236,7 @@ def test_run_agent_forces_docx_conversion_after_repeated_discovery(tmp_path, mon
         content="",
         tool_calls=[{
             "id": "c1",
-            "function": {"name": "bash", "arguments": '{"command": "ls Prueba"}'},
+            "function": {"name": "ls", "arguments": '{"path": "Prueba"}'},
         }],
     )
     final = LLMResponse(content="Convertido a PDF.", tool_calls=[])
