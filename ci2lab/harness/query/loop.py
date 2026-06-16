@@ -44,6 +44,7 @@ from ci2lab.harness.query.nudges import (
     pdf_tool_result_followup,
     pdf_tool_retry_hint,
     summarize_args,
+    web_fetch_failed_nudge,
 )
 from ci2lab.harness.query.session_hooks import maybe_save_session
 from ci2lab.harness.run_logger import RunLogger
@@ -61,6 +62,47 @@ from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 def _status(label: str) -> None:
     console.print(f"[dim cyan]{label}[/dim cyan]")
+
+
+_EXPLICIT_URL_RE = re.compile(r"https?://\S+")
+
+
+def _redirect_fetch_to_search(
+    calls: list[ToolCall],
+    user_prompt: str,
+    web_search_used: bool,
+) -> list[ToolCall]:
+    """Replace web_fetch with web_search when the model invented a URL.
+
+    If web_search hasn't run yet AND the user didn't supply an explicit URL in
+    their prompt, redirect every web_fetch call to web_search so the model
+    discovers the correct URL rather than guessing one from memory.
+    """
+    if web_search_used:
+        return calls
+    user_urls = set(_EXPLICIT_URL_RE.findall(user_prompt))
+    redirected: list[ToolCall] = []
+    changed = False
+    for call in calls:
+        if call.name == "web_fetch":
+            url = str(call.arguments.get("url", ""))
+            if url not in user_urls:
+                redirected.append(
+                    ToolCall(
+                        name="web_search",
+                        arguments={"query": user_prompt, "max_results": 5},
+                        call_id=call.call_id,
+                    )
+                )
+                changed = True
+                continue
+        redirected.append(call)
+    if changed:
+        console.print(
+            "[yellow]web_fetch redirigido a web_search "
+            "(el modelo invento una URL; buscando primero).[/yellow]"
+        )
+    return redirected
 
 
 def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
@@ -138,6 +180,7 @@ def run_agent(
     summary_failures = 0
     pdf_tool_nudges = 0
     pdf_tool_used = False
+    web_search_used = False  # becomes True once web_search runs in this turn
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -245,6 +288,9 @@ def run_agent(
                     tool_mode=selection.tool_mode,
                 )
                 calls = _prepend_missing_reads(calls, user_prompt)
+                calls = _redirect_fetch_to_search(
+                    calls, user_prompt, web_search_used
+                )
                 if calls:
                     # No conservar texto libre del modelo antes del resultado real de tools.
                     content = ""
@@ -329,6 +375,8 @@ def run_agent(
             )
             if any(is_pdf_read_tool_call(c.name, c.arguments) for c in calls):
                 pdf_tool_used = True
+            if any(c.name == "web_search" for c in calls):
+                web_search_used = True
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -407,6 +455,12 @@ def run_agent(
             pdf_followup = pdf_tool_result_followup(results, user_prompt)
             if pdf_followup:
                 history.append({"role": "user", "content": pdf_followup})
+            web_nudge = web_fetch_failed_nudge(results)
+            if web_nudge:
+                console.print(
+                    "[yellow]web_fetch falló; redirigiendo al modelo hacia web_search.[/yellow]"
+                )
+                history.append({"role": "user", "content": web_nudge})
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True

@@ -82,6 +82,10 @@ DISPATCH: dict[str, Callable[..., str]] = {
         a["url"],
         a.get("max_chars", 80_000),
     ),
+    "web_search": lambda cfg, a: web_tool.web_search(
+        a["query"],
+        a.get("max_results", 5),
+    ),
     "notebook_edit": lambda cfg, a: notebook_tool.notebook_edit(
         cfg.cwd,
         a["path"],

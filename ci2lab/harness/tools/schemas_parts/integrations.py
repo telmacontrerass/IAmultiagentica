@@ -8,10 +8,36 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
     {
             "type": "function",
             "function": {
+                "name": "web_search",
+                "description": (
+                    "Search the web for up-to-date information using a plain text query. "
+                    "Use when you need current docs, news, or any information without knowing the URL. "
+                    "Returns titles, URLs, and snippets from DuckDuckGo."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Number of results to return (1-10, default 5)",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+    {
+            "type": "function",
+            "function": {
                 "name": "web_fetch",
                 "description": (
-                    "Fetch a public http(s) URL and return text (HTML is stripped). "
-                    "Use for docs or reference pages, not for secrets."
+                    "Fetch a specific public http(s) URL and return its text (HTML is stripped). "
+                    "Only use when you already have a confirmed URL. "
+                    "If you do not have a URL, use web_search first."
                 ),
                 "parameters": {
                     "type": "object",

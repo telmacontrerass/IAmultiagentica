@@ -1,4 +1,4 @@
-"""Fetch remote web content (read-only)."""
+"""Fetch remote web content and web search (read-only)."""
 
 from __future__ import annotations
 
@@ -61,3 +61,40 @@ def web_fetch(url: str, max_chars: int = _DEFAULT_MAX_CHARS) -> str:
     if content_type:
         title += f" ({content_type.split(';')[0]})"
     return f"{title}\n\n{body}"
+
+
+_DEFAULT_SEARCH_RESULTS = 5
+
+
+def web_search(query: str, max_results: int = _DEFAULT_SEARCH_RESULTS) -> str:
+    """Search the web via DuckDuckGo and return title + URL + snippet per result."""
+    if not query or not str(query).strip():
+        return "Error: query is required"
+
+    limit = max(1, min(int(max_results), 10))
+
+    try:
+        from ddgs import DDGS  # lazy import — optional dependency
+    except ImportError:
+        return (
+            "Error: ddgs is not installed. "
+            "Run: pip install ddgs"
+        )
+
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(str(query).strip(), max_results=limit))
+    except Exception as exc:  # noqa: BLE001
+        return f"Error searching DuckDuckGo: {exc}"
+
+    if not results:
+        return f"No results found for: {query!r}"
+
+    lines: list[str] = [f"Search results for: {query!r}\n"]
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "(no title)")
+        href = r.get("href", "")
+        body = r.get("body", "")
+        lines.append(f"{i}. **{title}**\n   {href}\n   {body}")
+
+    return "\n\n".join(lines)

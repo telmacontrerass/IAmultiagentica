@@ -20,6 +20,7 @@ TOOL_NAMES = frozenset({
     "todo_write",
     "ask_user",
     "web_fetch",
+    "web_search",
     "notebook_edit",
     "git_status",
     "git_diff",

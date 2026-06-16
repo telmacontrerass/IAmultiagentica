@@ -75,6 +75,27 @@ def forced_pdf_read_tool_call(user_prompt: str) -> ToolCall | None:
     )
 
 
+def web_fetch_failed_nudge(results: list[ToolResult]) -> str | None:
+    """Return a redirect hint when web_fetch fails with an HTTP error.
+
+    The model tends to construct URLs from memory (which are often wrong or
+    blocked).  When that happens, nudge it to use web_search instead.
+    """
+    _HTTP_ERROR_CODES = {"400", "401", "403", "404", "429", "500", "502", "503"}
+    for result in results:
+        if result.tool_name != "web_fetch" or not result.is_error:
+            continue
+        if any(code in result.content for code in _HTTP_ERROR_CODES):
+            return (
+                f"web_fetch failed: {result.content}\n\n"
+                "The URL was likely wrong or the site blocks direct access. "
+                "Do NOT guess or retry a different URL. "
+                "Instead, call web_search with a plain text query to find the "
+                "correct URL, then optionally fetch that specific result."
+            )
+    return None
+
+
 def pdf_tool_result_followup(
     results: list[ToolResult],
     original_user_prompt: str,
