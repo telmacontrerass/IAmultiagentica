@@ -53,6 +53,12 @@ class MultiAgentRun:
     final_answer: str | None = None
     failed_phase: str | None = None
     error: str | None = None
+    # Pre-orchestration intent routing (set by classify_multiagent_intent).
+    intent: str | None = None
+    requires_write: bool | None = None
+    planned_phases: list[str] = field(default_factory=list)
+    intent_reason: str | None = None
+    intent_confidence: str | None = None
 
     def add_result(self, result: SubAgentResult) -> None:
         self.results.append(result)

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.multiagent.intent import classify_multiagent_intent
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
 from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
@@ -195,18 +196,21 @@ def _trace_payload(
     ended_at: datetime,
 ) -> dict[str, object]:
     phases = [_phase_trace(result) for result in run.results]
-    planned_phases: list[str] = [
+    planned_phases: list[str] = list(run.planned_phases) or [
         AgentRole.PLANNER.value,
         AgentRole.RESEARCHER.value,
     ]
-    if run.selected_coder_role is not None:
-        planned_phases.extend([
-            run.selected_coder_role.value,
-            AgentRole.VALIDATOR.value,
-            AgentRole.REVIEWER.value,
-        ])
-        if any(result.role == AgentRole.SECURITY_REVIEWER for result in run.results):
-            planned_phases.append(AgentRole.SECURITY_REVIEWER.value)
+    # Resolve the generic "coder" placeholder to the concrete implementer role.
+    if run.selected_coder_role is not None and "coder" in planned_phases:
+        planned_phases[planned_phases.index("coder")] = run.selected_coder_role.value
+    if (
+        any(
+            result.role == AgentRole.SECURITY_REVIEWER and result.status != "skipped"
+            for result in run.results
+        )
+        and AgentRole.SECURITY_REVIEWER.value not in planned_phases
+    ):
+        planned_phases.append(AgentRole.SECURITY_REVIEWER.value)
     executed_phases = [result.role.value for result in run.results if result.status != "skipped"]
     failed_phase = next(
         (result.role.value for result in run.results if result.status in {"failed", "timeout", "blocked"}),
@@ -231,8 +235,12 @@ def _trace_payload(
         "model_id": selection.model_id,
         "tool_mode": selection.tool_mode,
         "workspace": config.cwd,
-        "review_only": None,
-        "read_only": None,
+        "intent": run.intent,
+        "requires_write": run.requires_write,
+        "intent_reason": run.intent_reason,
+        "intent_confidence": run.intent_confidence,
+        "review_only": run.intent == "review_only",
+        "read_only": run.intent == "read_only_answer",
         "selected_coder_role": run.selected_coder_role.value if run.selected_coder_role else None,
         "planned_phases": planned_phases,
         "executed_phases": executed_phases,
@@ -345,11 +353,12 @@ def _build_planner_prompt(user_prompt: str) -> str:
     )
 
 
-def _build_research_prompt(user_prompt: str, plan: SubAgentResult) -> str:
+def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str:
+    plan_text = plan.output if plan else "No explicit plan was produced for this task."
     return (
         "Inspect the repository context needed for this plan. Summarize relevant "
         "files, APIs, constraints, and risks. Do not modify files.\n\n"
-        f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}"
+        f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}"
     )
 
 
@@ -463,6 +472,21 @@ def run_multi_agent(
     """Run the first sequential multi-agent flow."""
     cfg = config or AgentConfig(cwd=".")
     state = MultiAgentRun(user_prompt=user_prompt)
+
+    # Deterministic pre-orchestration intent gate (NVIDIA-style intent routing).
+    # Decide which phases are allowed *before* building or executing any phase.
+    decision = classify_multiagent_intent(user_prompt)
+    planned_phases = list(decision.allowed_phases)
+    state.intent = decision.intent.value
+    state.requires_write = decision.requires_write
+    state.intent_reason = decision.reason
+    state.intent_confidence = decision.confidence
+    state.planned_phases = planned_phases
+    console.print(
+        f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
+        f"requires_write={decision.requires_write} phases={planned_phases}"
+    )
+
     started_at = datetime.now(timezone.utc)
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
@@ -470,106 +494,116 @@ def run_multi_agent(
 
     final_status = "success"
     try:
-        plan_prompt = _build_planner_prompt(user_prompt)
-        plan = _execute_phase(
-            state,
-            AgentRole.PLANNER,
-            plan_prompt,
-            selection,
-            cfg,
-        )
-
-        research_prompt = _build_research_prompt(user_prompt, plan)
-        research = _execute_phase(
-            state,
-            AgentRole.RESEARCHER,
-            research_prompt,
-            selection,
-            cfg,
-        )
-
-        coder_role = choose_coder_role(plan, research)
-        state.selected_coder_role = coder_role
-
-        implementation_prompt = _build_implementation_prompt(user_prompt, plan, research)
-        implementation = _execute_phase(
-            state,
-            coder_role,
-            implementation_prompt,
-            selection,
-            cfg,
-        )
-
-        validation_prompt = _build_validation_prompt(user_prompt, plan, research, implementation)
-        validation = _execute_phase(
-            state,
-            AgentRole.VALIDATOR,
-            validation_prompt,
-            selection,
-            cfg,
-        )
-
-        repair_attempt = 0
-        while validation_failed(validation) and repair_attempt < max_repair_attempts:
-            repair_attempt += 1
-            repair_prompt = _build_repair_prompt(
-                user_prompt,
-                plan,
-                research,
-                implementation,
-                validation,
+        plan: SubAgentResult | None = None
+        if "planner" in planned_phases:
+            plan_prompt = _build_planner_prompt(user_prompt)
+            plan = _execute_phase(
+                state,
+                AgentRole.PLANNER,
+                plan_prompt,
+                selection,
+                cfg,
             )
+
+        research: SubAgentResult | None = None
+        if "researcher" in planned_phases:
+            research_prompt = _build_research_prompt(user_prompt, plan)
+            research = _execute_phase(
+                state,
+                AgentRole.RESEARCHER,
+                research_prompt,
+                selection,
+                cfg,
+            )
+
+        # Implementation + validation only run when the intent allows writes.
+        if "coder" in planned_phases:
+            coder_role = choose_coder_role(plan, research)
+            state.selected_coder_role = coder_role
+
+            implementation_prompt = _build_implementation_prompt(user_prompt, plan, research)
             implementation = _execute_phase(
                 state,
                 coder_role,
-                repair_prompt,
+                implementation_prompt,
                 selection,
                 cfg,
-                attempt=repair_attempt + 1,
             )
 
-            validation_prompt = _build_validation_prompt(
-                user_prompt,
-                plan,
-                research,
-                implementation,
-            )
-            validation = _execute_phase(
-                state,
-                AgentRole.VALIDATOR,
-                validation_prompt,
-                selection,
-                cfg,
-                attempt=repair_attempt + 1,
-            )
+            if "validator" in planned_phases:
+                validation_prompt = _build_validation_prompt(
+                    user_prompt, plan, research, implementation
+                )
+                validation = _execute_phase(
+                    state,
+                    AgentRole.VALIDATOR,
+                    validation_prompt,
+                    selection,
+                    cfg,
+                )
 
-        review_prompt = _build_review_prompt(state)
-        review = _execute_phase(
-            state,
-            AgentRole.REVIEWER,
-            review_prompt,
-            selection,
-            cfg,
-        )
+                repair_attempt = 0
+                while validation_failed(validation) and repair_attempt < max_repair_attempts:
+                    repair_attempt += 1
+                    repair_prompt = _build_repair_prompt(
+                        user_prompt,
+                        plan,
+                        research,
+                        implementation,
+                        validation,
+                    )
+                    implementation = _execute_phase(
+                        state,
+                        coder_role,
+                        repair_prompt,
+                        selection,
+                        cfg,
+                        attempt=repair_attempt + 1,
+                    )
 
-        if should_run_security_review(state):
-            security_prompt = _build_security_review_prompt(state)
+                    validation_prompt = _build_validation_prompt(
+                        user_prompt,
+                        plan,
+                        research,
+                        implementation,
+                    )
+                    validation = _execute_phase(
+                        state,
+                        AgentRole.VALIDATOR,
+                        validation_prompt,
+                        selection,
+                        cfg,
+                        attempt=repair_attempt + 1,
+                    )
+
+        if "reviewer" in planned_phases:
+            review_prompt = _build_review_prompt(state)
             _execute_phase(
                 state,
-                AgentRole.SECURITY_REVIEWER,
-                security_prompt,
+                AgentRole.REVIEWER,
+                review_prompt,
                 selection,
                 cfg,
             )
-        else:
-            state.add_result(
-                _skipped_result(
+
+            if should_run_security_review(state):
+                security_prompt = _build_security_review_prompt(state)
+                _execute_phase(
+                    state,
                     AgentRole.SECURITY_REVIEWER,
-                    "Security review was not required for this run.",
+                    security_prompt,
+                    selection,
                     cfg,
-                    reason="Security-sensitive markers were not detected.",
                 )
-            )
+            else:
+                state.add_result(
+                    _skipped_result(
+                        AgentRole.SECURITY_REVIEWER,
+                        "Security review was not required for this run.",
+                        cfg,
+                        reason="Security-sensitive markers were not detected.",
+                    )
+                )
 
         state.final_answer = synthesize_final_answer(state)
         return state.final_answer
