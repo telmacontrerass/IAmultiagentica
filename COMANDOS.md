@@ -261,6 +261,27 @@ Ejemplo de sustitucion: para Qwen2.5 Coder 1.5B, `<MODELO_ID>` es `qwen2.5-coder
 
 ## 10. Usar el agente por primera vez
 
+### Modo facil con menu interactivo
+
+```powershell
+ci2lab
+```
+Abre el menu inicial por defecto si estas en una terminal interactiva. Puedes moverte con las flechas y pulsar Enter para lanzar comandos sin escribirlos.
+
+```powershell
+ci2lab menu
+```
+Abre el mismo selector manualmente.
+
+Desde el menu puedes comprobar hardware, revisar Ollama, recomendar modelos, recomendar modelos para una tarea concreta, abrir chat con herramientas, abrir chat multi-agent, abrir la interfaz web, ejecutar evals, revisar permisos y abrir sesiones guardadas.
+Si la revision de Ollama detecta que no esta instalado, el menu ofrece instalarlo o abrir la pagina oficial de descarga.
+
+Al final del menu tienes `Work with commands`, que abre una linea `ci2lab:` para escribir comandos manualmente como antes, por ejemplo `chat`, `doctor`, `models recommend` o `agent "lista los archivos Python"`.
+
+Cuando eliges un chat, aparece un selector de modelos con estado `(installed)` o `(not installed)`. Si eliges un modelo no instalado, pregunta si quieres descargarlo con `ollama pull`.
+
+La opcion de sesiones muestra las conversaciones guardadas y permite abrir el `.json` de una sesion o reanudarla en chat.
+
 ### Modo facil con interfaz web
 
 ```powershell

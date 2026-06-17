@@ -117,6 +117,8 @@ ci2lab --model qwen2.5-coder:7b chat
 ci2lab doctor
 ci2lab hardware
 ci2lab models recommend
+ci2lab                                                 # menu interactivo inicial
+ci2lab menu                                            # abrir el selector manualmente
 ci2lab ui                                              # http://127.0.0.1:8765
 ci2lab --model qwen2.5-coder:7b chat                   # REPL (carga sesiones)
 ci2lab --model llama3.1:8b "lista los archivos Python" # un turno
@@ -124,6 +126,13 @@ ci2lab sessions
 ```
 
 **Flags globales** van **antes** del subcomando: `ci2lab --model X chat` (no `ci2lab chat --model X`).
+
+El menu interactivo es la entrada por defecto al ejecutar `ci2lab` sin argumentos.
+Muestra las acciones principales con selector de flechas:
+hardware, doctor/Ollama, recomendaciones, chat con herramientas, chat multi-agent,
+UI local, sesiones, permisos y evals. Al abrir chat permite elegir modelo y marca
+cada uno como `(installed)` o `(not installed)`. La opcion final
+`Work with commands` permite escribir comandos manuales como antes.
 
 ### Extensiones de workspace
 
