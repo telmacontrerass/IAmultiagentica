@@ -14,6 +14,7 @@ from ci2lab.cli.parser import _is_global_help_request, _print_global_help
 _GLOBAL_MARKERS = (
     'ci2lab "peticion"',
     "ci2lab chat",
+    "ci2lab menu",
     "ci2lab --multi-agent chat",
     "ci2lab sessions",
     "ci2lab doctor",
@@ -27,6 +28,9 @@ _GLOBAL_MARKERS = (
     "--session",
     "--no-log",
     "--multi-agent",
+    "ci2lab agent --multi-agent --model mistral:7b chat",
+    "ci2lab agent --multi-agent --model llama3.1:8b chat",
+    "ci2lab agent --multi-agent --model qwen2.5-coder:14b chat",
     "evals run [--live]",
     "python -m ci2lab.evals.run",
     "read_file, ls, glob, grep",
@@ -69,6 +73,21 @@ def test_agent_shortcut_without_subcommand():
         assert main(["hola"]) == 0
     run_turn.assert_called_once()
     assert run_turn.call_args.args[0] == "hola"
+
+
+def test_menu_command_opens_launcher():
+    with patch("ci2lab.cli.menu.run_start_menu", return_value=0) as run_menu:
+        assert main(["menu"]) == 0
+    run_menu.assert_called_once()
+
+
+def test_no_args_in_interactive_terminal_opens_launcher():
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch("ci2lab.cli.menu.run_start_menu", return_value=0) as run_menu,
+    ):
+        assert main([]) == 0
+    run_menu.assert_called_once()
 
 
 def test_tools_shortcut_model_first_expands_to_friendly_chat():

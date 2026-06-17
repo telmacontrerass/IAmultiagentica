@@ -64,6 +64,50 @@ def _status(label: str) -> None:
     console.print(f"[dim cyan]{label}[/dim cyan]")
 
 
+def _initial_progress_label(user_prompt: str) -> str:
+    """Describe the first model round in user-friendly terms."""
+    text = user_prompt.lower()
+    if any(word in text for word in ("pdf", "docx", "document", "documento", "archivo")):
+        return "Preparing to read the document..."
+    if any(word in text for word in ("web", "internet", "latest", "current", "hoy", "actual")):
+        return "Checking what information is needed..."
+    if re.search(r"\b(code|codigo|código|test|bug|fix|implement)\b", text):
+        return "Planning the code change..."
+    return "Deciding the next step..."
+
+
+def _path_looks_like_pdf(path: Any) -> bool:
+    return str(path or "").lower().endswith(".pdf")
+
+
+def _tool_progress_label(calls: list[ToolCall]) -> str:
+    """Describe the real tool work about to run without exposing tool internals."""
+    names = {call.name for call in calls}
+    if names & {"docx_to_pdf", "pdf_to_docx"}:
+        return "Converting the document..."
+    if any(
+        call.name in {"read_document", "read_file"}
+        and _path_looks_like_pdf(call.arguments.get("path") or call.arguments.get("source"))
+        for call in calls
+    ):
+        return "Extracting information from the PDF..."
+    if names & {"read_document"}:
+        return "Reading the document..."
+    if names & {"write_file", "edit_file", "apply_patch", "notebook_edit"}:
+        return "Generating code changes..."
+    if names & {"web_search", "web_fetch"}:
+        return "Looking up current information..."
+    if names & {"ls", "tree", "glob", "grep", "file_info", "inspect_file", "read_file"}:
+        return "Searching the project files..."
+    if names & {"bash"}:
+        return "Running the requested check..."
+    if names & {"todo_write"}:
+        return "Updating the task plan..."
+    if any(name == "skill" or name == "mcp_call" or name.startswith("mcp__") for name in names):
+        return "Using the selected integration..."
+    return "Running the next step..."
+
+
 def _current_request_anchor(user_prompt: str) -> dict[str, str]:
     return {
         "role": "user",
@@ -457,11 +501,8 @@ def run_agent(
                 else None
             )
             if initial_document_call:
-                console.print(
-                    "[yellow]Petición documental detectada; leyendo el documento "
-                    "con read_document.[/yellow]"
-                )
                 calls = [initial_document_call]
+                _status(_tool_progress_label(calls))
             else:
                 missing_document_message = (
                     document_request_missing_message(user_prompt, cfg.cwd)
@@ -492,7 +533,7 @@ def run_agent(
                 # Avoid leaking provisional model prose before tool execution.
                 # When tools are available, parse first and only render final text.
                 stream_this_round = cfg.stream and not bool(tools)
-                _status("Thinking...")
+                _status(_initial_progress_label(user_prompt))
                 streamed_this_round = stream_this_round
                 try:
                     llm_response = call_llm(
@@ -570,7 +611,7 @@ def run_agent(
                 else None
             )
             if forced_pdf_call:
-                _status("Reading files...")
+                _status(_tool_progress_label([forced_pdf_call]))
                 console.print(
                     "[yellow]El modelo siguió sin usar herramientas; ejecutando "
                     "read_file automáticamente para el PDF mencionado.[/yellow]"
@@ -678,7 +719,7 @@ def run_agent(
                     })
                     maybe_save_session(cfg, history, selection)
                     continue
-                _status("Finalizing answer...")
+                _status("Finalizing the answer...")
                 if final_text and streamed_this_round:
                     console.print()
                 elif final_text:
@@ -755,10 +796,7 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
-            if any(c.name in {"read_file", "read_document", "grep", "glob", "ls"} for c in calls):
-                _status("Reading files...")
-            else:
-                _status("Running tools...")
+            _status(_tool_progress_label(calls))
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
@@ -830,7 +868,7 @@ def run_agent(
             direct_answer = document_direct_answer(results, user_prompt)
             if direct_answer:
                 final_text = direct_answer
-                _status("Finalizing answer...")
+                _status("Finalizing the answer...")
                 console.print(final_text)
                 append_assistant_turn(history, final_text)
                 maybe_save_session(cfg, history, selection)

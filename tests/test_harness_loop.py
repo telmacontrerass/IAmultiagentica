@@ -4,8 +4,31 @@ from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.token_usage import TokenUsage
-from ci2lab.harness.query.loop import _prepend_missing_reads
+from ci2lab.harness.query.loop import (
+    _initial_progress_label,
+    _prepend_missing_reads,
+    _tool_progress_label,
+)
 from ci2lab.harness.types import ToolCall, ToolResult
+
+
+def test_initial_progress_label_describes_user_visible_work():
+    assert _initial_progress_label("resume prueba.pdf") == "Preparing to read the document..."
+    assert _initial_progress_label("fix this test") == "Planning the code change..."
+    assert _initial_progress_label("what is the latest price?") == "Checking what information is needed..."
+    assert _initial_progress_label("hola") == "Deciding the next step..."
+
+
+def test_tool_progress_label_uses_real_tool_work():
+    assert _tool_progress_label([
+        ToolCall(name="read_file", arguments={"path": "paper.pdf"}, call_id="c1")
+    ]) == "Extracting information from the PDF..."
+    assert _tool_progress_label([
+        ToolCall(name="apply_patch", arguments={"patch": "*** Begin Patch"}, call_id="c1")
+    ]) == "Generating code changes..."
+    assert _tool_progress_label([
+        ToolCall(name="web_search", arguments={"query": "latest release"}, call_id="c1")
+    ]) == "Looking up current information..."
 
 
 def test_run_agent_single_turn_no_tools():

@@ -26,6 +26,20 @@ from ci2lab.cli.runtime import _resolve_runtime_config
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    if not raw_argv:
+        parser = build_parser()
+        args = parser.parse_args(raw_argv)
+        try:
+            runtime = _resolve_runtime_config(args)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if sys.stdin.isatty():
+            from ci2lab.cli.menu import run_start_menu
+
+            return run_start_menu(runtime)
+        _print_global_help()
+        return 0
+
     if _is_global_help_request(raw_argv):
         _print_global_help()
         return 0
@@ -53,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run_turn(args.agent_prompt, args, runtime)
     if args.command == "chat":
         return _run_repl(args, runtime)
+    if args.command == "menu":
+        from ci2lab.cli.menu import run_start_menu
+
+        return run_start_menu(runtime)
     if args.command == "sessions":
         return _cmd_sessions(args)
     if args.command == "doctor":

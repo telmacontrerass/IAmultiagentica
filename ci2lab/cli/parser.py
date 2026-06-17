@@ -16,6 +16,7 @@ _CLI_COMMANDS = frozenset(
         "permissions",
         "ui",
         "tools",
+        "menu",
     }
 )
 
@@ -41,6 +42,7 @@ def _print_global_help() -> None:
         "Comandos principales:",
         '  ci2lab agent "peticion"           Una tarea y sale',
         "  ci2lab chat                       Modo interactivo (REPL)",
+        "  ci2lab menu                       Menu interactivo con selector",
         "  ci2lab --multi-agent chat         REPL con orquestador de subagentes",
         "  ci2lab tools qwen:1.8b            Chat sencillo con herramientas",
         "  ci2lab qwen:1.8b tools            Lo mismo, forma abreviada",
@@ -93,6 +95,11 @@ def _print_global_help() -> None:
         "Ayuda detallada por comando:",
         "  ci2lab <comando> --help",
         "  ci2lab models recommend --help",
+        "",
+        "Ejemplos modo multiagente:",
+        "  ci2lab agent --multi-agent --model mistral:7b chat",
+        "  ci2lab agent --multi-agent --model llama3.1:8b chat",
+        "  ci2lab agent --multi-agent --model qwen2.5-coder:14b chat",
     ]
     print("\n".join(lines))
 
@@ -166,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_agent_flags(agent_p)
 
     sub.add_parser("chat", help="Modo interactivo REPL").set_defaults(command="chat")
+    sub.add_parser("menu", help="Menu interactivo con selector").set_defaults(command="menu")
 
     sessions_p = sub.add_parser("sessions", help="Listar sesiones guardadas")
     sessions_p.add_argument("--json", action="store_true")
