@@ -93,6 +93,11 @@ def _print_global_help() -> None:
         "Ayuda detallada por comando:",
         "  ci2lab <comando> --help",
         "  ci2lab models recommend --help",
+        "",
+        "Ejemplos modo multiagente:",
+        "  ci2lab agent --multi-agent --model mistral:7b chat",
+        "  ci2lab agent --multi-agent --model llama3.1:8b chat",
+        "  ci2lab agent --multi-agent --model qwen2.5-coder:14b chat",
     ]
     print("\n".join(lines))
 
