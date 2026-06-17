@@ -20,6 +20,33 @@ def test_build_subagent_config_filters_tools_without_mutating_parent():
     assert "write_file" not in subagent.skill_allowed_tools
 
 
+def test_build_subagent_config_intersects_skill_and_role_tools():
+    parent = AgentConfig(
+        cwd=".",
+        stream=True,
+        session_id="session-1",
+        skill_allowed_tools=frozenset({"web_fetch", "read_file"}),
+    )
+
+    subagent = build_subagent_config(AgentRole.RESEARCHER, parent)
+
+    assert parent.skill_allowed_tools == frozenset({"web_fetch", "read_file"})
+    assert subagent.skill_allowed_tools == frozenset({"read_file"})
+    assert "web_fetch" not in subagent.skill_allowed_tools
+    assert "grep" not in subagent.skill_allowed_tools
+
+
+def test_build_subagent_config_keeps_empty_intersection_blocked():
+    parent = AgentConfig(
+        cwd=".",
+        skill_allowed_tools=frozenset({"web_fetch"}),
+    )
+
+    subagent = build_subagent_config(AgentRole.RESEARCHER, parent)
+
+    assert subagent.skill_allowed_tools == frozenset()
+
+
 def test_run_subagent_uses_isolated_system_context_and_role_tools():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=True, session_id="session-1")

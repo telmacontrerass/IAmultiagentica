@@ -333,24 +333,55 @@ function addMessage(role, text, extraClass = "", meta = {}) {
   persistUiState();
 }
 
-function addThinkingMessage() {
+function buildProgressMessages(prompt = "", files = []) {
+  const text = `${prompt} ${files.map((file) => file.name || file.path || "").join(" ")}`.toLowerCase();
+  const messages = ["Deciding the next step..."];
+  if (files.length) {
+    messages.push("Reading the attached files...");
+  }
+  if (/\bpdf\b|\.pdf\b/.test(text)) {
+    messages.push("Extracting information from the PDF...");
+  } else if (/\bdocx?\b|\.docx?\b|document|documento|archivo/.test(text)) {
+    messages.push("Reading the document...");
+  }
+  if (/\b(code|codigo|código|test|bug|fix|implement|generate|generating|create|write)\b/.test(text)) {
+    messages.push("Planning the code change...");
+    messages.push("Generating code changes...");
+  }
+  if (/web|internet|latest|current|today|hoy|actual|online/.test(text)) {
+    messages.push("Looking up current information...");
+  }
+  messages.push("Checking the result...");
+  messages.push("Preparing the answer...");
+  return [...new Set(messages)];
+}
+
+function addThinkingMessage(prompt = "", files = []) {
   const empty = els.messages.querySelector(".empty-state");
   if (empty) empty.remove();
   const node = document.createElement("div");
   node.className = "message assistant thinking";
   const startedAt = Date.now();
+  const progressMessages = buildProgressMessages(prompt, files);
   node.innerHTML = `
     <span class="thinking-loader" aria-hidden="true"></span>
     <span class="thinking-copy">
-      <span>Pensando</span>
+      <span class="thinking-status">${escapeHtml(progressMessages[0])}</span>
       <small class="thinking-time">0.0s</small>
     </span>
   `;
+  const status = node.querySelector(".thinking-status");
   const timer = node.querySelector(".thinking-time");
   node._startedAt = startedAt;
+  node._progressIndex = 0;
   node._timerId = window.setInterval(() => {
     if (timer) timer.textContent = formatElapsed(Date.now() - startedAt);
   }, 100);
+  node._progressTimerId = window.setInterval(() => {
+    if (!status || progressMessages.length <= 1) return;
+    node._progressIndex = Math.min(node._progressIndex + 1, progressMessages.length - 1);
+    status.textContent = progressMessages[node._progressIndex];
+  }, 3500);
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return node;
@@ -359,6 +390,9 @@ function addThinkingMessage() {
 function removeThinkingMessage(node) {
   if (node?._timerId) {
     window.clearInterval(node._timerId);
+  }
+  if (node?._progressTimerId) {
+    window.clearInterval(node._progressTimerId);
   }
   if (node && node.parentNode) {
     node.remove();
@@ -881,9 +915,9 @@ async function sendMessage(event) {
   state.uploadedFiles = [];
   renderAttachments();
   els.sendButton.disabled = true;
-  els.sendButton.textContent = "Pensando";
+  els.sendButton.textContent = "Working";
   persistUiState();
-  const thinkingNode = addThinkingMessage();
+  const thinkingNode = addThinkingMessage(prompt, files);
   const requestStartedAt = Date.now();
 
   try {

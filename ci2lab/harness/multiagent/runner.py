@@ -13,6 +13,17 @@ from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.types import AgentConfig
 
 
+def _resolve_subagent_allowed_tools(
+    role: AgentRole,
+    config: AgentConfig,
+) -> frozenset[str]:
+    """Never let a subagent broaden an active skill allow-list."""
+    role_allowed_tools = ROLE_SPECS[role].allowed_tools
+    if config.skill_allowed_tools is None:
+        return role_allowed_tools
+    return frozenset(config.skill_allowed_tools & role_allowed_tools)
+
+
 def build_subagent_system_prompt(
     role: AgentRole,
     selection: ModelSelection,
@@ -40,12 +51,11 @@ def build_subagent_config(
     config: AgentConfig,
 ) -> AgentConfig:
     """Copy the parent config and apply role-specific tool restrictions."""
-    spec = ROLE_SPECS[role]
     return replace(
         config,
         stream=False,
         session_id=None,
-        skill_allowed_tools=spec.allowed_tools,
+        skill_allowed_tools=_resolve_subagent_allowed_tools(role, config),
     )
 
 
