@@ -31,6 +31,13 @@ def build_system_prompt(
         f"- Modelo: {selection.display_name} ({selection.ollama_tag})\n"
         f"- SO: {os.name}"
     )
+    if os.name == "nt":
+        parts.append(
+            "## Windows shell\n\n"
+            "- Para explorar el repo, prioriza `tree`, `ls`, `glob` y `grep`.\n"
+            "- No uses `bash` para comandos Unix de listado como `ls -l`.\n"
+            "- Si necesitas shell en Windows, usa un comando valido en Windows."
+        )
 
     memory = load_project_memory(cwd)
     if memory:

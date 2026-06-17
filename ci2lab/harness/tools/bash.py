@@ -23,6 +23,8 @@ def run_bash(
     security_profile: str = "standard",
     security_engine: str = "ci2lab",
 ) -> str:
+    if not command.strip():
+        return "Error: bash requiere un `command` no vacio."
     if enforce_ci2lab_hard_policy(security_engine):
         decision = check_command_allowed(
             command, cwd, security_profile=security_profile

@@ -54,8 +54,17 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
     args = normalize_tool_arguments(call.arguments, tool_name=name)
 
     if name == "bash":
+        command = str(args.get("command", ""))
+        if not command.strip():
+            return ToolResult(
+                tool_name=name,
+                content="Error: bash requiere un `command` no vacio.",
+                is_error=True,
+                call_id=call.call_id,
+                outcome="invalid_arguments",
+            )
         redirected = tool_call_from_bash_command(
-            str(args.get("command", "")), call_id=call.call_id
+            command, call_id=call.call_id
         )
         if redirected is not None:
             return execute_tool(redirected, config)

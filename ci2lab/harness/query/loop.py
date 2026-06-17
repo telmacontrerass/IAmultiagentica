@@ -64,6 +64,19 @@ def _status(label: str) -> None:
     console.print(f"[dim cyan]{label}[/dim cyan]")
 
 
+def _current_request_anchor(user_prompt: str) -> dict[str, str]:
+    return {
+        "role": "user",
+        "content": (
+            "La peticion actual del usuario es:\n"
+            f"{user_prompt}\n\n"
+            "Responde solo a eso usando los resultados de herramientas ya "
+            "disponibles. No retomes una tarea anterior ni propongas crear "
+            "archivos si el usuario no lo pidio."
+        ),
+    }
+
+
 _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
 _DOCX_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.docx)\b", re.IGNORECASE)
 _LS_DIR_RE = re.compile(r"(?:^|\s)ls\s+(?P<path>[^\s;&|]+)")
@@ -156,6 +169,35 @@ _NO_INTERNET_RE = re.compile(
     r"no tengo capacidad de acceder a la web)",
     re.IGNORECASE,
 )
+_STOP_TOOLS_RE = re.compile(
+    r"(responde con lo que sabes|"
+    r"deja de repetir|"
+    r"contesta con lo que tengas|"
+    r"no sigas buscando)",
+    re.IGNORECASE,
+)
+_FACTUAL_TOPIC_RE = re.compile(
+    r"\b(resultado|marcador|score|partido|vs\b|bitcoin|btc|precio|latest|actual|"
+    r"noticia|version|versi[oó]n|cotizaci[oó]n)\b",
+    re.IGNORECASE,
+)
+_WEB_SIGNAL_RE = re.compile(
+    r"\b(web|internet|online|tiempo real|live|hoy|now|actual|latest|precio|bitcoin|btc)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_LOCAL_RE = re.compile(
+    r"\b(repo|repositorio|archivo|archivos|file|files|carpeta|directorio|"
+    r"path|ruta|read_file|tree|ls|glob|grep)\b",
+    re.IGNORECASE,
+)
+_MCP_PLACEHOLDER_RE = re.compile(
+    r"(mcp_server_name|placeholder|example|your[_-]?server)",
+    re.IGNORECASE,
+)
+_FACTUAL_FILESYSTEM_TOOLS = {"ls", "tree", "glob", "grep", "read_file", "read_document"}
+_BTC_PRICE_QUERY_RE = re.compile(r"\b(bitcoin|btc)\b.*\b(precio|price|cotizaci[oó]n)\b|\b(precio|price|cotizaci[oó]n)\b.*\b(bitcoin|btc)\b", re.IGNORECASE)
+_BTC_SUPPLY_DRIFT_RE = re.compile(r"\b(circulaci[oó]n|suministro|miner[ií]a|en circulaci[oó]n)\b", re.IGNORECASE)
+_PRICE_LIKE_ANSWER_RE = re.compile(r"(\$|usd|eur|d[oó]lar|precio|price|cotizaci[oó]n)", re.IGNORECASE)
 
 
 def _redirect_fetch_to_search(
@@ -194,6 +236,91 @@ def _redirect_fetch_to_search(
             "(el modelo invento una URL; buscando primero).[/yellow]"
         )
     return redirected
+
+
+def _history_requests_stop_tools(history: list[dict[str, Any]]) -> bool:
+    return any(
+        m.get("role") == "user" and _STOP_TOOLS_RE.search(str(m.get("content", "")))
+        for m in history
+    )
+
+
+def _is_factual_web_task(user_prompt: str) -> bool:
+    prompt = user_prompt.strip()
+    if prompt.startswith("/live_fact_lookup"):
+        return True
+    return (
+        bool(_FACTUAL_TOPIC_RE.search(prompt))
+        and bool(_WEB_SIGNAL_RE.search(prompt))
+        and not bool(_EXPLICIT_LOCAL_RE.search(prompt))
+    )
+
+
+def _normalize_query(query: str) -> str:
+    return " ".join(query.lower().split())
+
+
+def _is_filesystem_bash(call: ToolCall) -> bool:
+    if call.name != "bash":
+        return False
+    command = str(call.arguments.get("command") or "").strip().lower()
+    return command.startswith(("ls", "dir", "tree", "cat ", "type "))
+
+
+def _contains_web_tool_call(calls: list[ToolCall]) -> bool:
+    return any(call.name in {"web_search", "web_fetch"} for call in calls)
+
+
+def _web_focus_followup(user_prompt: str) -> str:
+    return (
+        "Pregunta original del usuario:\n"
+        f"{user_prompt}\n\n"
+        "Responde SOLO a esa pregunta. No cambies la pregunta a otro dato "
+        "relacionado encontrado en la fuente (por ejemplo, suministro, historia "
+        "o minería). Si no puedes extraer claramente el dato pedido, dilo con "
+        "una advertencia y explica que te basas solo en snippets o datos "
+        "parciales."
+    )
+
+
+def _looks_like_bitcoin_price_drift(user_prompt: str, final_text: str) -> bool:
+    if not _BTC_PRICE_QUERY_RE.search(user_prompt):
+        return False
+    if not _BTC_SUPPLY_DRIFT_RE.search(final_text):
+        return False
+    return not bool(_PRICE_LIKE_ANSWER_RE.search(final_text))
+
+
+def _filter_factual_web_calls(
+    calls: list[ToolCall],
+    *,
+    factual_web_task: bool,
+    seen_web_queries: set[str],
+) -> tuple[list[ToolCall], bool]:
+    if not factual_web_task:
+        return calls, False
+
+    filtered: list[ToolCall] = []
+    seen_this_batch: set[str] = set()
+    blocked_any = False
+    for call in calls:
+        if call.name in _FACTUAL_FILESYSTEM_TOOLS or _is_filesystem_bash(call):
+            blocked_any = True
+            continue
+        if call.name == "mcp_call":
+            server = str(call.arguments.get("server", ""))
+            if not server or _MCP_PLACEHOLDER_RE.search(server):
+                blocked_any = True
+                continue
+        if call.name == "web_search":
+            query = _normalize_query(str(call.arguments.get("query", "")))
+            if query and (query in seen_web_queries or query in seen_this_batch):
+                blocked_any = True
+                continue
+            if query:
+                seen_this_batch.add(query)
+        filtered.append(call)
+    return filtered, blocked_any
 
 
 def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
@@ -272,8 +399,13 @@ def run_agent(
     pdf_tool_nudges = 0
     pdf_tool_used = False
     web_search_used = False  # becomes True once web_search runs in this turn
+    web_fetch_http_error_seen = False
+    web_focus_nudges = 0
+    price_drift_nudges = 0
+    seen_web_queries: set[str] = set()
     found_docx_path: str | None = None
     web_capability_nudge_sent = False
+    stop_tools_nudge_sent = False
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -309,6 +441,7 @@ def run_agent(
 
             content = ""
             calls: list[ToolCall] = []
+            factual_web_task = _is_factual_web_task(user_prompt)
             initial_document_call = (
                 forced_document_read_tool_call(user_prompt, cfg.cwd)
                 if round_num == 1
@@ -334,7 +467,12 @@ def run_agent(
                     break
 
                 trimmed = trim_messages(history, selection.context_length)
-                tools = get_function_schemas(cfg) if selection.supports_tools else None
+                stop_tools_requested = _history_requests_stop_tools(history)
+                tools = (
+                    get_function_schemas(cfg)
+                    if selection.supports_tools and not stop_tools_requested
+                    else None
+                )
                 web_search_available = bool(
                     tools
                     and any(
@@ -342,7 +480,9 @@ def run_agent(
                         for t in tools
                     )
                 )
-                stream_this_round = cfg.stream
+                # Avoid leaking provisional model prose before tool execution.
+                # When tools are available, parse first and only render final text.
+                stream_this_round = cfg.stream and not bool(tools)
                 _status("Thinking...")
                 streamed_this_round = stream_this_round
                 try:
@@ -387,12 +527,32 @@ def run_agent(
                     llm_response.tool_calls,
                     tool_mode=selection.tool_mode,
                 )
+                if _history_requests_stop_tools(history):
+                    calls = []
                 calls = _prepend_missing_reads(calls, user_prompt)
                 calls = _redirect_fetch_to_search(
                     calls, user_prompt, web_search_used
                 )
+                calls, blocked_web_calls = _filter_factual_web_calls(
+                    calls,
+                    factual_web_task=factual_web_task,
+                    seen_web_queries=seen_web_queries,
+                )
+                if blocked_web_calls:
+                    append_assistant_turn(history, content)
+                    history.append({
+                        "role": "user",
+                        "content": (
+                            "No repitas la misma búsqueda. Usa los resultados ya "
+                            "disponibles o intenta leer una fuente si procede. Si no "
+                            "puedes verificar más, responde con advertencia."
+                        ),
+                    })
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 if calls:
-                    _print_model_step(content, already_streamed=streamed_this_round)
+                    if not (factual_web_task and _contains_web_tool_call(calls)):
+                        _print_model_step(content, already_streamed=streamed_this_round)
                     # No conservar texto libre del modelo antes del resultado real de tools.
                     content = ""
             forced_pdf_call = (
@@ -409,6 +569,22 @@ def run_agent(
                 calls = [forced_pdf_call]
 
             if not calls:
+                if (
+                    _history_requests_stop_tools(history)
+                    and not (strip_tool_markup(content).strip() or content.strip())
+                    and not stop_tools_nudge_sent
+                ):
+                    stop_tools_nudge_sent = True
+                    append_assistant_turn(history, content)
+                    history.append({
+                        "role": "user",
+                        "content": (
+                            "No uses herramientas. Responde ahora con lo disponible y "
+                            "añade una advertencia breve si faltan fuentes completas."
+                        ),
+                    })
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 pdf_hint = pdf_tool_retry_hint(
                     user_prompt,
                     selection_tool_mode=selection.tool_mode,
@@ -463,6 +639,20 @@ def run_agent(
                 final_text = strip_tool_markup(content).strip() or content.strip()
                 if (
                     final_text
+                    and factual_web_task
+                    and price_drift_nudges < 1
+                    and _looks_like_bitcoin_price_drift(user_prompt, final_text)
+                ):
+                    price_drift_nudges += 1
+                    append_assistant_turn(history, final_text or content)
+                    history.append({
+                        "role": "user",
+                        "content": _web_focus_followup(user_prompt),
+                    })
+                    maybe_save_session(cfg, history, selection)
+                    continue
+                if (
+                    final_text
                     and not calls
                     and web_search_available
                     and not web_capability_nudge_sent
@@ -509,6 +699,11 @@ def run_agent(
                 pdf_tool_used = True
             if any(c.name == "web_search" for c in calls):
                 web_search_used = True
+                for call in calls:
+                    if call.name == "web_search":
+                        query = _normalize_query(str(call.arguments.get("query", "")))
+                        if query:
+                            seen_web_queries.add(query)
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -570,6 +765,7 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            history.append(_current_request_anchor(user_prompt))
             for call, result in zip(calls, results, strict=False):
                 docx_path = _first_docx_path_from_result(call, result)
                 if docx_path:
@@ -596,10 +792,21 @@ def run_agent(
                 history.append({"role": "user", "content": pdf_followup})
             web_nudge = web_fetch_failed_nudge(results)
             if web_nudge:
+                web_fetch_http_error_seen = True
                 console.print(
                     "[yellow]web_fetch falló; redirigiendo al modelo hacia web_search.[/yellow]"
                 )
                 history.append({"role": "user", "content": web_nudge})
+            elif (
+                factual_web_task
+                and _contains_web_tool_call(calls)
+                and web_focus_nudges < 2
+            ):
+                web_focus_nudges += 1
+                history.append({
+                    "role": "user",
+                    "content": _web_focus_followup(user_prompt),
+                })
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True

@@ -43,6 +43,31 @@ from ci2lab.harness.parsing_parts.xml_tools import (
 from ci2lab.harness.tools.registry import TOOL_NAMES
 from ci2lab.harness.types import ToolCall
 
+_TEXT_TOOL_NAME_JSON_RE = re.compile(
+    r"(?:^|\n)\s*(?:modelo:\s*)?(?P<name>[a-zA-Z0-9_+-]+)\s*\n(?P<body>\{[\s\S]*?\})",
+    re.IGNORECASE,
+)
+
+
+def _parse_text_tool_name_plus_json(text: str) -> list[ToolCall]:
+    calls: list[ToolCall] = []
+    seen: set[tuple[str, str]] = set()
+    for match in _TEXT_TOOL_NAME_JSON_RE.finditer(text):
+        name = map_name(match.group("name"))
+        if name not in TOOL_NAMES:
+            continue
+        body = match.group("body").strip()
+        try:
+            args = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(args, dict):
+            continue
+        call = new_call(name, args)
+        if call.arguments and remember_call(call, seen):
+            calls.append(call)
+    return calls
+
 
 def resolve_tool_calls(
     text: str,
@@ -59,6 +84,7 @@ def resolve_tool_calls(
         parse_xml_blocks,
         parse_fenced_blocks,
         parse_json_tool_objects,
+        _parse_text_tool_name_plus_json,
         parse_generic_fenced_blocks,
     ):
         parsed = parser(text)

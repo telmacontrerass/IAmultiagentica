@@ -2,9 +2,10 @@ from unittest.mock import MagicMock, patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
+from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.query.loop import _prepend_missing_reads
-from ci2lab.harness.types import ToolCall
+from ci2lab.harness.types import ToolCall, ToolResult
 
 
 def test_run_agent_single_turn_no_tools():
@@ -383,6 +384,177 @@ def test_prepend_missing_reads_before_edit():
     assert result[1].name == "edit_file"
 
 
+def test_empty_bash_command_is_blocked(tmp_path):
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+    )
+
+    result = execute_tool(
+        ToolCall(name="bash", arguments={"command": "   "}, call_id="c1"),
+        config,
+    )
+
+    assert result.is_error
+    assert result.tool_name == "bash"
+    assert "no vacio" in result.content.lower()
+
+
+def test_local_repo_question_uses_tree_or_ls_not_empty_bash():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    first = LLMResponse(
+        content='tree\n{"path": ".", "depth": 2, "max_entries": 100}',
+        tool_calls=[],
+    )
+    final = LLMResponse(
+        content=(
+            "Archivos principales: README.md, pyproject.toml, ci2lab/, tests/. "
+            "El loop del agente parece estar en ci2lab/harness/query/loop.py."
+        ),
+        tool_calls=[],
+    )
+    executed: list[ToolCall] = []
+
+    def fake_execute_tool(call, _cfg):
+        executed.append(call)
+        return ToolResult(
+            tool_name=call.name,
+            content="ci2lab/\n  harness/\n    query/\n      loop.py\n",
+            is_error=False,
+            call_id=call.call_id,
+        )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute_tool),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [first, final]
+        result = run_agent(
+            "Lista los archivos principales del repositorio y dime en qué carpeta parece estar el loop del agente.",
+            selection,
+            config=config,
+        )
+
+    assert "loop.py" in result
+    assert executed
+    assert executed[0].name == "tree"
+    assert executed[0].arguments == {"path": ".", "depth": 2, "max_entries": 100}
+    assert all(call.name != "bash" for call in executed)
+
+
+def test_final_answer_after_tree_stays_anchored_to_latest_user_prompt():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    prompt = (
+        "Lista los archivos principales del repositorio y dime en qué carpeta "
+        "parece estar el loop del agente."
+    )
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
+        }],
+    )
+    final = LLMResponse(content="El loop parece estar en ci2lab/harness/query/loop.py.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="tree",
+                content="ci2lab/harness/query/loop.py\n",
+                is_error=False,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent(prompt, selection, config=config)
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user"
+        and "La peticion actual del usuario es:" in str(m.get("content", ""))
+        and prompt in str(m.get("content", ""))
+        for m in second_turn_messages
+    )
+
+
+def test_context_summary_does_not_override_current_user_request():
+    selection = default_selection("test:1b")
+    selection.context_length = 8192
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    prompt = (
+        "Lista los archivos principales del repositorio y dime en qué carpeta "
+        "parece estar el loop del agente."
+    )
+    old_messages = [
+        {"role": "system", "content": "old system"},
+        {"role": "user", "content": "Tarea antigua: crea docs/resumen.md"},
+        {"role": "assistant", "content": "Voy a crear docs/resumen.md"},
+    ]
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
+        }],
+    )
+    final = LLMResponse(content="El loop parece estar en ci2lab/harness/query/loop.py.", tool_calls=[])
+    manage_calls = {"count": 0}
+
+    def fake_manage_context(history, client, context_length, summary_failures=0):
+        manage_calls["count"] += 1
+        if manage_calls["count"] == 2:
+            injected = list(history)
+            injected.insert(
+                1,
+                {
+                    "role": "user",
+                    "content": "[Summary of earlier conversation]\n\nLa tarea era crear docs/resumen.md",
+                },
+            )
+            return injected, summary_failures, ["Contexto: historial resumido (~1000 → ~500 tokens estimados)."]
+        return history, summary_failures, []
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.manage_context", side_effect=fake_manage_context),
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="tree",
+                content="ci2lab/harness/query/loop.py\n",
+                is_error=False,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent(prompt, selection, config=config, messages=old_messages)
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        "[Summary of earlier conversation]" in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+    assert any(
+        m.get("role") == "user"
+        and "La peticion actual del usuario es:" in str(m.get("content", ""))
+        and prompt in str(m.get("content", ""))
+        for m in second_turn_messages
+    )
+
+
 def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
     from ci2lab.harness.session import save_session
 
@@ -463,3 +635,279 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
         for m in second_turn_messages
     )
     assert target.read_text(encoding="utf-8") == "Decimocuarto intento\n"
+
+
+def test_web_fetch_403_fallback_blocks_repeat_filesystem_and_placeholder_mcp():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    q = "precio actual bitcoin usd"
+    round1 = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "web_search", "arguments": f'{{"query": "{q}", "max_results": 5}}'},
+        }],
+    )
+    round2 = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c2",
+            "function": {
+                "name": "web_fetch",
+                "arguments": '{"url": "https://www.coinbase.com/en-es/converter/btc/usd"}',
+            },
+        }],
+    )
+    round3 = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c3",
+                "function": {"name": "web_search", "arguments": f'{{"query": "{q}", "max_results": 5}}'},
+            },
+            {
+                "id": "c4",
+                "function": {
+                    "name": "mcp_call",
+                    "arguments": '{"server": "MCP_SERVER_NAME", "tool": "search", "arguments": {}}',
+                },
+            },
+            {
+                "id": "c5",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            },
+        ],
+    )
+    final = LLMResponse(
+        content=(
+            "El precio exacto no pudo verificarse en una fuente completa por bloqueo HTTP 403.\n"
+            "Advertencia: respondo con snippets ya disponibles."
+        ),
+        tool_calls=[],
+    )
+
+    executed_calls: list[str] = []
+
+    def fake_execute_tool(call, _cfg):
+        executed_calls.append(call.name)
+        if call.name == "web_search":
+            return ToolResult(
+                tool_name="web_search",
+                content="Snippet: BTC price around 106k USD from search results.",
+                is_error=False,
+                call_id=call.call_id,
+            )
+        if call.name == "web_fetch":
+            return ToolResult(
+                tool_name="web_fetch",
+                content="HTTP 403 Forbidden",
+                is_error=True,
+                call_id=call.call_id,
+            )
+        raise AssertionError(f"Unexpected tool call executed: {call.name}")
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute_tool),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [round1, round2, round3, final]
+        result = run_agent("dime el precio actual de bitcoin", selection, config=config)
+
+    assert "advertencia" in result.lower()
+    assert executed_calls == ["web_search", "web_fetch"]
+    assert client.chat.call_count == 4
+    fourth_round_messages = client.chat.call_args_list[3].args[0]
+    assert any(
+        "no repitas la misma búsqueda" in str(m.get("content", "")).lower()
+        for m in fourth_round_messages
+        if isinstance(m, dict) and m.get("role") == "user"
+    )
+
+
+def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    model_trying_tools = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "web_search", "arguments": '{"query": "btc price", "max_results": 5}'},
+        }],
+    )
+    final = LLMResponse(
+        content="Con lo disponible, no puedo verificar la fuente completa. Advertencia: datos parciales.",
+        tool_calls=[],
+    )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool") as mock_execute_tool,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [model_trying_tools, final]
+        result = run_agent(
+            "precio bitcoin ahora, responde con lo que sabes y no sigas buscando",
+            selection,
+            config=config,
+        )
+
+    assert "advertencia" in result.lower()
+    assert mock_execute_tool.call_count == 0
+
+
+def test_factual_web_flow_blocks_duplicate_search_and_hides_pretool_hallucination():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    query = "precio bitcoin usd actual"
+
+    round1 = LLMResponse(
+        content="El precio actual es 200000 USD.\n```web_search\n{\"query\": \"precio bitcoin usd actual\", \"max_results\": 5}\n```",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "web_search", "arguments": f'{{"query": "{query}", "max_results": 5}}'},
+        }],
+    )
+    round2 = LLMResponse(
+        content="Repito búsqueda.\n```web_search\n{\"query\": \"precio bitcoin usd actual\", \"max_results\": 5}\n```",
+        tool_calls=[{
+            "id": "c2",
+            "function": {"name": "web_search", "arguments": f'{{"query": "{query}", "max_results": 5}}'},
+        }],
+    )
+    final = LLMResponse(
+        content=(
+            "Con los resultados disponibles, BTC ronda 106k USD.\n"
+            "Advertencia: no pude verificar una fuente completa adicional."
+        ),
+        tool_calls=[],
+    )
+
+    executed_calls: list[str] = []
+
+    def fake_execute_tool(call, _cfg):
+        executed_calls.append(call.name)
+        return ToolResult(
+            tool_name="web_search",
+            content="Snippet: BTC near 106k USD.",
+            is_error=False,
+            call_id=call.call_id,
+        )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute_tool),
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [round1, round2, final]
+        result = run_agent("Dime el precio del bitcoin actual", selection, config=config)
+
+    assert executed_calls == ["web_search"]
+    assert "advertencia" in result.lower()
+    assert "200000" not in result
+    printed = [str(c.args[0]) for c in mock_print.call_args_list if c.args]
+    assert not any("200000" in text for text in printed)
+    assert client.chat.call_count == 3
+
+
+def test_run_agent_disables_streaming_when_tools_are_available():
+    selection = default_selection("test:1b")
+    selection.supports_tools = True
+    config = AgentConfig(cwd=".", stream=True, auto_confirm=True, run_log_enabled=False)
+
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "web_search", "arguments": '{"query": "btc price", "max_results": 5}'},
+        }],
+    )
+    final = LLMResponse(content="Respuesta final con resultados.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.call_llm") as mock_call_llm:
+        mock_call_llm.side_effect = [with_tool, final]
+        run_agent("dime el precio del bitcoin actual", selection, config=config)
+
+    first_call = mock_call_llm.call_args_list[0]
+    assert first_call.kwargs["stream"] is False
+
+
+def test_web_fetch_round_reanchors_bitcoin_price_question_and_avoids_supply_drift():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    prompt = (
+        "Dime el precio actual del bitcoin usando internet. "
+        "No respondas solo con resultados de búsqueda: primero busca una fuente "
+        "y luego intenta leer la página con web_fetch."
+    )
+
+    search_round = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {
+                "name": "web_search",
+                "arguments": '{"query": "precio de Bitcoin actual", "max_results": 1}',
+            },
+        }],
+    )
+    fetch_round = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c2",
+            "function": {
+                "name": "web_fetch",
+                "arguments": '{"url": "https://coinmarketcap.com/es/currencies/bitcoin/"}',
+            },
+        }],
+    )
+    drift_final = LLMResponse(
+        content="Actualmente hay alrededor de 19.7 millones de Bitcoin en circulación.",
+        tool_calls=[],
+    )
+    corrected_final = LLMResponse(
+        content="El precio ronda 106,000 USD. Advertencia: cifra aproximada según la fuente leída.",
+        tool_calls=[],
+    )
+
+    def fake_execute_tool(call, _cfg):
+        if call.name == "web_search":
+            return ToolResult(
+                tool_name="web_search",
+                content="1. CoinMarketCap https://coinmarketcap.com/es/currencies/bitcoin/",
+                is_error=False,
+                call_id=call.call_id,
+            )
+        if call.name == "web_fetch":
+            return ToolResult(
+                tool_name="web_fetch",
+                content=(
+                    "Fetched https://coinmarketcap.com/es/currencies/bitcoin/ [200]\n\n"
+                    "Bitcoin price today is $106,123.45 USD. Market cap ... "
+                    "Circulating supply is 19.7M BTC."
+                ),
+                is_error=False,
+                call_id=call.call_id,
+            )
+        raise AssertionError(f"Unexpected tool {call.name}")
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute_tool),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [search_round, fetch_round, drift_final, corrected_final]
+        result = run_agent(prompt, selection, config=config)
+
+    assert "precio" in result.lower() or "usd" in result.lower()
+    assert "circulación" not in result.lower()
+    assert client.chat.call_count == 4
+    fourth_round_messages = client.chat.call_args_list[3].args[0]
+    assert any(
+        "pregunta original del usuario" in str(m.get("content", "")).lower()
+        for m in fourth_round_messages
+        if isinstance(m, dict) and m.get("role") == "user"
+    )
