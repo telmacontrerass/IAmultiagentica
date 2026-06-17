@@ -88,7 +88,12 @@ def document_direct_answer(
 def document_path_from_prompt(user_prompt: str, cwd: str) -> str | None:
     match = _DOCUMENT_PATH_RE.search(user_prompt)
     if match:
-        return match.group("path")
+        resolved = _resolve_prompt_path(match.group("path"), cwd)
+        if resolved:
+            return resolved
+        # Regex matched a name that does not exist at that location (e.g. the
+        # user wrote "resumen.txt inside Prueba" as prose, not as a path). Fall
+        # through to candidate search so we can locate it in a subdirectory.
     candidates = document_candidates(cwd, requested_document_extensions(user_prompt))
     if not candidates:
         return None
@@ -108,6 +113,26 @@ def document_path_from_prompt(user_prompt: str, cwd: str) -> str | None:
     requested = requested_document_extensions(user_prompt)
     if requested and len(candidates) == 1:
         return relative_document_path(candidates[0], cwd)
+    return None
+
+
+def _resolve_prompt_path(raw: str, cwd: str) -> str | None:
+    """Return a usable path for a regex-matched document reference.
+
+    Keeps the reference as-is when it already points to an existing file
+    (absolute, or relative to cwd). When the prompt only named the file
+    ("resumen.txt inside Prueba"), locates it by basename anywhere under cwd
+    and returns the real relative path. Returns None when it cannot be resolved
+    unambiguously, so the caller can fall back to token scoring.
+    """
+    candidate = Path(raw)
+    direct = candidate if candidate.is_absolute() else Path(cwd) / raw
+    if direct.is_file():
+        return direct.as_posix() if candidate.is_absolute() else raw
+    name = candidate.name.lower()
+    matches = [path for path in document_candidates(cwd) if path.name.lower() == name]
+    if len(matches) == 1:
+        return relative_document_path(matches[0], cwd)
     return None
 
 
@@ -152,20 +177,35 @@ def word_tokens(text: str) -> list[str]:
     ]
 
 
+_WRITE_VERBS = (
+    # Spanish
+    "crea", "crear", "guarda", "guardar", "escribe", "escribir", "edita",
+    "editar", "modifica", "modificar", "sobrescribe", "sobrescribir",
+    "convierte", "convertir", "genera", "generar", "exporta", "exportar",
+    # English
+    "make", "create", "write", "save", "edit", "modify", "overwrite",
+    "generate", "build", "convert", "export",
+)
+_READ_VERBS = (
+    # Spanish
+    "abre", "abrir", "analiza", "analizar", "busca", "buscar", "consulta",
+    "consultar", "corrige", "corregir", "extrae", "extraer", "lee", "leer",
+    "resume", "resumir", "revisa", "revisar",
+    # English
+    "read", "analyze", "analyse", "summarize", "summarise", "summary",
+    "open", "review", "extract",
+)
+# Word-boundary match so a verb fragment inside a filename (e.g. "resume"
+# inside "resumen.txt") does not falsely signal read/write intent.
+_WRITE_VERB_RE = re.compile(r"\b(" + "|".join(_WRITE_VERBS) + r")\b")
+_READ_VERB_RE = re.compile(r"\b(" + "|".join(_READ_VERBS) + r")\b")
+
+
 def looks_like_document_read_request(user_prompt: str) -> bool:
     text = user_prompt.lower()
-    write_verbs = (
-        "crea", "crear", "guarda", "guardar", "escribe", "escribir", "edita",
-        "editar", "modifica", "modificar", "sobrescribe", "sobrescribir",
-    )
-    if any(verb in text for verb in write_verbs):
+    if _WRITE_VERB_RE.search(text):
         return False
-    read_verbs = (
-        "abre", "abrir", "analiza", "analizar", "busca", "buscar", "consulta",
-        "consultar", "corrige", "corregir", "extrae", "extraer", "lee", "leer",
-        "resume", "resumir", "revisa", "revisar",
-    )
-    has_read_intent = any(verb in text for verb in read_verbs)
+    has_read_intent = bool(_READ_VERB_RE.search(text))
     has_reference = bool(_DOCUMENT_PATH_RE.search(user_prompt)) or any(
         cue in text for cue in _DOCUMENT_REQUEST_CUES
     )
