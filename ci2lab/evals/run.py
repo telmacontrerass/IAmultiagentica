@@ -1,9 +1,9 @@
 """
-CLI del sistema de evaluación del arnés.
+CLI for the harness evaluation system.
 
-Uso:
-  python -m ci2lab.evals.run              # mock (sin Ollama)
-  python -m ci2lab.evals.run --live       # requiere Ollama
+Usage:
+  python -m ci2lab.evals.run              # mock (without Ollama)
+  python -m ci2lab.evals.run --live       # requires Ollama
   ci2lab evals run --mock
 """
 
@@ -20,29 +20,29 @@ from ci2lab.evals.task import default_tasks_dir
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ci2lab.evals.run",
-        description="Evaluación práctica del arnés Ci2Lab (tareas repetibles)",
+        description="Practical evaluation of the Ci2Lab harness (repeatable tasks)",
     )
     parser.add_argument(
         "--tasks-dir",
         default=None,
-        help="Directorio con tareas JSON (default: evals/tasks/)",
+        help="Directory with JSON tasks (default: evals/tasks/)",
     )
     parser.add_argument(
         "--task",
         action="append",
         dest="task_ids",
         metavar="ID",
-        help="Ejecutar solo estas tareas (repetible)",
+        help="Run only these tasks (repeatable)",
     )
     parser.add_argument(
         "--model",
         default=None,
-        help="Tag Ollama (solo modo --live)",
+        help="Ollama tag (only in --live mode)",
     )
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Usar Ollama real (por defecto: modo mock sin Ollama)",
+        help="Use a real Ollama (default: mock mode without Ollama)",
     )
 
     args = parser.parse_args(argv)
@@ -58,23 +58,23 @@ def main(argv: list[str] | None = None) -> int:
         tasks_dir = default_tasks_dir()
     if not tasks_dir.is_dir():
         console.print(
-            "[red]No se encontró el directorio de tareas.[/red]\n"
-            f"  Esperado: {tasks_dir}\n\n"
-            "Crea tareas en evals/tasks/*.json o pasa --tasks-dir."
+            "[red]Tasks directory not found.[/red]\n"
+            f"  Expected: {tasks_dir}\n\n"
+            "Create tasks in evals/tasks/*.json or pass --tasks-dir."
         )
         return 1
 
     console.print(
-        f"[bold]Ci2Lab evals[/bold] — modo "
+        f"[bold]Ci2Lab evals[/bold] — mode "
         f"{'[cyan]mock[/cyan]' if use_mock else '[yellow]live[/yellow]'}"
     )
     if use_mock:
         console.print(
-            "[dim]Sin Ollama. Usa --live para evaluar contra el modelo real.[/dim]\n"
+            "[dim]No Ollama. Use --live to evaluate against the real model.[/dim]\n"
         )
     else:
         console.print(
-            "[dim]Requiere Ollama activo. Los prompts reales pueden variar.[/dim]\n"
+            "[dim]Requires Ollama running. Real prompts may vary.[/dim]\n"
         )
 
     try:
@@ -90,9 +90,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print_summary_table(results)
     console.print(
-        f"\n[bold]Resumen:[/bold] {summary.passed}/{summary.total} PASS"
+        f"\n[bold]Summary:[/bold] {summary.passed}/{summary.total} PASS"
     )
-    console.print(f"[dim]Resultados: {summary.results_dir}[/dim]")
+    console.print(f"[dim]Results: {summary.results_dir}[/dim]")
 
     return 0 if summary.failed == 0 else 1
 

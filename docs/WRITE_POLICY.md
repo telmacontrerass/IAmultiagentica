@@ -1,45 +1,45 @@
-# Política de edición supervisada
+# Supervised editing policy
 
-## Estado
+## Status
 
-`write_file` y `edit_file` están **habilitadas y validadas**, pero solo en **modo supervisado**.
+`write_file` and `edit_file` are **enabled and validated**, but only in **supervised mode**.
 
-No son el flujo principal del agente sobre el código del repositorio ni constituyen edición autónoma: cada cambio en disco requiere revisión y aprobación explícita del usuario cuando `require_diff_preview=true` (valor por defecto).
+They are not the agent's primary flow over the repository code, and they are not autonomous editing: every on-disk change requires explicit user review and approval when `require_diff_preview=true` (the default).
 
-## Qué significa modo supervisado
+## What supervised mode means
 
-- Siempre se genera diff preview si `require_diff_preview=true`.
-- El usuario debe aprobar el diff visualmente (`[s/N]`).
-- `--yes` **no omite** el preview con `require_diff_preview=true`.
-- Los cambios quedan registrados en `runs/` (`tool_calls.jsonl` con `outcome`).
-- Se pueden desactivar por completo con `write_tools_enabled=false`.
+- A diff preview is always generated when `require_diff_preview=true`.
+- The user must visually approve the diff (legacy engine: `[y/N]`; `claude_experimental`: the Allow/Deny prompt).
+- `--yes` **does not skip** the preview when `require_diff_preview=true`.
+- Changes are recorded under `runs/` (`tool_calls.jsonl` with an `outcome`).
+- They can be disabled entirely with `write_tools_enabled=false`.
 
-Detalle técnico del flujo: [`docs/audits/write_edit_tools_status.md`](audits/write_edit_tools_status.md).
+Technical detail of the flow: [`docs/audits/write_edit_tools_status.md`](audits/write_edit_tools_status.md).
 
-## Uso recomendado ahora
+## Recommended use today
 
-- Archivos temporales y workspaces de prueba.
-- Configs de prueba o fixtures locales.
-- Cambios pequeños y acotados.
-- Evals (`005`, `006`, `007`) y validación del harness.
-- Prototipos controlados fuera del código crítico del producto.
+- Temporary files and test workspaces.
+- Test configs or local fixtures.
+- Small, contained changes.
+- Evals (`005`, `006`, `007`) and harness validation.
+- Controlled prototypes outside critical product code.
 
-## Uso no recomendado todavía
+## Not recommended yet
 
-- Edición masiva de código del repo real como flujo principal del agente.
-- Refactors grandes sin revisión humana línea a línea.
-- Cambios críticos en producción o en rutas sensibles sin revisar el diff.
-- Scripts automatizados con `require_diff_preview=false` (omite la barrera de supervisión).
+- Mass editing of real repo code as the agent's primary flow.
+- Large refactors without line-by-line human review.
+- Critical production changes, or sensitive paths, without reviewing the diff.
+- Automated scripts with `require_diff_preview=false` (this bypasses the supervision barrier).
 
-## Pendiente antes de edición intensiva
+## Pending before intensive editing
 
-- Git snapshot / rollback antes de aplicar cambios.
-- Más evals de edición sobre código real.
-- Mejor política por tipo de archivo (allowlist/denylist de rutas).
-- Posible modo dry-run adicional.
+- Git snapshot / rollback before applying changes.
+- More editing evals over real code.
+- A better per-file-type policy (path allowlist/denylist).
+- A possible additional dry-run mode.
 
-## Referencias
+## References
 
-- [Estado técnico write/edit](audits/write_edit_tools_status.md)
-- [Validación en evals mock/live](audits/live_eval_status.md) — tareas `005`–`007`
-- [Limitaciones conocidas](KNOWN_LIMITATIONS.md)
+- [Technical write/edit status](audits/write_edit_tools_status.md)
+- [Validation in mock/live evals](audits/live_eval_status.md) — tasks `005`–`007`
+- [Known limitations](KNOWN_LIMITATIONS.md)

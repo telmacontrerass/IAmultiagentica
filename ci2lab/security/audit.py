@@ -1,4 +1,4 @@
-"""Registro de decisiones de seguridad (memoria + JSONL persistido)."""
+"""Security decision logging (in-memory + persisted JSONL)."""
 
 from __future__ import annotations
 

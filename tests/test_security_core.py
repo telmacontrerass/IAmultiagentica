@@ -67,7 +67,7 @@ def test_write_inside_workspace(workspace: Path):
 
 
 def test_block_write_outside_workspace(workspace: Path, outside_secret: Path):
-    with pytest.raises(PathViolationError, match="fuera del workspace"):
+    with pytest.raises(PathViolationError, match="outside the workspace"):
         assert_within_workspace(str(workspace), str(outside_secret))
 
 

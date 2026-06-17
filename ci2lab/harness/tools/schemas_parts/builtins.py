@@ -29,8 +29,8 @@ def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
         mgr = get_mcp_manager(config.cwd, connect=True)
         schemas.extend(mgr.build_function_schemas())
     if config is not None and config.skill_allowed_tools is not None:
-        # Canonicaliza sinónimos (list_files→ls, etc.) para que un allow-list
-        # escrito con otro nombre siga exponiendo el schema correcto al modelo.
+        # Canonicalize synonyms (list_files→ls, etc.) so that an allow-list
+        # written with a different name still exposes the correct schema to the model.
         from ci2lab.harness.parsing_parts.common import map_name
 
         allowed = {map_name(t) for t in config.skill_allowed_tools}

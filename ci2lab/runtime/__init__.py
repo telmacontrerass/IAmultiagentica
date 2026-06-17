@@ -1,1 +1,1 @@
-"""Runtime de inferencia (Ollama, etc.)."""
+"""Inference runtime (Ollama, etc.)."""

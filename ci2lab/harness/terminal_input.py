@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 
-def read_prompt_line(prompt: str = "Tú> ") -> str:
+def read_prompt_line(prompt: str = "You> ") -> str:
     """
     Read one user message from the terminal.
 

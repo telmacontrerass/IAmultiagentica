@@ -1,4 +1,4 @@
-"""Comandos agent y chat."""
+"""agent and chat commands."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def _workspace_startup_hint(args: argparse.Namespace, cwd: str) -> None:
         return
     if _looks_like_ci2lab_repo(cwd):
         console.print(
-            "[dim]Tip: para trabajar en otro proyecto usa `--workspace <ruta>` "
-            "o define `CI2LAB_WORKSPACE_HINT`.[/dim]"
+            "[dim]Tip: to work on another project use `--workspace <path>` "
+            "or set `CI2LAB_WORKSPACE_HINT`.[/dim]"
         )
 
 
@@ -40,13 +40,13 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
         data = load_session(args.session)
         if data:
             history = data.get("messages")
-            console.print(f"[dim]Reanudando sesión {args.session}[/dim]")
+            console.print(f"[dim]Resuming session {args.session}[/dim]")
         else:
             console.print(
-                f"[yellow]No se encontró la sesión {args.session}; se iniciará una nueva.[/yellow]"
+                f"[yellow]Session {args.session} not found; a new one will be started.[/yellow]"
             )
 
-    console.print(f"[bold]Modelo:[/bold] {selection.ollama_tag}")
+    console.print(f"[bold]Model:[/bold] {selection.ollama_tag}")
     console.print(f"[bold]Tool mode:[/bold] {selection.tool_mode}")
     console.print(f"[bold]CWD:[/bold] {config.cwd}\n")
     _workspace_startup_hint(args, config.cwd)
@@ -63,12 +63,12 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
     except LLMError as exc:
         console.print(f"[red]{exc.user_message}[/red]")
         console.print(
-            "[dim]Siguiente paso: corrige el problema y reintenta con el mismo "
-            "comando. Puedes validar entorno con `ci2lab doctor`.[/dim]"
+            "[dim]Next step: fix the problem and retry with the same "
+            "command. You can validate the environment with `ci2lab doctor`.[/dim]"
         )
         return exc.exit_code
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrumpido.[/yellow]")
+        console.print("\n[yellow]Interrupted.[/yellow]")
         return 130
     return 0
 
@@ -90,11 +90,11 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     except LLMError as exc:
         console.print(f"[red]{exc.user_message}[/red]")
         console.print(
-            "[dim]Siguiente paso: corrige el problema y relanza `ci2lab chat` "
-            "o valida entorno con `ci2lab doctor`.[/dim]"
+            "[dim]Next step: fix the problem and relaunch `ci2lab chat` "
+            "or validate the environment with `ci2lab doctor`.[/dim]"
         )
         return exc.exit_code
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrumpido.[/yellow]")
+        console.print("\n[yellow]Interrupted.[/yellow]")
         return 130
     return 0

@@ -13,15 +13,15 @@ from ci2lab.harness.tools.write_preview import WritePreview
 
 
 # ---------------------------------------------------------------------------
-# Preview (sin ejecutar nada en disco)
+# Preview (without executing anything on disk)
 # ---------------------------------------------------------------------------
 
 def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
     """
-    Construye un WritePreview descriptivo para fill_docx_template.
+    Build a descriptive WritePreview for fill_docx_template.
 
-    No lee ni escribe nada en disco; solo valida que la plantilla exista
-    y genera el texto de confirmación que verá el usuario.
+    Does not read or write anything to disk; it only validates that the template
+    exists and generates the confirmation text the user will see.
     """
     template = str(args.get("template", "")).strip()
     output = str(args.get("output", "")).strip()
@@ -31,20 +31,20 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
 
     if not template:
         return WritePreview(
-            path=output or "(sin output)",
+            path=output or "(no output)",
             is_new_file=True,
             diff="",
-            validation_error="Error: parámetro 'template' requerido",
+            validation_error="Error: 'template' parameter required",
         )
     if not output:
         return WritePreview(
-            path="(sin output)",
+            path="(no output)",
             is_new_file=True,
             diff="",
-            validation_error="Error: parámetro 'output' requerido",
+            validation_error="Error: 'output' parameter required",
         )
 
-    # Validar que la plantilla existe
+    # Validate that the template exists
     try:
         template_path = resolve_path(template, cwd)
     except PathViolationError as exc:
@@ -73,7 +73,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             ),
         )
 
-    # Validar que el output no coincide con la plantilla
+    # Validate that the output does not match the template
     try:
         output_path = resolve_path(output, cwd)
     except PathViolationError as exc:
@@ -98,23 +98,23 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: el output debe tener extensión .docx, "
+                f"Error: the output must have a .docx extension, "
                 f"no '{output_path.suffix}'"
             ),
         )
 
-    # Construir texto descriptivo del preview
+    # Build descriptive text for the preview
     lines = [
-        f"Plantilla : {template}",
-        f"Output    : {output} ({'existente — se sobreescribe' if output_path.is_file() else 'archivo nuevo'})",
+        f"Template : {template}",
+        f"Output    : {output} ({'existing — will be overwritten' if output_path.is_file() else 'new file'})",
         "",
     ]
     if fields:
-        lines.append("Campos a sustituir:")
+        lines.append("Fields to substitute:")
         for key, value in fields.items():
             lines.append(f"  {{{{{key}}}}}  →  {value}")
     else:
-        lines.append("(no se proporcionaron campos — se copiará la plantilla sin cambios)")
+        lines.append("(no fields provided — the template will be copied unchanged)")
 
     return WritePreview(
         path=str(output_path.relative_to(Path(cwd).resolve()))
@@ -127,21 +127,21 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
 
 
 # ---------------------------------------------------------------------------
-# Sustitución de marcadores en un párrafo DOCX
+# Placeholder substitution in a DOCX paragraph
 # ---------------------------------------------------------------------------
 
 def _replace_in_paragraph(paragraph: Any, fields: dict[str, str]) -> int:
     """
-    Sustituye {{clave}} → valor en un párrafo, manejando runs partidos.
+    Substitute {{key}} → value in a paragraph, handling split runs.
 
-    python-docx puede partir el texto de un marcador entre varios runs
-    (fragmentos de texto con formato distinto). La estrategia:
-      1. Obtener el texto completo del párrafo.
-      2. Sustituir en el texto completo.
-      3. Si hubo cambios, poner el resultado en el primer run y vaciar el resto.
+    python-docx may split a placeholder's text across several runs
+    (text fragments with different formatting). The strategy:
+      1. Get the full text of the paragraph.
+      2. Substitute in the full text.
+      3. If there were changes, put the result in the first run and empty the rest.
 
-    Esto preserva el formato del primer run (fuente, negrita, tamaño)
-    pero pierde variaciones de formato dentro del mismo párrafo. Aceptable en v1.
+    This preserves the formatting of the first run (font, bold, size)
+    but loses formatting variations within the same paragraph. Acceptable in v1.
     """
     full_text = paragraph.text
     new_text = full_text
@@ -166,7 +166,7 @@ def _replace_in_paragraph(paragraph: Any, fields: dict[str, str]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Función principal
+# Main function
 # ---------------------------------------------------------------------------
 
 def fill_docx_template(
@@ -176,9 +176,9 @@ def fill_docx_template(
     fields: dict[str, str],
 ) -> str:
     """
-    Genera un DOCX rellenando una plantilla con los campos dados.
+    Generate a DOCX by filling a template with the given fields.
 
-    Retorna siempre un string: mensaje de éxito o "Error: ...".
+    Always returns a string: a success message or "Error: ...".
     """
     try:
         from docx import Document
@@ -188,7 +188,7 @@ def fill_docx_template(
             "Ejecuta: pip install -e '.'"
         )
 
-    # Resolver rutas (ya validadas en preview, pero re-validamos por seguridad)
+    # Resolve paths (already validated in preview, but re-validated for safety)
     try:
         template_path = resolve_path(template, cwd)
         output_path = resolve_path(output, cwd)
@@ -200,21 +200,21 @@ def fill_docx_template(
     if template_path == output_path:
         return "Error: output no puede ser la misma ruta que la plantilla"
 
-    # Abrir la plantilla
+    # Open the template
     try:
         doc = Document(str(template_path))
     except Exception as exc:  # noqa: BLE001
         return f"Error: no se pudo abrir la plantilla {template}: {exc}"
 
-    # Crear directorio de output si no existe
+    # Create output directory if it does not exist
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Sustituir marcadores en párrafos sueltos
+    # Substitute placeholders in standalone paragraphs
     total = 0
     for paragraph in doc.paragraphs:
         total += _replace_in_paragraph(paragraph, fields)
 
-    # Sustituir marcadores en tablas
+    # Substitute placeholders in tables
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -225,10 +225,10 @@ def fill_docx_template(
     try:
         doc.save(str(output_path))
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo guardar el documento en {output}: {exc}"
+        return f"Error: could not save the document to {output}: {exc}"
 
     size_kb = round(output_path.stat().st_size / 1024, 1)
     return (
-        f"Documento generado: {output} "
-        f"({total} sustitución{'es' if total != 1 else ''}, {size_kb} KB)"
+        f"Document generated: {output} "
+        f"({total} substitution{'s' if total != 1 else ''}, {size_kb} KB)"
     )

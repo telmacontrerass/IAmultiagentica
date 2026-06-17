@@ -1,4 +1,4 @@
-"""Herramientas de lectura, búsqueda y edición de archivos."""
+"""File reading, searching and editing tools."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Parseo de invocaciones de herramientas desde la respuesta del modelo."""
+"""Parsing of tool invocations from the model's response."""
 
 from __future__ import annotations
 

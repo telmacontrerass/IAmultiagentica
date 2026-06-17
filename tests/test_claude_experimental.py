@@ -107,7 +107,7 @@ def test_default_engine_claude_experimental():
 
 
 def test_unknown_engine_fails():
-    with pytest.raises(Exception, match="desconocido"):
+    with pytest.raises(Exception, match="Unknown"):
         normalize_security_engine("not_a_real_engine")
 
 

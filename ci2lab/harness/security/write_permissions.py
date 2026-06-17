@@ -1,4 +1,4 @@
-"""Confirmación con diff preview para herramientas de escritura."""
+"""Confirmation with diff preview for write tools."""
 
 from __future__ import annotations
 
@@ -60,4 +60,4 @@ def _confirm_with_preview(
 
     if approved:
         return True, None
-    return False, f"El usuario denegó la ejecución de `{tool_name}`."
+    return False, f"The user denied execution of `{tool_name}`."

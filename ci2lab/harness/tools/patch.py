@@ -51,7 +51,7 @@ def _unified_diff(old: str, new: str, path: str) -> str:
         lineterm="",
     )
     text = "\n".join(chunks)
-    return text if text else "(sin cambios detectados)"
+    return text if text else "(no changes detected)"
 
 
 def _normalize_patch_text(patch_text: str) -> str:
@@ -192,8 +192,8 @@ def _locate_hunk(lines: list[str], hunk: Hunk, *, path: str) -> int:
     ]
     if not matches:
         raise ValueError(
-            f"no se encontro contexto del parche en `{path}`; "
-            "vuelve a leer el archivo y genera el hunk con lineas de contexto"
+            f"patch context not found in `{path}`; "
+            "re-read the file and build the hunk with context lines"
         )
     if preferred in matches:
         return preferred
@@ -248,7 +248,7 @@ def _read_file_lines(cwd: str, path: str, *, is_new_file: bool) -> list[str]:
     if not resolved.is_file():
         if is_new_file:
             return []
-        raise ValueError(f"no existe el archivo `{path}`")
+        raise ValueError(f"file does not exist `{path}`")
     return resolved.read_text(encoding="utf-8", errors="replace").splitlines()
 
 

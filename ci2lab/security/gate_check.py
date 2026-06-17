@@ -1,4 +1,4 @@
-"""Evaluación dry-run de la puerta de seguridad (sin ejecutar tools)."""
+"""Dry-run evaluation of the security gate (without executing tools)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ _PATTERN_TOOLS = frozenset({"grep", "glob"})
 
 
 def build_tool_args(tool: str, target: str) -> dict[str, Any]:
-    """Construye argumentos mínimos para evaluate_tool_gate."""
+    """Build minimal arguments for evaluate_tool_gate."""
     name = tool.strip()
     if name in _BASH_TOOLS:
         return {"command": target}
@@ -39,7 +39,7 @@ def _gate_to_decision(gate: Any) -> str:
 
 
 def load_permission_config(path: str | Path) -> OpenCodePermissionConfig:
-    """Carga permission desde JSON (compat: delega en opencode_config_io)."""
+    """Load permission from JSON (compat: delegates to opencode_config_io)."""
     return load_opencode_config_bundle(path).to_permission_config()
 
 
@@ -56,14 +56,14 @@ def evaluate_security_gate(
     show_effective_config: bool = False,
 ) -> dict[str, Any]:
     """
-    Evalúa la puerta de seguridad sin ejecutar la tool.
+    Evaluate the security gate without executing the tool.
 
-    Raises ValueError si engine/tool inválidos.
+    Raises ValueError if engine/tool are invalid.
     """
     normalized_engine = normalize_security_engine(engine)
     tool_name = tool.strip()
     if not tool_name:
-        raise ValueError("tool no puede estar vacío.")
+        raise ValueError("tool cannot be empty.")
 
     opencode_perms: OpenCodePermissionConfig | None = None
     if config_bundle is not None:

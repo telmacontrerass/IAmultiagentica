@@ -1,25 +1,25 @@
 """
-Permisos de herramientas via settings.json jerárquico.
+Tool permissions via hierarchical settings.json.
 
-Formato del archivo:
+File format:
     {
-      "allow": { "<tool>": ["<patron>", ...] },
-      "deny":  { "<tool>": ["<patron>", ...] }
+      "allow": { "<tool>": ["<pattern>", ...] },
+      "deny":  { "<tool>": ["<pattern>", ...] }
     }
 
-Semántica:
-  - deny evalúa primero y gana siempre (no son complementarios).
-  - Si una tool no aparece en allow → permitida por defecto.
-  - Si una tool aparece en allow → el sujeto debe coincidir al menos un patrón.
-  - allow + deny en la misma tool → deny gana si hay coincidencia.
+Semantics:
+  - deny is evaluated first and always wins (they are not complementary).
+  - If a tool does not appear in allow → allowed by default.
+  - If a tool appears in allow → the subject must match at least one pattern.
+  - allow + deny on the same tool → deny wins if there is a match.
 
-Jerarquía de archivos (orden de carga):
-  1. ~/.ci2lab/settings.json  (global / usuario)
-  2. .ci2lab/settings.json    (proyecto; se aplica encima del global)
+File hierarchy (load order):
+  1. ~/.ci2lab/settings.json  (global / user)
+  2. .ci2lab/settings.json    (project; applied on top of global)
 
-Reglas de fusión:
-  - deny:  acumulación. El proyecto no puede quitar denies del nivel global.
-  - allow: el proyecto sobreescribe por tool (puede ampliar o restringir).
+Merge rules:
+  - deny:  accumulation. The project cannot remove denies from the global level.
+  - allow: the project overrides per tool (can broaden or restrict).
 """
 
 from __future__ import annotations
@@ -38,12 +38,12 @@ _VALID_TOP_KEYS = frozenset({"allow", "deny"})
 
 
 # ---------------------------------------------------------------------------
-# Tipos públicos
+# Public types
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ToolSettings:
-    """Reglas allow/deny ya fusionadas de todos los niveles activos."""
+    """allow/deny rules already merged from all active levels."""
 
     allow: dict[str, list[str]] = field(default_factory=dict)
     deny: dict[str, list[str]] = field(default_factory=dict)
@@ -54,13 +54,13 @@ class ToolSettings:
 
 
 # ---------------------------------------------------------------------------
-# Rutas de búsqueda
+# Search paths
 # ---------------------------------------------------------------------------
 
 def _settings_paths(cwd: str) -> list[Path]:
     """
-    Devuelve las rutas donde buscar settings.json, de menor a mayor
-    especificidad.  La última capa (proyecto) tiene más precedencia en allow.
+    Return the paths to look for settings.json, from least to most
+    specific.  The last layer (project) has higher precedence in allow.
     """
     return [
         Path.home() / ".ci2lab" / _SETTINGS_FILENAME,
@@ -69,7 +69,7 @@ def _settings_paths(cwd: str) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Lectura y parseo de un archivo
+# Reading and parsing a file
 # ---------------------------------------------------------------------------
 
 def _load_raw(path: Path) -> dict[str, Any] | None:
@@ -78,13 +78,13 @@ def _load_raw(path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
-        logger.warning("settings.json: no se pudo leer %s: %s", path, exc)
+        logger.warning("settings.json: could not read %s: %s", path, exc)
         return None
     except json.JSONDecodeError as exc:
-        logger.warning("settings.json: JSON inválido en %s: %s", path, exc)
+        logger.warning("settings.json: invalid JSON in %s: %s", path, exc)
         return None
     if not isinstance(data, dict):
-        logger.warning("settings.json: %s no es un objeto JSON; ignorado.", path)
+        logger.warning("settings.json: %s is not a JSON object; ignored.", path)
         return None
     return data
 
@@ -95,16 +95,16 @@ def _parse_tool_patterns(
     context: str,
 ) -> dict[str, list[str]]:
     """
-    Parsea un bloque allow o deny.
+    Parse an allow or deny block.
 
-    Acepta:
+    Accepts:
       { "bash": ["rm *", "del *"], "read_file": "*.env" }
 
-    Ignora entradas inválidas con aviso en lugar de lanzar excepciones.
+    Ignores invalid entries with a warning instead of raising exceptions.
     """
     if not isinstance(raw, dict):
         logger.warning(
-            "settings.json (%s): debe ser {tool: [patrones]}; ignorado.", context
+            "settings.json (%s): must be {tool: [patterns]}; ignored.", context
         )
         return {}
     result: dict[str, list[str]] = {}
@@ -114,7 +114,7 @@ def _parse_tool_patterns(
             patterns = [patterns]
         if not isinstance(patterns, list):
             logger.warning(
-                "settings.json (%s.%s): patrones deben ser lista o string; ignorado.",
+                "settings.json (%s.%s): patterns must be a list or string; ignored.",
                 context,
                 tool,
             )
@@ -129,7 +129,7 @@ def _parse_single_file(data: dict[str, Any], *, source: str) -> ToolSettings:
     unknown = set(data.keys()) - _VALID_TOP_KEYS
     if unknown:
         logger.warning(
-            "settings.json (%s): claves desconocidas ignoradas: %s", source, unknown
+            "settings.json (%s): unknown keys ignored: %s", source, unknown
         )
     allow = _parse_tool_patterns(
         data.get("allow", {}), context=f"{source}.allow"
@@ -141,19 +141,19 @@ def _parse_single_file(data: dict[str, Any], *, source: str) -> ToolSettings:
 
 
 # ---------------------------------------------------------------------------
-# Fusión de capas
+# Layer merging
 # ---------------------------------------------------------------------------
 
 def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
     """
-    Fusiona capa global y capa de proyecto:
+    Merge the global layer and the project layer:
 
-    deny  → unión. Los patrones del global NO pueden ser eliminados por
-            el proyecto. El proyecto solo puede añadir más restricciones.
-    allow → el proyecto sobreescribe por tool (puede ampliar o cambiar).
-            Si una tool no aparece en el proyecto, se mantiene el global.
+    deny  → union. The global patterns CANNOT be removed by the project.
+            The project can only add more restrictions.
+    allow → the project overrides per tool (can broaden or change).
+            If a tool does not appear in the project, the global is kept.
     """
-    # deny: acumular sin duplicados, manteniendo orden
+    # deny: accumulate without duplicates, preserving order
     merged_deny: dict[str, list[str]] = {}
     all_deny_tools = set(global_s.deny) | set(project_s.deny)
     for tool in all_deny_tools:
@@ -163,23 +163,23 @@ def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
                 seen.append(p)
         merged_deny[tool] = seen
 
-    # allow: proyecto gana por tool; si el proyecto no define una tool,
-    # se conserva el valor global
+    # allow: project wins per tool; if the project does not define a tool,
+    # the global value is kept
     merged_allow: dict[str, list[str]] = {**global_s.allow, **project_s.allow}
 
     return ToolSettings(allow=merged_allow, deny=merged_deny)
 
 
 # ---------------------------------------------------------------------------
-# Carga pública
+# Public loading
 # ---------------------------------------------------------------------------
 
 def load_settings(cwd: str) -> ToolSettings:
     """
-    Carga y fusiona settings.json de nivel global y de proyecto.
+    Load and merge global-level and project-level settings.json.
 
-    Nunca lanza excepciones; errores de lectura o parseo se registran
-    con logging.warning y se ignoran silenciosamente.
+    Never raises exceptions; read or parse errors are recorded with
+    logging.warning and silently ignored.
     """
     layers: list[ToolSettings] = []
     for path in _settings_paths(cwd):
@@ -195,27 +195,27 @@ def load_settings(cwd: str) -> ToolSettings:
 
 
 # ---------------------------------------------------------------------------
-# Evaluación de una llamada concreta
+# Evaluating a specific call
 # ---------------------------------------------------------------------------
 
 def subject_for_tool(tool_name: str, args: dict[str, Any]) -> str:
     """
-    Extrae el 'sujeto' relevante de una llamada para compararlo con patrones.
+    Extract the relevant 'subject' of a call to compare it against patterns.
 
-    | Tool        | Sujeto                         |
+    | Tool        | Subject                        |
     |-------------|--------------------------------|
-    | bash        | el comando completo            |
-    | web_fetch   | la URL                         |
-    | *_file / ls / glob / grep / tree / inspect_file | la ruta |
-    | resto       | "*" (siempre coincide con "*") |
+    | bash        | the full command               |
+    | web_fetch   | the URL                        |
+    | *_file / ls / glob / grep / tree / inspect_file | the path |
+    | rest        | "*" (always matches "*")       |
     """
     if tool_name == "bash":
         return str(args.get("command", ""))
     if tool_name == "web_fetch":
         return str(args.get("url", ""))
     if tool_name == "fill_docx_template":
-        # El sujeto es la ruta de salida (el archivo que se va a escribir).
-        # La ruta de la plantilla se valida por workspace containment en preview_fill_docx.
+        # The subject is the output path (the file that will be written).
+        # The template path is validated by workspace containment in preview_fill_docx.
         return str(args.get("output", "*"))
     if "path" in args:
         return str(args["path"])
@@ -225,42 +225,42 @@ def subject_for_tool(tool_name: str, args: dict[str, Any]) -> str:
 
 
 def _normalize_path(s: str) -> str:
-    """Normaliza separadores para comparación cross-platform."""
+    """Normalize separators for cross-platform comparison."""
     return s.replace("\\", "/")
 
 
 def _pattern_matches(pattern: str, subject: str) -> bool:
     """
-    Compara un patrón glob contra el sujeto.
+    Compare a glob pattern against the subject.
 
-    Estrategias (por orden):
-    1. fnmatch directo (case-insensitive en Windows).
-    2. Prefix match para comandos bash con espacios (ej: "rm *" cubre "rm -rf .").
-    3. Para patrones con "**": PurePosixPath.full_match() (Python 3.13+).
-       - "**" puede representar cero o más segmentos de directorio.
-       - Respeta prefijos concretos: ".ci2lab/output/**/*.docx" NO coincide con
-         "otro/malicioso.docx".
-       - Fallback para Python < 3.13: bare-filename solo cuando el patrón
-         empieza con "**/" sin prefijo concreto.
-    4. Para patrones sin "**": coincidencia contra el nombre de archivo desnudo
-       (ej: "*.pdf" coincide con "docs/informe.pdf").
+    Strategies (in order):
+    1. Direct fnmatch (case-insensitive on Windows).
+    2. Prefix match for bash commands with spaces (e.g. "rm *" covers "rm -rf .").
+    3. For patterns with "**": PurePosixPath.full_match() (Python 3.13+).
+       - "**" can represent zero or more directory segments.
+       - Respects concrete prefixes: ".ci2lab/output/**/*.docx" does NOT match
+         "other/malicious.docx".
+       - Fallback for Python < 3.13: bare-filename only when the pattern
+         starts with "**/" without a concrete prefix.
+    4. For patterns without "**": match against the bare filename
+       (e.g. "*.pdf" matches "docs/report.pdf").
     """
     norm_s = _normalize_path(subject)
     norm_p = _normalize_path(pattern)
 
-    # coincidencia directa (case-insensitive en Windows vía lower())
+    # direct match (case-insensitive on Windows via lower())
     if fnmatch.fnmatchcase(norm_s, norm_p) or fnmatch.fnmatchcase(
         norm_s.lower(), norm_p.lower()
     ):
         return True
 
-    # para bash: intentar prefix match (rm * debe cubrir "rm -rf .")
+    # for bash: try a prefix match (rm * must cover "rm -rf .")
     if " " in norm_p and norm_s.startswith(norm_p.split("*")[0]):
         return True
 
-    # para patrones con **: usar PurePosixPath.full_match() (Python 3.13+).
-    # Path.match() dejó de soportar ** en Python 3.13; full_match() es el
-    # reemplazo oficial y maneja correctamente cero segmentos y prefijos concretos.
+    # for patterns with **: use PurePosixPath.full_match() (Python 3.13+).
+    # Path.match() dropped support for ** in Python 3.13; full_match() is the
+    # official replacement and correctly handles zero segments and concrete prefixes.
     if "**" in norm_p:
         from pathlib import PurePosixPath
 
@@ -278,9 +278,9 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
             if PurePosixPath(norm_s.lower()).full_match(norm_p.lower()):
                 return True
         except AttributeError:
-            # Python < 3.13: full_match no disponible; fallback manual.
-            # Solo aplicamos bare-filename cuando el patrón empieza con "**/"
-            # (sin prefijo concreto) para no ignorar el prefijo por error.
+            # Python < 3.13: full_match unavailable; manual fallback.
+            # Only apply bare-filename when the pattern starts with "**/"
+            # (without a concrete prefix) so we don't ignore the prefix by mistake.
             if norm_p.startswith("**/"):
                 suffix = norm_p[3:]
                 if suffix:
@@ -290,8 +290,8 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
                     ):
                         return True
 
-    # coincidencia solo contra el nombre de archivo (último segmento)
-    # para patrones sin ** usados contra rutas con directorio (ej: "*.pdf" vs "docs/x.pdf")
+    # match only against the filename (last segment)
+    # for patterns without ** used against paths with a directory (e.g. "*.pdf" vs "docs/x.pdf")
     filename = norm_s.rsplit("/", 1)[-1]
     if filename and filename != norm_s:
         if fnmatch.fnmatchcase(filename, norm_p) or fnmatch.fnmatchcase(
@@ -303,7 +303,7 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
 
 
 def _first_match(patterns: list[str], subject: str) -> str | None:
-    """Devuelve el primer patrón que coincide, o None."""
+    """Return the first pattern that matches, or None."""
     for p in patterns:
         if _pattern_matches(p, subject):
             return p
@@ -316,37 +316,37 @@ def check_tool_allowed(
     args: dict[str, Any],
 ) -> tuple[bool, str]:
     """
-    Evalúa si una tool call está permitida según las reglas de settings.json.
+    Evaluate whether a tool call is allowed according to settings.json rules.
 
-    Devuelve (allowed: bool, reason: str).
+    Returns (allowed: bool, reason: str).
 
-    Algoritmo:
-      1. Extraer el sujeto (ruta, comando, URL, o "*").
-      2. Buscar en deny[tool_name]: si hay coincidencia → bloqueado (deny gana).
-      3. Si allow[tool_name] existe: el sujeto debe coincidir al menos un patrón.
-      4. Si allow[tool_name] no existe: permitido por defecto.
+    Algorithm:
+      1. Extract the subject (path, command, URL, or "*").
+      2. Look in deny[tool_name]: if there is a match → blocked (deny wins).
+      3. If allow[tool_name] exists: the subject must match at least one pattern.
+      4. If allow[tool_name] does not exist: allowed by default.
     """
     subject = subject_for_tool(tool_name, args)
 
-    # 1. Deny: evalúa primero, gana siempre
+    # 1. Deny: evaluated first, always wins
     deny_patterns = settings.deny.get(tool_name, [])
     matched_deny = _first_match(deny_patterns, subject)
     if matched_deny:
         return (
             False,
-            f"bloqueado por settings.json deny[{tool_name!r}] patron={matched_deny!r}",
+            f"blocked by settings.json deny[{tool_name!r}] pattern={matched_deny!r}",
         )
 
-    # 2. Allow: si hay lista y el sujeto no coincide → bloqueado
+    # 2. Allow: if there is a list and the subject does not match → blocked
     allow_patterns = settings.allow.get(tool_name)
     if allow_patterns is not None:
         matched_allow = _first_match(allow_patterns, subject)
         if matched_allow is None:
             return (
                 False,
-                f"bloqueado por settings.json allow[{tool_name!r}]: "
-                f"ningún patrón coincide con {subject!r}",
+                f"blocked by settings.json allow[{tool_name!r}]: "
+                f"no pattern matches {subject!r}",
             )
 
-    # 3. Permitido
+    # 3. Allowed
     return True, "settings:allowed"

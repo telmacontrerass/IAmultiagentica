@@ -33,7 +33,7 @@ def execute_write_tool(
         return ToolResult(
             tool_name=name,
             content=(
-                f"Error: `{name}` deshabilitado por configuración "
+                f"Error: `{name}` disabled by configuration "
                 "(write_tools_enabled=false)."
             ),
             is_error=True,
@@ -93,7 +93,7 @@ def execute_write_tool(
         )
 
     if not preview.is_valid:
-        err_msg = preview.validation_error or "Error de validación"
+        err_msg = preview.validation_error or "Validation error"
         return ToolResult(
             tool_name=name,
             content=err_msg,

@@ -1,4 +1,4 @@
-"""Normalización y confinamiento de rutas al workspace."""
+"""Path normalization and confinement to the workspace."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 class PathViolationError(ValueError):
-    """La ruta escapa del directorio permitido."""
+    """The path escapes the allowed directory."""
 
 
 def workspace_root(workspace: str) -> Path:
@@ -14,7 +14,7 @@ def workspace_root(workspace: str) -> Path:
 
 
 def is_within_workspace(requested_path: str, workspace: str) -> bool:
-    """True si requested_path resuelve dentro del workspace."""
+    """True if requested_path resolves inside the workspace."""
     base = workspace_root(workspace)
     candidate = Path(requested_path).expanduser()
     if not candidate.is_absolute():
@@ -27,7 +27,7 @@ def is_within_workspace(requested_path: str, workspace: str) -> bool:
 
 
 def resolve_workspace_path(workspace: str, requested_path: str) -> Path:
-    """Resuelve requested_path respecto al workspace y rechaza path traversal."""
+    """Resolve requested_path relative to the workspace and reject path traversal."""
     base = workspace_root(workspace)
     candidate = Path(requested_path).expanduser()
     if not candidate.is_absolute():
@@ -37,11 +37,11 @@ def resolve_workspace_path(workspace: str, requested_path: str) -> Path:
         resolved.relative_to(base)
     except ValueError as exc:
         raise PathViolationError(
-            f"Ruta fuera del workspace: {resolved} (base: {base})"
+            f"Path outside the workspace: {resolved} (base: {base})"
         ) from exc
     return resolved
 
 
 def assert_within_workspace(workspace: str, requested_path: str) -> Path:
-    """Alias explícito que lanza si la ruta escapa del workspace."""
+    """Explicit alias that raises if the path escapes the workspace."""
     return resolve_workspace_path(workspace, requested_path)

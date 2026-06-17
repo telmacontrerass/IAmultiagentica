@@ -219,5 +219,5 @@ def test_cli_session_list_json():
 def test_invalid_audit_json_fails(workspace: Path):
     bad = workspace / "bad.jsonl"
     bad.write_text("{broken\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="JSON inválido"):
+    with pytest.raises(ValueError, match="Invalid JSON"):
         load_audit_events(bad)

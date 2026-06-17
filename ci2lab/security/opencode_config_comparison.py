@@ -1,4 +1,4 @@
-"""Comparador de configs OpenCode contra matriz de casos (EXPERIMENTAL)."""
+"""Comparator of OpenCode configs against a case matrix (EXPERIMENTAL)."""
 
 from __future__ import annotations
 
@@ -139,9 +139,9 @@ def _risk_note_for_case(
     if case_id == "read_external" and any(
         "external_directory=allow" in w for w in warnings
     ):
-        return "INSEGURO: lectura externa permitida por config"
+        return "UNSAFE: external read allowed by config"
     if external_directory and case_id == "read_external":
-        return "path externo evaluado con external_directory"
+        return "external path evaluated with external_directory"
     return "; ".join(warnings) if warnings else ""
 
 

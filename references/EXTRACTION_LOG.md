@@ -1,137 +1,137 @@
-# Registro de extracción (ingeniería inversa)
+# Extraction log (reverse engineering)
 
-Qué ideas tomamos de cada repo de referencia para construir **IAmultiagentica**.
-No copiamos código ni usamos esos proyectos como dependencias: leímos, entendimos y reescribimos en Python propio.
+Which ideas we took from each reference repo to build **IAmultiagentica**.
+We did not copy code or use those projects as dependencies: we read, understood, and rewrote in our own Python.
 
-**Última actualización:** junio 2026 · **Alcance:** módulo `ci2lab/harness/` + CLI + pipeline + hardware/router/catalog
+**Scope:** the `ci2lab/harness/` module + CLI + pipeline + hardware/router/catalog
 
 ---
 
-## Resumen rápido
+## Quick summary
 
-| Repo | Rol principal | Qué nos aportó |
-|------|---------------|----------------|
-| Odysseus | Base técnica | Cómo hacer funcionar un agente con modelos locales; idea de detección de hardware + catálogo de modelos |
-| Deep Agents | Comportamiento | Cómo debe actuar y hablar el agente |
-| Claude Code | Buenas prácticas | Cómo usar las herramientas con criterio |
-| OpenCode | Seguridad y orden | Cómo pedir permiso y organizar las tools |
+| Repo | Main role | What it gave us |
+|------|-----------|-----------------|
+| Odysseus | Technical base | How to make an agent work with local models; the idea of hardware detection + a model catalog |
+| Deep Agents | Behavior | How the agent should act and speak |
+| Claude Code | Best practices | How to use tools with good judgment |
+| OpenCode | Security and order | How to ask for permission and organize tools |
 
 ---
 
 ## Odysseus (`../odysseus-dev/`)
 
-**Por qué lo miramos:** Es el más parecido a lo que queríamos — agente en Python pensado para Ollama y modelos open source.
+**Why we looked at it:** It is the closest to what we wanted — a Python agent built for Ollama and open-source models.
 
-### Qué cogimos
+### What we took
 
-- El **bucle del agente**: pensar → usar herramienta → ver resultado → repetir hasta responder.
-- La idea de soportar **varias formas** en que un modelo pide herramientas (no todos hablan igual).
-- La **lista de herramientas de programación**: leer, buscar, listar, escribir, editar, bash.
-- **Evitar bucles infinitos** cuando el modelo repite lo mismo una y otra vez.
-- **Limitar** comandos y salidas largas para no colgar ni saturar la conversación.
-- Mantener al agente **dentro de la carpeta del proyecto** por seguridad.
-- La idea de **escanear el hardware y puntuar qué modelo encaja**, más un catálogo de modelos (de su README + `services/hwfit/`).
+- The **agent loop**: think → use a tool → see the result → repeat until answering.
+- The idea of supporting **multiple ways** a model can request tools (not all of them speak the same way).
+- The **list of coding tools**: read, search, list, write, edit, bash.
+- **Avoiding infinite loops** when the model repeats the same thing over and over.
+- **Limiting** long commands and outputs so the conversation doesn't hang or get flooded.
+- Keeping the agent **inside the project folder** for safety.
+- The idea of **scanning the hardware and scoring which model fits**, plus a model catalog (from its README + `services/hwfit/`).
 
-### Qué no cogimos
+### What we did not take
 
-- La interfaz web, el correo, recetas de cocina, integración MCP.
-- Decenas de herramientas extra que no hacen falta para programar.
-- Su base de datos, su backend completo ni el bucle gigante tal cual.
+- The web interface, email, cooking recipes, MCP integration.
+- Dozens of extra tools not needed for coding.
+- Its database, its full backend, or its giant loop as-is.
 
 ---
 
 ## Deep Agents (`../deepagents-main/`)
 
-**Por qué lo miramos:** Tiene un texto claro sobre **cómo debe comportarse** un buen agente, sin depender de un producto concreto.
+**Why we looked at it:** It has a clear write-up on **how a good agent should behave**, without depending on a specific product.
 
-### Qué cogimos
+### What we took
 
-- El **tono del agente**: ir al grano, actuar en lugar de solo prometer, comprobar el resultado.
-- El **conjunto básico** de herramientas de archivos (listar, leer, buscar, escribir, editar).
-- La idea de **pedir confirmación** antes de acciones delicadas (escribir, editar, bash).
+- The **agent's tone**: get to the point, act instead of just promising, verify the result.
+- The **basic set** of file tools (list, read, search, write, edit).
+- The idea of **asking for confirmation** before delicate actions (write, edit, bash).
 
-### Qué no cogimos
+### What we did not take
 
-- LangChain, LangGraph ni su framework de agentes.
-- Sub-agentes, planificación avanzada ni memoria a largo plazo.
-- Su middleware completo de filesystem.
+- LangChain, LangGraph, or its agent framework.
+- Subagents, advanced planning, or long-term memory.
+- Its full filesystem middleware.
 
 ---
 
 ## Claude Code (`../claude-code-main/`)
 
-**Por qué lo miramos:** Es la referencia de calidad en prompts y en **cuándo** usar cada herramienta.
+**Why we looked at it:** It is the quality reference for prompts and for **when** to use each tool.
 
-### Qué cogimos
+### What we took
 
-- La regla de **preferir leer y buscar** antes de lanzar comandos en la terminal.
-- **Descripciones claras** de cada herramienta para que el modelo sepa cuándo usarla.
-- Leer archivos **con números de línea** para poder citar trozos con precisión.
-- La idea general del bucle: pregunta → herramientas → respuesta (sin copiar su código TypeScript).
+- The rule to **prefer reading and searching** before running terminal commands.
+- **Clear descriptions** of each tool so the model knows when to use it.
+- Reading files **with line numbers** to cite snippets precisely.
+- The general loop idea: question → tools → answer (without copying its TypeScript code).
 
-### Qué no cogimos
+### What we did not take
 
-- Todo el producto comercial: compactación de contexto, hooks, analíticas, sub-agentes.
-- Prompts enormes pensados para modelos muy grandes.
-- Integración con Anthropic, MCP, modo plan, etc.
+- The full commercial product: context compaction, hooks, analytics, subagents.
+- Huge prompts designed for very large models.
+- Integration with Anthropic, MCP, plan mode, etc.
 
 ---
 
 ## OpenCode (`../opencode-dev/`)
 
-**Por qué lo miramos:** Organiza bien las herramientas y **pregunta al usuario** antes de ejecutar cosas sensibles.
+**Why we looked at it:** It organizes tools well and **asks the user** before running sensitive actions.
 
-### Qué cogimos
+### What we took
 
-- **Preguntar antes de ejecutar** bash, escribir o editar archivos.
-- Un **registro único** donde viven todas las herramientas (definición + ejecución).
-- **Acortar salidas muy largas** para no llenar la conversación de ruido.
+- **Asking before running** bash, writing, or editing files.
+- A **single registry** where all the tools live (definition + execution).
+- **Shortening very long outputs** so the conversation isn't filled with noise.
 
-### Qué no cogimos
+### What we did not take
 
-- Su stack técnico (Effect-TS, monorepo, plugins).
-- Sesiones avanzadas, reglas YAML de permisos, integración MCP.
-- Validación estricta de argumentos (queda como mejora futura).
-
----
-
-## Lo que es nuestro (no viene de esos repos)
-
-- Los **contratos** compartidos entre módulos.
-- La **CLI** (`doctor`, prompt directo, chat, sesiones).
-- El **cliente** que habla con Ollama y el streaming en terminal.
-- **Sesiones guardadas** en disco y modo REPL interactivo.
-- El **pipeline** que conecta router y arnés (con modelo por defecto de respaldo).
-- Los **tests** del arnés.
+- Its tech stack (Effect-TS, monorepo, plugins).
+- Advanced sessions, YAML permission rules, MCP integration.
+- Strict argument validation (left as a future improvement).
 
 ---
 
-## Tabla de registro (detalle por destino)
+## What is ours (not from those repos)
 
-| Fecha | Origen | Qué se extrajo | Destino en ci2lab/ |
-|-------|--------|----------------|-------------------|
-| 2026-06 | Odysseus | Bucle ReAct multi-ronda | `harness/query/loop.py` |
-| 2026-06 | Odysseus | Parser de herramientas (varios formatos) | `harness/parsing.py` |
-| 2026-06 | Odysseus | Schemas y catálogo de tools | `harness/tools/` (schemas, dispatch, executor) |
-| 2026-06 | Odysseus | Formato de mensajes con historial de tools | `harness/messages.py` |
-| 2026-06 | Odysseus | Límite de carpeta de trabajo | `harness/tools/paths.py` |
-| 2026-06-09 | Odysseus (README + `services/hwfit/`) | Idea de "escaneo de hardware + puntuación de encaje + catálogo de modelos"; no se copió código | `hardware/`, `router/`, `catalog/models.json` |
-| 2026-06 | Deep Agents | Comportamiento y tono del agente | `harness/prompts/system.md` |
-| 2026-06 | Deep Agents | Set mínimo de tools de archivos | `harness/tools/filesystem.py` |
-| 2026-06 | Deep Agents | Confirmación en acciones delicadas | `harness/security/permissions.py` |
-| 2026-06 | Claude Code | Reglas de uso de tools en el prompt | `harness/prompts/system.md` |
-| 2026-06 | Claude Code | Lectura con líneas numeradas | `harness/tools/filesystem.py` |
-| 2026-06 | OpenCode | Preguntar permiso antes de ejecutar | `harness/security/permissions.py` |
-| 2026-06 | OpenCode | Registry unificado + truncar salidas | `harness/tools/registry.py` |
-| 2026-06 | — (propio) | CLI, REPL, sesiones, cliente LLM | `cli/`, `harness/repl.py`, `pipeline.py` |
-| 2026-06-12 | — (propio) | Refactor arnés + integración | `harness/query/`, `harness/context/`, `harness/security/`, `console.py` |
+- The **shared contracts** between modules.
+- The **CLI** (`doctor`, direct prompt, chat, sessions).
+- The **client** that talks to Ollama and the terminal streaming.
+- **Saved sessions** on disk and the interactive REPL mode.
+- The **pipeline** that connects router and harness (with a default fallback model).
+- The harness **tests**.
 
 ---
 
-## Pendiente de extracción (fases futuras)
+## Detailed log (by destination)
 
-| Origen | Idea | Para qué serviría |
-|--------|------|-------------------|
-| Claude Code | Ejecutar lecturas en paralelo | Más velocidad al explorar un repo |
-| Odysseus | Compactación avanzada del historial | Conversaciones muy largas |
-| OpenCode | Validación estricta de argumentos | Menos errores del modelo al llamar tools |
+| Date | Source | What was extracted | Destination in ci2lab/ |
+|------|--------|--------------------|------------------------|
+| 2026-06 | Odysseus | Multi-round ReAct loop | `harness/query/loop.py` |
+| 2026-06 | Odysseus | Tool parser (multiple formats) | `harness/parsing.py` |
+| 2026-06 | Odysseus | Tool schemas and catalog | `harness/tools/` (schemas, dispatch, executor) |
+| 2026-06 | Odysseus | Message format with tool history | `harness/messages.py` |
+| 2026-06 | Odysseus | Working-folder boundary | `harness/tools/paths.py` |
+| 2026-06-09 | Odysseus (README + `services/hwfit/`) | The idea of "hardware scan + fit scoring + model catalog"; no code copied | `hardware/`, `router/`, `catalog/models.json` |
+| 2026-06 | Deep Agents | Agent behavior and tone | `harness/prompts/system.md` |
+| 2026-06 | Deep Agents | Minimal set of file tools | `harness/tools/filesystem.py` |
+| 2026-06 | Deep Agents | Confirmation on delicate actions | `harness/security/permissions.py` |
+| 2026-06 | Claude Code | Tool-usage rules in the prompt | `harness/prompts/system.md` |
+| 2026-06 | Claude Code | Reading with numbered lines | `harness/tools/filesystem.py` |
+| 2026-06 | OpenCode | Asking permission before running | `harness/security/permissions.py` |
+| 2026-06 | OpenCode | Unified registry + output truncation | `harness/tools/registry.py` |
+| 2026-06 | — (ours) | CLI, REPL, sessions, LLM client | `cli/`, `harness/repl.py`, `pipeline.py` |
+| 2026-06-12 | — (ours) | Harness refactor + integration | `harness/query/`, `harness/context/`, `harness/security/`, `console.py` |
+
+---
+
+## Pending extraction (future phases)
+
+| Source | Idea | What it would be for |
+|--------|------|----------------------|
+| Claude Code | Run reads in parallel | Faster repo exploration |
+| Odysseus | Advanced history compaction | Very long conversations |
+| OpenCode | Strict argument validation | Fewer model errors when calling tools |

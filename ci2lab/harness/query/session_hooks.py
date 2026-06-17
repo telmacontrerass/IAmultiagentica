@@ -24,4 +24,4 @@ def maybe_save_session(
         cwd=cfg.cwd,
         token_usage=cfg.token_usage.to_dict(),
     )
-    console.print(f"[dim]Sesión guardada: {path}[/dim]")
+    console.print(f"[dim]Session saved: {path}[/dim]")

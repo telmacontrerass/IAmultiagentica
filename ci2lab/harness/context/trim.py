@@ -1,4 +1,4 @@
-"""Recorte de historial para no superar el contexto del modelo."""
+"""History trimming to stay within the model's context window."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
-    """Estimación rápida (~4 caracteres por token)."""
+    """Quick estimate (~4 characters per token)."""
     total = 0
     for msg in messages:
         content = msg.get("content")
@@ -29,9 +29,9 @@ def trim_messages(
     reserve_output: int = 1024,
 ) -> list[dict[str, Any]]:
     """
-    Mantiene el system prompt y recorta mensajes antiguos del medio.
+    Keeps the system prompt and trims old messages from the middle.
 
-    Nunca elimina el último mensaje de usuario si existe.
+    Never removes the last user message if one exists.
     """
     budget = max(512, max_tokens - reserve_output)
     if estimate_tokens(messages) <= budget:

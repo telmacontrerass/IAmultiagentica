@@ -1,4 +1,4 @@
-"""Perfiles de seguridad configurables (sin relajar garantías base)."""
+"""Configurable security profiles (without relaxing base guarantees)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ SECURITY_PROFILE_BLOCKED_OUTCOME = "blocked_by_security_profile"
 VALID_PROFILES = frozenset({"strict", "standard", "dev", "audit"})
 DEFAULT_PROFILE = "standard"
 
-# Herramientas bloqueadas por perfil (solo endurecimiento; nunca relaja workspace/secretos).
+# Tools blocked per profile (hardening only; never relaxes workspace/secrets).
 _PROFILE_BLOCKED_TOOLS: dict[str, frozenset[str]] = {
     "strict": frozenset({"write_file", "edit_file", "bash"}),
     "standard": frozenset(),
@@ -42,7 +42,7 @@ class SecurityConfig:
     max_tool_output_chars: int | None = None
     permission: dict[str, Any] = field(default_factory=dict)
     permission_preset: str | None = None
-    """Preset OpenCode (opencode_experimental / claude_experimental)."""
+    """OpenCode preset (opencode_experimental / claude_experimental)."""
 
     def resolved_limits(self) -> SecurityLimits:
         default_timeout, default_output = _PROFILE_LIMIT_DEFAULTS[self.profile]
@@ -61,7 +61,7 @@ class SecurityConfig:
 
 
 class UnknownSecurityProfileError(ValueError):
-    """Perfil de seguridad no reconocido."""
+    """Unrecognized security profile."""
 
 
 def validate_profile(profile: str) -> str:
@@ -69,8 +69,8 @@ def validate_profile(profile: str) -> str:
     if normalized not in VALID_PROFILES:
         names = ", ".join(sorted(VALID_PROFILES))
         raise UnknownSecurityProfileError(
-            f"Perfil de seguridad desconocido: {profile!r}. "
-            f"Valores validos: {names}."
+            f"Unknown security profile: {profile!r}. "
+            f"Valid values: {names}."
         )
     return normalized
 
@@ -79,7 +79,7 @@ def parse_security_config(raw: Mapping[str, Any] | None) -> SecurityConfig:
     if not raw:
         return SecurityConfig()
     if not isinstance(raw, dict):
-        raise ValueError("security debe ser un objeto JSON/YAML.")
+        raise ValueError("security must be a JSON/YAML object.")
 
     profile = validate_profile(str(raw.get("profile", DEFAULT_PROFILE)))
 
@@ -91,7 +91,7 @@ def parse_security_config(raw: Mapping[str, Any] | None) -> SecurityConfig:
     permission: dict[str, Any] = {}
     if permission_raw is not None:
         if not isinstance(permission_raw, dict):
-            raise ValueError("security.permission debe ser un objeto.")
+            raise ValueError("security.permission must be an object.")
         permission = dict(permission_raw)
 
     preset_raw = raw.get("permission_preset")
@@ -106,7 +106,7 @@ def parse_security_config(raw: Mapping[str, Any] | None) -> SecurityConfig:
     max_output: int | None = None
     if limits_raw is not None:
         if not isinstance(limits_raw, dict):
-            raise ValueError("security.limits debe ser un objeto.")
+            raise ValueError("security.limits must be an object.")
         if "bash_timeout_seconds" in limits_raw:
             bash_timeout = int(limits_raw["bash_timeout_seconds"])
         if "max_tool_output_chars" in limits_raw:
@@ -139,10 +139,10 @@ def merge_opencode_permission_sources(
     *layers: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """
-    Fusiona capas permission estilo OpenCode (orden: primera capa gana menos).
+    Merges OpenCode-style permission layers (order: the first layer wins least).
 
-    Precedencia típica: preset < permission (root) < security.permission.
-    Usado con opencode_experimental y claude_experimental.
+    Typical precedence: preset < permission (root) < security.permission.
+    Used with opencode_experimental and claude_experimental.
     """
     merged: dict[str, Any] = {}
     for layer in layers:

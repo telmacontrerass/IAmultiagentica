@@ -62,7 +62,7 @@ def test_grep_skips_sensitive_files_without_leaking(workspace: Path):
     assert "FAKE_TOKEN=SHOULD_NOT_LEAK" not in out
     assert "PRIVATE_KEY_SHOULD_NOT_LEAK" not in out
     assert "CREDENTIAL_SHOULD_NOT_LEAK" not in out
-    assert "omitieron" in out.lower() or "Sin coincidencias" in out
+    assert "skipped" in out.lower() or "No matches" in out
 
 
 def test_grep_blocks_when_target_is_sensitive_file(workspace: Path):

@@ -8,7 +8,7 @@ Hard rules (read carefully — breaking these means the tool does NOT run):
 - Output exactly ONE tool block per message, then stop and wait for the result.
 - Do not describe a tool call in prose or in a plain ` ```json ` block of explanation — only a real tool-named block runs. (` ```json ` with `{"name": "...", "arguments": {...}}` is accepted only as a fallback.)
 - Never put `read_file`, `edit_file`, `write_file`, or other tools inside a ` ```bash ` block. `bash` is only for real shell commands like `python wordle.py`.
-- To read a file use ` ```read_file ` with the path as the body, not ` ```bash\nread_file Pruebas.py `.
+- To read a file use ` ```read_file ` with the path as the body, not ` ```bash\nread_file sample.py `.
 - Use the exact argument names shown below.
 - Only say the task is done after a tool result confirms success.
 
@@ -25,13 +25,13 @@ List a directory:
 Read a text/code file with numbered lines (one path per block):
 
 ```read_file
-Pruebas.py
+sample.py
 ```
 
 Read a document by format (PDF, DOCX, PPTX, XLSX, CSV, Markdown, plain text):
 
 ```read_document
-rubrica.docx
+report.docx
 ```
 
 Find files by glob pattern:
@@ -70,10 +70,10 @@ The body MUST be a single JSON object with `path` and `content`. Put the full fi
 {"path": "count_to_100.py", "content": "for i in range(1, 101):\n    print(i)\n"}
 ```
 
-User-requested doc example:
+User-requested file example:
 
 ```write_file
-{"path": "docs/resumen.md", "content": "# Resumen\n\nContenido pedido por el usuario.\n"}
+{"path": "docs/summary.md", "content": "# Summary\n\nContent requested by the user.\n"}
 ```
 
 Do not create error/log files (e.g. `ci2lab_error.txt`) on your own after a tool block unless the user asked for that file.
@@ -83,7 +83,7 @@ Do not create error/log files (e.g. `ci2lab_error.txt`) on your own after a tool
 Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 
 ```write_docx
-{"path": "informe.docx", "content": "# Título\n\nPárrafo del documento.\n"}
+{"path": "report.docx", "content": "# Title\n\nParagraph of the document.\n"}
 ```
 
 ### docx_to_pdf (convert Word to PDF)
@@ -91,7 +91,7 @@ Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 Convert a `.docx` file to PDF. Tries LibreOffice first (best for non-Latin text), then pandoc with a Unicode-capable engine. Pass the existing `.docx` path as `source`; do not pass a glob pattern.
 
 ```docx_to_pdf
-{"source": "informe.docx", "output": "informe.pdf"}
+{"source": "report.docx", "output": "report.pdf"}
 ```
 
 ### pdf_to_docx (convert PDF to Word)
@@ -99,7 +99,7 @@ Convert a `.docx` file to PDF. Tries LibreOffice first (best for non-Latin text)
 Convert a `.pdf` file to a `.docx` file using pdf2docx. Preserves layout, images, and tables.
 
 ```pdf_to_docx
-{"source": "documento.pdf", "output": "documento.docx"}
+{"source": "document.pdf", "output": "document.docx"}
 ```
 
 ### edit_file (replace exact text in an existing file)
@@ -107,7 +107,7 @@ Convert a `.pdf` file to a `.docx` file using pdf2docx. Preserves layout, images
 The body MUST be a single JSON object with `path`, `old_string`, and `new_string`. `old_string` must match the existing text exactly.
 
 ```edit_file
-{"path": "Pruebas.py", "old_string": "linea tres", "new_string": "Linea cambiada otra vez"}
+{"path": "sample.py", "old_string": "line three", "new_string": "line three changed"}
 ```
 
 ### apply_patch (unified diff)
@@ -115,14 +115,14 @@ The body MUST be a single JSON object with `path`, `old_string`, and `new_string
 The body is the patch text itself (or JSON with a `patch` field). Use after `read_file` when a multi-line change is easier as a diff.
 
 ```apply_patch
---- a/Pruebas.py
-+++ b/Pruebas.py
+--- a/sample.py
++++ b/sample.py
 @@ -1,4 +1,4 @@
- # archivo de prueba
- linea dos
--linea tres
-+Linea cambiada otra vez
- linea cuatro
+ # sample file
+ line two
+-line three
++line three changed
+ line four
 ```
 
 ### file_info
@@ -130,7 +130,7 @@ The body is the patch text itself (or JSON with a `patch` field). Use after `rea
 Path metadata without reading full content:
 
 ```file_info
-Pruebas.py
+sample.py
 ```
 
 ### tree
@@ -146,7 +146,7 @@ Directory tree (optional JSON for depth/limits):
 Inspect a line range from a text file:
 
 ```inspect_file
-{"path": "Pruebas.py", "start": 1, "end": 4}
+{"path": "sample.py", "start": 1, "end": 4}
 ```
 
 ### todo_write
@@ -205,4 +205,10 @@ Then fetch selected sources with `web_fetch`.
 {"server": "my-server", "tool": "search", "arguments": {"query": "docs"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_search`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+### fill_docx_template (fill placeholders in a .docx template)
+
+```fill_docx_template
+{"template": "template.docx", "output": "filled.docx", "fields": {"{{name}}": "Ada", "{{date}}": "2026-06-17"}}
+```
+
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `fill_docx_template`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_search`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

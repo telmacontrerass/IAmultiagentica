@@ -1,4 +1,4 @@
-"""Lectura y resumen de auditoría de permisos (dashboard CLI tipo /permissions)."""
+"""Reading and summary of the permissions audit (CLI dashboard like /permissions)."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _TABLE_COLUMNS = (
 )
 
 _EXTERNAL_WARNING = (
-    "INSEGURO: external_directory=true — acceso fuera del workspace"
+    "UNSAFE: external_directory=true — access outside the workspace"
 )
 
 _DENIED_OUTCOMES = frozenset({
@@ -44,10 +44,10 @@ _DENIED_OUTCOMES = frozenset({
 
 
 def load_audit_events(path: str | Path) -> list[dict[str, Any]]:
-    """Carga eventos JSONL. Líneas inválidas se omiten con aviso implícito."""
+    """Load JSONL events. Invalid lines are skipped with an implicit notice."""
     audit_path = Path(path).expanduser().resolve()
     if not audit_path.is_file():
-        raise FileNotFoundError(f"No existe el archivo de auditoría: {audit_path}")
+        raise FileNotFoundError(f"Audit file does not exist: {audit_path}")
 
     events: list[dict[str, Any]] = []
     for line_no, raw in enumerate(
@@ -60,18 +60,18 @@ def load_audit_events(path: str | Path) -> list[dict[str, Any]]:
             record = json.loads(line)
         except json.JSONDecodeError as exc:
             raise ValueError(
-                f"JSON inválido en {audit_path}:{line_no}: {exc}"
+                f"Invalid JSON in {audit_path}:{line_no}: {exc}"
             ) from exc
         if not isinstance(record, dict):
             raise ValueError(
-                f"Línea {line_no} en {audit_path}: debe ser un objeto JSON."
+                f"Line {line_no} in {audit_path}: must be a JSON object."
             )
         events.append(_normalize_event(record))
     return events
 
 
 def compute_event_id(record: dict[str, Any]) -> str:
-    """ID estable derivado de campos del evento (12 hex chars)."""
+    """Stable ID derived from event fields (12 hex chars)."""
     target = str(record.get("target", record.get("detail", "")))
     parts = [
         str(record.get("timestamp", "")),
@@ -87,7 +87,7 @@ def compute_event_id(record: dict[str, Any]) -> str:
 
 
 def _normalize_event(record: dict[str, Any]) -> dict[str, Any]:
-    """Unifica campos legacy y anidados."""
+    """Unify legacy and nested fields."""
     event = dict(record)
     event.setdefault("target", record.get("detail", ""))
     if "approval_choice" not in event:
@@ -110,7 +110,7 @@ def find_event_by_id(
 
 
 def parse_target_to_args(tool: str, target: str) -> dict[str, Any]:
-    """Reconstruye args mínimos desde tool + target del audit."""
+    """Reconstruct minimal args from the audit's tool + target."""
     text = target.strip()
     if text.startswith("{") and text.endswith("}"):
         try:
@@ -134,18 +134,18 @@ def approval_from_audit_event(
     event: dict[str, Any],
 ) -> tuple[ApprovalFingerprint, list[str]]:
     """
-    Construye fingerprint para approve-session.
+    Build a fingerprint for approve-session.
 
-    Raises ValueError si el evento no es elegible.
+    Raises ValueError if the event is not eligible.
     """
     warnings: list[str] = []
     engine = str(event.get("security_engine", ""))
     if engine == "ci2lab":
         raise ValueError(
-            "approve-session no aplica a ci2lab; use motores permission-layer."
+            "approve-session does not apply to ci2lab; use permission-layer engines."
         )
     if not uses_permission_layer(engine):
-        raise ValueError(f"Motor no soportado para approve-session: {engine!r}")
+        raise ValueError(f"Unsupported engine for approve-session: {engine!r}")
 
     decision = str(event.get("decision", "")).lower()
     approval_choice = event.get("approval_choice")
@@ -153,23 +153,23 @@ def approval_from_audit_event(
         matched = str(event.get("matched_rule") or "")
         if matched.startswith("hard:"):
             raise ValueError(
-                "No se puede aprobar: bloqueo hard (workspace/secret/bash/profile). "
-                "Cambiar permission config no lo saltará."
+                "Cannot approve: hard block (workspace/secret/bash/profile). "
+                "Changing the permission config will not bypass it."
             )
         raise ValueError(
-            "No se puede aprobar: el evento fue denegado por regla de permission."
+            "Cannot approve: the event was denied by a permission rule."
         )
     if decision != "ask" and approval_choice != "deny_once":
         raise ValueError(
-            "approve-session solo aplica a eventos con decision=ask "
-            "o approval_choice=deny_once."
+            "approve-session only applies to events with decision=ask "
+            "or approval_choice=deny_once."
         )
 
     tool = event.get("tool")
     target = event.get("target")
     if not tool or target is None or str(target).strip() == "":
         raise ValueError(
-            "Faltan campos tool/target para construir el fingerprint."
+            "Missing tool/target fields to build the fingerprint."
         )
 
     external = bool(event.get("external_directory"))
@@ -220,7 +220,7 @@ def build_retry_plan(
     *,
     workspace: str,
 ) -> dict[str, Any]:
-    """Plan de reintento sin ejecutar tools."""
+    """Retry plan without executing tools."""
     tool = str(event.get("tool", ""))
     target = str(event.get("target", ""))
     args = parse_target_to_args(tool, target)
@@ -256,21 +256,21 @@ def build_retry_plan(
     if _is_secret_event(event):
         recommendations.extend(
             [
-                "Bloqueo duro de archivo sensible (secret policy).",
-                "Reintentar con ci2lab seguirá denegado.",
-                "No se recomienda permitir lectura/escritura de secretos "
-                "salvo auditoría explícita.",
-                "No se genera config insegura por defecto.",
+                "Hard block on a sensitive file (secret policy).",
+                "Retrying with ci2lab will remain denied.",
+                "Allowing reads/writes of secrets is not recommended "
+                "except under explicit audit.",
+                "No unsafe config is generated by default.",
             ]
         )
     elif _is_outside_workspace_event(event):
         recommendations.extend(
             [
-                "Fue bloqueado por política dura de workspace (outside_workspace).",
-                "Reintentarlo con ci2lab seguirá siendo denegado.",
-                "Solo opencode_experimental con external_directory=allow "
-                "podría permitirlo.",
-                "Eso es INSEGURO — no usar en producción.",
+                "It was blocked by the hard workspace policy (outside_workspace).",
+                "Retrying it with ci2lab will remain denied.",
+                "Only opencode_experimental with external_directory=allow "
+                "could permit it.",
+                "That is UNSAFE — do not use in production.",
             ]
         )
     elif orig_engine in {"opencode_experimental", "claude_experimental"} and (
@@ -279,11 +279,11 @@ def build_retry_plan(
     ):
         recommendations.extend(
             [
-                f"Puedes reintentar con la misma config {orig_engine}.",
-                "En el prompt interactivo elige Allow once o Allow session.",
-                "No hace falta cambiar las reglas de permission.",
-                "También puedes usar: ci2lab permissions approve-session "
-                f"{event.get('event_id')} (solo con sesión activa en este proceso).",
+                f"You can retry with the same {orig_engine} config.",
+                "In the interactive prompt choose Allow once or Allow session.",
+                "No need to change the permission rules.",
+                "You can also use: ci2lab permissions approve-session "
+                f"{event.get('event_id')} (only with an active session in this process).",
             ]
         )
     elif orig_engine in {"opencode_experimental", "claude_experimental"} and (
@@ -293,31 +293,31 @@ def build_retry_plan(
         if matched.startswith("hard:") or orig_engine == "claude_experimental" and matched.startswith("hard:"):
             recommendations.extend(
                 [
-                    "Bloqueo hard: no se puede saltar con permission config ni --yes.",
-                    "claude_experimental mantiene workspace/secret/bash blocklist.",
+                    "Hard block: cannot be bypassed with permission config or --yes.",
+                    "claude_experimental keeps the workspace/secret/bash blocklist.",
                 ]
             )
         else:
             recommendations.extend(
                 [
-                    "Fue denegado por regla de permission (matched_rule).",
-                    "--yes / auto_confirm no saltará esta denegación.",
-                    "Habría que cambiar la permission config para permitirlo.",
+                    "It was denied by a permission rule (matched_rule).",
+                    "--yes / auto_confirm will not bypass this denial.",
+                    "You would need to change the permission config to allow it.",
                 ]
             )
     else:
         recommendations.append(
-            "Revisa decision, reason y matched_rule del evento original."
+            "Review decision, reason and matched_rule of the original event."
         )
         recommendations.append(
-            f"Si reintentas con ci2lab: decision={ci2lab_gate['decision']}."
+            f"If you retry with ci2lab: decision={ci2lab_gate['decision']}."
         )
         recommendations.append(
-            f"Si reintentas con opencode_experimental (defaults): "
+            f"If you retry with opencode_experimental (defaults): "
             f"decision={opencode_gate['decision']}."
         )
         recommendations.append(
-            f"Si reintentas con claude_experimental (defaults): "
+            f"If you retry with claude_experimental (defaults): "
             f"decision={claude_gate['decision']}."
         )
 
@@ -376,7 +376,7 @@ def format_retry_plan(plan: dict[str, Any]) -> str:
     for warn in plan.get("warnings", []):
         lines.extend(["", f"WARNING: {warn}"])
     lines.append("")
-    lines.append("(retry-plan no ejecuta herramientas)")
+    lines.append("(retry-plan does not execute tools)")
     return "\n".join(lines)
 
 
@@ -386,9 +386,9 @@ def find_latest_audit_file(
     runs_dir: str = "runs",
 ) -> Path | None:
     """
-    Busca security_audit.jsonl en runs/<run_id>/ (más reciente por mtime).
+    Look for security_audit.jsonl under runs/<run_id>/ (most recent by mtime).
 
-    No incluye el fallback `.ci2lab/` — usar resolve_audit_source().
+    Does not include the `.ci2lab/` fallback — use resolve_audit_source().
     """
     ws = Path(workspace).resolve()
     runs_root = ws / runs_dir
@@ -412,9 +412,9 @@ def resolve_audit_source(
     runs_dir: str = "runs",
 ) -> tuple[Path, str]:
     """
-    Resuelve ruta de auditoría.
+    Resolve the audit path.
 
-    Precedencia: --audit-file > último run > `.ci2lab/security_audit.jsonl`.
+    Precedence: --audit-file > latest run > `.ci2lab/security_audit.jsonl`.
     """
     if audit_file is not None:
         path = Path(audit_file).expanduser().resolve()
@@ -511,10 +511,10 @@ def _truncate(text: str, max_len: int) -> str:
 
 
 def format_event_table(events: list[dict[str, Any]], *, max_rows: int = 20) -> str:
-    """Tabla ASCII de eventos (más recientes primero)."""
+    """ASCII table of events (most recent first)."""
     rows = list(reversed(events))[:max_rows]
     if not rows:
-        return "(sin eventos)"
+        return "(no events)"
 
     col_names = list(_TABLE_COLUMNS)
     widths = {name: len(name) for name in col_names}
@@ -544,11 +544,11 @@ def format_event_table(events: list[dict[str, Any]], *, max_rows: int = 20) -> s
     ]
     lines.extend(fmt_line(r) for r in str_rows)
     if len(events) > max_rows:
-        lines.append(f"... ({len(events) - max_rows} eventos más antiguos omitidos)")
+        lines.append(f"... ({len(events) - max_rows} older events omitted)")
     return "\n".join(lines)
 
 
 def format_audit_tail(events: list[dict[str, Any]], *, limit: int = 20) -> str:
-    """Últimas líneas del audit en JSON compacto."""
+    """Last audit lines in compact JSON."""
     tail = events[-limit:] if limit > 0 else events
     return "\n".join(json.dumps(ev, ensure_ascii=False) for ev in tail)

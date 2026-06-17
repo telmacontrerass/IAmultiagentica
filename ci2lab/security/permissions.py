@@ -1,4 +1,4 @@
-"""Fachada de permisos: despacha al motor de seguridad activo."""
+"""Permissions facade: dispatches to the active security engine."""
 
 from __future__ import annotations
 

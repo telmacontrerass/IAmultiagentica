@@ -1,4 +1,4 @@
-"""Persistencia de sesiones de agente en ~/.ci2lab/sessions/."""
+"""Persistence of agent sessions in ~/.ci2lab/sessions/."""
 
 from __future__ import annotations
 

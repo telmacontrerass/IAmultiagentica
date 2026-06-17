@@ -1,4 +1,4 @@
-"""Ejecución como módulo: python -m ci2lab.cli"""
+"""Run as a module: python -m ci2lab.cli"""
 
 import sys
 

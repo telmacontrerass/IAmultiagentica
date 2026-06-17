@@ -1,22 +1,22 @@
-# Repositorios de referencia (solo lectura)
+# Reference repositories (read-only)
 
-Estos repositorios viven **fuera** de `IAmultiagentica/`, en la carpeta padre `Ci2Lab/`.
-No son dependencias del proyecto. Se usan solo para ingeniería inversa de prompts, bucles agénticos y patrones.
+These repositories live **outside** `IAmultiagentica/`, in the parent `Ci2Lab/` folder.
+They are not project dependencies. They are used only for reverse-engineering prompts, agentic loops, and patterns.
 
-| Carpeta (en `../`) | Uso |
-|--------------------|-----|
-| `claude-code-main/` | System prompts, descripciones de herramientas, bucle query |
-| `odysseus-dev/` | Bucle agent_loop, tool_parsing, schemas, ejecución |
-| `opencode-dev/` | Registry de tools, permisos, session loop |
+| Folder (in `../`) | Use |
+|-------------------|-----|
+| `claude-code-main/` | System prompts, tool descriptions, query loop |
+| `odysseus-dev/` | agent_loop, tool_parsing, schemas, execution |
+| `opencode-dev/` | Tool registry, permissions, session loop |
 | `deepagents-main/` | BASE_AGENT_PROMPT, filesystem middleware |
 
-## Reglas
+## Rules
 
-- **No** `import` ni `pip install` desde estos repos.
-- **No** copiar carpetas enteras al paquete `ci2lab/`.
-- Documentar en `references/EXTRACTION_LOG.md` qué se extrajo y a qué archivo de destino.
+- **Do not** `import` or `pip install` from these repos.
+- **Do not** copy whole folders into the `ci2lab/` package.
+- Document in `references/EXTRACTION_LOG.md` what was extracted and into which destination file.
 
-## Rutas relativas desde IAmultiagentica
+## Relative paths from IAmultiagentica
 
 ```text
 ../claude-code-main/

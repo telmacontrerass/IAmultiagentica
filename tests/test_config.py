@@ -51,7 +51,7 @@ def test_merge_cli_workspace(tmp_path):
 
 
 def test_workspace_cwd_conflict():
-    with pytest.raises(ValueError, match="solo uno"):
+    with pytest.raises(ValueError, match="only one"):
         resolve_workspace(workspace=".", cwd="/tmp", config=Ci2LabConfig())
 
 

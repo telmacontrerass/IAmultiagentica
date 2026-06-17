@@ -103,7 +103,7 @@ class TestFillDocxTemplate:
     def test_success_message_contains_substitution_count(
         self, tmp_workspace: Path, simple_template: Path
     ) -> None:
-        """El mensaje de éxito incluye el número de sustituciones."""
+        """The success message includes the number of substitutions."""
         from ci2lab.harness.tools.docx_writer import fill_docx_template
 
         result = fill_docx_template(
@@ -113,7 +113,7 @@ class TestFillDocxTemplate:
             fields={"nombre": "X", "fecha": "Y", "ciudad": "Z"},
         )
 
-        assert "3 sustituciones" in result or "3 sustitución" in result
+        assert "3 substitutions" in result or "3 substitution" in result
 
     def test_missing_template(self, tmp_workspace: Path) -> None:
         """Error claro si la plantilla no existe."""

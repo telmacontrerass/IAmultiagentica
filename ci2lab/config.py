@@ -1,7 +1,7 @@
 """
-Configuración centralizada de Ci2Lab.
+Centralized Ci2Lab configuration.
 
-Prioridad (mayor a menor): argumentos CLI > variables de entorno > ci2lab.yaml > defaults.
+Priority (highest to lowest): CLI arguments > environment variables > ci2lab.yaml > defaults.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class Ci2LabConfig:
     require_diff_preview: bool = DEFAULT_REQUIRE_DIFF_PREVIEW
     security: SecurityConfig = field(default_factory=SecurityConfig)
     permission: dict[str, Any] = field(default_factory=dict)
-    """permission root-level estilo OpenCode (solo opencode_experimental)."""
+    """OpenCode-style root-level permission (opencode_experimental only)."""
 
 
 def _parse_bool(value: str) -> bool:
@@ -75,7 +75,7 @@ def _coerce_value(key: str, raw: str) -> Any:
 
 
 def _load_simple_yaml(text: str) -> dict[str, Any]:
-    """Parser YAML mínimo (pares clave: valor, sin dependencias externas)."""
+    """Minimal YAML parser (key: value pairs, no external dependencies)."""
     data: dict[str, Any] = {}
     for line in text.splitlines():
         stripped = line.strip()
@@ -137,12 +137,12 @@ def _apply_mapping(config: Ci2LabConfig, mapping: dict[str, Any]) -> Ci2LabConfi
             continue
         if key == "security":
             if not isinstance(value, dict):
-                raise ValueError("security debe ser un objeto JSON/YAML.")
+                raise ValueError("security must be a JSON/YAML object.")
             updates["security"] = parse_security_config(value)
             continue
         if key == "permission":
             if not isinstance(value, dict):
-                raise ValueError("permission debe ser un objeto JSON/YAML.")
+                raise ValueError("permission must be a JSON/YAML object.")
             updates["permission"] = dict(value)
             continue
         target = alias.get(key, key)
@@ -196,8 +196,8 @@ def _from_env(config: Ci2LabConfig) -> Ci2LabConfig:
 
 def load_config(*, config_path: str | None = None) -> Ci2LabConfig:
     """
-    Carga defaults + ci2lab.yaml (si existe) + variables de entorno.
-    No incluye overrides de CLI.
+    Load defaults + ci2lab.yaml (if present) + environment variables.
+    Does not include CLI overrides.
     """
     config = Ci2LabConfig()
     explicit = config_path or os.environ.get("CI2LAB_CONFIG")
@@ -223,10 +223,10 @@ def resolve_workspace(
     cwd: str | None,
     config: Ci2LabConfig,
 ) -> str:
-    """Resuelve directorio de trabajo; error si --workspace y --cwd coexisten."""
+    """Resolve the working directory; error if --workspace and --cwd coexist."""
     if workspace and cwd:
         raise ValueError(
-            "Usa solo uno de --workspace o --cwd, no ambos."
+            "Use only one of --workspace or --cwd, not both."
         )
     raw = workspace or cwd or config.workspace
     if not raw:
@@ -254,7 +254,7 @@ def merge_cli_config(
     runs_dir: str | None = None,
     no_log: bool = False,
 ) -> Ci2LabConfig:
-    """Aplica overrides de CLI sobre la config cargada."""
+    """Apply CLI overrides on top of the loaded config."""
     updates: dict[str, Any] = {}
     if model is not None:
         updates["model"] = model

@@ -1,37 +1,40 @@
-# Hoja de ruta de herramientas Ci2Lab
+# Ci2Lab tools roadmap
 
-## Estado actual (24 herramientas built-in + MCP dinámico)
+## Current state (25 built-in tools + dynamic MCP)
 
-| Herramienta | Tipo |
-|-------------|------|
-| `read_file`, `read_document`, `inspect_file`, `file_info`, `tree`, `ls`, `glob`, `grep` | lectura / exploración |
-| `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `fill_docx_template`, `notebook_edit` | escritura / conversión |
+| Tool | Type |
+|------|------|
+| `read_file`, `read_document`, `inspect_file`, `file_info`, `tree`, `ls`, `glob`, `grep` | reading / exploration |
+| `write_file`, `write_docx`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `fill_docx_template`, `notebook_edit` | writing / conversion |
 | `bash`, `git_status`, `git_diff` | shell / git |
-| `todo_write`, `ask_user`, `web_fetch` | flujo / usuario |
+| `todo_write`, `ask_user`, `web_search`, `web_fetch` | workflow / user |
 | `skill`, `mcp_call` | skills + MCP fallback |
-| `mcp__*` | herramientas MCP dinámicas (servidores en `.ci2lab/mcp.json`) |
+| `mcp__*` | dynamic MCP tools (servers in `.ci2lab/mcp.json`) |
 
-**Arquitectura del registro:**
+The authoritative list is `TOOL_NAMES` in `harness/tools/schemas_parts/registry.py` (25 names; `mcp__*` tools are added dynamically).
 
-- `harness/tools/schemas.py` — `TOOL_NAMES` y schemas OpenAI
-- `harness/tools/dispatch.py` — tabla name → implementación
-- `harness/tools/executor.py` — `execute_tool`, permisos, previews, security gate
-- `harness/tools/registry.py` — re-export público
+**Registry architecture:**
 
-**Extensiones relacionadas (no son tools del dispatch):**
+- `harness/tools/schemas.py` — re-exports `TOOL_NAMES` and the OpenAI schemas
+- `harness/tools/schemas_parts/` — `registry.py` (`TOOL_NAMES`) and the schema groups (`explore`, `edit`, `runtime`, `workflow`, `integrations`)
+- `harness/tools/dispatch.py` — name → implementation table
+- `harness/tools/executor.py` — permissions, previews, security gate
+- `harness/tools/registry.py` — public re-export (`execute_tool`, `get_function_schemas`)
 
-- Skills: `.ci2lab/skills/*/SKILL.md` → tool `skill`
-- Project memory: `CI2LAB.md`, `AGENTS.md` → inyectado en system prompt
+**Related extensions (not dispatch tools):**
 
-## Candidatas futuras
+- Skills: `.ci2lab/skills/*/SKILL.md` → `skill` tool
+- Project memory: `CI2LAB.md`, `AGENTS.md` → injected into the system prompt
 
-| Tool | Prioridad | Notas |
-|------|-----------|-------|
-| `run_tests` | Alta | wrapper seguro sobre pytest |
-| Registro declarativo único | Media | unificar schemas + dispatch + COMPACTABLE_TOOLS |
-| `runtime/ensure.py` | Alta | `ollama pull` automático |
+## Future candidates
 
-## Descartadas por ahora
+| Tool | Priority | Notes |
+|------|----------|-------|
+| `run_tests` | High | safe wrapper around pytest |
+| Single declarative registry | Medium | unify schemas + dispatch + compactable tools |
+| `runtime/ensure.py` | High | automatic `ollama pull` |
 
-- Sub-agentes con ventana aislada
-- Marketplace de plugins
+## Dropped for now
+
+- Subagents with an isolated window
+- Plugin marketplace

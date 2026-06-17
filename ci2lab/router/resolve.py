@@ -26,7 +26,7 @@ def resolve_model(
     intent = classify_intent(user_prompt)
     recommendations = recommend_models(user_prompt, profile=profile, limit=5)
     if not recommendations:
-        raise RuntimeError("No hay modelos en el catálogo que quepan en este hardware.")
+        raise RuntimeError("No models in the catalog fit this hardware.")
 
     if force_model_id:
         normalized = force_model_id.lower()
@@ -39,7 +39,7 @@ def resolve_model(
             None,
         )
         if chosen is None:
-            raise RuntimeError(f"El modelo forzado no cabe o no existe: {force_model_id}")
+            raise RuntimeError(f"The forced model does not fit or does not exist: {force_model_id}")
     else:
         chosen = recommendations[0][0]
 
@@ -57,6 +57,6 @@ def resolve_model(
         context_length=chosen.context_length,
         intent=intent,
         hardware_tier=profile.hardware_tier,
-        reason=f"Elegido porque cabe en tu hardware y encaja con la intención '{intent.category}'.",
+        reason=f"Chosen because it fits your hardware and matches the intent '{intent.category}'.",
         alternatives=alternatives,
     )

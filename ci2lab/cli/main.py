@@ -1,4 +1,4 @@
-"""Punto de entrada y despacho de comandos CLI."""
+"""CLI entry point and command dispatch."""
 
 from __future__ import annotations
 

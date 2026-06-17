@@ -1,4 +1,4 @@
-"""Subcomando `ci2lab permissions` — dashboard CLI de auditoría y sesiones."""
+"""`ci2lab permissions` subcommand — CLI dashboard for audit and sessions."""
 
 from __future__ import annotations
 
@@ -37,17 +37,17 @@ console = Console()
 def add_permissions_parser(sub: argparse._SubParsersAction) -> None:
     permissions_p = sub.add_parser(
         "permissions",
-        help="Dashboard de permisos: auditoría y aprobaciones de sesión",
+        help="Permissions dashboard: audit and session approvals",
     )
     perm_sub = permissions_p.add_subparsers(dest="permissions_command", required=True)
 
     for name, help_text in (
-        ("summary", "Resumen de decisiones en el audit log"),
-        ("recent-denied", "Denegaciones y bloqueos recientes"),
-        ("recent-asked", "Peticiones que requirieron confirmación (ask)"),
-        ("audit-tail", "Últimas líneas del audit en JSON"),
-        ("session-list", "Aprobaciones de sesión en memoria (opencode_experimental)"),
-        ("session-clear", "Limpiar aprobaciones de sesión en memoria"),
+        ("summary", "Summary of decisions in the audit log"),
+        ("recent-denied", "Recent denials and blocks"),
+        ("recent-asked", "Requests that required confirmation (ask)"),
+        ("audit-tail", "Last lines of the audit in JSON"),
+        ("session-list", "In-memory session approvals (opencode_experimental)"),
+        ("session-clear", "Clear in-memory session approvals"),
     ):
         p = perm_sub.add_parser(name, help=help_text)
         _add_permissions_flags(p)
@@ -56,22 +56,22 @@ def add_permissions_parser(sub: argparse._SubParsersAction) -> None:
     session_clear_p.add_argument(
         "--session",
         default=None,
-        help="ID de sesión a limpiar (default: todas)",
+        help="Session ID to clear (default: all)",
     )
 
     retry_p = perm_sub.add_parser(
         "retry-plan",
-        help="Plan de reintento para un event_id (no ejecuta tools)",
+        help="Retry plan for an event_id (does not run tools)",
     )
     _add_permissions_flags(retry_p)
-    retry_p.add_argument("event_id", help="event_id del audit")
+    retry_p.add_argument("event_id", help="event_id from the audit")
 
     approve_p = perm_sub.add_parser(
         "approve-session",
-        help="Grant allow_session para un event_id (solo sesión activa en proceso)",
+        help="Grant allow_session for an event_id (only the active in-process session)",
     )
     _add_permissions_flags(approve_p)
-    approve_p.add_argument("event_id", help="event_id del audit")
+    approve_p.add_argument("event_id", help="event_id from the audit")
 
 
 def _add_permissions_flags(p: argparse.ArgumentParser) -> None:
@@ -85,20 +85,20 @@ def _add_permissions_flags(p: argparse.ArgumentParser) -> None:
         "--audit-file",
         type=Path,
         default=None,
-        help="Ruta explícita a security_audit.jsonl",
+        help="Explicit path to security_audit.jsonl",
     )
     p.add_argument(
         "--runs-dir",
         default="runs",
-        help="Directorio de runs para buscar audit (default: runs)",
+        help="Runs directory to search for the audit (default: runs)",
     )
     p.add_argument(
         "--limit",
         type=int,
         default=20,
-        help="Máximo de filas/eventos a mostrar (default: 20)",
+        help="Maximum rows/events to show (default: 20)",
     )
-    p.add_argument("--json", action="store_true", help="Salida JSON")
+    p.add_argument("--json", action="store_true", help="JSON output")
 
 
 def cmd_permissions(args: argparse.Namespace) -> int:
@@ -118,16 +118,16 @@ def cmd_permissions(args: argparse.Namespace) -> int:
     )
     if source == "missing" or not audit_path.is_file():
         msg = {
-            "error": "No se encontró security_audit.jsonl",
+            "error": "security_audit.jsonl not found",
             "workspace": str(workspace),
-            "hint": "Ejecuta un agente con logging o usa --audit-file",
+            "hint": "Run an agent with logging or use --audit-file",
         }
         if args.json:
             console.print_json(json.dumps(msg, ensure_ascii=False))
         else:
-            console.print("[yellow]No hay auditoría disponible.[/yellow]")
+            console.print("[yellow]No audit available.[/yellow]")
             console.print(f"  Workspace: {workspace}")
-            console.print("  Busca en runs/<run_id>/security_audit.jsonl o .ci2lab/")
+            console.print("  Look in runs/<run_id>/security_audit.jsonl or .ci2lab/")
         return 1
 
     try:
@@ -136,7 +136,7 @@ def cmd_permissions(args: argparse.Namespace) -> int:
         if args.json:
             console.print_json(json.dumps({"error": str(exc)}, ensure_ascii=False))
         else:
-            console.print(f"[red]Error leyendo audit:[/red] {exc}")
+            console.print(f"[red]Error reading audit:[/red] {exc}")
         return 1
 
     if cmd == "summary":
@@ -144,7 +144,7 @@ def cmd_permissions(args: argparse.Namespace) -> int:
     if cmd == "recent-denied":
         return _print_filtered(
             filter_denied_events(events),
-            title="Denegaciones recientes",
+            title="Recent denials",
             audit_path=audit_path,
             source=source,
             args=args,
@@ -152,7 +152,7 @@ def cmd_permissions(args: argparse.Namespace) -> int:
     if cmd == "recent-asked":
         return _print_filtered(
             filter_asked_events(events),
-            title="Peticiones ask recientes",
+            title="Recent ask requests",
             audit_path=audit_path,
             source=source,
             args=args,
@@ -160,7 +160,7 @@ def cmd_permissions(args: argparse.Namespace) -> int:
     if cmd == "audit-tail":
         return _print_tail(events, audit_path, source, args)
 
-    console.print(f"Subcomando desconocido: {cmd}")
+    console.print(f"Unknown subcommand: {cmd}")
     return 1
 
 
@@ -184,33 +184,33 @@ def _print_summary(
 
     console.print("[bold]Permissions summary[/bold]\n")
     console.print(f"Audit: [cyan]{audit_path}[/cyan] ({source})")
-    console.print(f"Total eventos: {summary['total_events']}")
+    console.print(f"Total events: {summary['total_events']}")
     if summary["latest_timestamp"]:
-        console.print(f"Último evento: {summary['latest_timestamp']}")
+        console.print(f"Latest event: {summary['latest_timestamp']}")
     console.print()
 
-    table = Table(title="Por decisión")
-    table.add_column("Decisión")
+    table = Table(title="By decision")
+    table.add_column("Decision")
     table.add_column("Count", justify="right")
     for decision, count in sorted(summary["by_decision"].items()):
         table.add_row(decision, str(count))
     console.print(table)
     console.print()
 
-    stats = Table(title="Contadores")
-    stats.add_column("Métrica")
-    stats.add_column("Valor", justify="right")
-    stats.add_row("Denegados/bloqueados", str(summary["denied_count"]))
-    stats.add_row("Ask (confirmación)", str(summary["asked_count"]))
-    stats.add_row("Session approval usado", str(summary["session_approvals_used"]))
-    stats.add_row("Rutas externas", str(summary["external_directory_count"]))
+    stats = Table(title="Counters")
+    stats.add_column("Metric")
+    stats.add_column("Value", justify="right")
+    stats.add_row("Denied/blocked", str(summary["denied_count"]))
+    stats.add_row("Ask (confirmation)", str(summary["asked_count"]))
+    stats.add_row("Session approval used", str(summary["session_approvals_used"]))
+    stats.add_row("External paths", str(summary["external_directory_count"]))
     mem = count_session_approvals()
-    stats.add_row("Aprobaciones en memoria", str(mem["total"]))
+    stats.add_row("In-memory approvals", str(mem["total"]))
     console.print(stats)
 
     if summary["by_engine"]:
         console.print()
-        eng = Table(title="Por motor")
+        eng = Table(title="By engine")
         eng.add_column("Engine")
         eng.add_column("Count", justify="right")
         for name, count in sorted(summary["by_engine"].items()):
@@ -266,7 +266,7 @@ def _print_tail(
         return 0
 
     console.print(f"[bold]Audit tail[/bold] ({source})")
-    console.print(f"Archivo: {audit_path}\n")
+    console.print(f"File: {audit_path}\n")
     console.print(format_audit_tail(events, limit=limit))
     return 0
 
@@ -282,13 +282,13 @@ def _load_audit_or_error(
     )
     if source == "missing" or not audit_path.is_file():
         msg = {
-            "error": "No se encontró security_audit.jsonl",
+            "error": "security_audit.jsonl not found",
             "workspace": str(workspace),
         }
         if args.json:
             console.print_json(json.dumps(msg, ensure_ascii=False))
         else:
-            console.print("[yellow]No hay auditoría disponible.[/yellow]")
+            console.print("[yellow]No audit available.[/yellow]")
         return None, None, None, 1
     try:
         events = load_audit_events(audit_path)
@@ -296,7 +296,7 @@ def _load_audit_or_error(
         if args.json:
             console.print_json(json.dumps({"error": str(exc)}, ensure_ascii=False))
         else:
-            console.print(f"[red]Error leyendo audit:[/red] {exc}")
+            console.print(f"[red]Error reading audit:[/red] {exc}")
         return None, None, None, 1
     return events, audit_path, source, 0
 
@@ -313,14 +313,14 @@ def _cmd_event_action(
     event = find_event_by_id(events, args.event_id)
     if event is None:
         msg = {
-            "error": f"event_id no encontrado: {args.event_id!r}",
+            "error": f"event_id not found: {args.event_id!r}",
             "audit_file": str(audit_path),
             "audit_source": source,
         }
         if args.json:
             console.print_json(json.dumps(msg, ensure_ascii=False, indent=2))
         else:
-            console.print(f"[red]event_id no encontrado:[/red] {args.event_id}")
+            console.print(f"[red]event_id not found:[/red] {args.event_id}")
             console.print(f"  Audit: {audit_path} ({source})")
         return 1
 
@@ -341,7 +341,7 @@ def _cmd_event_action(
         if args.json:
             console.print_json(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            console.print(f"[red]No se puede aprobar:[/red] {exc}")
+            console.print(f"[red]Cannot approve:[/red] {exc}")
         return 1
 
     active = get_active_session_id()
@@ -384,7 +384,7 @@ def _cmd_event_action(
         console.print_json(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         console.print(
-            f"[green]allow_session registrado[/green] para sesión {active!r}"
+            f"[green]allow_session recorded[/green] for session {active!r}"
         )
         console.print(
             f"  tool={event.get('tool')} rule={event.get('matched_rule')}"
@@ -410,8 +410,8 @@ def _cmd_session(args: argparse.Namespace, cmd: str) -> int:
                 )
             )
         else:
-            scope = f"sesión {target!r}" if target else "todas las sesiones"
-            console.print(f"[green]Aprobaciones limpiadas[/green] ({scope})")
+            scope = f"session {target!r}" if target else "all sessions"
+            console.print(f"[green]Approvals cleared[/green] ({scope})")
         return 0
 
     rows = list_session_approvals(args.session)
@@ -429,18 +429,18 @@ def _cmd_session(args: argparse.Namespace, cmd: str) -> int:
         )
         return 0
 
-    console.print("[bold]Session approvals[/bold] (memoria de proceso)\n")
+    console.print("[bold]Session approvals[/bold] (process memory)\n")
     console.print(
-        "[dim]Solo opencode_experimental. No persiste entre procesos.[/dim]\n"
+        "[dim]opencode_experimental only. Does not persist between processes.[/dim]\n"
     )
     active = get_active_session_id()
     if active:
-        console.print(f"Sesión activa en este proceso: [cyan]{active}[/cyan]")
+        console.print(f"Active session in this process: [cyan]{active}[/cyan]")
     else:
-        console.print("Sin sesión activa en este proceso.")
+        console.print("No active session in this process.")
 
     if not rows:
-        console.print("\n(y vacío — no hay aprobaciones en memoria)")
+        console.print("\n(empty — no approvals in memory)")
         return 0
 
     table = Table()
@@ -460,5 +460,5 @@ def _cmd_session(args: argparse.Namespace, cmd: str) -> int:
     console.print()
     console.print(table)
     if len(rows) > args.limit:
-        console.print(f"... {len(rows) - args.limit} más")
+        console.print(f"... {len(rows) - args.limit} more")
     return 0

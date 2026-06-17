@@ -1,4 +1,4 @@
-"""Resolución segura de rutas confinadas al directorio de trabajo."""
+"""Safe resolution of paths confined to the working directory."""
 
 from __future__ import annotations
 

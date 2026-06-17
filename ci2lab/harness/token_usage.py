@@ -125,15 +125,15 @@ def format_token_usage_line(state: TokenUsageState) -> str:
     turn = state.turn
     session = state.session
     if not turn.available:
-        return "Tokens: no disponibles desde el proveedor"
+        return "Tokens: not available from the provider"
     model = turn.model or session.model or "?"
     return (
         "Tokens: "
-        f"entrada {turn.prompt_tokens:,} | "
-        f"salida {turn.completion_tokens:,} | "
-        f"turno {turn.total_tokens:,} | "
-        f"conversacion {session.total_tokens:,} | "
-        f"modelo {model}"
+        f"input {turn.prompt_tokens:,} | "
+        f"output {turn.completion_tokens:,} | "
+        f"turn {turn.total_tokens:,} | "
+        f"conversation {session.total_tokens:,} | "
+        f"model {model}"
     )
 
 

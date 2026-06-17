@@ -19,7 +19,7 @@ def notebook_edit(
 ) -> str:
     resolved = resolve_path(path, cwd)
     if not resolved.is_file():
-        return f"Error: no existe el archivo {resolved}"
+        return f"Error: file does not exist: {resolved}"
     if resolved.suffix.lower() != ".ipynb":
         return f"Error: {resolved} is not a .ipynb notebook"
 

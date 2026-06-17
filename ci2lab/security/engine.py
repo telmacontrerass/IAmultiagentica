@@ -1,4 +1,4 @@
-"""Selección de motor de seguridad: CI2Lab, OpenCode experimental, Claude experimental."""
+"""Security engine selection: CI2Lab, OpenCode experimental, Claude experimental."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ CLAUDE_EXTERNAL_ALLOW_IGNORED = (
 
 class SecurityEngineName(str, Enum):
     CI2LAB = "ci2lab"
-    STANDARD = "standard"  # alias de ci2lab
+    STANDARD = "standard"  # alias of ci2lab
     OPENCODE_EXPERIMENTAL = "opencode_experimental"
     CLAUDE_EXPERIMENTAL = "claude_experimental"
 
@@ -73,7 +73,7 @@ _PERMISSION_LAYER_ENGINES = frozenset({
 
 
 class UnknownSecurityEngineError(ValueError):
-    """Motor de seguridad no reconocido."""
+    """Security engine not recognized."""
 
 
 def normalize_security_engine(raw: str | None) -> str:
@@ -91,7 +91,7 @@ def normalize_security_engine(raw: str | None) -> str:
             )
         )
         raise UnknownSecurityEngineError(
-            f"Motor de seguridad desconocido: {raw!r}. Valores validos: {valid}."
+            f"Unknown security engine: {raw!r}. Valid values: {valid}."
         )
     return _ENGINE_ALIASES[key]
 
@@ -101,7 +101,7 @@ def uses_permission_layer(security_engine: str) -> bool:
 
 
 def enforce_ci2lab_hard_policy(security_engine: str) -> bool:
-    """Hard policy en ejecución de tools (workspace, secretos, blocklist)."""
+    """Hard policy on tool execution (workspace, secrets, blocklist)."""
     engine = normalize_security_engine(security_engine)
     return engine in {
         SecurityEngineName.CI2LAB.value,
@@ -119,7 +119,7 @@ def is_experimental_engine(security_engine: str) -> bool:
 
 @dataclass(frozen=True)
 class ToolGateResult:
-    """Resultado de la puerta de seguridad antes de ejecutar una tool."""
+    """Result of the security gate before executing a tool."""
 
     proceed: bool
     blocked: bool = False
@@ -146,7 +146,7 @@ def _run_hard_guards(
     engine: str,
     experimental: bool,
 ) -> ToolGateResult | None:
-    """Capa dura CI2Lab. Devuelve ToolGateResult si bloquea; None si pasa."""
+    """CI2Lab hard layer. Returns ToolGateResult if it blocks; None if it passes."""
     from ci2lab.harness.security_profiles import (
         SECURITY_PROFILE_BLOCKED_OUTCOME,
         is_tool_blocked_by_profile,
@@ -257,7 +257,7 @@ def _permission_layer_gate(
         return ToolGateResult(
             proceed=False,
             blocked=True,
-            message=decision.message or f"Error: permiso denegado ({decision.reason})",
+            message=decision.message or f"Error: permission denied ({decision.reason})",
             outcome="blocked_by_permission",
             reason=decision.reason,
             engine=engine,
@@ -300,7 +300,7 @@ def _permission_layer_gate(
             return ToolGateResult(
                 proceed=False,
                 blocked=True,
-                message="Error: denegado por aprobación de sesión (deny_once)",
+                message="Error: denied by session approval (deny_once)",
                 outcome="denied",
                 reason="session_deny_once",
                 engine=engine,

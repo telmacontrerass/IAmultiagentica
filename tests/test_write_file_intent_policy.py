@@ -204,6 +204,6 @@ def test_system_prompt_allows_explicit_write_and_discourages_error_files():
     from ci2lab.harness import default_selection
 
     text = build_system_prompt(default_selection("test:1b"), ".")
-    assert "docs/resumen.md" in text
-    assert "ci2lab_error.txt" in text
-    assert "explicitly" in text.lower() or "explicitamente" in text.lower() or "explicit" in text.lower()
+    assert "write_file" in text
+    assert "diagnostic or log files" in text.lower()
+    assert "explicit" in text.lower()

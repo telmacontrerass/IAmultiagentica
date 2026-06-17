@@ -1,4 +1,4 @@
-"""Cliente HTTP OpenAI-compatible (Ollama / vLLM)."""
+"""OpenAI-compatible HTTP client (Ollama / vLLM)."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[StreamToken | LLMResponse]:
         """
-        Emite StreamToken por cada fragmento de texto y termina con LLMResponse completo.
+        Emits a StreamToken for each text fragment and ends with a complete LLMResponse.
         """
         with httpx.Client(timeout=self.timeout) as client:
             for model in self._model_candidates():

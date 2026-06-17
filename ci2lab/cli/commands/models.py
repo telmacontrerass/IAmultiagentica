@@ -1,4 +1,4 @@
-"""Comandos models (recommend, install, run)."""
+"""models commands (recommend, install, run)."""
 
 from __future__ import annotations
 
@@ -54,13 +54,13 @@ def _cmd_models_install(args: argparse.Namespace) -> int:
         }))
         return 0
 
-    console.print(f"[bold]Modelo elegido:[/bold] {model.display_name}")
+    console.print(f"[bold]Chosen model:[/bold] {model.display_name}")
     console.print(f"[bold]Ollama:[/bold] {model.ollama_tag}\n")
-    console.print("[bold]1. Instalar/descargar el modelo:[/bold]")
+    console.print("[bold]1. Install/download the model:[/bold]")
     console.print(f"  {commands['pull']}")
-    console.print("\n[bold]2. Abrir chat directo con Ollama:[/bold]")
+    console.print("\n[bold]2. Open a direct chat with Ollama:[/bold]")
     console.print(f"  {commands['ollama_run']}")
-    console.print("\n[bold]3. Abrir chat agéntico desde ci2lab:[/bold]")
+    console.print("\n[bold]3. Open an agentic chat from ci2lab:[/bold]")
     console.print(f"  {commands['ci2lab_chat']}")
     return 0
 
@@ -71,13 +71,13 @@ def _cmd_models_run(args: argparse.Namespace) -> int:
     if model is None:
         return 1
 
-    console.print(f"[bold]Abriendo:[/bold] {model.display_name} ({model.ollama_tag})")
-    console.print("[dim]Sal con /bye o Ctrl+C.[/dim]\n")
+    console.print(f"[bold]Opening:[/bold] {model.display_name} ({model.ollama_tag})")
+    console.print("[dim]Exit with /bye or Ctrl+C.[/dim]\n")
     try:
         completed = subprocess.run(["ollama", "run", model.ollama_tag], check=False)
     except FileNotFoundError:
-        console.print("[red]No encuentro el comando `ollama`.[/red]")
-        console.print("Instala Ollama y después ejecuta:")
+        console.print("[red]Cannot find the `ollama` command.[/red]")
+        console.print("Install Ollama and then run:")
         console.print(f"  {_install_commands(model)['pull']}")
         return 1
     return completed.returncode
@@ -105,15 +105,15 @@ def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> Mode
     ]
 
     if not exact:
-        console.print(f"[red]Modelo no reconocido:[/red] {model_name}")
+        console.print(f"[red]Unrecognized model:[/red] {model_name}")
         _print_allowed_models(profile)
         return None
 
     model = exact[0]
     if not model_fits(model, profile):
-        console.print(f"[red]Ese modelo existe, pero no cabe en este equipo:[/red] {model.display_name}")
+        console.print(f"[red]That model exists, but it does not fit on this machine:[/red] {model.display_name}")
         console.print(
-            "Presupuesto aproximado para inferencia: "
+            "Approximate budget for inference: "
             f"[bold]{profile.inference_budget_gb:g} GB[/bold]."
         )
         _print_allowed_models(profile)
@@ -125,13 +125,13 @@ def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> Mode
 def _print_allowed_models(profile: HardwareProfile) -> None:
     allowed = [model for model in load_model_catalog() if model_fits(model, profile)]
     if not allowed:
-        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        console.print("[yellow]No catalog models fit within this budget.[/yellow]")
         return
 
-    table = Table(title="Modelos permitidos en este equipo")
-    table.add_column("Escribe esto")
+    table = Table(title="Models allowed on this machine")
+    table.add_column("Type this")
     table.add_column("Ollama")
-    table.add_column("Nombre")
+    table.add_column("Name")
     for model in allowed:
         table.add_row(model.id, model.ollama_tag, model.display_name)
     console.print(table)
@@ -190,25 +190,25 @@ def _focused_recommend_command(
         console.print_json(json.dumps(payload))
         return 0
 
-    console.print(f"Intencion detectada: [bold]{intent.category}[/bold]")
+    console.print(f"Detected intent: [bold]{intent.category}[/bold]")
     _print_memory_budget_context(profile)
     if ollama_error:
         console.print(
-            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+            "[yellow]Warning: could not query Ollama to mark installed models.[/yellow]"
         )
 
     if not recommendations:
-        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        console.print("[yellow]No catalog models fit within this budget.[/yellow]")
         return 1
 
-    table = Table(title="Modelos recomendados")
-    table.add_column("Modelo")
+    table = Table(title="Recommended models")
+    table.add_column("Model")
     table.add_column("Ollama")
-    table.add_column("Instalacion")
-    table.add_column("Estado")
+    table.add_column("Installation")
+    table.add_column("Status")
     table.add_column("Score")
-    table.add_column("Memoria")
-    table.add_column("Motivo")
+    table.add_column("Memory")
+    table.add_column("Reason")
     for entry in recommendations:
         item = entry.item
         install_label = (
@@ -253,7 +253,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
                     "requires_memory_cleanup": item.recommendation.requires_memory_cleanup,
                     "installed": item.installed,
                     "installation_label": (
-                        "Ya instalado" if item.installed else "Para descargar"
+                        "Already installed" if item.installed else "To download"
                     ),
                     "criteria": _criteria_payload(item.recommendation),
                 }
@@ -266,26 +266,26 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
     _print_memory_budget_context(profile)
     if ollama_error:
         console.print(
-            "[yellow]Aviso: no pude consultar Ollama para marcar modelos instalados.[/yellow]"
+            "[yellow]Warning: could not query Ollama to mark installed models.[/yellow]"
         )
 
     if not plan:
-        console.print("[yellow]No hay modelos del catálogo que quepan con este presupuesto.[/yellow]")
+        console.print("[yellow]No catalog models fit within this budget.[/yellow]")
         return 1
 
-    table = Table(title="Modelos recomendados para tu equipo")
-    table.add_column("Usos")
-    table.add_column("Modelo")
+    table = Table(title="Recommended models for your machine")
+    table.add_column("Uses")
+    table.add_column("Model")
     table.add_column("Ollama")
-    table.add_column("Instalacion")
-    table.add_column("Estado")
+    table.add_column("Installation")
+    table.add_column("Status")
     table.add_column("Score")
-    table.add_column("Memoria")
-    table.add_column("Motivo")
+    table.add_column("Memory")
+    table.add_column("Reason")
     for item in plan:
         recommendation = item.recommendation
         install_label = (
-            "[green]Ya instalado[/green]" if item.installed else "Para descargar"
+            "[green]Already installed[/green]" if item.installed else "To download"
         )
         table.add_row(
             ", ".join(item.use_cases),
@@ -321,7 +321,7 @@ def _criteria_payload(item) -> dict[str, float | str | bool]:
 
 def _memory_summary(item) -> str:
     return (
-        f"usa ~{item.memory_required_gb:g} GB "
+        f"uses ~{item.memory_required_gb:g} GB "
         f"({item.memory_usage_percent:g}%); "
-        f"queda ~{item.remaining_memory_gb:g} GB"
+        f"~{item.remaining_memory_gb:g} GB left"
     )

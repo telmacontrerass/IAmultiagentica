@@ -137,7 +137,7 @@ def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
     payload = _chat(state, {"message": "hola", "model": ""})
 
     assert payload["ok"] is False
-    assert "Selecciona un modelo instalado" in payload["error"]
+    assert "Select an installed model" in payload["error"]
     assert "llama3.1:8b" not in payload["error"]
 
 
@@ -172,7 +172,7 @@ def test_upload_file_rejects_unsupported_suffix(tmp_path):
     payload = _upload_file(state, {"name": "documento.exe", "content_base64": content})
 
     assert payload["ok"] is False
-    assert "Formato no soportado" in payload["error"]
+    assert "Unsupported format" in payload["error"]
 
 
 def test_upload_file_rejects_sensitive_names(tmp_path):
@@ -182,7 +182,7 @@ def test_upload_file_rejects_sensitive_names(tmp_path):
     payload = _upload_file(state, {"name": "token.pdf", "content_base64": content})
 
     assert payload["ok"] is False
-    assert "secretos" in payload["error"] or "tokens" in payload["error"]
+    assert "secrets" in payload["error"] or "tokens" in payload["error"]
 
 
 def test_prompt_with_uploaded_files_reads_attachment_content(tmp_path):
@@ -197,7 +197,7 @@ def test_prompt_with_uploaded_files_reads_attachment_content(tmp_path):
     )
 
     assert "contenido importante" in prompt
-    assert "Responde usando el contenido" in prompt
+    assert "Answer using the following content" in prompt
     assert "read_document" in prompt
 
 
@@ -216,7 +216,7 @@ def test_prompt_with_uploaded_files_reports_read_errors(tmp_path, monkeypatch):
         [{"name": "doc.pdf", "path": "ci2lab_uploads/doc.pdf"}],
     )
 
-    assert "No se pudo leer el archivo adjunto" in prompt
+    assert "Could not read the attached file" in prompt
     assert "Contenido leído" not in prompt
     assert "Contenido leido" not in prompt
 
@@ -230,7 +230,7 @@ def test_prompt_with_uploaded_files_rejects_non_upload_paths(tmp_path):
         [{"name": "doc.txt", "path": "doc.txt"}],
     )
 
-    assert "rechazado" in prompt
+    assert "rejected" in prompt
     assert "contenido privado" not in prompt
 
 
@@ -314,42 +314,6 @@ def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["usage"]["last_turn"]["total_tokens"] == 16
     assert payload["usage"]["session_total"]["prompt_tokens"] == 12
-
-
-def test_chat_answers_simple_english_document_summary_without_llm(tmp_path, monkeypatch):
-    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
-    upload_dir = tmp_path / "ci2lab_uploads"
-    upload_dir.mkdir()
-    (upload_dir / "derivatives.txt").write_text(
-        "Lesson 5. Financial derivatives\n"
-        "A derivative is an instrument whose value depends on another asset.\n"
-        "The four basic derivatives are forwards, futures, swaps and options.\n",
-        encoding="utf-8",
-    )
-    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    monkeypatch.setattr(
-        state,
-        "list_installed_models",
-        lambda: ([{"name": "gemma2:2b"}], None),
-    )
-
-    def fail_run_agent(*args, **kwargs):
-        raise AssertionError("run_agent should not be called for simple document summaries")
-
-    monkeypatch.setattr("ci2lab.ui.server.run_agent", fail_run_agent)
-
-    payload = _chat(
-        state,
-        {
-            "message": "Summarise this document for me",
-            "model": "gemma2:2b",
-            "attachments": [{"name": "derivatives.txt", "path": "ci2lab_uploads/derivatives.txt"}],
-        },
-    )
-
-    assert payload["ok"] is True
-    assert "derivative" in payload["answer"].lower()
-    assert "ci2lab" not in payload["answer"].lower()
 
 
 def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):

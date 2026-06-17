@@ -1,10 +1,10 @@
-# Pruebas manuales — Ci2Lab
+# Manual tests — Ci2Lab
 
-Checklist para validar el arnés tras cambios. Requiere Ollama en marcha con un modelo instalado (p. ej. `llama3.1:8b`).
+A checklist to validate the harness after changes. Requires Ollama running with an installed model (e.g. `llama3.1:8b`).
 
-Para regresión automatizada, ver también [`regression_checklist.md`](regression_checklist.md) y [`evals.md`](evals.md).
+For automated regression, see also [`regression_checklist.md`](regression_checklist.md) and [`evals.md`](evals.md).
 
-## Preparación
+## Setup
 
 ```bash
 cd IAmultiagentica
@@ -13,71 +13,71 @@ pip install -e ".[dev]"
 ci2lab doctor
 ```
 
-## 1. Turno básico con logging
+## 1. Basic turn with logging
 
 ```bash
-python -m ci2lab.cli --no-stream --yes "lista los archivos del directorio actual"
+python -m ci2lab.cli --no-stream --yes "list the files in the current directory"
 ```
 
-Verificar:
+Check:
 
-- [ ] Respuesta en terminal sin error fatal
-- [ ] Carpeta nueva en `runs/YYYY-MM-DD_HHMMSS_<id>/`
-- [ ] `run_summary.json` con `model`, `workspace`, `tools_used` (esperado: `ls` o similar)
-- [ ] `tool_calls.jsonl` con al menos una línea si el modelo usó herramientas
-- [ ] `conversation.json` con mensajes `system`, `user`, `assistant`, `tool`
-- [ ] `final_answer.md` con texto de respuesta
-- [ ] `config_snapshot.json` con configuración efectiva
+- [ ] A response in the terminal with no fatal error
+- [ ] A new folder under `runs/YYYY-MM-DD_HHMMSS_<id>/`
+- [ ] `run_summary.json` with `model`, `workspace`, `tools_used` (expected: `ls` or similar)
+- [ ] `tool_calls.jsonl` with at least one line if the model used tools
+- [ ] `conversation.json` with `system`, `user`, `assistant`, `tool` messages
+- [ ] `final_answer.md` with the response text
+- [ ] `config_snapshot.json` with the effective configuration
 
-## 2. Sin logging
+## 2. No logging
 
 ```bash
-python -m ci2lab.cli --no-log --no-stream --yes "lista los archivos"
+python -m ci2lab.cli --no-log --no-stream --yes "list the files"
 ```
 
-Verificar:
+Check:
 
-- [ ] No se crea carpeta nueva en `runs/` (comparar timestamp antes/después)
-- [ ] El agente responde igual que con logging
+- [ ] No new folder is created under `runs/` (compare timestamps before/after)
+- [ ] The agent responds the same as with logging
 
-## 3. Workspace y runs-dir personalizados
+## 3. Custom workspace and runs-dir
 
 ```bash
-python -m ci2lab.cli --workspace . --runs-dir ./_test_runs --no-stream --yes "hola"
+python -m ci2lab.cli --workspace . --runs-dir ./_test_runs --no-stream --yes "hello"
 ```
 
-Verificar:
+Check:
 
-- [ ] Carpeta bajo `_test_runs/` (no `runs/` por defecto)
-- [ ] `run_summary.json` → `workspace` apunta al directorio actual absoluto
+- [ ] A folder under `_test_runs/` (not the default `runs/`)
+- [ ] `run_summary.json` → `workspace` points to the current directory's absolute path
 
-Limpiar: `rm -r _test_runs` (o borrar manualmente en Windows).
+Cleanup: `rm -r _test_runs` (or delete manually on Windows).
 
-## 4. Errores Ollama
+## 4. Ollama errors
 
-Con Ollama **detenido**:
+With Ollama **stopped**:
 
 ```bash
-python -m ci2lab.cli "hola"
+python -m ci2lab.cli "hello"
 ```
 
-Verificar:
+Check:
 
-- [ ] Mensaje accionable (conectar, `ollama serve`, `ci2lab doctor`)
-- [ ] Exit code distinto de 0
+- [ ] An actionable message (connect, `ollama serve`, `ci2lab doctor`)
+- [ ] A non-zero exit code
 
-## 5. Blocklist bash
+## 5. Bash blocklist
 
-En REPL o con un prompt que pida `rm -rf /` vía bash:
+In the REPL, or with a prompt asking to run `rm -rf /` via bash:
 
-Verificar:
+Check:
 
-- [ ] Comando bloqueado aunque uses `--yes`
-- [ ] El agente continúa (error devuelto al modelo, no crash)
+- [ ] The command is blocked even with `--yes`
+- [ ] The agent continues (the error is returned to the model, no crash)
 
-## 6. Config YAML
+## 6. YAML config
 
-Crear `ci2lab.yaml` temporal:
+Create a temporary `ci2lab.yaml`:
 
 ```yaml
 model: llama3.1:8b
@@ -86,97 +86,97 @@ log_runs: true
 ```
 
 ```bash
-python -m ci2lab.cli --no-stream --yes "di hola"
+python -m ci2lab.cli --no-stream --yes "say hello"
 ```
 
-Verificar:
+Check:
 
-- [ ] Run creado bajo `runs/`
-- [ ] `config_snapshot.json` refleja el modelo configurado
+- [ ] A run is created under `runs/`
+- [ ] `config_snapshot.json` reflects the configured model
 
-## 7. Edición supervisada (write/edit)
+## 7. Supervised editing (write/edit)
 
-Las tools `write_file` y `edit_file` están habilitadas en **modo supervisado**: diff preview obligatorio por defecto, aprobación humana, registro en `runs/`. Ver [`WRITE_POLICY.md`](WRITE_POLICY.md).
+The `write_file` and `edit_file` tools are enabled in **supervised mode**: a mandatory diff preview by default, human approval, and a record under `runs/`. See [`WRITE_POLICY.md`](WRITE_POLICY.md).
 
-Crear `test_edit.txt` con contenido `version 1`.
+Create `test_edit.txt` with the content `version 1`.
 
 ```bash
-python -m ci2lab.cli --no-stream "cambia test_edit.txt de version 1 a version 2 con edit_file"
+python -m ci2lab.cli --no-stream "change test_edit.txt from version 1 to version 2 with edit_file"
 ```
 
-Verificar:
+Check:
 
-- [ ] Panel de preview con diff unificado antes de escribir
-- [ ] Si respondes `n`, el archivo no cambia
-- [ ] Si respondes `s`, el archivo se actualiza
-- [ ] `tool_calls.jsonl` → `outcome: approved` o `denied`
+- [ ] A preview panel with a unified diff before writing
+- [ ] If you answer `n`, the file does not change
+- [ ] If you answer `y`, the file is updated
+- [ ] `tool_calls.jsonl` → `outcome: approved` or `denied`
 
-Probar `--yes` con preview obligatorio:
+Test `--yes` with the mandatory preview:
 
 ```bash
-python -m ci2lab.cli --no-stream --yes "usa edit_file en test_edit.txt ..."
+python -m ci2lab.cli --no-stream --yes "use edit_file on test_edit.txt ..."
 ```
 
-Verificar:
+Check:
 
-- [ ] **Sigue pidiendo confirmación** (o muestra preview y pide `[s/N]`) con `require_diff_preview: true` por defecto
+- [ ] It **still asks for confirmation** (or shows the preview and asks `[y/N]`) with the default `require_diff_preview: true`
 
-Deshabilitar escritura en `ci2lab.yaml`:
+Disable writing in `ci2lab.yaml`:
 
 ```yaml
 write_tools_enabled: false
 ```
 
-Verificar:
+Check:
 
-- [ ] `write_file` / `edit_file` devuelven error al modelo sin modificar archivos
+- [ ] `write_file` / `edit_file` return an error to the model without modifying files
 - [ ] `tool_calls.jsonl` → `outcome: blocked_by_config`
 
-## 8. Evaluación práctica (evals)
+## 8. Practical evaluation (evals)
 
 ```bash
 python -m ci2lab.evals.run
 ```
 
-Verificar:
+Check:
 
-- [ ] 7/7 tareas PASS en modo mock (sin Ollama)
-- [ ] Carpeta `evals/results/YYYY-MM-DD_HHMMSS/` con `summary.json` y `results.jsonl`
-- [ ] `runs/<task_id>/tool_calls.jsonl` registra tools por tarea
+- [ ] All tasks PASS in mock mode (no Ollama)
+- [ ] A folder `evals/results/YYYY-MM-DD_HHMMSS/` with `summary.json` and `results.jsonl`
+- [ ] `runs/<task_id>/tool_calls.jsonl` records tools per task
 - [ ] Exit code 0
 
-Una tarea concreta:
+A single task:
 
 ```bash
 python -m ci2lab.evals.run --task 006_edit_file_approved
 ```
 
-Modo live (opcional, requiere Ollama):
+Live mode (optional, requires Ollama):
 
 ```bash
 python -m ci2lab.evals.run --live --model llama3.1:8b --task 001_list_files
 ```
 
-## 9. Hardware y router
+## 9. Hardware and router
 
 ```bash
 ci2lab hardware
 ci2lab hardware --json
 ci2lab models recommend
-ci2lab models recommend "quiero programar en Python"
+ci2lab models recommend "I want to program in Python"
 ci2lab models install qwen2.5-coder-1.5b
 ```
 
-Verificar:
+Check:
 
-- [ ] `hardware` muestra RAM, VRAM, GPU, `inference_budget_gb`, `hardware_tier`
-- [ ] `models recommend` lista solo modelos que caben en el presupuesto
-- [ ] Con prompt de coding, los modelos coder aparecen arriba
-- [ ] `models install` muestra `ollama pull`, `ollama run` y `ci2lab --model … chat`
+- [ ] `hardware` shows RAM, VRAM, GPU, `inference_budget_gb`, `hardware_tier`
+- [ ] `models recommend` lists only models that fit the budget
+- [ ] With a coding prompt, the coder models appear at the top
+- [ ] `models install` shows `ollama pull`, `ollama run`, and `ci2lab --model … chat`
 
-**Limitación conocida:** `ci2lab chat` no usa el router automáticamente; `--model` debe ir antes del subcomando. Ver [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).
+**Known limitation:** `ci2lab chat` does not use the router automatically; `--model` must come before the subcommand. See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).
 
-## 10. Entrypoints
+## 10. Entry points
 
 ```bash
 python -m ci2lab.cli --help
@@ -184,4 +184,4 @@ python -m ci2lab --help
 python -m ci2lab.cli --workspace . --help
 ```
 
-Verificar flags `--workspace`, `--runs-dir`, `--no-log` en la ayuda.
+Check the `--workspace`, `--runs-dir`, `--no-log` flags appear in the help.

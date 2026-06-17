@@ -1,1 +1,1 @@
-"""Sistema de evaluación práctica del arnés."""
+"""Practical evaluation system for the harness."""

@@ -1,125 +1,125 @@
-# Handoff: Perfilador de hardware + Router de modelos
+# Handoff: Hardware profiler + Model router
 
-> **Para la IA / desarrollador que implementa esta parte.**  
-> El arnés agéntico lo implementa otra persona. Este documento define **qué construir**, **qué no tocar** y **cómo encajar con el arnés** al final.
+> **For the AI / developer implementing this part.**
+> The agentic harness is implemented by someone else. This document defines **what to build**, **what not to touch**, and **how to fit with the harness** at the end.
 
-**Raíz del proyecto:** `Ci2Lab/IAmultiagentica/`  
-**Workspace padre:** `Ci2Lab/` (solo repos de referencia, ver `references/EXTERNAL_REPOS.md`)
-
----
-
-## Estado de implementación (2026-06-12)
-
-Resumen de lo que **ya existe** frente a lo que **falta** según este handoff.
-
-| Componente | Estado | Archivos / CLI |
-|------------|--------|----------------|
-| `hardware/profile.py` | ✅ Implementado | `scan_hardware()` — RAM, VRAM, GPU, CPU, presupuesto inferencia |
-| `router/catalog.py` | ✅ Implementado | Carga `ci2lab/catalog/models.json` (21 modelos) |
-| `router/intent.py` | ✅ Implementado | Clasificador por keywords (`coding`, `reasoning`, `rag`, …) |
-| `router/recommend.py` | ✅ Implementado | Scoring, `model_fits()`, plan de descarga |
-| `router/selection.py` | ✅ Implementado | `build_model_selection()` — **ruta de producción** |
-| `router/resolve.py` | ⚠️ Opcional | `resolve_model()` auto-elige; no usado en chat/agent/UI |
-| CLI `ci2lab hardware` | ✅ Implementado | Tabla o `--json` |
-| CLI `ci2lab models recommend` | ✅ Implementado | Con/sin prompt; plan de descarga |
-| CLI `ci2lab models install` | ✅ Implementado | Comandos pull/run/chat |
-| CLI `ci2lab models run` | ✅ Implementado | `ollama run` del tag elegido |
-| `pipeline.py` | ✅ Implementado | `prepare_session()`, `build_agent_config()` |
-| `runtime/ensure.py` | 🔲 Pendiente | Sin auto-pull ni comprobación de modelo instalado |
-| Tests hardware/router | ✅ Parcial | `test_hardware_profile.py`, `test_cli_models.py` |
-
-### Qué falta para cerrar el handoff
-
-1. **`ci2lab/runtime/ensure.py`** — `ensure_model_ready(selection)` con `ollama pull` opcional.
-2. **`prefer_installed` en `resolve_model()`** — o retirar `resolve_model` si se confirma el flujo usuario-elige-modelo.
-3. **Validación live por modelo** — solo `llama3.1:8b` validado en evals del arnés.
+**Project root:** `Ci2Lab/IAmultiagentica/`
+**Parent workspace:** `Ci2Lab/` (reference repos only, see `references/EXTERNAL_REPOS.md`)
 
 ---
 
-## 1. Contexto del proyecto
+## Implementation status
 
-**IAmultiagentica** (paquete Python `ci2lab`) es una CLI local que:
+Summary of what **already exists** versus what is **missing** per this handoff.
 
-1. Detecta las capacidades del ordenador (RAM, VRAM, GPU).
-2. Interpreta la intención del usuario (ej. `"programar muy bien"`).
-3. Elige el mejor modelo open source que **quepa** en ese hardware.
-4. (Opcional) Descarga/arranca el modelo vía Ollama.
-5. Pasa el control al **arnés agéntico**, que ejecuta el bucle ReAct con herramientas.
+| Component | Status | Files / CLI |
+|-----------|--------|-------------|
+| `hardware/profile.py` | Implemented | `scan_hardware()` — RAM, VRAM, GPU, CPU, inference budget |
+| `router/catalog.py` | Implemented | Loads `ci2lab/catalog/models.json` (64 models) |
+| `router/intent.py` | Implemented | Keyword classifier (`coding`, `reasoning`, `rag`, …) |
+| `router/recommend.py` | Implemented | Scoring, `model_fits()`, download plan |
+| `router/selection.py` | Implemented | `build_model_selection()` — **production path** |
+| `router/resolve.py` | Optional | `resolve_model()` auto-picks; not used in chat/agent/UI |
+| CLI `ci2lab hardware` | Implemented | Table or `--json` |
+| CLI `ci2lab models recommend` | Implemented | With/without prompt; download plan |
+| CLI `ci2lab models install` | Implemented | pull/run/chat commands |
+| CLI `ci2lab models run` | Implemented | `ollama run` of the chosen tag |
+| `pipeline.py` | Implemented | `prepare_session()`, `build_agent_config()` |
+| `runtime/ensure.py` | Pending | No auto-pull or installed-model check |
+| Hardware/router tests | Partial | `test_hardware_profile.py`, `test_cli_models.py` |
+
+### What is left to close the handoff
+
+1. **`ci2lab/runtime/ensure.py`** — `ensure_model_ready(selection)` with optional `ollama pull`.
+2. **`prefer_installed` in `resolve_model()`** — or retire `resolve_model` if the user-chooses-the-model flow is confirmed.
+3. **Per-model live validation** — only `llama3.1:8b` has been validated in the harness evals.
+
+---
+
+## 1. Project context
+
+**IAmultiagentica** (the `ci2lab` Python package) is a local CLI that:
+
+1. Detects the computer's capabilities (RAM, VRAM, GPU).
+2. Interprets the user's intent (e.g. `"program really well"`).
+3. Picks the best open-source model that **fits** that hardware.
+4. (Optional) Downloads/starts the model via Ollama.
+5. Hands control to the **agentic harness**, which runs the ReAct loop with tools.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  TU PARTE (este handoff)                                    │
+│  YOUR PART (this handoff)                                   │
 │  hardware/  +  router/  +  runtime/ (ensure_model)          │
 └───────────────────────────┬─────────────────────────────────┘
-                            │  ModelSelection (contrato)
+                            │  ModelSelection (contract)
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  PARTE DEL COMPAÑERO (arnés)                                │
-│  harness/  — bucle ReAct, tools, prompts, permisos          │
+│  THE OTHER PERSON'S PART (harness)                          │
+│  harness/  — ReAct loop, tools, prompts, permissions        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Regla de oro:** no importar opencode, deepagents, odysseus ni claude-code como dependencias. Solo consultar los repos en `../` (ver `references/EXTERNAL_REPOS.md`) y anotar extracciones en `references/EXTRACTION_LOG.md`.
+**Golden rule:** do not import opencode, deepagents, odysseus, or claude-code as dependencies. Only consult the repos in `../` (see `references/EXTERNAL_REPOS.md`) and note extractions in `references/EXTRACTION_LOG.md`.
 
 ---
 
-## 2. Alcance: qué SÍ y qué NO
+## 2. Scope: what is and is not yours
 
-### ✅ Tu responsabilidad
+### Your responsibility
 
-| Módulo | Descripción |
+| Module | Description |
 |--------|-------------|
-| `IAmultiagentica/ci2lab/hardware/` | Escanear RAM, VRAM, GPU, OS, modo inferencia (CPU/GPU) |
-| `IAmultiagentica/ci2lab/router/` | Catálogo de modelos, clasificación de intención, selección óptima |
-| `IAmultiagentica/ci2lab/runtime/` | Comprobar/descargar/arrancar modelo en Ollama (MVP) |
-| `IAmultiagentica/ci2lab/catalog/` | JSON/YAML con modelos reales (Mistral, Qwen, Llama, Gemma, NVIDIA) |
+| `IAmultiagentica/ci2lab/hardware/` | Scan RAM, VRAM, GPU, OS, inference mode (CPU/GPU) |
+| `IAmultiagentica/ci2lab/router/` | Model catalog, intent classification, optimal selection |
+| `IAmultiagentica/ci2lab/runtime/` | Check/download/start a model in Ollama (MVP) |
+| `IAmultiagentica/ci2lab/catalog/` | JSON/YAML with real models (Mistral, Qwen, Llama, Gemma, NVIDIA) |
 | CLI | `ci2lab hardware`, `ci2lab models recommend`, `ci2lab models pull` |
-| Tests | `IAmultiagentica/tests/` — profiler, selector, casos límite de VRAM |
+| Tests | `IAmultiagentica/tests/` — profiler, selector, VRAM edge cases |
 
-### ❌ Fuera de tu alcance (arnés)
+### Out of your scope (harness)
 
-- Bucle ReAct, parsing de tool calls, ejecución de bash/read/grep
-- System prompts del agente, permisos de herramientas
-- `ci2lab/harness/` (excepto **consumir** `ModelSelection`)
+- ReAct loop, tool-call parsing, bash/read/grep execution
+- Agent system prompts, tool permissions
+- `ci2lab/harness/` (except **consuming** `ModelSelection`)
 
-### 🤝 Contrato compartido (NO modificar sin acuerdo)
+### Shared contract (do NOT change without agreement)
 
-Archivo: **`IAmultiagentica/ci2lab/contracts/types.py`**
+File: **`IAmultiagentica/ci2lab/contracts/types.py`**
 
-Ambas partes importan solo de ahí para integrarse. Si necesitas un campo nuevo, añádelo con valor opcional y documenta en este archivo.
+Both sides import only from there to integrate. If you need a new field, add it as optional and document it in that file.
 
 ---
 
-## 3. Contrato de integración (lo más importante)
+## 3. Integration contract (the most important part)
 
-### 3.1 Entrada que recibes del usuario
+### 3.1 Input you receive from the user
 
 ```python
-user_prompt: str          # ej. "programar muy bien"
-cwd: str | None = None    # directorio de trabajo (opcional)
-force_model: str | None   # override manual (--model)
+user_prompt: str          # e.g. "program really well"
+cwd: str | None = None    # working directory (optional)
+force_model: str | None   # manual override (--model)
 ```
 
-### 3.2 Salida que debes producir: `ModelSelection`
+### 3.2 Output you must produce: `ModelSelection`
 
-El arnés llamará:
+The harness will call:
 
 ```python
 from ci2lab.contracts.types import ModelSelection, HardwareProfile
 
 selection: ModelSelection = resolve_model(user_prompt, profile=profile)
-# El arnés usa:
-#   selection.ollama_tag      → modelo a cargar
+# The harness uses:
+#   selection.ollama_tag      → model to load
 #   selection.backend_url     → http://localhost:11434/v1
 #   selection.tool_mode       → "native" | "fenced"
-#   selection.context_length  → para trim de contexto
+#   selection.context_length  → for context trimming
 ```
 
-**Campos obligatorios de `ModelSelection`:** ver `ci2lab/contracts/types.py`.
+**Required `ModelSelection` fields:** see `ci2lab/contracts/types.py`.
 
-### 3.3 Función pública que debes exponer
+### 3.3 Public function you must expose
 
-Implementar en `ci2lab/router/resolve.py`:
+Implement in `ci2lab/router/resolve.py`:
 
 ```python
 def resolve_model(
@@ -133,27 +133,27 @@ def resolve_model(
     1. profile = profile or scan_hardware()
     2. intent = classify_intent(user_prompt)
     3. model = select_best_model(intent, profile, force_model_id)
-    4. return ModelSelection con metadatos para el arnés
+    4. return ModelSelection with metadata for the harness
     """
 ```
 
-### 3.4 Función de arranque (runtime)
+### 3.4 Startup function (runtime)
 
-Implementar en `ci2lab/runtime/ensure.py`:
+Implement in `ci2lab/runtime/ensure.py`:
 
 ```python
 def ensure_model_ready(selection: ModelSelection, *, pull: bool = True) -> None:
     """
-    - Comprueba si Ollama tiene el tag
-    - Si pull=True y no está → ollama pull
-    - Opcional: warmup con prompt mínimo
-    - Lanza RuntimeError claro si Ollama no responde
+    - Check whether Ollama has the tag
+    - If pull=True and missing → ollama pull
+    - Optional: warmup with a minimal prompt
+    - Raise a clear RuntimeError if Ollama does not respond
     """
 ```
 
-### 3.5 Pipeline unificado (implementado)
+### 3.5 Unified pipeline (implemented)
 
-En `ci2lab/pipeline.py`:
+In `ci2lab/pipeline.py`:
 
 ```python
 def prepare_session(user_prompt, *, force_model=None, tool_mode_override=None, ...) -> tuple[HardwareProfile, ModelSelection]:
@@ -165,9 +165,9 @@ def build_agent_config(runtime: Ci2LabConfig, selection: ModelSelection, **overr
     ...
 ```
 
-El usuario elige el modelo (`--model`, UI o config). `resolve_model()` queda como API opcional para auto-selección futura.
+The user chooses the model (`--model`, UI, or config). `resolve_model()` remains an optional API for future auto-selection.
 
-El arnés recibe:
+The harness receives:
 
 ```python
 from ci2lab.harness import run_agent
@@ -179,17 +179,17 @@ run_agent(prompt, selection, config=config)
 
 ---
 
-## 4. Estructura de carpetas
+## 4. Folder structure
 
-Ver [`STRUCTURE.md`](STRUCTURE.md) para el árbol actualizado. Resumen:
+See [`STRUCTURE.md`](STRUCTURE.md) for the up-to-date tree. Summary:
 
 ```text
 ci2lab/
 ├── cli/              # parser, runtime, commands/*
 ├── pipeline.py       # prepare_session, build_agent_config
-├── console.py        # salida Rich compartida
+├── console.py        # shared Rich output
 ├── contracts/, hardware/, router/, runtime/, catalog/
-├── security/         # motores de permisos
+├── security/         # permission engines
 ├── harness/
 │   ├── query/        # run_agent (ReAct)
 │   ├── context/, security/, tools/, mcp/, skills/
@@ -198,43 +198,43 @@ ci2lab/
 └── config.py
 ```
 
-Los repos de referencia están **fuera**, en `Ci2Lab/claude-code-main/`, etc.
+The reference repos are **outside**, in `Ci2Lab/claude-code-main/`, etc.
 
-**No crear** lógica de arnés en `router/` ni `hardware/`.
+**Do not create** harness logic in `router/` or `hardware/`.
 
 ---
 
 ## 5. Hardware profiler
 
-### 5.1 `HardwareProfile` (ya definido en contracts)
+### 5.1 `HardwareProfile` (already defined in contracts)
 
-Debe rellenarse en cada `scan_hardware()` (con caché TTL 60s opcional).
+Should be filled by each `scan_hardware()` (with an optional 60 s TTL cache).
 
-### 5.2 Qué detectar
+### 5.2 What to detect
 
-| Campo | Windows | Linux | Notas |
+| Field | Windows | Linux | Notes |
 |-------|---------|-------|-------|
 | `ram_total_gb` | `psutil` | `psutil` | |
 | `ram_available_gb` | `psutil` | `psutil` | |
-| `vram_total_gb` | `nvidia-smi` | `nvidia-smi` | 0 si solo CPU |
-| `vram_available_gb` | `nvidia-smi` | `nvidia-smi` | estimar libre |
-| `gpu_name` | nvidia-smi / WMI | nvidia-smi | `"CPU only"` si no hay GPU |
-| `gpu_vendor` | `nvidia` \| `amd` \| `intel` \| `none` | idem | |
+| `vram_total_gb` | `nvidia-smi` | `nvidia-smi` | 0 if CPU only |
+| `vram_available_gb` | `nvidia-smi` | `nvidia-smi` | estimate free |
+| `gpu_name` | nvidia-smi / WMI | nvidia-smi | `"CPU only"` if no GPU |
+| `gpu_vendor` | `nvidia` \| `amd` \| `intel` \| `none` | same | |
 | `cpu_cores` | `psutil` | `psutil` | |
 | `os` | `windows` \| `linux` \| `darwin` | | |
-| `inference_mode` | `gpu` si VRAM≥4GB else `cpu` | idem | |
-| `inference_budget_gb` | ver fórmula abajo | | |
+| `inference_mode` | `gpu` if VRAM≥4GB else `cpu` | same | |
+| `inference_budget_gb` | see formula below | | |
 
-### 5.3 Fórmula `inference_budget_gb`
+### 5.3 `inference_budget_gb` formula
 
 ```text
-Si inference_mode == "gpu":
+If inference_mode == "gpu":
     inference_budget_gb = max(0, vram_available_gb - 2.0)
-Si inference_mode == "cpu":
+If inference_mode == "cpu":
     inference_budget_gb = max(0, ram_available_gb * 0.6)
 ```
 
-### 5.4 Comando CLI
+### 5.4 CLI command
 
 ```bash
 cd IAmultiagentica
@@ -242,21 +242,21 @@ ci2lab hardware
 ci2lab hardware --json
 ```
 
-### 5.5 Criterios de aceptación
+### 5.5 Acceptance criteria
 
-- [ ] En Windows del equipo objetivo devuelve RAM coherente (±1 GB).
-- [ ] Si hay NVIDIA, reporta VRAM; si no, `inference_mode=cpu` sin crash.
-- [ ] `ci2lab hardware --json` parseable por `json.loads`.
+- [ ] On the target Windows machine it returns consistent RAM (±1 GB).
+- [ ] If there is an NVIDIA GPU, it reports VRAM; otherwise `inference_mode=cpu` without crashing.
+- [ ] `ci2lab hardware --json` is parseable by `json.loads`.
 
 ---
 
-## 6. Catálogo de modelos
+## 6. Model catalog
 
-### 6.1 Fuente de datos
+### 6.1 Data source
 
-Convertir la tabla del proyecto a **`ci2lab/catalog/models.json`**.
+Convert the project table into **`ci2lab/catalog/models.json`**.
 
-Cada entrada:
+Each entry:
 
 ```json
 {
@@ -286,12 +286,12 @@ Cada entrada:
 
 ### 6.2 `benchmarks.json`
 
-Mejores modelos por categoría y tier (`edge`, `workstation`, `enterprise`). Los `id` deben existir en `models.json`.
+Best models per category and tier (`edge`, `workstation`, `enterprise`). The `id`s must exist in `models.json`.
 
-### 6.3 Prioridad MVP del catálogo
+### 6.3 Catalog MVP priority
 
-| id | ollama_tag | categoría principal |
-|----|------------|---------------------|
+| id | ollama_tag | main category |
+|----|------------|---------------|
 | qwen2.5-1.5b | qwen2.5:1.5b | edge |
 | qwen2.5-7b | qwen2.5:7b | general |
 | qwen2.5-coder-7b | qwen2.5-coder:7b | coding |
@@ -303,29 +303,29 @@ Mejores modelos por categoría y tier (`edge`, `workstation`, `enterprise`). Los
 
 ---
 
-## 7. Clasificación de intención
+## 7. Intent classification
 
-### 7.1 Categorías
+### 7.1 Categories
 
 `coding`, `rag`, `reasoning`, `translation`, `vision`, `voice`, `edge`, `general`
 
-### 7.2 MVP: reglas por keywords (sin LLM)
+### 7.2 MVP: keyword rules (no LLM)
 
-Implementar en `router/intent.py`.
+Implement in `router/intent.py`.
 
-### 7.3 Fase 2 (opcional)
+### 7.3 Phase 2 (optional)
 
-Patrones tipo keyword/intent/capability router; implementar en `ci2lab/router/` sin dependencias externas.
-
----
-
-## 8. Algoritmo de selección
-
-Ver secciones 8.1–8.4 del plan original (tiers edge/workstation/enterprise, filtro por VRAM/RAM, fallback de tier, orden por `benchmark_score`).
+Keyword/intent/capability-router style patterns; implement in `ci2lab/router/` without external dependencies.
 
 ---
 
-## 9. Runtime Ollama (MVP)
+## 8. Selection algorithm
+
+See sections 8.1–8.4 of the original plan (edge/workstation/enterprise tiers, VRAM/RAM filter, tier fallback, ordering by `benchmark_score`).
+
+---
+
+## 9. Ollama runtime (MVP)
 
 - API: `http://localhost:11434`
 - OpenAI-compatible: `http://localhost:11434/v1`
@@ -347,59 +347,59 @@ ci2lab prepare "<prompt>"
 
 ---
 
-## 11. Configuración global
+## 11. Global configuration
 
-`~/.ci2lab/config.toml` — ver plan original.
+`~/.ci2lab/config.toml` — see the original plan.
 
 ---
 
 ## 12. Tests
 
-Ubicación: **`IAmultiagentica/tests/`**
+Location: **`IAmultiagentica/tests/`**
 
-Casos mínimos: 6 GB VRAM, 24 GB VRAM, CPU 32 GB RAM, 4 GB VRAM + reasoning.
+Minimal cases: 6 GB VRAM, 24 GB VRAM, CPU 32 GB RAM, 4 GB VRAM + reasoning.
 
 ---
 
-## 13. Material de referencia (fuera del proyecto)
+## 13. Reference material (outside the project)
 
-Repos en `Ci2Lab/` (carpeta **padre** de `IAmultiagentica/`):
+Repos in `Ci2Lab/` (the **parent** folder of `IAmultiagentica/`):
 
-| Ruta | Uso |
+| Path | Use |
 |------|-----|
-| `../claude-code-main/` | Prompts y descripciones de herramientas |
+| `../claude-code-main/` | Prompts and tool descriptions |
 | `../odysseus-dev/` | agent_loop, tool_parsing, schemas |
-| `../opencode-dev/` | Tool registry, permisos |
+| `../opencode-dev/` | Tool registry, permissions |
 | `../deepagents-main/` | BASE_AGENT_PROMPT, filesystem middleware |
-| Tabla de modelos del proyecto | Fuente de `catalog/models.json` |
-| Benchmarks del proyecto | Fuente de `catalog/benchmarks.json` |
+| Project model table | Source for `catalog/models.json` |
+| Project benchmarks | Source for `catalog/benchmarks.json` |
 
-**No** copiar estos repos dentro de `IAmultiagentica/`. **No** importarlos como paquetes.
+**Do not** copy these repos into `IAmultiagentica/`. **Do not** import them as packages.
 
 ---
 
-## 14. Integración final con el arnés
+## 14. Final integration with the harness
 
 ```python
 from ci2lab.pipeline import prepare_session
 from ci2lab.harness import run_agent
 
 profile, selection = prepare_session(prompt)
-await run_agent(user_prompt=prompt, selection=selection, hardware=profile)
+run_agent(user_prompt=prompt, selection=selection, hardware=profile)
 ```
 
-| Campo | Uso en arnés |
-|-------|----------------|
-| `selection.ollama_tag` | Modelo en API |
-| `selection.backend_url` | Base URL OpenAI-compatible |
+| Field | Use in the harness |
+|-------|--------------------|
+| `selection.ollama_tag` | Model in the API |
+| `selection.backend_url` | OpenAI-compatible base URL |
 | `selection.tool_mode` | `native` vs `fenced` |
-| `selection.context_length` | Recorte de historial |
+| `selection.context_length` | History trimming |
 
 ---
 
-## 15. Orden de implementación
+## 15. Implementation order
 
-1. `ci2lab/contracts/types.py` — **ya existe**
+1. `ci2lab/contracts/types.py` — **already exists**
 2. `catalog/models.json` + `benchmarks.json`
 3. `hardware/profiler.py`
 4. `router/intent.py` + `router/selector.py` + `router/resolve.py`
@@ -407,32 +407,32 @@ await run_agent(user_prompt=prompt, selection=selection, hardware=profile)
 6. `pipeline.py` + CLI
 7. Tests
 
-**Hito:** `ci2lab prepare "programar muy bien" --json` desde `IAmultiagentica/`.
+**Milestone:** `ci2lab prepare "program really well" --json` from `IAmultiagentica/`.
 
 ---
 
-## 16. Definición de terminado
+## 16. Definition of done
 
-- [ ] Trabajar siempre desde `IAmultiagentica/` (`pip install -e .`)
-- [ ] `ci2lab hardware` funciona en Windows
-- [ ] Catálogo ≥10 modelos + `benchmarks.json`
-- [ ] `resolve_model()` → `ModelSelection` estable
-- [ ] `ensure_model_ready()` con Ollama
-- [ ] Tests con mocks (sin GPU real)
-- [ ] `ci2lab prepare --json` consumible por el arnés
-
----
-
-## 17. Preguntas frecuentes
-
-**¿Dónde clono / desarrollo?** `cd Ci2Lab/IAmultiagentica`
-
-**¿Python?** 3.11+
-
-**¿pyproject.toml?** En la raíz de `IAmultiagentica/`
-
-**¿Repos de referencia?** Hermanos en `Ci2Lab/`, no dentro del proyecto
+- [ ] Always work from `IAmultiagentica/` (`pip install -e .`)
+- [ ] `ci2lab hardware` works on Windows
+- [ ] Catalog ≥10 models + `benchmarks.json`
+- [ ] `resolve_model()` → stable `ModelSelection`
+- [ ] `ensure_model_ready()` with Ollama
+- [ ] Tests with mocks (no real GPU)
+- [ ] `ci2lab prepare --json` consumable by the harness
 
 ---
 
-*Última actualización: 2026-06-09. Contrato: `IAmultiagentica/ci2lab/contracts/types.py`.*
+## 17. FAQ
+
+**Where do I clone / develop?** `cd Ci2Lab/IAmultiagentica`
+
+**Python?** 3.11+
+
+**pyproject.toml?** At the root of `IAmultiagentica/`
+
+**Reference repos?** Siblings in `Ci2Lab/`, not inside the project
+
+---
+
+*Contract: `IAmultiagentica/ci2lab/contracts/types.py`.*

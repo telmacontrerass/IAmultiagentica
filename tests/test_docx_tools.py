@@ -57,7 +57,7 @@ def test_write_docx_creates_file(pandoc_skip, tmp_path: Path) -> None:
         "out.docx",
         "# Nuevo\n\nDocumento creado.\n",
     )
-    assert result.startswith("Creado")
+    assert result.startswith("Created")
     assert (tmp_path / "out.docx").is_file()
 
 
@@ -87,6 +87,6 @@ def test_build_docx_roundtrip(pandoc_skip, tmp_path: Path) -> None:
     target = tmp_path / "round.docx"
     md = "# Roundtrip\n\nSecond line.\n"
     msg = build_docx_from_markdown(target, md)
-    assert "Creado" in msg
+    assert "Created" in msg
     back = extract_docx_markdown(target)
     assert "Roundtrip" in back

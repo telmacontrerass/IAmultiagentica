@@ -1,4 +1,4 @@
-"""Permisos por herramienta: allow, confirm o deny."""
+"""Per-tool permissions: allow, confirm or deny."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ CONFIRM_TOOLS = frozenset({
 
 
 def default_confirm(tool_name: str, summary: str) -> bool:
-    prompt = f"\n¿Ejecutar {tool_name}? {summary}\n[s/N] "
+    prompt = f"\nRun {tool_name}? {summary}\n[y/N] "
     try:
         answer = input(prompt).strip().lower()  # noqa: T201
     except EOFError:
@@ -41,4 +41,4 @@ def check_permission(
     callback = confirm_callback or default_confirm
     if callback(tool_name, summary):
         return True, None
-    return False, f"El usuario denegó la ejecución de `{tool_name}`."
+    return False, f"The user denied execution of `{tool_name}`."

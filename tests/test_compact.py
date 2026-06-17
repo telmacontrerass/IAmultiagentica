@@ -217,8 +217,8 @@ def test_manage_context_falls_back_and_counts_failures():
         history, FakeClient(fail=True), context_length=4096
     )
     assert failures == 1
-    assert any("falló" in e for e in events)
-    # Historial intacto: el recorte lo hace trim_messages después.
+    assert any("failed" in e for e in events)
+    # History intact: trimming is done by trim_messages afterwards.
     assert out[0]["content"] == history[0]["content"]
 
 
@@ -242,7 +242,7 @@ def test_manage_context_summarizes_when_micro_compact_insufficient():
         history, FakeClient("compact summary"), context_length=4096
     )
     assert failures == 0
-    assert any("resumido" in e for e in events)
+    assert any("summarized" in e for e in events)
     assert any(
         isinstance(m.get("content"), str) and m["content"].startswith(SUMMARY_PREFIX)
         for m in out

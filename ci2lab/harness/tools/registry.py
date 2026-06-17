@@ -1,7 +1,7 @@
-"""Catálogo de herramientas — re-export público.
+"""Tool catalog — public re-export.
 
-Implementación en schemas.py (nombres/schemas), dispatch.py (handlers) y
-executor.py (permisos, previews, security gate).
+Implementation in schemas.py (names/schemas), dispatch.py (handlers) and
+executor.py (permissions, previews, security gate).
 """
 
 from __future__ import annotations

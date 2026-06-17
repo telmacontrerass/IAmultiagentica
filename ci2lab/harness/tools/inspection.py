@@ -1,4 +1,4 @@
-"""Herramientas de inspeccion de bajo riesgo (solo lectura, sin ejecucion)."""
+"""Low-risk inspection tools (read-only, no execution)."""
 
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def tree(
         return err
     assert resolved is not None
     if not resolved.is_dir():
-        return f"Error: no es un directorio {resolved}"
+        return f"Error: not a directory: {resolved}"
 
     root = workspace_root(cwd)
     depth = max(0, depth)
@@ -182,7 +182,7 @@ def inspect_file(
         return err
     assert resolved is not None
     if not resolved.exists():
-        return f"Error: no existe el archivo {resolved}"
+        return f"Error: file does not exist: {resolved}"
     if not resolved.is_file():
         return f"Error: no es un archivo {resolved}"
     if is_sensitive_path(resolved, workspace=cwd):

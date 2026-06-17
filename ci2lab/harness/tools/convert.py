@@ -1,11 +1,11 @@
 """Document format conversion: docx ↔ pdf.
 
-`docx_to_pdf` intenta varios motores en orden de robustez. El primero
-(LibreOffice) maneja Unicode (CJK, acentos, emojis) sin LaTeX, que es justo
-donde el motor por defecto de pandoc (pdflatex) falla. Si LibreOffice no está
-disponible, se prueban motores LaTeX compatibles con Unicode (xelatex/lualatex/
-tectonic) y luego motores HTML (weasyprint/wkhtmltopdf), dejando pdflatex como
-último recurso.
+`docx_to_pdf` tries several engines in order of robustness. The first one
+(LibreOffice) handles Unicode (CJK, accents, emojis) without LaTeX, which is
+exactly where pandoc's default engine (pdflatex) fails. If LibreOffice is not
+available, Unicode-compatible LaTeX engines (xelatex/lualatex/tectonic) are
+tried, then HTML engines (weasyprint/wkhtmltopdf), leaving pdflatex as the
+last resort.
 """
 
 from __future__ import annotations
@@ -20,18 +20,18 @@ _PANDOC_TIMEOUT_SECONDS = 120
 _SOFFICE_TIMEOUT_SECONDS = 180
 
 _PANDOC_MISSING = (
-    "Error: no se puede convertir porque falta `pandoc` en PATH. "
-    "Instálalo con: winget install JohnMacFarlane.Pandoc"
+    "Error: cannot convert because `pandoc` is missing from PATH. "
+    "Install it with: winget install JohnMacFarlane.Pandoc"
 )
 
 _PDF2DOCX_MISSING = (
-    "Error: no se puede convertir PDF a DOCX porque falta la dependencia `pdf2docx`. "
-    'Instálala con: pip install pdf2docx  (o pip install -e ".[convert]")'
+    "Error: cannot convert PDF to DOCX because the `pdf2docx` dependency is missing. "
+    'Install it with: pip install pdf2docx  (or pip install -e ".[convert]")'
 )
 
-# Motores LaTeX que SÍ aceptan Unicode arbitrario (a diferencia de pdflatex).
+# LaTeX engines that DO accept arbitrary Unicode (unlike pdflatex).
 _UNICODE_LATEX_ENGINES = ("xelatex", "lualatex", "tectonic")
-# Motores que renderizan vía HTML/CSS (sin LaTeX).
+# Engines that render via HTML/CSS (without LaTeX).
 _HTML_PDF_ENGINES = ("weasyprint", "wkhtmltopdf", "prince")
 
 
@@ -48,28 +48,28 @@ def _soffice_path() -> str | None:
 
 
 def _validate_docx(source_path: Path) -> str | None:
-    """Devuelve un mensaje de error si el .docx no es un Word OOXML válido."""
+    """Return an error message if the .docx is not a valid Word OOXML file."""
     if not zipfile.is_zipfile(source_path):
         return (
-            f"Error: '{source_path.name}' no es un .docx válido (no es un paquete "
-            "OOXML/zip). Puede estar corrupto o ser un .doc antiguo renombrado. "
-            "Vuelve a generarlo (write_docx) o ábrelo y guárdalo como .docx real."
+            f"Error: '{source_path.name}' is not a valid .docx (not an "
+            "OOXML/zip package). It may be corrupt or a renamed legacy .doc. "
+            "Regenerate it (write_docx) or open and save it as a real .docx."
         )
     try:
         with zipfile.ZipFile(source_path) as zf:
             names = set(zf.namelist())
     except zipfile.BadZipFile:
-        return f"Error: '{source_path.name}' está corrupto y no se puede leer como .docx."
+        return f"Error: '{source_path.name}' is corrupt and cannot be read as a .docx."
     if "word/document.xml" not in names:
         return (
-            f"Error: '{source_path.name}' es un zip pero no contiene "
-            "word/document.xml; no es un documento Word válido."
+            f"Error: '{source_path.name}' is a zip but does not contain "
+            "word/document.xml; it is not a valid Word document."
         )
     return None
 
 
 def _convert_with_soffice(soffice: str, source_path: Path, output_path: Path) -> str | None:
-    """Convierte con LibreOffice headless. Devuelve None si tuvo éxito, o un error."""
+    """Convert with headless LibreOffice. Returns None on success, or an error."""
     with tempfile.TemporaryDirectory() as tmp:
         try:
             result = subprocess.run(
@@ -90,13 +90,13 @@ def _convert_with_soffice(soffice: str, source_path: Path, output_path: Path) ->
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            return "LibreOffice tardó demasiado"
+            return "LibreOffice timed out"
         except OSError as exc:
-            return f"no se pudo ejecutar LibreOffice: {exc}"
+            return f"could not run LibreOffice: {exc}"
 
         produced = Path(tmp) / (source_path.stem + ".pdf")
         if result.returncode != 0 or not produced.is_file():
-            return (result.stderr or result.stdout or "fallo de LibreOffice").strip()[:300]
+            return (result.stderr or result.stdout or "LibreOffice failure").strip()[:300]
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(output_path))
     return None
@@ -105,7 +105,7 @@ def _convert_with_soffice(soffice: str, source_path: Path, output_path: Path) ->
 def _convert_with_pandoc(
     pandoc: str, source_path: Path, output_path: Path, engine: str | None
 ) -> str | None:
-    """Convierte con pandoc usando un motor PDF concreto. None si éxito."""
+    """Convert with pandoc using a specific PDF engine. None on success."""
     cmd = [pandoc, str(source_path), "-o", str(output_path)]
     if engine:
         cmd.append(f"--pdf-engine={engine}")
@@ -120,11 +120,11 @@ def _convert_with_pandoc(
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return "pandoc tardó demasiado"
+        return "pandoc timed out"
     except OSError as exc:
-        return f"no se pudo ejecutar pandoc: {exc}"
+        return f"could not run pandoc: {exc}"
     if result.returncode != 0 or not output_path.is_file():
-        return (result.stderr or result.stdout or "fallo desconocido").strip()[:300]
+        return (result.stderr or result.stdout or "unknown failure").strip()[:300]
     return None
 
 
@@ -139,11 +139,11 @@ def docx_to_pdf(cwd: str, source: str, output: str) -> str:
         return f"Error: {exc}"
 
     if source_path.suffix.lower() != ".docx":
-        return f"Error: docx_to_pdf requiere un archivo fuente .docx, no '{source_path.suffix}'"
+        return f"Error: docx_to_pdf requires a .docx source file, not '{source_path.suffix}'"
     if output_path.suffix.lower() != ".pdf":
-        return f"Error: docx_to_pdf requiere una ruta de salida .pdf, no '{output_path.suffix}'"
+        return f"Error: docx_to_pdf requires a .pdf output path, not '{output_path.suffix}'"
     if not source_path.is_file():
-        return f"Error: archivo fuente no encontrado: {source}"
+        return f"Error: source file not found: {source}"
 
     invalid = _validate_docx(source_path)
     if invalid:
@@ -152,44 +152,44 @@ def docx_to_pdf(cwd: str, source: str, output: str) -> str:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     attempts: list[str] = []
 
-    # 1) LibreOffice: máxima fidelidad y Unicode sin LaTeX.
+    # 1) LibreOffice: maximum fidelity and Unicode without LaTeX.
     soffice = _soffice_path()
     if soffice:
         err = _convert_with_soffice(soffice, source_path, output_path)
         if err is None:
             size = output_path.stat().st_size
-            return f"Creado {output} ({size} bytes) desde {source} vía LibreOffice"
+            return f"Created {output} ({size} bytes) from {source} via LibreOffice"
         attempts.append(f"LibreOffice: {err}")
 
-    # 2) pandoc con varios motores (Unicode-safe primero).
+    # 2) pandoc with several engines (Unicode-safe first).
     pandoc = _pandoc_path()
     if pandoc:
         engines: list[str | None] = []
         for engine in (*_UNICODE_LATEX_ENGINES, *_HTML_PDF_ENGINES):
             if shutil.which(engine):
                 engines.append(engine)
-        engines.append(None)  # pandoc elige (pdflatex); último recurso.
+        engines.append(None)  # pandoc chooses (pdflatex); last resort.
 
         for engine in engines:
             err = _convert_with_pandoc(pandoc, source_path, output_path, engine)
             if err is None:
-                label = engine or "pandoc (motor por defecto)"
+                label = engine or "pandoc (default engine)"
                 size = output_path.stat().st_size
-                return f"Creado {output} ({size} bytes) desde {source} vía {label}"
+                return f"Created {output} ({size} bytes) from {source} via {label}"
             attempts.append(f"pandoc/{engine or 'default'}: {err}")
 
     if not soffice and not pandoc:
         return (
-            "Error: no hay motor de conversión disponible. Instala LibreOffice "
-            "(recomendado para Unicode): winget install TheDocumentFoundation.LibreOffice "
-            "— o pandoc + un motor PDF (winget install JohnMacFarlane.Pandoc)."
+            "Error: no conversion engine available. Install LibreOffice "
+            "(recommended for Unicode): winget install TheDocumentFoundation.LibreOffice "
+            "— or pandoc + a PDF engine (winget install JohnMacFarlane.Pandoc)."
         )
 
-    detail = " | ".join(attempts) if attempts else "sin detalles"
+    detail = " | ".join(attempts) if attempts else "no details"
     return (
-        f"Error: no se pudo crear {output_path.name}: falta un motor PDF válido. "
-        "Instala LibreOffice (recomendado, soporta Unicode/CJK) o un motor como "
-        "xelatex/weasyprint/wkhtmltopdf. Intentos: " + detail[:600]
+        f"Error: could not create {output_path.name}: a valid PDF engine is missing. "
+        "Install LibreOffice (recommended, supports Unicode/CJK) or an engine like "
+        "xelatex/weasyprint/wkhtmltopdf. Attempts: " + detail[:600]
     )
 
 
@@ -204,11 +204,11 @@ def pdf_to_docx(cwd: str, source: str, output: str) -> str:
         return f"Error: {exc}"
 
     if source_path.suffix.lower() != ".pdf":
-        return f"Error: pdf_to_docx requiere un archivo fuente .pdf, no '{source_path.suffix}'"
+        return f"Error: pdf_to_docx requires a .pdf source file, not '{source_path.suffix}'"
     if output_path.suffix.lower() != ".docx":
-        return f"Error: pdf_to_docx requiere una ruta de salida .docx, no '{output_path.suffix}'"
+        return f"Error: pdf_to_docx requires a .docx output path, not '{output_path.suffix}'"
     if not source_path.is_file():
-        return f"Error: archivo fuente no encontrado: {source}"
+        return f"Error: source file not found: {source}"
 
     try:
         from pdf2docx import Converter
@@ -222,7 +222,7 @@ def pdf_to_docx(cwd: str, source: str, output: str) -> str:
         cv.convert(str(output_path), start=0, end=None)
         cv.close()
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo convertir {source_path.name}: {exc}"
+        return f"Error: could not convert {source_path.name}: {exc}"
 
     size = output_path.stat().st_size
-    return f"Creado {output} ({size} bytes) desde {source} vía pdf2docx"
+    return f"Created {output} ({size} bytes) from {source} via pdf2docx"

@@ -44,7 +44,7 @@ def run_ui(
     server = ThreadingHTTPServer((host, port), handler_factory(state))
     url = f"http://{host}:{server.server_port}"
     print(f"Ci2Lab UI local: {url}")
-    print("Pulsa Ctrl+C para parar el servidor.")
+    print("Press Ctrl+C to stop the server.")
 
     if open_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
@@ -52,7 +52,7 @@ def run_ui(
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nServidor UI detenido.")
+        print("\nUI server stopped.")
         return 130
     finally:
         server.server_close()

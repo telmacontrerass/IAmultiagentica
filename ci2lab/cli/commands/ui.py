@@ -1,4 +1,4 @@
-"""Comando ui."""
+"""ui command."""
 
 from __future__ import annotations
 

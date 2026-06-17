@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def permission_summary(tool_name: str, args: dict) -> str:
-    """Resumen corto para el diálogo de confirmación."""
+    """Short summary for the confirmation dialog."""
     if tool_name == "bash":
         cmd = args.get("command", "")
         return cmd[:120] + ("..." if len(cmd) > 120 else "")

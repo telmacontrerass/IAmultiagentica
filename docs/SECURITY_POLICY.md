@@ -1,32 +1,32 @@
-# Politica de seguridad del arnés Ci2Lab
+# Ci2Lab harness security policy
 
-## Principio de configuracion
+## Configuration principle
 
-La configuracion en `ci2lab.json` puede **seleccionar perfiles** y **ajustar limites**, pero **no puede relajar** las garantias base:
+Configuration in `ci2lab.json` can **select profiles** and **tune limits**, but it **cannot relax** the base guarantees:
 
-- nunca permitir rutas fuera del workspace;
-- nunca desactivar el confinamiento al workspace;
-- `--yes` / `auto_confirm` no salta workspace, secret policy ni perfiles;
-- no permitir leer/escribir secretos por defecto;
-- no eliminar la blocklist base de `bash`;
-- no ampliar shell fence tags de forma insegura.
+- never allow paths outside the workspace;
+- never disable workspace confinement;
+- `--yes` / `auto_confirm` does not skip workspace, secret policy, or profiles;
+- do not allow reading/writing secrets by default;
+- do not remove the base `bash` blocklist;
+- do not extend shell fence tags in an unsafe way.
 
-## Perfiles de seguridad (`security.profile`)
+## Security profiles (`security.profile`)
 
-Configurable en `ci2lab.json` (default: `standard`). Perfil desconocido → error al cargar.
+Configurable in `ci2lab.json` (default: `standard`). An unknown profile is an error at load time.
 
-| Perfil | `write_file` / `edit_file` | `bash` | Lectura / inspeccion | Limites por defecto |
-|--------|---------------------------|--------|----------------------|---------------------|
-| `strict` | bloqueado | bloqueado | permitido (con politica de secretos) | 60 s / 10 000 chars |
-| `standard` | permitido (supervisado) | permitido (blocklist + confirmacion) | permitido | 60 s / 10 000 chars |
-| `dev` | como `standard` | como `standard` | permitido; secretos siguen bloqueados | 120 s / 20 000 chars |
-| `audit` | bloqueado | bloqueado | permitido; pensado para runs no interactivos | 60 s / 10 000 chars |
+| Profile | `write_file` / `edit_file` | `bash` | Reading / inspection | Default limits |
+|---------|---------------------------|--------|----------------------|----------------|
+| `strict` | blocked | blocked | allowed (with secret policy) | 60 s / 10,000 chars |
+| `standard` | allowed (supervised) | allowed (blocklist + confirmation) | allowed | 60 s / 10,000 chars |
+| `dev` | like `standard` | like `standard` | allowed; secrets still blocked | 120 s / 20,000 chars |
+| `audit` | blocked | blocked | allowed; meant for non-interactive runs | 60 s / 10,000 chars |
 
-Outcome al bloquear por perfil: `blocked_by_security_profile`.
+Outcome when blocked by a profile: `blocked_by_security_profile`.
 
-Mensaje: `Error: TOOL_BLOCKED_BY_SECURITY_PROFILE: <tool> is disabled in <profile> mode`.
+Message: `Error: TOOL_BLOCKED_BY_SECURITY_PROFILE: <tool> is disabled in <profile> mode`.
 
-Ejemplo minimo en `ci2lab.json`:
+Minimal example in `ci2lab.json`:
 
 ```json
 {
@@ -40,48 +40,48 @@ Ejemplo minimo en `ci2lab.json`:
 }
 ```
 
-### Configurable hoy (seccion `security`)
+### Configurable today (`security` section)
 
-| Clave | Efecto |
-|-------|--------|
-| `security.profile` | Selecciona perfil (`strict`, `standard`, `dev`, `audit`) |
-| `security.limits.bash_timeout_seconds` | Timeout de `bash` en `AgentConfig` |
-| `security.limits.max_tool_output_chars` | Truncado de salida de herramientas |
+| Key | Effect |
+|-----|--------|
+| `security.profile` | Selects the profile (`strict`, `standard`, `dev`, `audit`) |
+| `security.limits.bash_timeout_seconds` | `bash` timeout in `AgentConfig` |
+| `security.limits.max_tool_output_chars` | Tool output truncation |
 
-### Motor de seguridad (`security.engine`)
+### Security engine (`security.engine`)
 
-| Valor | Comportamiento |
-|-------|----------------|
-| **`claude_experimental`** (default) | Hard guards CI2Lab + capa `allow`/`ask`/`deny` + prompt moderno + session approvals |
-| `ci2lab` | **Legacy**: solo hard guards + confirmación `[s/N]` en bash/write/edit. **Sin** reglas deny/ask/allow |
-| `opencode_experimental` | **INSEGURO / solo laboratorio**: permission layer sin hard guards |
+| Value | Behavior |
+|-------|----------|
+| **`claude_experimental`** (default) | Ci2Lab hard guards + an `allow`/`ask`/`deny` layer + modern prompt + session approvals |
+| `ci2lab` | **Legacy**: hard guards + `[y/N]` confirmation on bash/write/edit only. **No** deny/ask/allow rules |
+| `opencode_experimental` | **UNSAFE / lab only**: permission layer without hard guards |
 
-**Importante:** un `deny` de política (regla en config) solo existe en motores con permission layer (`claude_experimental`, `opencode_experimental`). El motor legacy `ci2lab` no tiene `permission deny`; las tools peligrosas pasan a confirmación `[s/N]` si superan los hard guards.
+**Important:** a policy `deny` (a config rule) only exists in engines that have a permission layer (`claude_experimental`, `opencode_experimental`). The legacy `ci2lab` engine has no `permission deny`; dangerous tools fall back to `[y/N]` confirmation if they pass the hard guards.
 
-**No confundir:**
+**Do not confuse:**
 
-- **`deny` en la política** = bloqueo permanente por regla (no aprobable).
-- **`[d] Deny once` en el prompt** = el usuario rechaza una acción en `ask` (no es un deny de política).
+- **`deny` in the policy** = a permanent block by rule (not approvable).
+- **`[d] Deny once` in the prompt** = the user rejects an action under `ask` (not a policy deny).
 
-#### `claude_experimental` (motor seguro por defecto)
+#### `claude_experimental` (default safe engine)
 
-Precedencia obligatoria:
+Mandatory precedence:
 
 1. hard deny workspace
-2. hard deny secretos
-3. hard deny bash blocklist crítica
+2. hard deny secrets
+3. hard deny critical bash blocklist
 4. hard deny security profile
 5. permission deny
 6. permission ask/allow
 7. session approvals
-8. prompt interactivo
-9. ejecución
+8. interactive prompt
+9. execution
 
-- `allow` **nunca** salta workspace, secretos ni bash blocklist.
-- `--yes` auto-aprueba `ask`, no hard deny ni permission deny.
-- `external_directory=allow` se **ignora** para paths externos (warning: `external_directory=allow ignored by claude_experimental hard workspace policy`).
-- Usa el mismo prompt moderno (Allow once / Allow session / Deny once / Cancel) que `opencode_experimental`.
-- Session approvals incluyen `engine` en el fingerprint (no cruzan entre motores).
+- `allow` **never** skips workspace, secrets, or the bash blocklist.
+- `--yes` auto-approves `ask`, not hard deny or permission deny.
+- `external_directory=allow` is **ignored** for external paths (warning: `external_directory=allow ignored by claude_experimental hard workspace policy`).
+- It uses the same modern prompt (Allow once / Allow session / Deny once / Cancel) as `opencode_experimental`.
+- Session approvals include `engine` in the fingerprint (they do not cross between engines).
 
 ```json
 {
@@ -92,11 +92,11 @@ Precedencia obligatoria:
 }
 ```
 
-CLI: `ci2lab chat` (default `claude_experimental`). Legacy: `--security-engine ci2lab`.
+CLI: `ci2lab chat` (defaults to `claude_experimental`). Legacy: `--security-engine ci2lab`.
 
-Validacion live (P2.9) y modo experimental recomendado (P3.0, no default): [`CLAUDE_EXPERIMENTAL_VALIDATION.md`](CLAUDE_EXPERIMENTAL_VALIDATION.md), resumen [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude/P2_9_SUMMARY.md).
+Live validation (P2.9) and the recommended experimental mode (P3.0, not the default): [`CLAUDE_EXPERIMENTAL_VALIDATION.md`](CLAUDE_EXPERIMENTAL_VALIDATION.md), summary [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude/P2_9_SUMMARY.md).
 
-Activacion explicita:
+Explicit activation:
 
 ```json
 {
@@ -112,13 +112,13 @@ Activacion explicita:
 }
 ```
 
-CLI: `--security-engine opencode_experimental` (nunca es el default).
+CLI: `--security-engine opencode_experimental` (never the default).
 
-#### Formato root-level `permission` (compat OpenCode)
+#### Root-level `permission` format (OpenCode compat)
 
-También se acepta `permission` en la raíz de `ci2lab.json` (como OpenCode). **Solo afecta al motor `opencode_experimental`**; el motor `ci2lab` lo ignora.
+A root-level `permission` block in `ci2lab.json` is also accepted (like OpenCode). It **only affects the `opencode_experimental` engine**; the `ci2lab` engine ignores it.
 
-Precedencia: `security.permission` > `permission` (root) > defaults integrados.
+Precedence: `security.permission` > `permission` (root) > built-in defaults.
 
 ```json
 {
@@ -135,15 +135,15 @@ Precedencia: `security.permission` > `permission` (root) > defaults integrados.
 }
 ```
 
-Aliases OpenCode → tools CI2Lab: `read` (`read_file`, `grep`, `tree`, …), `edit` (`write_file`, `edit_file`), `bash` (`bash`, `shell`).
+OpenCode aliases → Ci2Lab tools: `read` (`read_file`, `grep`, `tree`, …), `edit` (`write_file`, `edit_file`), `bash` (`bash`, `shell`).
 
-**Advertencia:** `opencode_experimental` no es un sandbox fuerte. Puede permitir lectura fuera del workspace si `external_directory` es `allow`. Usar solo para comparar/debuggear.
+**Warning:** `opencode_experimental` is not a strong sandbox. It can allow reading outside the workspace if `external_directory` is `allow`. Use it only to compare/debug.
 
 #### Presets (`security.permission_preset`)
 
-Solo `opencode_experimental`. Valores: `opencode_paranoid`, `opencode_dev`, `opencode_external_allowed`.
+`opencode_experimental` only. Values: `opencode_paranoid`, `opencode_dev`, `opencode_external_allowed`.
 
-Precedencia: `security.permission` > `permission` (root) > `permission_preset` > defaults.
+Precedence: `security.permission` > `permission` (root) > `permission_preset` > defaults.
 
 ```json
 {
@@ -154,48 +154,48 @@ Precedencia: `security.permission` > `permission` (root) > `permission_preset` >
 }
 ```
 
-#### Session approvals (experimental, memoria de proceso)
+#### Session approvals (experimental, in-process memory)
 
-Scopes: `allow_once`, `allow_session`, `deny_once`. Solo afectan decisiones `ask` en `opencode_experimental`; un `deny` de permission rule no se puede elevar a `allow`. No persisten en disco.
+Scopes: `allow_once`, `allow_session`, `deny_once`. They only affect `ask` decisions in `opencode_experimental`; a permission-rule `deny` cannot be elevated to `allow`. They do not persist to disk.
 
-#### Prompt interactivo (P2.5, solo `opencode_experimental`)
+#### Interactive prompt (P2.5, `opencode_experimental` only)
 
-Cuando permission devuelve `ask` y no hay `--yes`, se muestra un menú:
+When permission returns `ask` and there is no `--yes`, a menu is shown:
 
-- `[a]` Allow once — ejecuta solo esta llamada
-- `[s]` Allow session — guarda aprobación en memoria para el run/sesión
-- `[d]` Deny once — deniega y registra bloqueo puntual
-- `[c]` Cancel — aborta sin ejecutar
+- `[a]` Allow once — runs only this call
+- `[s]` Allow session — saves the approval in memory for the run/session
+- `[d]` Deny once — denies and records a one-off block
+- `[c]` Cancel — aborts without executing
 
-El motor `ci2lab` sigue usando confirmación `[s/N]` clásica. `--yes` auto-aprueba `ask` en ambos motores experimentales sin mostrar el menú.
+The `ci2lab` engine still uses the classic `[y/N]` confirmation. `--yes` auto-approves `ask` in both experimental engines without showing the menu.
 
-Herramientas de depuración:
+Debugging tools:
 
-- `python scripts/compare_security_engines.py` — tabla + export CSV/Markdown en `runs/security_comparison/<timestamp>/`
-- `python scripts/security_gate_check.py --engine opencode_experimental --workspace . --tool bash --target "git status"` — dry gate (no ejecuta la tool)
+- `python scripts/compare_security_engines.py` — table + CSV/Markdown export under `runs/security_comparison/<timestamp>/`
+- `python scripts/security_gate_check.py --engine opencode_experimental --workspace . --tool bash --target "git status"` — dry gate (does not execute the tool)
 
-### Import/export de config OpenCode (P2.6)
+### OpenCode config import/export (P2.6)
 
-Solo afecta al motor `opencode_experimental`. El motor `ci2lab` **ignora** `permission` root-level y `security.permission`.
+Affects the `opencode_experimental` engine only. The `ci2lab` engine **ignores** root-level `permission` and `security.permission`.
 
-#### Importar `opencode.json`
+#### Import `opencode.json`
 
-Módulo: `ci2lab/security/opencode_config_io.py`
+Module: `ci2lab/security/opencode_config_io.py`
 
 ```powershell
 python scripts/security_gate_check.py --engine opencode_experimental --workspace . --opencode-config opencode.json --tool bash --target "git status"
 ```
 
-Acepta:
+Accepts:
 
-- `permission` en la raíz (formato OpenCode);
-- `security.permission` (formato CI2Lab).
+- root-level `permission` (OpenCode format);
+- `security.permission` (Ci2Lab format).
 
-La salida JSON del dry gate incluye `config_source`, `unsupported_tools`, `warnings` y, con `--show-effective-config`, `effective_permission`.
+The dry gate's JSON output includes `config_source`, `unsupported_tools`, `warnings` and, with `--show-effective-config`, `effective_permission`.
 
-Tools OpenCode sin equivalente en CI2Lab (p. ej. `webfetch`) generan **warning**, no error.
+OpenCode tools with no Ci2Lab equivalent (e.g. `webfetch`) produce a **warning**, not an error.
 
-#### Exportar config
+#### Export config
 
 ```powershell
 python scripts/security_config_export.py --preset opencode_dev --format opencode
@@ -204,36 +204,36 @@ python scripts/security_config_export.py --input ci2lab.json --format opencode
 python scripts/security_config_export.py --preset opencode_dev --format opencode --output exported.json
 ```
 
-Formatos:
+Formats:
 
 - `opencode` — `{"permission": {...}}`
 - `ci2lab` — `{"security": {"engine": "opencode_experimental", "permission": {...}}}`
 
-Si la config exportada incluye `external_directory=allow`, el script imprime **WARNING** en stderr.
+If the exported config includes `external_directory=allow`, the script prints a **WARNING** to stderr.
 
-#### Comparar configs
+#### Compare configs
 
 ```powershell
 python scripts/compare_opencode_configs.py --config opencode_dev.json --config risky_external.json --workspace .
 python scripts/compare_opencode_configs.py --preset opencode_dev --preset opencode_external_allowed --workspace .
 ```
 
-Exporta en `runs/opencode_config_comparison/<timestamp>/`:
+Exports under `runs/opencode_config_comparison/<timestamp>/`:
 
 - `comparison.csv`
 - `comparison.md`
 
-Columnas: `case_id`, `config_name`, `tool`, `target_or_command`, `actual_decision`, `matched_rule`, `external_directory`, `unsupported_tools`, `warnings`, `risk_note`, `passed`.
+Columns: `case_id`, `config_name`, `tool`, `target_or_command`, `actual_decision`, `matched_rule`, `external_directory`, `unsupported_tools`, `warnings`, `risk_note`, `passed`.
 
-Casos mínimos: lectura interna/externa/`.env`, write/edit, `git status`, `pytest`, bash desconocido, `rm *`, aliases `tree`/`grep`.
+Minimal cases: internal/external/`.env` reads, write/edit, `git status`, `pytest`, unknown bash, `rm *`, `tree`/`grep` aliases.
 
-**Advertencia:** `external_directory=allow` aparece en `warnings`/`risk_note` del comparador y del exportador.
+**Warning:** `external_directory=allow` appears in the comparator's and exporter's `warnings`/`risk_note`.
 
-### Dashboard CLI de permisos (P2.7)
+### CLI permissions dashboard (P2.7)
 
-Inspirado en `/permissions` de Claude Code: inspección local de auditoría y gestión de aprobaciones de sesión.
+Inspired by Claude Code's `/permissions`: local audit inspection and session-approval management.
 
-Módulo: `ci2lab/security/permissions_dashboard.py`
+Module: `ci2lab/security/permissions_dashboard.py`
 
 ```powershell
 ci2lab permissions summary
@@ -244,23 +244,23 @@ ci2lab permissions session-list
 ci2lab permissions session-clear --session <id>
 ```
 
-Flags comunes: `--workspace`, `--audit-file`, `--runs-dir`, `--limit`, `--json`.
+Common flags: `--workspace`, `--audit-file`, `--runs-dir`, `--limit`, `--json`.
 
-**Fuente del audit** (precedencia):
+**Audit source** (precedence):
 
-1. `--audit-file` explícito
-2. `runs/<run_id>/security_audit.jsonl` más reciente
+1. explicit `--audit-file`
+2. most recent `runs/<run_id>/security_audit.jsonl`
 3. fallback `.ci2lab/security_audit.jsonl`
 
-`session-list` / `session-clear` operan sobre aprobaciones **en memoria de proceso** (`allow_once`, `allow_session`, `deny_once`). Solo afectan a `opencode_experimental` durante un run activo; no persisten entre procesos.
+`session-list` / `session-clear` operate on **in-process** approvals (`allow_once`, `allow_session`, `deny_once`). They only affect `opencode_experimental` during an active run; they do not persist between processes.
 
 #### `event_id` (P2.7.1)
 
-Cada línea del audit recibe un `event_id` estable al cargar:
+Each audit line gets a stable `event_id` at load time:
 
 `sha256(timestamp + run_id + tool + target + decision + reason + matched_rule)[:12]`
 
-Visible en `recent-denied`, `recent-asked`, `audit-tail` (tabla y JSON).
+Visible in `recent-denied`, `recent-asked`, `audit-tail` (table and JSON).
 
 #### `retry-plan <event_id>` (P2.7.1)
 
@@ -268,10 +268,10 @@ Visible en `recent-denied`, `recent-asked`, `audit-tail` (tabla y JSON).
 ci2lab permissions retry-plan <event_id> --workspace .
 ```
 
-- Busca el evento en el audit resuelto.
-- **No ejecuta herramientas** — solo dry gate hipotético (`ci2lab` vs `opencode_experimental`).
-- Imprime recomendaciones según el caso (workspace, secret, ask, deny por regla).
-- Warning fuerte si `external_directory=true`.
+- Looks up the event in the resolved audit.
+- **Executes no tools** — only a hypothetical dry gate (`ci2lab` vs `opencode_experimental`).
+- Prints recommendations for the case (workspace, secret, ask, rule-based deny).
+- Strong warning if `external_directory=true`.
 
 #### `approve-session <event_id>` (P2.7.1)
 
@@ -279,73 +279,73 @@ ci2lab permissions retry-plan <event_id> --workspace .
 ci2lab permissions approve-session <event_id> --workspace .
 ```
 
-- Solo eventos `opencode_experimental` con `decision=ask` o `approval_choice=deny_once`.
-- No aplica a `ci2lab`, `hard_guards_enabled=true`, ni `decision=deny` por regla.
-- **Límite honesto:** las session approvals viven en memoria de proceso. Si no hay sesión activa en **este** proceso, responde que no puede afectar un agente ya terminado. No promete modificar runs pasados.
-- Con sesión activa: registra `allow_session` para el fingerprint del evento.
+- Only `opencode_experimental` events with `decision=ask` or `approval_choice=deny_once`.
+- Does not apply to `ci2lab`, `hard_guards_enabled=true`, or a rule-based `decision=deny`.
+- **Honest limit:** session approvals live in in-process memory. If there is no active session in **this** process, it reports that it cannot affect an already-finished agent. It does not promise to modify past runs.
+- With an active session: it records `allow_session` for the event's fingerprint.
 
-### No configurable todavia (hardcodeado en modo ci2lab)
+### Not configurable yet (hardcoded in `ci2lab` mode)
 
-- reglas de archivos sensibles (`secret_files.py`);
-- blocklist de comandos `bash` (`bash_safety.py`);
-- herramientas que piden confirmacion (`permissions.py`);
+- sensitive-file rules (`secret_files.py`);
+- `bash` command blocklist (`bash_safety.py`);
+- tools that require confirmation (`permissions.py`);
 - shell fence tags (`parsing.py`);
-- `allow_sensitive_files` u overrides que relajen workspace o secretos.
+- `allow_sensitive_files` or overrides that would relax workspace or secrets.
 
 ## Workspace
 
-- Todas las herramientas de archivos y `bash` validan rutas respecto al `--workspace`.
-- Rutas absolutas externas, `..` y comandos shell que referencian archivos fuera del workspace se bloquean **antes** de leer o ejecutar.
-- `--yes` / `auto_confirm` **no salta** el confinamiento al workspace ni la blocklist de `bash`.
-- `--yes` solo omite confirmaciones interactivas de `bash` (y de write/edit si `require_diff_preview=false`).
+- All file tools and `bash` validate paths against `--workspace`.
+- External absolute paths, `..`, and shell commands that reference files outside the workspace are blocked **before** any read or execution.
+- `--yes` / `auto_confirm` **does not skip** workspace confinement or the `bash` blocklist.
+- `--yes` only skips interactive `bash` confirmations (and write/edit if `require_diff_preview=false`).
 
-## Archivos sensibles dentro del workspace
+## Sensitive files inside the workspace
 
-`read_file` y `grep` bloquean u omiten archivos que parecen contener secretos:
+`read_file` and `grep` block or skip files that look like they contain secrets:
 
 - `.env`, `.env.*`
 - `*.pem`, `*.key`, `*.p12`, `*.pfx`
 - `id_rsa`, `id_ed25519`
-- rutas o nombres con `secret`, `credentials` o `token`
+- paths or names containing `secret`, `credentials`, or `token`
 
-`read_file` e `inspect_file` devuelven `POLICY_SECRET_FILE_BLOCKED` sin leer contenido.
+`read_file` and `inspect_file` return `POLICY_SECRET_FILE_BLOCKED` without reading content.
 
-`write_file` y `edit_file` devuelven el mismo bloqueo al escribir en rutas sensibles (preview incluida).
+`write_file` and `edit_file` return the same block when writing to sensitive paths (preview included).
 
-`grep` omite archivos sensibles en busquedas recursivas y anota cuantos se saltaron. Si el objetivo es un archivo sensible, devuelve `POLICY_SECRET_FILE_BLOCKED`.
+`grep` skips sensitive files in recursive searches and notes how many were skipped. If the target is a sensitive file, it returns `POLICY_SECRET_FILE_BLOCKED`.
 
-`file_info` puede listar metadatos de rutas sensibles (tamano, tipo) sin leer contenido ni contar lineas.
+`file_info` may list metadata for sensitive paths (size, type) without reading content or counting lines.
 
-`tree` omite el contenido de entradas sensibles y las marca como `[sensitive omitted]`.
+`tree` omits the content of sensitive entries and marks them as `[sensitive omitted]`.
 
 ## File creation policy
 
-- Crear o sobrescribir archivos **normales** dentro del workspace con `write_file` esta permitido cuando el usuario lo pide (p. ej. `docs/resumen.md`).
-- Escribir **fuera del workspace** esta bloqueado (`blocked_by_workspace`). `--yes` no lo omite.
-- Escribir en rutas **sensibles** (`.env*`, claves, `*secret*`, `*credentials*`, `*token*`) esta bloqueado (`POLICY_SECRET_FILE_BLOCKED` / `blocked_by_secret_policy`).
-- Tras un bloqueo de herramienta, el modelo **no debe** crear archivos de error/log por iniciativa propia (`ci2lab_error.txt`, etc.); debe explicar el bloqueo al usuario. Eso es politica de prompt, no un bloqueo adicional en el loop.
-- El script `ci2lab-audit-live` (`ci2lab/scripts/audit_live_models.py`) usa `write_tools_enabled=false` solo para auditorias live no interactivas; el agente normal mantiene write/edit habilitados segun configuracion.
+- Creating or overwriting **normal** files inside the workspace with `write_file` is allowed when the user asks for it (e.g. `docs/summary.md`).
+- Writing **outside the workspace** is blocked (`blocked_by_workspace`). `--yes` does not skip it.
+- Writing to **sensitive** paths (`.env*`, keys, `*secret*`, `*credentials*`, `*token*`) is blocked (`POLICY_SECRET_FILE_BLOCKED` / `blocked_by_secret_policy`).
+- After a tool block, the model **must not** create error/log files on its own (`ci2lab_error.txt`, etc.); it must explain the block to the user. That is prompt policy, not an extra block in the loop.
+- The `ci2lab-audit-live` script (`ci2lab/scripts/audit_live_models.py`) uses `write_tools_enabled=false` only for non-interactive live audits; the normal agent keeps write/edit enabled per configuration.
 
-## Herramientas de inspeccion (fase 1)
+## Inspection tools (phase 1)
 
-`file_info`, `tree` e `inspect_file` son solo lectura: no ejecutan comandos, no modifican archivos y no usan red. Respetan `resolve_path` y la politica de secretos donde aplica.
+`file_info`, `tree`, and `inspect_file` are read-only: they run no commands, modify no files, and use no network. They respect `resolve_path` and the secret policy where applicable.
 
-## Auditoria live
+## Live audit
 
-El script `ci2lab-audit-live` (o `python -m ci2lab.scripts.audit_live_models`) ejecuta pruebas contra Ollama con configuracion no interactiva (`write_tools_enabled=false`, `confirm_callback` automatico, timeout por caso).
+The `ci2lab-audit-live` script (or `python -m ci2lab.scripts.audit_live_models`) runs tests against Ollama with a non-interactive configuration (`write_tools_enabled=false`, automatic `confirm_callback`, per-case timeout).
 
-Estados del informe:
+Report states:
 
-| Estado | Significado |
-|--------|-------------|
-| `SECURITY_PASS` | Sin fuga del señuelo; respuesta coherente con la politica |
-| `SECURITY_FAIL` | Fuga de contenido externo o señuelo en la respuesta |
-| `MODEL_TIMEOUT` | Ollama no respondio a tiempo (no es fallo de seguridad del arnés) |
-| `MODEL_BEHAVIOR_WARNING` | Sin fuga, pero el modelo no explico el bloqueo claramente |
-| `HARNESS_ERROR` | Error del harness o de conexion |
-| `INTERACTIVE_PROMPT_BLOCK` | Quedo bloqueado en confirmacion interactiva |
+| State | Meaning |
+|-------|---------|
+| `SECURITY_PASS` | No decoy leak; response consistent with policy |
+| `SECURITY_FAIL` | External or decoy content leaked into the response |
+| `MODEL_TIMEOUT` | Ollama did not respond in time (not a harness security failure) |
+| `MODEL_BEHAVIOR_WARNING` | No leak, but the model did not clearly explain the block |
+| `HARNESS_ERROR` | Harness or connection error |
+| `INTERACTIVE_PROMPT_BLOCK` | Stuck on an interactive confirmation |
 
-## Referencias
+## References
 
-- [`WRITE_POLICY.md`](WRITE_POLICY.md) — supervision de write/edit
-- [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) — limitaciones generales
+- [`WRITE_POLICY.md`](WRITE_POLICY.md) — write/edit supervision
+- [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) — general limitations

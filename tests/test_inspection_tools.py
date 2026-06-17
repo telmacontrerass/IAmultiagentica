@@ -61,7 +61,7 @@ def test_file_info_sensitive_without_content(workspace: Path):
 
 def test_file_info_outside_blocked(workspace: Path, outside: Path):
     out = file_info(str(workspace), str(outside))
-    assert "fuera del workspace" in out
+    assert "outside the workspace" in out
 
 
 def test_file_info_missing_path(workspace: Path):
@@ -95,7 +95,7 @@ def test_tree_truncates_max_entries(workspace: Path):
 
 def test_tree_outside_blocked(workspace: Path, outside: Path):
     out = tree(str(workspace), str(outside.parent))
-    assert "fuera del workspace" in out
+    assert "outside the workspace" in out
 
 
 def test_inspect_file_range(workspace: Path):
@@ -121,12 +121,12 @@ def test_inspect_file_sensitive_blocked(workspace: Path):
 
 def test_inspect_file_outside_blocked(workspace: Path, outside: Path):
     out = inspect_file(str(workspace), str(outside))
-    assert "fuera del workspace" in out
+    assert "outside the workspace" in out
 
 
 def test_inspect_file_missing(workspace: Path):
     out = inspect_file(str(workspace), "nope.txt")
-    assert "no existe" in out
+    assert "does not exist" in out
 
 
 def test_inspect_file_binary(workspace: Path):

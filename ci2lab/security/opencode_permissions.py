@@ -1,4 +1,4 @@
-"""Permisos estilo OpenCode: allow / ask / deny con patrones (EXPERIMENTAL)."""
+"""OpenCode-style permissions: allow / ask / deny with patterns (EXPERIMENTAL)."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ _DEFAULT_EXPERIMENTAL_RULES: dict[str, Any] = {
 
 @dataclass
 class OpenCodePermissionConfig:
-    """Reglas permission de opencode.json (subconjunto)."""
+    """permission rules from opencode.json (subset)."""
 
     rules: dict[str, Any] = field(default_factory=dict)
 
@@ -120,7 +120,7 @@ def parse_opencode_permissions(raw: Mapping[str, Any] | None) -> OpenCodePermiss
 def _normalize_permission(value: str) -> PermissionValue:
     v = value.strip().lower()
     if v not in {"allow", "ask", "deny"}:
-        raise ValueError(f"permiso invalido: {value!r} (use allow|ask|deny)")
+        raise ValueError(f"invalid permission: {value!r} (use allow|ask|deny)")
     return v
 
 
@@ -129,7 +129,7 @@ def _normalize_slashes(text: str) -> str:
 
 
 def _path_subjects(path: str) -> list[str]:
-    """Candidatos para match de path (Unix y Windows normalizados)."""
+    """Candidates for path matching (Unix and Windows normalized)."""
     norm = _normalize_slashes(path.strip())
     subjects = [norm]
     try:
@@ -175,7 +175,7 @@ def _match_best_rule(
     *,
     rule_prefix: str = "",
 ) -> tuple[PermissionValue | None, str | None]:
-    """Regla mas especifica gana; empate -> ultima en orden de declaracion."""
+    """Most specific rule wins; tie -> last in declaration order."""
     if not isinstance(rules, dict):
         return _normalize_permission(str(rules)), f"{rule_prefix}*"
 
@@ -243,7 +243,7 @@ def _permission_to_decision(
             action=DecisionAction.DENY,
             reason=f"permission_deny:{context}",
             outcome="blocked_by_permission",
-            message=f"Error: permiso denegado por policy OpenCode ({context})",
+            message=f"Error: permission denied by OpenCode policy ({context})",
             matched_rule=matched_rule,
             external_directory=external_directory,
         )
@@ -279,9 +279,9 @@ def evaluate_opencode_tool(
     auto_confirm: bool,
 ) -> SecurityDecision:
     """
-    Evalua permisos OpenCode sin hard-checks de CI2Lab.
+    Evaluate OpenCode permissions without CI2Lab hard-checks.
 
-    EXPERIMENTAL / INSEGURO: no aplica workspace confinement ni secret policy.
+    EXPERIMENTAL / UNSAFE: does not apply workspace confinement or secret policy.
     """
     rule_map = rules.rules
     path_tools = _READ_TOOLS | _EDIT_TOOLS

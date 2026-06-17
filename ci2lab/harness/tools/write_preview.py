@@ -1,4 +1,4 @@
-"""Diff preview y validación previa para write_file y edit_file."""
+"""Diff preview and pre-validation for write_file and edit_file."""
 
 from __future__ import annotations
 
@@ -26,23 +26,23 @@ class WritePreview:
         return self.validation_error is None
 
     def format_for_display(self) -> str:
-        lines = [f"Archivo: {self.path}"]
+        lines = [f"File: {self.path}"]
         if self.validation_error:
-            lines.append(f"Error de validación: {self.validation_error}")
+            lines.append(f"Validation error: {self.validation_error}")
             return "\n".join(lines)
         if self.is_new_file:
-            lines.append("Acción: crear archivo nuevo")
+            lines.append("Action: create new file")
             preview = self.new_content or ""
             if len(preview) > MAX_NEW_FILE_PREVIEW_CHARS:
                 preview = (
                     preview[:MAX_NEW_FILE_PREVIEW_CHARS]
-                    + f"\n… ({len(self.new_content or '')} caracteres totales)"
+                    + f"\n… ({len(self.new_content or '')} characters total)"
                 )
-            lines.append("--- contenido propuesto ---")
+            lines.append("--- proposed content ---")
             lines.append(preview)
         else:
-            lines.append("Acción: modificar archivo existente")
-            lines.append("--- diff unificado ---")
+            lines.append("Action: modify existing file")
+            lines.append("--- unified diff ---")
             lines.extend(_truncate_diff_lines(self.diff))
         return "\n".join(lines)
 
@@ -52,7 +52,7 @@ def _truncate_diff_lines(diff: str) -> list[str]:
     if len(rows) <= MAX_DISPLAY_LINES:
         return rows
     head = rows[:MAX_DISPLAY_LINES]
-    head.append(f"… ({len(rows) - MAX_DISPLAY_LINES} líneas más en el diff)")
+    head.append(f"… ({len(rows) - MAX_DISPLAY_LINES} more lines in the diff)")
     return head
 
 
@@ -69,7 +69,7 @@ def _unified_diff(old: str, new: str, path: str) -> str:
         lineterm="",
     )
     text = "\n".join(chunks)
-    return text if text else "(sin cambios detectados)"
+    return text if text else "(no changes detected)"
 
 
 def compute_edit_result(
@@ -79,9 +79,9 @@ def compute_edit_result(
     new_string: str,
     replace_all: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Devuelve (nuevo_contenido, mensaje_error)."""
+    """Return (new_content, error_message)."""
     if old_string == new_string:
-        return None, "Error: old_string y new_string son iguales; no hay cambio que aplicar"
+        return None, "Error: old_string and new_string are identical; nothing to change"
     resolved = resolve_path(path, cwd)
     if not resolved.is_file():
         from ci2lab.harness.tools.file_hints import format_missing_file_error
@@ -90,11 +90,11 @@ def compute_edit_result(
     text = resolved.read_text(encoding="utf-8", errors="replace")
     count = text.count(old_string)
     if count == 0:
-        return None, "Error: old_string no encontrado en el archivo"
+        return None, "Error: old_string not found in the file"
     if not replace_all and count > 1:
         return (
             None,
-            f"Error: old_string aparece {count} veces; usa replace_all o hazlo único",
+            f"Error: old_string appears {count} times; use replace_all or make it unique",
         )
     replacements = count if replace_all else 1
     new_text = text.replace(old_string, new_string, replacements)
@@ -110,7 +110,7 @@ def preview_write_docx(cwd: str, path: str, content: str) -> WritePreview:
             path=rel,
             is_new_file=not resolved.is_file(),
             diff="",
-            validation_error="Error: write_docx solo admite rutas .docx",
+            validation_error="Error: write_docx only accepts .docx paths",
         )
     if is_sensitive_path(resolved, workspace=cwd):
         return WritePreview(
@@ -124,18 +124,18 @@ def preview_write_docx(cwd: str, path: str, content: str) -> WritePreview:
 
         current = extract_docx_markdown(resolved)
         if current.startswith("Error:"):
-            current = "(no se pudo extraer el .docx actual para diff)"
+            current = "(could not extract the current .docx for diff)"
         return WritePreview(
             path=rel,
             is_new_file=False,
             diff=_unified_diff(current, content, rel),
-            new_content="[Se convertirá markdown -> .docx con pandoc]\n" + content,
+            new_content="[Will convert markdown -> .docx with pandoc]\n" + content,
         )
     return WritePreview(
         path=rel,
         is_new_file=True,
         diff="",
-        new_content="[Nuevo .docx desde markdown vía pandoc]\n" + content,
+        new_content="[New .docx from markdown via pandoc]\n" + content,
     )
 
 
@@ -232,12 +232,12 @@ def preview_apply_patch(cwd: str, patch_text: str) -> WritePreview:
             validation_error=error,
         )
     assert plan is not None
-    if not plan.combined_diff or plan.combined_diff == "(sin cambios detectados)":
+    if not plan.combined_diff or plan.combined_diff == "(no changes detected)":
         return WritePreview(
             path="apply_patch",
             is_new_file=False,
             diff="",
-            validation_error="Error: el parche no introduce cambios",
+            validation_error="Error: the patch introduces no changes",
         )
     if len(plan.touched_paths) == 1:
         path_label = plan.touched_paths[0]
@@ -266,7 +266,7 @@ def _conversion_preview(
         output_path = resolve_path(output, cwd)
     except PathViolationError as exc:
         return WritePreview(
-            path=output or "(sin output)",
+            path=output or "(no output)",
             is_new_file=True,
             diff="",
             validation_error=str(exc),
@@ -278,7 +278,7 @@ def _conversion_preview(
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: {tool_name} requiere un archivo fuente {source_ext}, "
+                f"Error: {tool_name} requires a {source_ext} source file, "
                 f"no '{source_path.suffix}'"
             ),
         )
@@ -288,7 +288,7 @@ def _conversion_preview(
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: {tool_name} requiere una ruta de salida {output_ext}, "
+                f"Error: {tool_name} requires a {output_ext} output path, "
                 f"no '{output_path.suffix}'"
             ),
         )
@@ -297,15 +297,15 @@ def _conversion_preview(
             path=output,
             is_new_file=True,
             diff="",
-            validation_error=f"Error: archivo fuente no encontrado: {source}",
+            validation_error=f"Error: source file not found: {source}",
         )
 
     rel_out = _display_path(output_path, cwd)
-    overwrite_note = "existente — se sobreescribirá" if output_path.is_file() else "archivo nuevo"
+    overwrite_note = "existing — will be overwritten" if output_path.is_file() else "new file"
     summary = (
-        f"Fuente : {source}\n"
-        f"Salida : {output} ({overwrite_note})\n"
-        f"Método : {source_ext} → {output_ext}"
+        f"Source : {source}\n"
+        f"Output : {output} ({overwrite_note})\n"
+        f"Method : {source_ext} → {output_ext}"
     )
     return WritePreview(
         path=rel_out,

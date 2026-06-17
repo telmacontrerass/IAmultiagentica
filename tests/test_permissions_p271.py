@@ -153,7 +153,7 @@ def test_retry_plan_outside_workspace(workspace: Path):
     text = " ".join(plan["recommendations"]).lower()
     assert "workspace" in text
     assert "ci2lab" in text
-    assert "inseguro" in text or "external_directory" in text.lower()
+    assert "unsafe" in text or "external_directory" in text.lower()
     assert plan["warnings"]
 
 
@@ -171,7 +171,7 @@ def test_retry_plan_opencode_ask(workspace: Path):
     plan = build_retry_plan(event, workspace=str(workspace))
     text = " ".join(plan["recommendations"]).lower()
     assert "allow once" in text or "allow session" in text
-    assert "misma config" in text or "mismas" in text or "misma" in text
+    assert "same" in text and "config" in text
 
 
 def test_retry_plan_deny_rule(workspace: Path):
@@ -246,7 +246,7 @@ def test_approval_ci2lab_rejected():
 
 
 def test_approval_hard_guards_rejected():
-    with pytest.raises(ValueError, match="bloqueo hard"):
+    with pytest.raises(ValueError, match="hard block"):
         approval_from_audit_event(
             {
                 "security_engine": "claude_experimental",
@@ -260,7 +260,7 @@ def test_approval_hard_guards_rejected():
 
 
 def test_approval_deny_rule_rejected():
-    with pytest.raises(ValueError, match="denegado"):
+    with pytest.raises(ValueError, match="denied"):
         approval_from_audit_event(
             {
                 "security_engine": "opencode_experimental",
@@ -274,7 +274,7 @@ def test_approval_deny_rule_rejected():
 
 
 def test_approval_missing_fields():
-    with pytest.raises(ValueError, match="Faltan campos"):
+    with pytest.raises(ValueError, match="Missing tool/target"):
         approval_from_audit_event(
             {
                 "security_engine": "opencode_experimental",

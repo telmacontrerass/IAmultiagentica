@@ -108,9 +108,9 @@ def test_read_document_plain_text_adds_metadata(tmp_path):
 
     text = read_document(str(tmp_path), "apuntes.md")
 
-    assert "Documento: apuntes.md" in text
-    assert "Tipo: md" in text
-    assert "Texto extraido:" in text
+    assert "Document: apuntes.md" in text
+    assert "Type: md" in text
+    assert "Extracted text:" in text
     assert "# Tema 1" in text
 
 
@@ -146,7 +146,7 @@ def test_read_document_docx_extracts_paragraphs_and_tables(tmp_path, monkeypatch
 
     text = read_document(str(tmp_path), "rubrica.docx")
 
-    assert "Tipo: docx" in text
+    assert "Type: docx" in text
     assert "[Heading 1] Rubrica de evaluacion" in text
     assert "Criterio | Puntos" in text
 
@@ -176,7 +176,7 @@ def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
 
     text = read_document(str(tmp_path), "notas.xlsx")
 
-    assert "Tipo: xlsx" in text
+    assert "Type: xlsx" in text
     assert "[Sheet: Notas]" in text
     assert "Alumno | Examen" in text
     assert "A1 | 8.5" in text

@@ -1,4 +1,4 @@
-"""Comando hardware."""
+"""hardware command."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ def _cmd_hardware(args: argparse.Namespace) -> int:
         console.print_json(json.dumps(profile.to_dict()))
         return 0
 
-    table = Table(title="Caracteristicas detectadas")
-    table.add_column("Dato")
-    table.add_column("Valor")
+    table = Table(title="Detected characteristics")
+    table.add_column("Field")
+    table.add_column("Value")
     for key, value in profile.to_dict().items():
         display = str(value)
         if key == "memory_pressure":
@@ -33,18 +33,18 @@ def _cmd_hardware(args: argparse.Namespace) -> int:
 def _print_memory_budget_context(profile: HardwareProfile) -> None:
     mode = profile.inference_mode
     console.print(
-        f"Tu equipo permite teoricamente ~{profile.inference_budget_theoretical_gb:g} GB "
-        f"para inferencia en modo {mode}."
+        f"Your machine theoretically allows ~{profile.inference_budget_theoretical_gb:g} GB "
+        f"for inference in {mode} mode."
     )
     if mode == "gpu" and profile.gpu_vendor != "apple":
-        available_label = "VRAM disponible segura ahora"
+        available_label = "Safe VRAM available now"
     else:
-        available_label = "RAM disponible segura ahora"
+        available_label = "Safe RAM available now"
     console.print(
         f"{available_label}: ~{profile.inference_budget_available_gb:g} GB."
     )
     if profile.memory_pressure:
         console.print(
-            "[yellow]Aviso: hay presion de memoria. "
-            "Cierra aplicaciones antes de usar modelos grandes.[/yellow]"
+            "[yellow]Warning: there is memory pressure. "
+            "Close applications before using large models.[/yellow]"
         )

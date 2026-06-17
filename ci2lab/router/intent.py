@@ -1,4 +1,8 @@
 """Small keyword-based intent classifier."""
+# NOTE: the keyword lists below (and the difficulty trigger words) are matched
+# against the user prompt; they intentionally keep Spanish terms so Spanish
+# prompts still classify correctly. They are not user-facing text — do not
+# translate or remove them.
 
 from __future__ import annotations
 

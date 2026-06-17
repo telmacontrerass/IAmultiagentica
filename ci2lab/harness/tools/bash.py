@@ -1,4 +1,4 @@
-"""Ejecución de comandos shell con timeout."""
+"""Shell command execution with a timeout."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from ci2lab.security.policy import check_command_allowed
 
 
 def _format_bash_block_message(blocked: str) -> str:
-    if blocked.startswith("Comando bloqueado:"):
+    if blocked.startswith(("Blocked command:", "Comando bloqueado:")):
         return f"Error: {blocked}"
-    return f"Error: comando bloqueado por politica de seguridad ({blocked})."
+    return f"Error: command blocked by security policy ({blocked})."
 
 
 def run_bash(
@@ -24,7 +24,7 @@ def run_bash(
     security_engine: str = "ci2lab",
 ) -> str:
     if not command.strip():
-        return "Error: bash requiere un `command` no vacio."
+        return "Error: bash requires a non-empty `command`."
     if enforce_ci2lab_hard_policy(security_engine):
         decision = check_command_allowed(
             command, cwd, security_profile=security_profile
@@ -41,9 +41,9 @@ def run_bash(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
-        return f"Error: comando superó el timeout de {timeout_seconds}s"
+        return f"Error: command exceeded the {timeout_seconds}s timeout"
     except OSError as exc:
-        return f"Error al ejecutar comando: {exc}"
+        return f"Error running command: {exc}"
 
     parts: list[str] = []
     if proc.stdout:
@@ -52,4 +52,4 @@ def run_bash(
         parts.append(f"[stderr]\n{proc.stderr.rstrip()}")
     if proc.returncode != 0:
         parts.append(f"[exit code {proc.returncode}]")
-    return "\n".join(parts) if parts else f"(sin salida, exit {proc.returncode})"
+    return "\n".join(parts) if parts else f"(no output, exit {proc.returncode})"

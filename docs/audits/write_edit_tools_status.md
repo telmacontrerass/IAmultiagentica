@@ -1,60 +1,62 @@
-# Estado de `write_file` y `edit_file`
+# Status of `write_file` and `edit_file`
 
-**Fecha:** 2026-06-09 (actualizado: política de edición supervisada)  
-**Fase:** edición habilitada en modo supervisado — **validado** en evals `005`/`006`/`007` mock y live
+_Historical snapshot; may not reflect the current implementation._
 
-## Resumen
+**Date:** 2026-06-09 (updated: supervised editing policy)
+**Phase:** editing enabled in supervised mode — **validated** in evals `005`/`006`/`007`, mock and live
 
-`write_file` y `edit_file` están **habilitadas y validadas** en **modo supervisado**: diff preview obligatorio por defecto antes de modificar el disco. El usuario ve un diff unificado (o preview de archivo nuevo) y debe aprobar. `--yes` **no omite** el preview si `require_diff_preview=true`.
+## Summary
 
-**Decisión actual:** edición disponible, no autónoma. Cada cambio requiere supervisión humana; no es el flujo principal del agente sobre el código crítico del repositorio. Política completa: [`docs/WRITE_POLICY.md`](../WRITE_POLICY.md). Desactivar por completo con `write_tools_enabled: false`.
+`write_file` and `edit_file` are **enabled and validated** in **supervised mode**: a mandatory diff preview by default before modifying disk. The user sees a unified diff (or a new-file preview) and must approve. `--yes` **does not skip** the preview when `require_diff_preview=true`.
 
-## Configuración
+**Current decision:** editing is available, not autonomous. Every change requires human supervision; it is not the agent's primary flow over critical repository code. Full policy: [`docs/WRITE_POLICY.md`](../WRITE_POLICY.md). Disable entirely with `write_tools_enabled: false`.
 
-| Campo | Default | Descripción |
+## Configuration
+
+| Field | Default | Description |
 |-------|---------|-------------|
-| `write_tools_enabled` | `true` | Si `false`, write/edit devuelven error sin ejecutar |
-| `require_diff_preview` | `true` | Si `true`, siempre muestra diff y pide confirmación |
+| `write_tools_enabled` | `true` | If `false`, write/edit return an error without running |
+| `require_diff_preview` | `true` | If `true`, always shows the diff and asks for confirmation |
 
-Fuentes: `ci2lab.yaml`, `CI2LAB_WRITE_TOOLS_ENABLED`, `CI2LAB_REQUIRE_DIFF_PREVIEW`, `AgentConfig`.
+Sources: `ci2lab.yaml`, `CI2LAB_WRITE_TOOLS_ENABLED`, `CI2LAB_REQUIRE_DIFF_PREVIEW`, `AgentConfig`.
 
-Cuando `require_diff_preview=false`, write/edit siguen el flujo de confirmación estándar (`--yes` puede auto-aprobar).
+When `require_diff_preview=false`, write/edit follow the standard confirmation flow (`--yes` can auto-approve).
 
-## Flujo
+## Flow
 
-1. Modelo invoca `write_file` o `edit_file`.
-2. Si `write_tools_enabled=false` → `outcome: blocked_by_config`.
-3. Se genera preview (`harness/tools/write_preview.py`):
-   - **edit_file:** diff unificado antes/después del reemplazo.
-   - **write_file (existente):** diff contenido actual vs nuevo.
-   - **write_file (nuevo):** mensaje de creación + preview del contenido.
-4. Si validación falla (p. ej. `old_string` no encontrado) → `outcome: failed` sin tocar disco.
-5. Si `require_diff_preview=true` → panel Rich con diff → confirmación `[s/N]`.
-6. Si deniega → `outcome: denied`, archivo sin cambios.
-7. Si aprueba → ejecuta y `outcome: approved`.
+1. The model invokes `write_file` or `edit_file`.
+2. If `write_tools_enabled=false` → `outcome: blocked_by_config`.
+3. A preview is generated (`harness/tools/write_preview.py`):
+   - **edit_file:** unified diff before/after the replacement.
+   - **write_file (existing):** diff of current content vs new.
+   - **write_file (new):** a creation message + a preview of the content.
+4. If validation fails (e.g. `old_string` not found) → `outcome: failed` without touching disk.
+5. If `require_diff_preview=true` → a Rich panel with the diff → `[y/N]` confirmation.
+6. If denied → `outcome: denied`, file unchanged.
+7. If approved → it runs and `outcome: approved`.
 
-`bash` no usa diff preview; `--yes` sigue auto-confirmando bash (salvo blocklist).
+`bash` does not use a diff preview; `--yes` still auto-confirms bash (except for the blocklist).
 
 ## Logging (`tool_calls.jsonl`)
 
-Cada invocación de write/edit registra `outcome`:
+Each write/edit invocation records an `outcome`:
 
 - `approved`
 - `denied`
 - `blocked_by_config`
 - `failed`
 
-## Inventario en código
+## Code inventory
 
-| Ubicación | `write_file` | `edit_file` |
-|-----------|--------------|-------------|
-| `TOOL_NAMES` / `_DISPATCH` | ✅ | ✅ |
-| `write_preview.py` | ✅ | ✅ |
-| `write_permissions.py` | ✅ | ✅ |
-| `CONFIRM_TOOLS` (modo sin preview) | ✅ | ✅ |
+| Location | `write_file` | `edit_file` |
+|----------|--------------|-------------|
+| `TOOL_NAMES` / dispatch | Yes | Yes |
+| `write_preview.py` | Yes | Yes |
+| `write_permissions.py` | Yes | Yes |
+| confirm tools (no-preview mode) | Yes | Yes |
 
-## Fuera de alcance
+## Out of scope
 
 - Git rollback / auto-commit
-- Diff preview para `bash`
-- UI gráfica
+- Diff preview for `bash`
+- Graphical UI

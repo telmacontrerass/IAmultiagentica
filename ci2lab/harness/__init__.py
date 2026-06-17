@@ -1,6 +1,6 @@
-"""Arnés agéntico: bucle ReAct, herramientas, REPL y sesiones.
+"""Agentic harness: ReAct loop, tools, REPL and sessions.
 
-Punto de entrada principal: `run_agent` (implementado en `harness.query.loop`).
+Main entry point: `run_agent` (implemented in `harness.query.loop`).
 """
 
 from __future__ import annotations

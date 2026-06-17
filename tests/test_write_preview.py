@@ -14,7 +14,7 @@ def test_edit_file_rejects_identical_old_and_new_strings(tmp_path):
     target.write_text("hola\n", encoding="utf-8")
     preview = preview_edit_file(str(tmp_path), "a.txt", "hola", "hola")
     assert not preview.is_valid
-    assert "son iguales" in (preview.validation_error or "")
+    assert "are identical" in (preview.validation_error or "")
 
 
 def test_edit_file_missing_path_lists_root_py_files(tmp_path):
@@ -53,7 +53,7 @@ def test_write_file_new_shows_preview(tmp_path):
     assert preview.is_valid
     assert preview.is_new_file
     assert "contenido nuevo" in preview.format_for_display()
-    assert "crear archivo nuevo" in preview.format_for_display().lower()
+    assert "create new file" in preview.format_for_display().lower()
 
 
 def test_write_tools_disabled(tmp_path):

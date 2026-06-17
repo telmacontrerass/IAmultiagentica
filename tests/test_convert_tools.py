@@ -69,9 +69,9 @@ def test_docx_to_pdf_creates_file(pandoc_skip, tmp_path: Path) -> None:
     docx = tmp_path / "input.docx"
     _make_docx(docx, "# Test\n\nContenido de prueba.\n")
     result = docx_to_pdf(str(tmp_path), "input.docx", "output.pdf")
-    if result.startswith("Error:") and "motor PDF" in result:
+    if result.startswith("Error:") and "PDF engine" in result:
         pytest.skip("No PDF engine installed for pandoc")
-    assert result.startswith("Creado")
+    assert result.startswith("Created")
     assert (tmp_path / "output.pdf").is_file()
 
 
@@ -81,9 +81,9 @@ def test_docx_to_pdf_overwrite(pandoc_skip, tmp_path: Path) -> None:
     out = tmp_path / "doc.pdf"
     out.write_bytes(b"placeholder")
     result = docx_to_pdf(str(tmp_path), "doc.docx", "doc.pdf")
-    if result.startswith("Error:") and "motor PDF" in result:
+    if result.startswith("Error:") and "PDF engine" in result:
         pytest.skip("No PDF engine installed for pandoc")
-    assert result.startswith("Creado")
+    assert result.startswith("Created")
     assert out.stat().st_size > len(b"placeholder")
 
 
@@ -172,7 +172,7 @@ def test_preview_pdf_to_docx_overwrite_note(tmp_path: Path) -> None:
     preview = preview_pdf_to_docx(str(tmp_path), "data.pdf", "data.docx")
     assert preview.is_valid
     assert not preview.is_new_file
-    assert "sobreescribir" in (preview.new_content or "")
+    assert "overwritten" in (preview.new_content or "")
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ def test_execute_docx_to_pdf_via_registry(pandoc_skip, tmp_path: Path, monkeypat
         ),
         cfg,
     )
-    if result.is_error and "motor PDF" in result.content:
+    if result.is_error and "PDF engine" in result.content:
         pytest.skip("No PDF engine installed for pandoc")
     assert not result.is_error
     assert (tmp_path / "exec.pdf").is_file()

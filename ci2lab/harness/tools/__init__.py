@@ -1,1 +1,1 @@
-"""Herramientas nativas del arnés."""
+"""Native harness tools."""

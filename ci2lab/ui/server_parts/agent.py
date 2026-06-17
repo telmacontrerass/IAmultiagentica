@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from ci2lab.harness.document_answer import maybe_answer_document_request
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.session import load_session, new_session_id, save_session
 from ci2lab.harness.token_usage import TokenUsageState
@@ -17,7 +16,7 @@ from ci2lab.ui.server_parts.uploads import normalize_attachments, prompt_with_up
 def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     prompt = str(payload.get("message") or "").strip()
     if not prompt:
-        return {"ok": False, "error": "Escribe un mensaje antes de enviar."}
+        return {"ok": False, "error": "Type a message before sending."}
 
     model_result = resolve_selected_installed_model(state, payload)
     if not model_result["ok"]:
@@ -39,31 +38,6 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         cwd=workspace,
         token_usage=existing_token_usage,
     )
-    direct_answer = (
-        maybe_answer_document_request(prompt, [prompt_for_model])
-        if attachments
-        else None
-    )
-    if direct_answer:
-        save_completed_session(
-            session_id=session_id,
-            messages=messages,
-            prompt=prompt,
-            answer=direct_answer,
-            model_tag=model,
-            cwd=workspace,
-            token_usage=existing_token_usage,
-        )
-        usage_state = TokenUsageState()
-        usage_state.hydrate_session(existing_token_usage)
-        return {
-            "ok": True,
-            "answer": direct_answer,
-            "session_id": session_id,
-            "model": model,
-            "display_name": model,
-            "usage": usage_state.to_dict(),
-        }
 
     try:
         prepare_session, build_agent_config, run_agent = _agent_dependencies()
@@ -202,8 +176,8 @@ def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dic
         return {
             "ok": False,
             "error": (
-                "Selecciona un modelo instalado antes de chatear. "
-                "Si no aparece ninguno, descarga uno en Modelos locales."
+                "Select an installed model before chatting. "
+                "If none appears, download one in Local models."
             ),
             "usage": TokenUsageState().to_dict(),
         }
@@ -216,7 +190,7 @@ def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dic
     if error:
         return {
             "ok": False,
-            "error": f"No se pudo comprobar Ollama ni sus modelos instalados: {error}",
+            "error": f"Could not check Ollama or its installed models: {error}",
             "model": model_tag,
             "display_name": display_name,
             "usage": TokenUsageState().to_dict(),
@@ -226,8 +200,8 @@ def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dic
         return {
             "ok": False,
             "error": (
-                f"El modelo seleccionado no esta instalado: {model_tag}. "
-                "Elige un modelo instalado en el desplegable o descargalo en Modelos locales."
+                f"The selected model is not installed: {model_tag}. "
+                "Choose an installed model from the dropdown or download it in Local models."
             ),
             "model": model_tag,
             "display_name": display_name,

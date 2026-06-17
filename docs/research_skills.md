@@ -1,97 +1,118 @@
-# Research Skills (P1.5)
+# Research Skills
 
-## 1) Objetivo
+## 1) Goal
 
-Las research skills convierten una herramienta base (`web_fetch`) en flujos evaluables y deterministas para análisis técnico con evidencia.
+Research skills turn base tools (`web_search`, `web_fetch`) into evaluable, deterministic workflows for technical analysis backed by evidence.
 
-Objetivo de P1.5:
-- partir de una URL controlada (fixture local),
-- extraer hechos verificables,
-- producir salidas estructuradas en JSON,
-- validar contrato y orquestación en tests offline.
+The goals are to:
+- start from a controlled URL (a local fixture) or a focused search query,
+- extract verifiable facts,
+- produce structured outputs,
+- validate the contract and orchestration in offline tests.
 
 ## 2) Tool vs Skill
 
-- `web_fetch` (tool primitiva, read-only):
-  - descarga contenido `http/https`,
-  - sigue redirecciones,
-  - limpia HTML,
-  - recorta respuesta larga,
-  - no modifica archivos ni ejecuta acciones destructivas.
+- `web_search` / `web_fetch` (primitive, read-only tools):
+  - `web_search` finds candidate URLs from a plain-text query;
+  - `web_fetch` downloads `http/https` content, follows redirects, strips HTML, and truncates long responses;
+  - neither modifies files nor runs destructive actions.
 
-- `research_web_doc_review` (skill evaluable):
-  - usa `web_fetch`,
-  - revisa una documentación web controlada,
-  - exige evidencia textual y límites no verificados.
+- `live_fact_lookup` (factual/live skill):
+  - uses `web_search` + `web_fetch`,
+  - answers a factual or time-sensitive question from discovered sources,
+  - responds in plain text with a `Fuente:` (source) line and a caveat when the source is weak.
 
-- `research_web_vs_repo` (skill documentación vs código):
-  - usa `web_fetch` + `read_file`,
-  - compara hechos documentales con observaciones del repo local,
-  - separa coincidencias, gaps/riesgos y recomendaciones.
+- `research_web_doc_review` (evaluable skill):
+  - uses `web_fetch`,
+  - reviews one controlled web document,
+  - requires textual evidence and an explicit list of unverified limits.
 
-## 3) Skills actuales
+- `research_web_vs_repo` (doc-vs-code skill):
+  - uses `web_fetch` + `read_file`,
+  - compares documentation facts against observations from the local repo,
+  - separates matches, gaps/risks, and recommendations.
+
+## 3) Built-in skills
+
+### `live_fact_lookup`
+
+- Allowed tools: `web_search`, `web_fetch`
+- Input: a factual/live question (with or without a URL)
+- Required workflow:
+  1. Interpret the factual question.
+  2. If there is no URL, call `web_search` with a focused query.
+  3. Pick one or two reliable sources from the results.
+  4. Call `web_fetch` on at least one source before stating facts.
+  5. Answer only from `web_search`/`web_fetch` content.
+- Hard constraints:
+  - Do not invent scores, dates, versions, names, or outcomes that are not in the fetched content.
+  - Do not use tools other than `web_search` and `web_fetch`.
+- Response format:
+  - Plain text (not JSON) unless the user explicitly asks for JSON.
+  - Always include a `Fuente:` line.
+  - Allow a `Advertencia:` (warning) line when the source is weak or conflicting.
 
 ### `research_web_doc_review`
 
-- Herramientas permitidas: `web_fetch`
-- Entrada: una URL exacta
-- Salida esperada (JSON):
+- Allowed tools: `web_fetch`
+- Input: exactly one URL
+- Expected output (JSON):
   - `url`, `title`, `key_points`, `relevant_api_or_concepts`,
   - `constraints_or_warnings`, `quoted_evidence`,
   - `practical_recommendations`, `unknowns_or_not_verified`
-- Qué valida el test:
-  - JSON con claves exactas
-  - evidencia textual procedente de la página fixture
-  - ausencia de fuentes externas inventadas
-  - presencia de límites/no cubierto
-- Limitaciones actuales:
-  - evaluación semántica del modelo real no cubierta en esta fase
+- What the test validates:
+  - JSON with the exact keys
+  - textual evidence taken from the fixture page
+  - no invented external sources
+  - presence of limits/not-covered items
+- Current limitations:
+  - semantic evaluation against a real model is not covered in this phase
 
 ### `research_web_vs_repo`
 
-- Herramientas permitidas: `web_fetch`, `read_file`
-- Entrada: URL + uno o más archivos locales (fase actual: 1 archivo)
-- Salida esperada (JSON):
+- Allowed tools: `web_fetch`, `read_file`
+- Input: a URL + one or more local files (current phase: one file)
+- Expected output (JSON):
   - `url`, `local_files_reviewed`, `doc_facts`, `repo_observations`,
   - `matches`, `gaps_or_risks`, `recommended_changes`,
   - `changes_not_recommended`, `quoted_evidence`,
   - `unknowns_or_not_verified`
-- Qué valida el test:
-  - JSON con claves exactas
-  - URL presente
-  - archivo local listado en `local_files_reviewed`
-  - evidencia documental + observaciones concretas de código
-  - al menos un `match`, un `gap_or_risk`, una recomendación y un cambio no recomendado
-  - ausencia de fuentes externas inventadas
-- Limitaciones actuales:
-  - caso monofichero en test (multiarchivo queda para fase posterior)
+- What the test validates:
+  - JSON with the exact keys
+  - the URL is present
+  - the local file is listed in `local_files_reviewed`
+  - documentary evidence + concrete code observations
+  - at least one `match`, one `gap_or_risk`, one recommendation, and one not-recommended change
+  - no invented external sources
+- Current limitations:
+  - the test covers the single-file case (multi-file is a later phase)
 
-## 4) Enfoque de seguridad
+## 4) Security approach
 
-- Tests 100% offline/deterministas.
-- Sin dependencia de internet en CI.
-- Sin modificación de archivos durante research skills.
-- Sin fuentes externas no proporcionadas por la entrada.
-- Toolset restringido por skill (`allowed_tools`).
+- Tests are 100% offline/deterministic.
+- No internet dependency in CI.
+- No file modification during research skills.
+- No external sources beyond what the input provides.
+- Per-skill restricted toolset (`allowed_tools`).
 
-## 5) Comandos de verificación
+## 5) Verification commands
 
 ```bash
 pytest tests/test_research_skills.py -q
 pytest tests/ -q
 ```
 
-## 6) Limitaciones honestas
+## 6) Honest limitations
 
-- Los tests actuales usan LLM mock determinista.
-- Validan contrato/orquestación y evidencia estructural.
-- No validan todavía la calidad semántica completa de modelos vivos.
-- La evaluación live queda explícitamente para una fase posterior.
+- The current tests use a deterministic mock LLM.
+- They validate the contract/orchestration and structural evidence.
+- They do not yet validate the full semantic quality of live models.
+- Live evaluation is explicitly left for a later phase.
 
 ## 7) Roadmap
 
-- Evaluación semántica live opcional (fuera de CI por defecto).
-- Extensión a comparación multiarchivo.
-- Comparación multi-fuente con corpus controlado.
-- Evaluación de estado del arte con corpus cerrado.
-- Extracción de papers como capacidad posterior (no incluida en P1.5).
+- Optional live semantic evaluation (off CI by default).
+- Extension to multi-file comparison.
+- Multi-source comparison with a controlled corpus.
+- State-of-the-art evaluation with a closed corpus.
+- Paper extraction as a later capability.

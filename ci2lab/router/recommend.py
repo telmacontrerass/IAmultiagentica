@@ -16,9 +16,9 @@ MemoryFitStatus = Literal["ok_now", "requires_cleanup", "not_recommended"]
 RecommendationStatus = Literal["OK_NOW", "OK_IF_MEMORY_FREED", "NOT_RECOMMENDED"]
 
 _STATUS_LABELS: dict[RecommendationStatus, str] = {
-    "OK_NOW": "Cabe ahora",
-    "OK_IF_MEMORY_FREED": "Cabe liberando memoria",
-    "NOT_RECOMMENDED": "No recomendable",
+    "OK_NOW": "Fits now",
+    "OK_IF_MEMORY_FREED": "Fits if memory is freed",
+    "NOT_RECOMMENDED": "Not recommended",
 }
 
 CONTEXT_TARGETS: dict[IntentCategory, int] = {
@@ -78,7 +78,7 @@ class DisplayRecommendation:
 
     @property
     def installation_label(self) -> str:
-        return "Ya instalado" if self.installed else "Para descargar"
+        return "Already installed" if self.installed else "To download"
 
 
 def recommendation_pool_size(limit: int) -> int:
@@ -283,7 +283,7 @@ def classify_memory_fit(
     required_gb: float,
     profile: HardwareProfile,
 ) -> tuple[MemoryFitStatus, bool, str]:
-    """Compatibilidad con tests/codigo anterior."""
+    """Compatibility with tests/legacy code."""
     classification = classify_model_memory(required_gb, profile)
     legacy_status: MemoryFitStatus
     if classification.recommendation_status == "OK_NOW":
@@ -308,9 +308,9 @@ def _effective_available_budget(profile: HardwareProfile) -> float:
 
 
 def model_fits(model: ModelSpec, profile: HardwareProfile) -> bool:
-    """True si el modelo cabe en el presupuesto teórico de este equipo.
+    """True if the model fits within this machine's theoretical budget.
 
-    Única fuente de verdad para CLI, router y UI.
+    Single source of truth for CLI, router, and UI.
     """
     required_gb = _memory_required_gb(model, profile)
     return classify_model_memory(required_gb, profile).theoretical_fit
@@ -409,18 +409,18 @@ def _fit_reason(
 
     if classification.recommendation_status == "OK_NOW":
         return (
-            f"necesita ~{required_gb:g} GB de {resource}; "
-            f"cabe ahora (~{available_gb:g} GB disponibles seguros)"
+            f"needs ~{required_gb:g} GB of {resource}; "
+            f"fits now (~{available_gb:g} GB safely available)"
         )
     if classification.recommendation_status == "OK_IF_MEMORY_FREED":
         return (
-            f"necesita ~{required_gb:g} GB; cabe teoricamente "
-            f"(~{theoretical_gb:g} GB), pero ahora solo hay "
-            f"~{available_gb:g} GB disponibles seguros"
+            f"needs ~{required_gb:g} GB; fits theoretically "
+            f"(~{theoretical_gb:g} GB), but right now only "
+            f"~{available_gb:g} GB are safely available"
         )
     return (
-        f"necesita ~{required_gb:g} GB de {resource}; "
-        f"supera el presupuesto teorico del equipo (~{theoretical_gb:g} GB)"
+        f"needs ~{required_gb:g} GB of {resource}; "
+        f"exceeds the machine's theoretical budget (~{theoretical_gb:g} GB)"
     )
 
 

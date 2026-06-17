@@ -1,4 +1,4 @@
-"""Presets de permission OpenCode (EXPERIMENTAL, solo opencode_experimental)."""
+"""OpenCode permission presets (EXPERIMENTAL, opencode_experimental only)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _DEFAULT_PRESET = "opencode_paranoid"
 
 
 class UnknownPermissionPresetError(ValueError):
-    """Preset de permission OpenCode no reconocido."""
+    """OpenCode permission preset not recognized."""
 
 
 _PRESETS: dict[str, dict[str, Any]] = {
@@ -144,7 +144,7 @@ def normalize_permission_preset(name: str | None) -> str | None:
     if key not in PRESET_NAMES:
         valid = ", ".join(sorted(PRESET_NAMES))
         raise UnknownPermissionPresetError(
-            f"Preset de permission desconocido: {name!r}. Valores validos: {valid}."
+            f"Unknown permission preset: {name!r}. Valid values: {valid}."
         )
     return key
 

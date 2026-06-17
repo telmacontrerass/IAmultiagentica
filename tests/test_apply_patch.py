@@ -32,7 +32,7 @@ def test_apply_patch_context_mismatch(tmp_path: Path):
     result = apply_patch(str(tmp_path), SAMPLE_PATCH)
 
     assert result.startswith("Error:")
-    assert "no se encontro contexto" in result or "mundo" in result
+    assert "patch context not found" in result or "mundo" in result
 
 
 def test_plan_patch_creates_new_file(tmp_path: Path):

@@ -26,7 +26,7 @@ from ci2lab.security.permissions import evaluate_tool_gate
 from ci2lab.settings import check_tool_allowed
 
 
-# Equivalencias que sugerimos cuando el skill bloquea una herramienta de shell.
+# Equivalences we suggest when the skill blocks a shell tool.
 _SHELL_TOOL_EQUIVALENT = {
     "bash": ("ls", "grep", "glob", "read_file"),
     "ls": ("ls",),
@@ -37,7 +37,7 @@ _SHELL_TOOL_EQUIVALENT = {
 
 
 def _skill_block_hint(name: str, allowed_canon: set[str]) -> str:
-    """Sugiere la herramienta permitida equivalente para que el modelo no entre en bucle."""
+    """Suggest the equivalent permitted tool so the model does not get stuck in a loop."""
     from ci2lab.harness.parsing_parts.common import map_name
 
     candidates = _SHELL_TOOL_EQUIVALENT.get(map_name(name), ())
@@ -59,21 +59,21 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
     if not is_known_tool(name):
         return ToolResult(
             tool_name=name,
-            content=f"Error: herramienta desconocida `{name}`",
+            content=f"Error: unknown tool `{name}`",
             is_error=True,
             call_id=call.call_id,
         )
 
-    # `bash read_file ...` (un tool nativo escrito como comando) siempre se
-    # redirige al tool real.
+    # `bash read_file ...` (a native tool written as a command) is always
+    # redirected to the real tool.
     if name == "bash":
         command = str(call.arguments.get("command", ""))
         redirected = tool_call_from_bash_command(command, call_id=call.call_id)
         if redirected is not None and redirected.name != "bash":
             return execute_tool(redirected, config)
-        # Si el skill NO permite `bash`, traducimos comandos POSIX simples
-        # (`ls`, `grep`, `find`, `cat`) al tool equivalente. Sin esto, un skill
-        # restringido deja al modelo en bucle infinito contra el filtro.
+        # If the skill does NOT allow `bash`, we translate simple POSIX commands
+        # (`ls`, `grep`, `find`, `cat`) to the equivalent tool. Without this, a
+        # restricted skill leaves the model in an infinite loop against the filter.
         if config.skill_allowed_tools is not None:
             from ci2lab.harness.parsing_parts.common import map_name as _mn
 
@@ -83,8 +83,8 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
                     return execute_tool(translated, config)
 
     if config.skill_allowed_tools is not None and name != "skill":
-        # Canonicaliza nombres (list_files→ls, dir→ls...) en ambos lados para
-        # tolerar allow-lists de skills escritos con sinónimos.
+        # Canonicalize names (list_files→ls, dir→ls...) on both sides to
+        # tolerate skill allow-lists written with synonyms.
         from ci2lab.harness.parsing_parts.common import map_name
 
         canonical = map_name(name)
@@ -105,14 +105,14 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
 
     args = normalize_tool_arguments(call.arguments, tool_name=name)
 
-    # La redirección bash→tool ya ocurrió arriba (antes del filtro del skill).
-    # Aquí solo validamos que el comando no esté vacío para evitar ejecuciones
-    # erróneas con modelos que emiten un bloque bash sin contenido.
+    # The bash→tool redirection already happened above (before the skill filter).
+    # Here we only validate that the command is not empty, to avoid erroneous
+    # executions with models that emit an empty bash block.
     if name == "bash":
         if not str(args.get("command", "")).strip():
             return ToolResult(
                 tool_name=name,
-                content="Error: bash requiere un `command` no vacio.",
+                content="Error: bash requires a non-empty `command`.",
                 is_error=True,
                 call_id=call.call_id,
                 outcome="invalid_arguments",
@@ -125,7 +125,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         if len(output) > config.max_tool_output_chars:
             output = (
                 output[: config.max_tool_output_chars]
-                + f"\n... (truncado, {len(output)} caracteres totales)"
+                + f"\n... (truncated, {len(output)} characters total)"
             )
         return ToolResult(
             tool_name=name,
@@ -160,7 +160,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         )
         return ToolResult(
             tool_name=name,
-            content=gate.message or "Error: bloqueado por politica de seguridad",
+            content=gate.message or "Error: blocked by security policy",
             is_error=True,
             call_id=call.call_id,
             outcome=gate.outcome,

@@ -1,4 +1,4 @@
-"""Modo interactivo REPL del arnés."""
+"""Interactive REPL mode for the harness."""
 
 from __future__ import annotations
 
@@ -40,30 +40,30 @@ def run_repl(
         data = load_session(session_id)
         if data:
             history = data.get("messages")
-            console.print(f"[dim]Reanudando sesión {session_id}[/dim]")
+            console.print(f"[dim]Resuming session {session_id}[/dim]")
 
     console.print(Panel(
         f"[bold]ci2lab REPL[/bold]\n"
-        f"Modelo: {selection.ollama_tag}\n"
+        f"Model: {selection.ollama_tag}\n"
         f"Tool mode: {selection.tool_mode}\n"
-        f"Modo: {'multi-agent' if multi_agent else 'classic'}\n"
+        f"Mode: {'multi-agent' if multi_agent else 'classic'}\n"
         f"CWD: {config.cwd}\n"
-        f"Sesión: {sid}\n\n"
-        "Escribe tu petición. [bold]Ctrl+V[/bold] pega; [bold]Enter[/bold] envía; "
-        "[bold]Alt+Enter[/bold] nueva línea.\n"
-        "Comandos: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
+        f"Session: {sid}\n\n"
+        "Type your request. [bold]Ctrl+V[/bold] pastes; [bold]Enter[/bold] sends; "
+        "[bold]Alt+Enter[/bold] new line.\n"
+        "Commands: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
         "[bold]/delete[/bold], [bold]/sessions[/bold], [bold]/resume ID[/bold], "
         "[bold]/retry[/bold], [bold]/why[/bold], "
         "[bold]/skills[/bold], [bold]/skill-name[/bold]",
-        title="Agente local",
+        title="Local agent",
         border_style="blue",
     ))
 
     while True:
         try:
-            line = read_prompt_line("Tú> ")
+            line = read_prompt_line("You> ")
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]Hasta luego.[/dim]")
+            console.print("\n[dim]See you later.[/dim]")
             break
 
         if not line:
@@ -73,7 +73,7 @@ def run_repl(
         if line.lower() == "/sessions":
             rows = list_sessions()
             if not rows:
-                console.print("[dim]No hay sesiones guardadas.[/dim]")
+                console.print("[dim]No saved sessions.[/dim]")
             else:
                 for row in rows[:20]:
                     console.print(
@@ -84,39 +84,39 @@ def run_repl(
         if line.lower().startswith("/resume "):
             target = line.split(maxsplit=1)[1].strip()
             if not target:
-                console.print("[yellow]Uso: /resume <session_id>[/yellow]")
+                console.print("[yellow]Usage: /resume <session_id>[/yellow]")
                 continue
             data = load_session(target)
             if not data:
-                console.print(f"[yellow]No existe la sesión {target}.[/yellow]")
+                console.print(f"[yellow]Session {target} does not exist.[/yellow]")
                 continue
             sid = target
             config.session_id = sid
             history = data.get("messages")
-            console.print(f"[green]Sesión {sid} cargada.[/green]")
+            console.print(f"[green]Session {sid} loaded.[/green]")
             continue
         if line.lower() == "/retry":
             if not last_user_prompt:
-                console.print("[yellow]No hay petición anterior para reintentar.[/yellow]")
+                console.print("[yellow]No previous request to retry.[/yellow]")
                 continue
             line = last_user_prompt
-            console.print(f"[dim]Reintentando: {line}[/dim]")
+            console.print(f"[dim]Retrying: {line}[/dim]")
         if line.lower() == "/why":
             if not last_error_message:
-                console.print("[dim]No hay fallo reciente registrado.[/dim]")
+                console.print("[dim]No recent failure recorded.[/dim]")
             else:
                 console.print(
-                    "[yellow]Último error:[/yellow]\n"
+                    "[yellow]Last error:[/yellow]\n"
                     f"{last_error_message}\n\n"
-                    "[dim]Siguiente paso: corrige el problema y usa /retry "
-                    "o ejecuta `ci2lab doctor`.[/dim]"
+                    "[dim]Next step: fix the problem and use /retry "
+                    "or run `ci2lab doctor`.[/dim]"
                 )
             continue
         if line.lower() == "/clear":
             history = [
                 {"role": "system", "content": history[0]["content"]}
             ] if history and history[0].get("role") == "system" else None
-            console.print("[dim]Historial limpiado (system conservado).[/dim]")
+            console.print("[dim]History cleared (system kept).[/dim]")
             continue
         if line.lower() == "/save":
             if history:
@@ -127,17 +127,17 @@ def run_repl(
                     cwd=config.cwd,
                     token_usage=config.token_usage.to_dict(),
                 )
-                console.print(f"[green]Guardado en {path}[/green]")
+                console.print(f"[green]Saved to {path}[/green]")
             else:
-                console.print("[yellow]Nada que guardar aún.[/yellow]")
+                console.print("[yellow]Nothing to save yet.[/yellow]")
             continue
         if is_delete_session_request(line):
             deleted = delete_session(sid)
             history = None
             if deleted:
-                console.print(f"[green]Sesión {sid} eliminada.[/green]")
+                console.print(f"[green]Session {sid} deleted.[/green]")
             else:
-                console.print("[yellow]No había sesión guardada que eliminar.[/yellow]")
+                console.print("[yellow]There was no saved session to delete.[/yellow]")
             continue
         if line.lower() == "/skills":
             skills = load_skills(config.cwd)

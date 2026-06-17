@@ -7,8 +7,8 @@ import subprocess
 from pathlib import Path
 
 _PANDOC_MISSING = (
-    "Error: no se puede procesar .docx porque falta `pandoc` en PATH. "
-    "Instálalo con: winget install JohnMacFarlane.Pandoc"
+    "Error: cannot process .docx because `pandoc` is missing from PATH. "
+    "Install it with: winget install JohnMacFarlane.Pandoc"
 )
 
 _PANDOC_TIMEOUT_SECONDS = 120
@@ -39,19 +39,19 @@ def extract_docx_markdown(path: Path) -> str:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return f"Error: pandoc tardó demasiado leyendo {path.name}"
+        return f"Error: pandoc timed out reading {path.name}"
     except OSError as exc:
-        return f"Error: no se pudo ejecutar pandoc: {exc}"
+        return f"Error: could not run pandoc: {exc}"
 
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "fallo desconocido").strip()
-        return f"Error: pandoc no pudo leer {path.name}: {err[:500]}"
+        err = (result.stderr or result.stdout or "unknown failure").strip()
+        return f"Error: pandoc could not read {path.name}: {err[:500]}"
 
     text = result.stdout
     if not text.strip():
         return (
-            "Error: el documento Word no tiene texto extraíble "
-            "(vacío o solo imágenes; OCR no disponible)."
+            "Error: the Word document has no extractable text "
+            "(empty or images only; OCR not available)."
         )
     return text
 
@@ -63,7 +63,7 @@ def build_docx_from_markdown(target: Path, markdown: str) -> str:
         return _PANDOC_MISSING
 
     if target.suffix.lower() != ".docx":
-        return "Error: write_docx solo admite rutas que terminen en .docx"
+        return "Error: write_docx only accepts paths ending in .docx"
 
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp_md = target.with_name(f".{target.stem}.ci2lab.tmp.md")
@@ -80,18 +80,18 @@ def build_docx_from_markdown(target: Path, markdown: str) -> str:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return f"Error: pandoc tardó demasiado escribiendo {target.name}"
+        return f"Error: pandoc timed out writing {target.name}"
     except OSError as exc:
-        return f"Error: no se pudo ejecutar pandoc: {exc}"
+        return f"Error: could not run pandoc: {exc}"
     finally:
         tmp_md.unlink(missing_ok=True)
 
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "fallo desconocido").strip()
-        return f"Error: pandoc no pudo crear {target.name}: {err[:500]}"
+        err = (result.stderr or result.stdout or "unknown failure").strip()
+        return f"Error: pandoc could not create {target.name}: {err[:500]}"
 
     size = target.stat().st_size
-    return f"Creado {target} ({size} bytes) desde markdown vía pandoc"
+    return f"Created {target} ({size} bytes) from markdown via pandoc"
 
 
 def write_docx(cwd: str, path: str, content: str) -> str:

@@ -1,4 +1,4 @@
-"""ArgumentParser y ayuda global del CLI."""
+"""ArgumentParser and global CLI help."""
 
 from __future__ import annotations
 
@@ -22,78 +22,77 @@ _CLI_COMMANDS = frozenset(
 
 
 def _is_global_help_request(raw_argv: list[str]) -> bool:
-    """True cuando el usuario pide ayuda global sin subcomando."""
+    """True when the user asks for global help with no subcommand."""
     if not raw_argv:
         return True
     return raw_argv in (["--help"], ["-h"])
 
 
 def _print_global_help() -> None:
-    """Ayuda global ASCII (compatible cp1252)."""
+    """Global ASCII help (cp1252-compatible)."""
     lines = [
-        "usage: ci2lab [opciones] [comando] [argumentos]",
+        "usage: ci2lab [options] [command] [arguments]",
         "",
-        "CLI local: detecta hardware, recomienda modelos y ejecuta un agente",
-        "con herramientas en terminal (read, grep, bash, edicion supervisada).",
+        "Local CLI: detects hardware, recommends models and runs an agent",
+        "with tools in the terminal (read, grep, bash, supervised editing).",
         "",
-        "Atajo:",
-        '  ci2lab "peticion"                 Ejecuta el agente (equivale a agent)',
+        "Shortcut:",
+        '  ci2lab "request"                  Run the agent (same as agent)',
         "",
-        "Comandos principales:",
-        '  ci2lab agent "peticion"           Una tarea y sale',
-        "  ci2lab chat                       Modo interactivo (REPL)",
-        "  ci2lab menu                       Menu interactivo con selector",
-        "  ci2lab --multi-agent chat         REPL con orquestador de subagentes",
-        "  ci2lab tools qwen:1.8b            Chat sencillo con herramientas",
-        "  ci2lab qwen:1.8b tools            Lo mismo, forma abreviada",
-        "  ci2lab sessions [--json]          Lista sesiones guardadas",
-        "  ci2lab doctor                     Comprueba Python, Ollama y modelos",
-        "  ci2lab hardware [--json]          RAM, GPU, presupuesto de memoria",
-        "  ci2lab models recommend [consulta]",
-        "                                    Modelos recomendados para tu PC",
-        "  ci2lab models install <modelo>    Comandos pull/run/chat para un modelo",
-        "  ci2lab models run <modelo>        Abre el modelo con ollama run",
-        "  ci2lab evals run                  Evaluaciones del arnes (mock)",
-        "  ci2lab permissions summary        Dashboard de permisos / auditoria",
-        "  ci2lab ui                         Interfaz web local",
+        "Main commands:",
+        '  ci2lab agent "request"            One task and exit',
+        "  ci2lab chat                       Interactive mode (REPL)",
+        "  ci2lab --multi-agent chat         REPL with subagent orchestrator",
+        "  ci2lab tools qwen:1.8b            Simple chat with tools",
+        "  ci2lab qwen:1.8b tools            Same thing, short form",
+        "  ci2lab sessions [--json]          List saved sessions",
+        "  ci2lab doctor                     Check Python, Ollama and models",
+        "  ci2lab hardware [--json]          RAM, GPU, memory budget",
+        "  ci2lab models recommend [query]",
+        "                                    Recommended models for your PC",
+        "  ci2lab models install <model>     pull/run/chat commands for a model",
+        "  ci2lab models run <model>         Open the model with ollama run",
+        "  ci2lab evals run                  Harness evaluations (mock)",
+        "  ci2lab permissions summary        Permissions / audit dashboard",
+        "  ci2lab ui                         Local web interface",
         "",
-        "Flags del agente (atajo, agent y chat):",
-        "  --model TAG                       Tag Ollama (ej. qwen2.5-coder:7b)",
-        "  --tool-mode {native,fenced}       native=function calling; fenced=bloques",
-        "  --workspace PATH                  Directorio de trabajo del agente",
-        "  --cwd PATH                        Alias legacy de --workspace",
-        "  --yes                             Auto-confirmar bash (no omite preview)",
-        "  --security-engine ENGINE          Motor: claude_experimental (default),",
+        "Agent flags (shortcut, agent and chat):",
+        "  --model TAG                       Ollama tag (e.g. qwen2.5-coder:7b)",
+        "  --tool-mode {native,fenced}       native=function calling; fenced=blocks",
+        "  --workspace PATH                  Agent working directory",
+        "  --cwd PATH                        Legacy alias of --workspace",
+        "  --yes                             Auto-confirm bash (does not skip preview)",
+        "  --security-engine ENGINE          Engine: claude_experimental (default),",
         "                                    ci2lab (legacy), opencode_experimental (lab)",
-        "  --no-stream                       Desactivar streaming de tokens",
-        "  --max-rounds N                    Maximo de vueltas del agente",
-        "  --multi-agent                     Usar orquestador secuencial de subagentes",
-        "  --session ID                      Reanudar sesion en chat/agent",
-        "  --runs-dir PATH                   Directorio de logs (default: runs)",
-        "  --no-log                          No guardar artefactos en runs/",
+        "  --no-stream                       Disable token streaming",
+        "  --max-rounds N                    Maximum agent rounds",
+        "  --multi-agent                     Use the sequential subagent orchestrator",
+        "  --session ID                      Resume session in chat/agent",
+        "  --runs-dir PATH                   Logs directory (default: runs)",
+        "  --no-log                          Do not save artifacts in runs/",
         "",
-        "Importante: los flags del agente van ANTES del subcomando:",
+        "Important: agent flags go BEFORE the subcommand:",
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
         "",
-        "Opciones por comando:",
-        "  models recommend [--json] [--limit N] [consulta]",
+        "Per-command options:",
+        "  models recommend [--json] [--limit N] [query]",
         "  models install <id|tag> [--json]",
         "  models run <id|tag>",
         "  evals run [--live] [--model TAG] [--task ID] [--tasks-dir PATH]",
         "",
-        "Evals (alternativa):",
-        "  python -m ci2lab.evals.run        Equivalente a ci2lab evals run (mock)",
+        "Evals (alternative):",
+        "  python -m ci2lab.evals.run        Same as ci2lab evals run (mock)",
         "",
-        "Herramientas del agente (dentro de chat/agent):",
+        "Agent tools (inside chat/agent):",
         "  read_document, read_file, ls, glob, grep, edit_file, write_file, notebook_edit,",
         "  bash, git_status, git_diff, todo_write, ask_user, web_search, web_fetch",
-        "  (si pides info live sin URL: web_search primero, luego web_fetch para leer fuentes)",
+        "  (if you ask for live info with no URL: web_search first, then web_fetch to read sources)",
         "",
-        "Config opcional: ci2lab.yaml o ~/.ci2lab/ci2lab.yaml",
+        "Optional config: ci2lab.yaml or ~/.ci2lab/ci2lab.yaml",
         "  (model, workspace, runs_dir, write_tools_enabled, etc.)",
         "",
-        "Ayuda detallada por comando:",
-        "  ci2lab <comando> --help",
+        "Detailed help per command:",
+        "  ci2lab <command> --help",
         "  ci2lab models recommend --help",
         "",
         "Ejemplos modo multiagente:",
@@ -108,25 +107,25 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--model",
         default=None,
-        help="Tag Ollama (override; si no, config o CI2LAB_MODEL)",
+        help="Ollama tag (override; otherwise config or CI2LAB_MODEL)",
     )
     p.add_argument(
         "--tool-mode",
         choices=["native", "fenced"],
         default=None,
-        help="Modo de invocación de herramientas",
+        help="Tool invocation mode",
     )
     p.add_argument(
         "--cwd",
         default=None,
-        help="Directorio de trabajo (legacy; preferir --workspace)",
+        help="Working directory (legacy; prefer --workspace)",
     )
     p.add_argument(
         "--workspace",
         default=None,
-        help="Directorio de trabajo del agente (alias semántico de --cwd)",
+        help="Agent working directory (semantic alias of --cwd)",
     )
-    p.add_argument("--yes", action="store_true", help="Auto-confirmar tools peligrosas")
+    p.add_argument("--yes", action="store_true", help="Auto-confirm dangerous tools")
     from ci2lab.security.engine import CLI_SECURITY_ENGINE_CHOICES
 
     p.add_argument(
@@ -135,75 +134,74 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="ENGINE",
         help=(
-            "Motor de seguridad (default: claude_experimental). "
-            "ci2lab=legacy sin deny/ask/allow; opencode_experimental=lab inseguro."
+            "Security engine (default: claude_experimental). "
+            "ci2lab=legacy without deny/ask/allow; opencode_experimental=unsafe lab."
         ),
     )
-    p.add_argument("--no-stream", action="store_true", help="Desactivar streaming de tokens")
+    p.add_argument("--no-stream", action="store_true", help="Disable token streaming")
     p.add_argument("--max-rounds", type=int, default=None)
     p.add_argument(
         "--multi-agent",
         action="store_true",
-        help="Usar orquestador secuencial de subagentes para una tarea",
+        help="Use the sequential subagent orchestrator for one task",
     )
-    p.add_argument("--session", default=None, help="ID de sesión (nueva si se omite en REPL)")
+    p.add_argument("--session", default=None, help="Session ID (new one if omitted in REPL)")
     p.add_argument(
         "--runs-dir",
         default=None,
-        help="Directorio base para logs de ejecución (default: runs)",
+        help="Base directory for run logs (default: runs)",
     )
     p.add_argument(
         "--no-log",
         action="store_true",
-        help="No guardar artefactos de la ejecución en runs/",
+        help="Do not save run artifacts in runs/",
     )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ci2lab",
-        description="Agente local multi-modelo con arnés agéntico",
+        description="Local multi-model agent with an agentic harness",
     )
     _add_agent_flags(parser)
 
     sub = parser.add_subparsers(dest="command")
 
-    agent_p = sub.add_parser("agent", help="Una petición y salir")
-    agent_p.add_argument("agent_prompt", help="Petición para el agente")
+    agent_p = sub.add_parser("agent", help="One request and exit")
+    agent_p.add_argument("agent_prompt", help="Request for the agent")
     _add_agent_flags(agent_p)
 
-    sub.add_parser("chat", help="Modo interactivo REPL").set_defaults(command="chat")
-    sub.add_parser("menu", help="Menu interactivo con selector").set_defaults(command="menu")
+    sub.add_parser("chat", help="Interactive REPL mode").set_defaults(command="chat")
 
-    sessions_p = sub.add_parser("sessions", help="Listar sesiones guardadas")
+    sessions_p = sub.add_parser("sessions", help="List saved sessions")
     sessions_p.add_argument("--json", action="store_true")
 
-    sub.add_parser("doctor", help="Comprobar entorno")
+    sub.add_parser("doctor", help="Check environment")
 
-    hardware_p = sub.add_parser("hardware", help="Detecta las características del ordenador")
-    hardware_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
+    hardware_p = sub.add_parser("hardware", help="Detect the computer's characteristics")
+    hardware_p.add_argument("--json", action="store_true", help="Show output as JSON")
 
-    models_p = sub.add_parser("models", help="Trabaja con modelos locales")
+    models_p = sub.add_parser("models", help="Work with local models")
     models_sub = models_p.add_subparsers(dest="models_command", required=True)
-    recommend_p = models_sub.add_parser("recommend", help="Recomienda modelos para descargar")
-    recommend_p.add_argument("model_prompt", nargs="*", help="Consulta concreta opcional")
-    recommend_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
-    recommend_p.add_argument("--limit", type=int, default=5, help="Número máximo de modelos")
+    recommend_p = models_sub.add_parser("recommend", help="Recommend models to download")
+    recommend_p.add_argument("model_prompt", nargs="*", help="Optional specific query")
+    recommend_p.add_argument("--json", action="store_true", help="Show output as JSON")
+    recommend_p.add_argument("--limit", type=int, default=5, help="Maximum number of models")
     install_p = models_sub.add_parser(
         "install",
-        help="Muestra el comando para instalar y abrir un modelo permitido",
+        help="Show the command to install and open an allowed model",
     )
-    install_p.add_argument("model", help="ID del catálogo o tag Ollama")
-    install_p.add_argument("--json", action="store_true", help="Muestra la salida en JSON")
+    install_p.add_argument("model", help="Catalog ID or Ollama tag")
+    install_p.add_argument("--json", action="store_true", help="Show output as JSON")
     run_p = models_sub.add_parser(
         "run",
-        help="Abre el modelo en la consola con ollama run",
+        help="Open the model in the console with ollama run",
     )
-    run_p.add_argument("model", help="ID del catálogo o tag Ollama")
+    run_p.add_argument("model", help="Catalog ID or Ollama tag")
 
-    evals_p = sub.add_parser("evals", help="Evaluación práctica del arnés")
+    evals_p = sub.add_parser("evals", help="Practical harness evaluation")
     evals_sub = evals_p.add_subparsers(dest="evals_command")
-    evals_run = evals_sub.add_parser("run", help="Ejecutar tareas de evals/")
+    evals_run = evals_sub.add_parser("run", help="Run tasks from evals/")
     evals_run.add_argument("--tasks-dir", default=None)
     evals_run.add_argument("--task", action="append", dest="task_ids", metavar="ID")
     evals_run.add_argument("--model", default=None)
@@ -213,9 +211,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_permissions_parser(sub)
 
-    ui_p = sub.add_parser("ui", help="Interfaz web local")
-    ui_p.add_argument("--host", default="127.0.0.1", help="Host local")
-    ui_p.add_argument("--port", type=int, default=8765, help="Puerto local")
-    ui_p.add_argument("--no-open", action="store_true", help="No abrir navegador")
+    ui_p = sub.add_parser("ui", help="Local web interface")
+    ui_p.add_argument("--host", default="127.0.0.1", help="Local host")
+    ui_p.add_argument("--port", type=int, default=8765, help="Local port")
+    ui_p.add_argument("--no-open", action="store_true", help="Do not open browser")
 
     return parser

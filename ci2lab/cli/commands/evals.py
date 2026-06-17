@@ -1,4 +1,4 @@
-"""Comando evals."""
+"""evals command."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ def _cmd_evals(args: argparse.Namespace) -> int:
     from ci2lab.evals.run import main as evals_main
 
     if args.evals_command != "run":
-        console.print("Uso: ci2lab evals run [--mock por defecto] [--live]")
+        console.print("Usage: ci2lab evals run [--mock by default] [--live]")
         return 0
     argv: list[str] = []
     if args.tasks_dir:

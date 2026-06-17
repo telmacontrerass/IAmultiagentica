@@ -1,4 +1,4 @@
-"""Comparador automático entre motores de seguridad ci2lab y opencode_experimental."""
+"""Automatic comparator between the ci2lab and opencode_experimental security engines."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class ComparisonCase:
     expected_opencode: dict[str, str]
     """permission_config_key -> expected decision (allow|ask|deny)."""
     expected_claude: dict[str, str] = field(default_factory=dict)
-    """permission_config_key -> expected decision para claude_experimental."""
+    """permission_config_key -> expected decision for claude_experimental."""
     notes: str = ""
     risk_note: str = ""
 
@@ -133,14 +133,14 @@ def _risk_note_for_row(
     if case.notes:
         return case.notes
     if engine == "opencode_experimental" and external_directory:
-        return "opencode puede permitir paths externos segun external_directory"
+        return "opencode may allow external paths depending on external_directory"
     if engine == "claude_experimental" and external_directory:
         return (
-            "claude_experimental ignora external_directory=allow; "
-            "hard workspace bloquea"
+            "claude_experimental ignores external_directory=allow; "
+            "hard workspace blocks"
         )
     if engine == "ci2lab" and external_directory:
-        return "ci2lab bloquea siempre paths fuera del workspace"
+        return "ci2lab always blocks paths outside the workspace"
     return ""
 
 
@@ -189,7 +189,7 @@ def build_comparison_cases(
     return [
         ComparisonCase(
             case_id="read_inside",
-            description="Leer archivo dentro del workspace",
+            description="Read a file inside the workspace",
             tool="read_file",
             args={"path": str(inside)},
             expected_ci2lab="allow",
@@ -198,7 +198,7 @@ def build_comparison_cases(
         ),
         ComparisonCase(
             case_id="read_external_deny",
-            description="Leer fuera del workspace con external_directory=deny",
+            description="Read outside the workspace with external_directory=deny",
             tool="read_file",
             args={"path": str(outside_path)},
             expected_ci2lab="deny",
@@ -206,12 +206,12 @@ def build_comparison_cases(
                 "default_experimental": "deny",
                 "external_deny": "deny",
             },
-            notes="ci2lab siempre bloquea paths externos",
-            risk_note="sandbox-first: ci2lab ignora external_directory allow",
+            notes="ci2lab always blocks external paths",
+            risk_note="sandbox-first: ci2lab ignores external_directory allow",
         ),
         ComparisonCase(
             case_id="read_external_ask",
-            description="Leer fuera del workspace con external_directory=ask",
+            description="Read outside the workspace with external_directory=ask",
             tool="read_file",
             args={"path": str(outside_path)},
             expected_ci2lab="deny",
@@ -219,7 +219,7 @@ def build_comparison_cases(
         ),
         ComparisonCase(
             case_id="read_external_allow",
-            description="Leer fuera del workspace con external_directory=allow",
+            description="Read outside the workspace with external_directory=allow",
             tool="read_file",
             args={"path": str(outside_path)},
             expected_ci2lab="deny",
@@ -228,7 +228,7 @@ def build_comparison_cases(
                 "opencode_external_allowed": "allow",
             },
             notes="sandbox-first vs permission-first",
-            risk_note="INSEGURO: opencode puede leer fuera del workspace",
+            risk_note="UNSAFE: opencode can read outside the workspace",
             expected_claude={
                 "external_allow": "deny",
                 "opencode_external_allowed": "deny",
@@ -237,25 +237,25 @@ def build_comparison_cases(
         ),
         ComparisonCase(
             case_id="preset_external_paranoid",
-            description="Preset opencode_paranoid bloquea path externo",
+            description="Preset opencode_paranoid blocks external path",
             tool="read_file",
             args={"path": str(outside_path)},
             expected_ci2lab="deny",
             expected_opencode={"opencode_paranoid": "deny", "opencode_dev": "deny"},
-            risk_note="presets paranoid/dev: external_directory deny",
+            risk_note="paranoid/dev presets: external_directory deny",
         ),
         ComparisonCase(
             case_id="preset_write_paranoid",
-            description="Preset opencode_paranoid bloquea write_file",
+            description="Preset opencode_paranoid blocks write_file",
             tool="write_file",
             args={"path": "new.txt", "content": "x"},
             expected_ci2lab="ask",
             expected_opencode={"opencode_paranoid": "deny", "opencode_dev": "ask"},
-            risk_note="preset paranoid: edit deny",
+            risk_note="paranoid preset: edit deny",
         ),
         ComparisonCase(
             case_id="read_dotenv",
-            description="Leer .env dentro del workspace",
+            description="Read .env inside the workspace",
             tool="read_file",
             args={"path": str(env_path)},
             expected_ci2lab="deny",
@@ -294,7 +294,7 @@ def build_comparison_cases(
         ),
         ComparisonCase(
             case_id="bash_unmatched",
-            description="Comando bash sin regla especifica",
+            description="bash command with no specific rule",
             tool="bash",
             args={"command": "echo safe"},
             expected_ci2lab="ask",
@@ -303,17 +303,17 @@ def build_comparison_cases(
         ),
         ComparisonCase(
             case_id="yes_approves_ask",
-            description="--yes aprueba ask",
+            description="--yes approves ask",
             tool="bash",
             args={"command": "echo safe"},
             expected_ci2lab="ask",
             expected_opencode={"yes_ask_bash": "allow"},
             expected_claude={"yes_ask_bash": "allow"},
-            notes="auto_confirm convierte ask->allow solo en experimental",
+            notes="auto_confirm turns ask->allow only in experimental",
         ),
         ComparisonCase(
             case_id="yes_not_deny",
-            description="--yes no salta deny",
+            description="--yes does not bypass deny",
             tool="bash",
             args={"command": "rm *"},
             expected_ci2lab="deny",
@@ -575,7 +575,7 @@ def export_comparison_report(
     workspace: Path,
     runs_dir: str = "runs",
 ) -> ComparisonExportResult:
-    """Escribe CSV, Markdown y snapshots de config bajo runs/security_comparison/."""
+    """Write CSV, Markdown and config snapshots under runs/security_comparison/."""
     ws = workspace.resolve()
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
     out_dir = ws / runs_dir / "security_comparison" / stamp
@@ -603,7 +603,7 @@ def export_comparison_report(
 
     ci2lab_snapshot = {
         "engine": "ci2lab",
-        "description": "Motor seguro por defecto (sandbox-first)",
+        "description": "Secure default engine (sandbox-first)",
         "security_profile": "standard",
         "hard_guards": {
             "workspace_confinement": True,
@@ -611,11 +611,11 @@ def export_comparison_report(
             "bash_blocklist": True,
             "security_profiles": True,
         },
-        "note": "root-level permission no afecta a este motor",
+        "note": "root-level permission does not affect this engine",
     }
     opencode_snapshot = {
         "engine": "opencode_experimental",
-        "description": "INSEGURO — replica OpenCode allow/ask/deny para comparar",
+        "description": "UNSAFE — replicates OpenCode allow/ask/deny for comparison",
         "permission": OpenCodePermissionConfig.default_experimental().rules,
         "permission_sources": {
             "precedence": [

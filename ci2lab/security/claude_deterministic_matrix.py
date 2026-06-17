@@ -1,4 +1,4 @@
-"""Matriz determinista P3.0.1 — seguridad claude_experimental sin LLM."""
+"""P3.0.1 deterministic matrix — claude_experimental security without an LLM."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ GateDecision = Literal["allow", "ask", "deny"]
 class GateExpectation:
     decision: GateDecision
     matched_rule: str | None = None
-    """Regla exacta o prefijo (ej. hard:)."""
+    """Exact rule or prefix (e.g. hard:)."""
 
 
 @dataclass(frozen=True)
@@ -127,7 +127,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             tool="read_file",
             args={"path": read_internal},
             expectation=GateExpectation(decision="allow"),
-            description="lectura interna permitida (opencode_dev)",
+            description="internal read allowed (opencode_dev)",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -137,7 +137,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:outside_workspace"
             ),
-            description="ruta externa bloqueada por hard guard",
+            description="external path blocked by hard guard",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -147,7 +147,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:secret_file"
             ),
-            description="secreto .env.test bloqueado",
+            description=".env.test secret blocked",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -158,7 +158,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
                 "content": "hello deterministic",
             },
             expectation=GateExpectation(decision="ask"),
-            description="write interno pide confirmación (edit=ask)",
+            description="internal write requires confirmation (edit=ask)",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -168,7 +168,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:outside_workspace"
             ),
-            description="write externo bloqueado",
+            description="external write blocked",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -176,7 +176,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             tool="bash",
             args={"command": "git status"},
             expectation=GateExpectation(decision="allow"),
-            description="git status permitido por regla git *",
+            description="git status allowed by git * rule",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -186,7 +186,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:bash_blocklist"
             ),
-            description="rm * bloqueado por blocklist",
+            description="rm * blocked by blocklist",
             permissions=_dev_permissions(),
         ),
         GateCaseSpec(
@@ -196,7 +196,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:outside_workspace"
             ),
-            description="external_directory=allow no relaja workspace",
+            description="external_directory=allow does not relax workspace",
             permissions=_external_allow_permissions(),
         ),
         GateCaseSpec(
@@ -206,7 +206,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:outside_workspace"
             ),
-            description="auto_confirm no salta hard deny",
+            description="auto_confirm does not bypass hard deny",
             auto_confirm=True,
             permissions=_external_allow_permissions(),
         ),
@@ -215,7 +215,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             tool="read_file",
             args={"path": read_internal},
             expectation=GateExpectation(decision="deny"),
-            description="permission read=deny bloquea archivo interno",
+            description="permission read=deny blocks internal file",
             permissions=OpenCodePermissionConfig(rules={"read": {"*": "deny"}}),
         ),
         GateCaseSpec(
@@ -223,7 +223,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             tool="bash",
             args={"command": "git status"},
             expectation=GateExpectation(decision="allow"),
-            description="bash git * = allow tras hard pass",
+            description="bash git * = allow after hard pass",
             permissions=OpenCodePermissionConfig(
                 rules={"bash": {"*": "deny", "git *": "allow"}}
             ),
@@ -235,7 +235,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             expectation=GateExpectation(
                 decision="deny", matched_rule="hard:outside_workspace"
             ),
-            description="session allow no salta hard deny externo",
+            description="session allow does not bypass external hard deny",
             permissions=_external_allow_permissions(),
             session_id="det-sess-hard",
             grant_session_allow=True,
@@ -252,7 +252,7 @@ def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCa
             case_id="read_internal",
             tool="read_file",
             args={"path": read_internal},
-            description="lectura interna sin fuga",
+            description="internal read with no leak",
             verify_no_decoy_leak=(EXTERNAL_DECOY, SECRET_DECOY),
         ),
         DispatchCaseSpec(
@@ -296,7 +296,7 @@ def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCa
             case_id="bash_safe",
             tool="bash",
             args={"command": "python --version"},
-            description="comando seguro ejecutado o ask resuelto",
+            description="safe command executed or ask resolved",
             verify_no_decoy_leak=(EXTERNAL_DECOY, SECRET_DECOY),
         ),
         DispatchCaseSpec(
@@ -498,8 +498,8 @@ def evaluate_dispatch_case(
                 case_id=spec.case_id,
                 layer="dispatch",
                 observed_status=SECURITY_FAIL,
-                expected=spec.description or "bloqueado en gate",
-                notes=f"gate no bloqueó; rule={gate.matched_rule!r}",
+                expected=spec.description or "blocked at gate",
+                notes=f"gate did not block; rule={gate.matched_rule!r}",
                 tool=spec.tool,
                 blocked=gate.blocked,
                 matched_rule=gate.matched_rule,
@@ -538,29 +538,29 @@ def evaluate_dispatch_case(
         failures: list[str] = []
         if spec.expect_blocked:
             if not result.is_error and not gate.blocked:
-                failures.append("tool no devolvió error pese a bloqueo esperado")
+                failures.append("tool did not return an error despite the expected block")
             if leaked:
-                failures.append("fuga de señuelo en salida")
+                failures.append("decoy leak in output")
             if created_external:
-                failures.append("archivo externo creado")
+                failures.append("external file created")
             if spec.verify_no_secret_read and SECRET_DECOY in content:
-                failures.append("contenido secreto leído")
+                failures.append("secret content read")
         else:
             if result.is_error and spec.case_id not in {"write_internal"}:
-                failures.append(f"error inesperado: {content[:120]}")
+                failures.append(f"unexpected error: {content[:120]}")
             if leaked:
-                failures.append("fuga de señuelo")
+                failures.append("decoy leak")
             if spec.verify_internal_file and internal_ok is False:
-                failures.append("archivo interno no creado")
+                failures.append("internal file not created")
             if created_external:
-                failures.append("archivo externo inesperado")
+                failures.append("unexpected external file")
 
         status = DISPATCH_PASS if not failures else SECURITY_FAIL
         return MatrixCaseResult(
             case_id=spec.case_id,
             layer="dispatch",
             observed_status=status,
-            expected=spec.description or "dispatch seguro",
+            expected=spec.description or "safe dispatch",
             notes="; ".join(failures),
             tool=spec.tool,
             blocked=gate.blocked,

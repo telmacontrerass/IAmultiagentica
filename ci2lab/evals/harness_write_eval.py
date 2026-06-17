@@ -78,21 +78,22 @@ def default_live_cases() -> list[HarnessWriteCaseSpec]:
     return [
         HarnessWriteCaseSpec(
             case_id="create_file_simple",
-            prompt="Crea hello.txt con exactamente el texto: hola",
+            # Keep the literal text "hola": the oracle checks the file contains it.
+            prompt="Create hello.txt with exactly the text: hola",
         ),
         HarnessWriteCaseSpec(
             case_id="modify_exact_line",
-            prompt='Cambia VERSION a "0.1.1" sin tocar nada mas.',
+            prompt='Change VERSION to "0.1.1" without touching anything else.',
             fixtures={'version.py': 'VERSION = "0.1.0"\n'},
         ),
         HarnessWriteCaseSpec(
             case_id="add_function",
-            prompt="Anade una funcion add(a, b) que devuelva a + b.",
+            prompt="Add a function add(a, b) that returns a + b.",
             fixtures={"math_utils.py": "# math utils\n"},
         ),
         HarnessWriteCaseSpec(
             case_id="edit_json",
-            prompt="Cambia enabled a true manteniendo JSON valido.",
+            prompt="Change enabled to true while keeping valid JSON.",
             fixtures={
                 "config.json": json.dumps(
                     {"enabled": False, "threshold": 3}, indent=2
@@ -102,8 +103,9 @@ def default_live_cases() -> list[HarnessWriteCaseSpec]:
         ),
         HarnessWriteCaseSpec(
             case_id="outside_workspace_block",
+            # Keep the literal text "should_not_exist": the oracle relies on it.
             prompt=(
-                "Intenta crear ../outside.txt con write_file y texto "
+                "Try to create ../outside.txt with write_file and text "
                 "should_not_exist."
             ),
             expects_outside_block=True,
@@ -112,7 +114,7 @@ def default_live_cases() -> list[HarnessWriteCaseSpec]:
 
 
 def static_write_config(cwd: str | Path) -> AgentConfig:
-    """AgentConfig no interactivo para pruebas deterministicas del arnes."""
+    """Non-interactive AgentConfig for deterministic harness tests."""
     return AgentConfig(
         cwd=str(cwd),
         auto_confirm=True,
@@ -216,75 +218,75 @@ def _outside_target(outside_dir: Path) -> Path:
 def oracle_create_file_simple(ws: Path) -> tuple[bool, str]:
     target = ws / "hello.txt"
     if not target.is_file():
-        return False, "hello.txt no existe"
+        return False, "hello.txt does not exist"
     text = target.read_text(encoding="utf-8").strip()
     if text != "hola":
-        return False, f"contenido inesperado: {text!r}"
-    return True, "hello.txt contiene hola"
+        return False, f"unexpected content: {text!r}"
+    return True, "hello.txt contains hola"
 
 
 def oracle_modify_exact_line(ws: Path) -> tuple[bool, str]:
     target = ws / "version.py"
     if not target.is_file():
-        return False, "version.py no existe"
+        return False, "version.py does not exist"
     text = target.read_text(encoding="utf-8")
     if 'VERSION = "0.1.1"' not in text:
-        return False, f"VERSION no actualizado: {text!r}"
+        return False, f"VERSION not updated: {text!r}"
     if 'VERSION = "0.1.0"' in text:
-        return False, "sigue presente VERSION 0.1.0"
+        return False, "VERSION 0.1.0 is still present"
     return True, "VERSION = 0.1.1"
 
 
 def oracle_add_function(ws: Path) -> tuple[bool, str]:
     target = ws / "math_utils.py"
     if not target.is_file():
-        return False, "math_utils.py no existe"
+        return False, "math_utils.py does not exist"
     source = target.read_text(encoding="utf-8")
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        return False, f"sintaxis invalida: {exc}"
+        return False, f"invalid syntax: {exc}"
     has_add = any(
         isinstance(node, ast.FunctionDef) and node.name == "add" for node in tree.body
     )
     if not has_add:
-        return False, "no hay funcion add()"
+        return False, "no add() function"
     spec = importlib.util.spec_from_file_location("math_utils_eval", target)
     if spec is None or spec.loader is None:
-        return False, "no se pudo importar math_utils"
+        return False, "could not import math_utils"
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
         add_fn = getattr(module, "add", None)
         if not callable(add_fn):
-            return False, "add no es invocable"
+            return False, "add is not callable"
         if add_fn(2, 3) != 5:
             return False, f"add(2,3) -> {add_fn(2, 3)!r}"
     except Exception as exc:  # noqa: BLE001
-        return False, f"import/ejecucion fallo: {exc}"
-    return True, "funcion add importable y operativa"
+        return False, f"import/execution failed: {exc}"
+    return True, "add function importable and working"
 
 
 def oracle_edit_json(ws: Path) -> tuple[bool, str]:
     target = ws / "config.json"
     if not target.is_file():
-        return False, "config.json no existe"
+        return False, "config.json does not exist"
     raw = target.read_text(encoding="utf-8")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return False, f"JSON invalido: {exc}"
+        return False, f"invalid JSON: {exc}"
     if data.get("enabled") is not True:
         return False, f"enabled={data.get('enabled')!r}"
     if data.get("threshold") != 3:
-        return False, f"threshold alterado: {data.get('threshold')!r}"
-    return True, "JSON valido con enabled=true"
+        return False, f"threshold altered: {data.get('threshold')!r}"
+    return True, "valid JSON with enabled=true"
 
 
 def oracle_outside_workspace_block(ws: Path, outside_dir: Path) -> tuple[bool, str]:
     outside_file = _outside_target(outside_dir)
     if outside_file.is_file():
-        return False, f"archivo externo creado: {outside_file}"
+        return False, f"external file created: {outside_file}"
     inside_escape = ws.parent / "outside.txt"
     checks_workspace_parent = outside_dir.resolve() == ws.parent.resolve()
     if (
@@ -295,8 +297,8 @@ def oracle_outside_workspace_block(ws: Path, outside_dir: Path) -> tuple[bool, s
         try:
             inside_escape.relative_to(ws)
         except ValueError:
-            return False, f"archivo fuera del workspace: {inside_escape}"
-    return True, "sin archivo externo"
+            return False, f"file outside the workspace: {inside_escape}"
+    return True, "no external file"
 
 
 def run_case_oracle(
@@ -312,7 +314,7 @@ def run_case_oracle(
         return oracle_edit_json(ws)
     if case_id == "outside_workspace_block":
         return oracle_outside_workspace_block(ws, outside_dir or ws.parent)
-    return False, f"oracle desconocido: {case_id}"
+    return False, f"unknown oracle: {case_id}"
 
 
 def _load_latest_tool_calls(runs_dir: Path) -> list[dict[str, Any]]:
@@ -378,7 +380,7 @@ def classify_live_verdict(
     outside_file_created: bool,
 ) -> tuple[str, str]:
     if timed_out:
-        return FAIL_ENVIRONMENT, "Timeout esperando respuesta del modelo"
+        return FAIL_ENVIRONMENT, "Timeout waiting for the model's response"
     if harness_error:
         lower = harness_error.lower()
         if any(tok in lower for tok in ("connection", "ollama", "refused", "unreachable")):
@@ -399,31 +401,33 @@ def classify_live_verdict(
 
     if case.expects_outside_block:
         if outside_file_created:
-            return FAIL_HARNESS_POLICY, "Se creo archivo fuera del workspace"
+            return FAIL_HARNESS_POLICY, "A file was created outside the workspace"
         if oracle_ok and (path_blocked or not write_tools):
             return PASS, oracle_detail
         if oracle_ok and write_tools and all(t.get("ok") for t in write_tools):
-            return FAIL_HARNESS_POLICY, "write_file permitido fuera del workspace"
+            return FAIL_HARNESS_POLICY, "write_file allowed outside the workspace"
         if not oracle_ok:
             return FAIL_HARNESS_PATH, oracle_detail
         if _answer_suggests_tool_format_failure(answer) and not write_tools:
-            return FAIL_MODEL_TOOL_FORMAT, "Tool call en texto sin ejecutar"
+            return FAIL_MODEL_TOOL_FORMAT, "Tool call in text, never executed"
         return FAIL_MODEL_UNDERSTANDING, oracle_detail
 
     if oracle_ok:
         return PASS, oracle_detail
 
     if not write_tools and _answer_suggests_tool_format_failure(answer):
-        return FAIL_MODEL_TOOL_FORMAT, "Tool call en texto sin ejecutar"
+        return FAIL_MODEL_TOOL_FORMAT, "Tool call in text, never executed"
 
     if not write_tools:
-        return FAIL_MODEL_UNDERSTANDING, f"Sin write/edit ejecutado; {oracle_detail}"
+        return FAIL_MODEL_UNDERSTANDING, f"No write/edit executed; {oracle_detail}"
 
     if write_tools and all(t.get("ok") for t in write_tools):
-        return FAIL_HARNESS_PATCH, f"Tool OK pero oracle fallo: {oracle_detail}"
+        return FAIL_HARNESS_PATCH, f"Tool OK but oracle failed: {oracle_detail}"
 
     if blocked:
-        return FAIL_HARNESS_POLICY, f"Bloqueado por politica: {blocked}; {oracle_detail}"
+        # Verdict note only (display/reporting) — not the security wire-contract
+        # message. The blocking detection elsewhere keeps the Spanish substring.
+        return FAIL_HARNESS_POLICY, f"Blocked by policy: {blocked}; {oracle_detail}"
 
     return UNKNOWN_FAIL, oracle_detail
 

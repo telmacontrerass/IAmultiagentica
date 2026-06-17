@@ -1,4 +1,4 @@
-"""Políticas de seguridad para ejecución bash."""
+"""Security policies for bash execution."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ import re
 
 from ci2lab.harness.tools.bash_workspace import check_bash_workspace_blocked
 
-# (patrón, descripción corta para el usuario)
+# (pattern, short description for the user)
 _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\brm\s+(-[^\s]*f|-\w*f\w*|\S+\s+-rf\b)", re.I), "rm -rf / eliminación recursiva forzada"),
-    (re.compile(r"\bdel\s+/(?:s|f|q)\b", re.I), "del /s, del /f o del /q"),
-    (re.compile(r"\bformat\s+[a-z]:", re.I), "format de disco"),
+    (re.compile(r"\brm\s+(-[^\s]*f|-\w*f\w*|\S+\s+-rf\b)", re.I), "rm -rf / forced recursive deletion"),
+    (re.compile(r"\bdel\s+/(?:s|f|q)\b", re.I), "del /s, del /f, or del /q"),
+    (re.compile(r"\bformat\s+[a-z]:", re.I), "disk format"),
     (re.compile(r"\bshutdown\b", re.I), "shutdown"),
     (re.compile(r"\breboot\b", re.I), "reboot"),
-    (re.compile(r"\bcurl\b[^\n|]*\|\s*(ba)?sh\b", re.I), "curl | sh (pipe a shell)"),
-    (re.compile(r"\bwget\b[^\n|]*\|\s*(ba)?sh\b", re.I), "wget | sh (pipe a shell)"),
+    (re.compile(r"\bcurl\b[^\n|]*\|\s*(ba)?sh\b", re.I), "curl | sh (pipe to a shell)"),
+    (re.compile(r"\bwget\b[^\n|]*\|\s*(ba)?sh\b", re.I), "wget | sh (pipe to a shell)"),
     (
         re.compile(
             r"invoke-webrequest\b[^\n|]*\|\s*invoke-expression\b|"
@@ -29,31 +29,31 @@ _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
             r"set-executionpolicy\s+bypass.*(invoke-webrequest|iwr|curl|wget|download)",
             re.I | re.S,
         ),
-        "Set-ExecutionPolicy Bypass con descarga/ejecución",
+        "Set-ExecutionPolicy Bypass with download/execution",
     ),
     (
         re.compile(
             r"(invoke-webrequest|iwr|curl|wget).{0,200}set-executionpolicy\s+bypass",
             re.I | re.S,
         ),
-        "descarga combinada con Set-ExecutionPolicy Bypass",
+        "download combined with Set-ExecutionPolicy Bypass",
     ),
     (re.compile(r"\binvoke-expression\b", re.I), "Invoke-Expression"),
     (re.compile(r"\biex\b", re.I), "iex (Invoke-Expression)"),
-    (re.compile(r"\brm\s+\*"), "rm * (eliminacion con comodin)"),
-    (re.compile(r"\bdel\s+\*", re.I), "del * (eliminacion con comodin)"),
+    (re.compile(r"\brm\s+\*"), "rm * (wildcard deletion)"),
+    (re.compile(r"\bdel\s+\*", re.I), "del * (wildcard deletion)"),
     (
         re.compile(r"\bremove-item\s+\*", re.I),
-        "Remove-Item * (eliminacion con comodin)",
+        "Remove-Item * (wildcard deletion)",
     ),
 ]
 
 
 def check_bash_blocked(command: str, *, cwd: str | None = None) -> str | None:
-    """Devuelve la descripción de la regla violada, o None si está permitido.
+    """Return the description of the violated rule, or None if it is allowed.
 
-    La blocklist se aplica siempre, incluso con --yes.
-    Si se pasa cwd, también se validan rutas respecto al workspace.
+    The blocklist is always applied, even with --yes.
+    If cwd is passed, paths are also validated against the workspace.
     """
     if not command or not command.strip():
         return None

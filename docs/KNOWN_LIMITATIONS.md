@@ -1,63 +1,69 @@
-# Limitaciones conocidas — Ci2Lab
+# Known limitations — Ci2Lab
 
-Última revisión: 2026-06-12.
+## Pipeline ↔ router integration
 
-## Integración pipeline ↔ router
+| Limitation | Detail |
+|------------|--------|
+| The router does not auto-select a model in chat | `ci2lab models recommend` suggests; the user picks with `--model`. |
+| `tool_mode` from the catalog | `prepare_session()` + `build_model_selection()` apply the catalog mode; override with `--tool-mode` or yaml. |
+| Uncataloged tags | Unknown models default to `tool_mode: fenced`. |
+| No auto-pull | `runtime/ensure.py` does not exist; the user must run `ollama pull`. |
+| `ci2lab agent --session` without history | `--session` saves but does not load previous messages (`chat --session` and the UI do). |
+| `resolve_model()` unused in production | Optional API; chat/agent/UI use `build_model_selection()`. |
 
-| Limitación | Detalle |
-|------------|---------|
-| Router no auto-selecciona modelo en chat | `ci2lab models recommend` sugiere; el usuario elige con `--model`. |
-| `tool_mode` desde catálogo | `prepare_session()` + `build_model_selection()` aplican el modo del catálogo; override con `--tool-mode` o yaml. |
-| Tags no catalogados | Modelos desconocidos usan `tool_mode: fenced` por defecto. |
-| Sin auto-pull | `runtime/ensure.py` no existe; el usuario debe hacer `ollama pull`. |
-| `ci2lab agent --session` sin historial | `--session` guarda pero no carga mensajes previos (sí `chat --session` y la UI). |
-| `resolve_model()` sin uso en producción | API opcional; chat/agent/UI usan `build_model_selection()`. |
+## Out of scope (for now)
 
-## Fuera de alcance (aún)
-
-| Área | Estado |
+| Area | Status |
 |------|--------|
-| Runtime automático (`ollama pull` / ensure) | No implementado |
-| Git snapshot / rollback / auto-commit | No implementado |
-| Routing multi-modelo por turno | No implementado |
-| Benchmark live por modelo del catálogo | Solo scores estáticos en `models.json` |
-| Memoria vectorial entre sesiones | No implementado |
-| Hooks extensibles tipo Claude Code | No implementado |
+| Automatic runtime (`ollama pull` / ensure) | Not implemented |
+| Git snapshot / rollback / auto-commit | Not implemented |
+| Per-turn multi-model routing | Not implemented |
+| Live per-model benchmark of the catalog | Static scores in `models.json` only |
+| Vector memory across sessions | Not implemented |
+| Claude-Code-style extensible hooks | Not implemented |
 
-## Integrado
+## Integrated
 
-| Área | Estado |
+| Area | Status |
 |------|--------|
-| MCP cliente (stdio) | ✅ `.ci2lab/mcp.json` |
-| Skills workspace | ✅ `.ci2lab/skills/*/SKILL.md` |
-| Project memory | ✅ `CI2LAB.md`, `AGENTS.md` |
-| UI web local | ✅ `ci2lab ui` |
-| Compactación de contexto | ✅ `harness/context/` |
-| Motores de seguridad | ✅ `ci2lab/security/` (`ci2lab`, `claude_experimental`, …) |
-| 22 herramientas built-in | ✅ `harness/tools/schemas.py` |
+| MCP client (stdio) | Done — `.ci2lab/mcp.json` |
+| Workspace skills | Done — `.ci2lab/skills/*/SKILL.md` |
+| Project memory | Done — `CI2LAB.md`, `AGENTS.md` |
+| Local web UI | Done — `ci2lab ui` |
+| Context compaction | Done — `harness/context/` |
+| Security engines | Done — `ci2lab/security/` (`ci2lab`, `claude_experimental`, …) |
+| 25 built-in tools | Done — `harness/tools/schemas_parts/registry.py` |
 
-## Seguridad y sandbox
+## Localization
 
-Ver [`SECURITY_POLICY.md`](SECURITY_POLICY.md).
+| Limitation | Detail |
+|------------|--------|
+| Web frontend still in Spanish | The agent system prompt, the terminal/CLI UI, and tool outputs are English, but the web UI page text (`ci2lab/ui/static/index.html`, `app.js`) is still Spanish. |
+| A few tool output strings still in Spanish | Some filesystem tool messages (e.g. `grep` "no matches" notices) remain Spanish; the agent and CLI surfaces are otherwise English. |
 
-| Limitación | Detalle |
-|------------|---------|
-| Sin sandbox OS/contenedor | Confirmación + blocklist; no seccomp ni red aislada |
-| Rutas | `resolve_path()` confina al workspace |
-| Archivos sensibles | Heurística en `secret_files`; no clasificador perfecto |
-| `bash` con `shell=True` | `--yes` no omite blocklist de workspace |
+## Security and sandbox
 
-## Operación del harness
+See [`SECURITY_POLICY.md`](SECURITY_POLICY.md).
 
-| Limitación | Detalle |
-|------------|---------|
-| Parser heterogéneo | Modelos locales pueden imprimir tools como texto |
-| Compactación | Historial antiguo se resume o recorta |
-| Trim grosero | ~4 caracteres/token |
-| REPL / sesiones | `~/.ci2lab/sessions/`; reanudar con `chat --session ID` |
-| CLI flags | Flags del agente van **antes** del subcomando |
-| Entrada terminal | `prompt_toolkit` en REPL/ask_user; confirmaciones usan `input()` |
+| Limitation | Detail |
+|------------|--------|
+| No OS/container sandbox | Confirmation + blocklist; no seccomp or isolated network |
+| Paths | `resolve_path()` confines access to the workspace |
+| Sensitive files | Heuristic in `secret_files`; not a perfect classifier |
+| `bash` with `shell=True` | `--yes` does not skip the workspace blocklist |
+
+## Harness operation
+
+| Limitation | Detail |
+|------------|--------|
+| Heterogeneous parser | Local models may print tool calls as plain text |
+| Task-agnostic loop | The loop has no per-topic special cases; robustness comes from generic mechanisms (loop detection, error-streak cutoff, workspace-policy handling, edit follow-ups, `web_fetch`→`web_search` redirect, and a few recovery nudges). |
+| Compaction | Old history is summarized or trimmed |
+| Coarse trim | ~4 characters/token |
+| REPL / sessions | `~/.ci2lab/sessions/`; resume with `chat --session ID` |
+| CLI flags | Agent flags go **before** the subcommand |
+| Terminal input | `prompt_toolkit` in REPL/ask_user; confirmations use `input()` |
 
 ## Tests
 
-Ejecutar `python -m pytest -q` (560+ tests). Cubre harness, tools, MCP, skills, router, CLI y security.
+Run `python -m pytest -q`. Covers the harness, tools, MCP, skills, router, CLI, and security.

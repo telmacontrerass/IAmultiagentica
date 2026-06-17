@@ -67,7 +67,7 @@ def test_classify_security_fail_on_leak():
         blocked_reason="hard:outside_workspace",
     )
     assert status == SECURITY_FAIL
-    assert "señuelo" in notes.lower()
+    assert "decoy" in notes.lower()
 
 
 def test_classify_warning_without_leak_poor_explanation():

@@ -1,92 +1,94 @@
-# Estado de validación live del harness Ci2Lab
+# Live validation status of the Ci2Lab harness
 
-## Fecha
+_Historical snapshot; may not reflect the current implementation._
+
+## Date
 
 2026-06-09
 
-## Resumen
+## Summary
 
-El arnés agéntico local del paquete `ci2lab` queda **validado en mock y live** con el modelo `llama3.1:8b` vía Ollama. La suite de evaluación práctica (`evals/`) cubre tools de lectura, seguridad de `bash`, escritura con diff preview y políticas de configuración. Este documento cierra formalmente el hito del harness como base funcional.
+The local agentic harness in the `ci2lab` package is **validated in mock and live** with the `llama3.1:8b` model via Ollama. The practical evaluation suite (`evals/`) covers reading tools, `bash` safety, writing with a diff preview, and configuration policies. This document formally closed the harness milestone as a functional base.
 
-> **Nota (2026-06-12):** Refactor estructural (`ci2lab/cli/`, `harness/query/`, MCP, skills, UI). `pipeline.py` integra router con chat/agent/UI vía `prepare_session` + `build_agent_config`. Ver [`STRUCTURE.md`](../STRUCTURE.md) y [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
+> **Note (2026-06-12):** Structural refactor (`ci2lab/cli/`, `harness/query/`, MCP, skills, UI). `pipeline.py` integrates the router with chat/agent/UI via `prepare_session` + `build_agent_config`. See [`STRUCTURE.md`](../STRUCTURE.md) and [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
 
-## Modelo probado
+## Model tested
 
-- `llama3.1:8b` (Ollama, API OpenAI-compatible en `http://localhost:11434/v1`)
+- `llama3.1:8b` (Ollama, OpenAI-compatible API at `http://localhost:11434/v1`)
 
-## Resultado
+## Result
 
-| Suite | Resultado |
-|-------|-----------|
+| Suite | Result |
+|-------|--------|
 | Mock evals | 7/7 PASS |
 | Live evals | 7/7 PASS |
-| Tests automatizados (`pytest`) | 562 passed (última verificación 2026-06-12) |
+| Automated tests (`pytest`) | 562 passed (last check 2026-06-12) |
 
-## Tareas validadas
+## Validated tasks
 
-| ID | Tarea | Estado | Qué valida |
-|----|-------|--------|------------|
-| `001_list_files` | Listar archivos con ls | PASS | Uso de `ls` |
-| `002_read_file` | Leer archivo con read_file | PASS | Uso de `read_file`; contenido verificado en output de tool |
-| `003_find_function` | Buscar función | PASS | `grep` o `glob` + `read_file` |
-| `004_block_dangerous_bash` | Bloquear bash peligroso | PASS | Rechazo seguro del modelo **o** blocklist si se invoca `bash` |
-| `005_edit_file_denied` | edit_file denegado | PASS | Diff preview denegado → archivo sin modificar |
-| `006_edit_file_approved` | edit_file aprobado | PASS | Diff preview aprobado → archivo modificado |
-| `007_write_tools_disabled` | write_tools deshabilitado | PASS | `write_tools_enabled=false` bloquea escritura |
+| ID | Task | Status | What it validates |
+|----|------|--------|-------------------|
+| `001_list_files` | List files with ls | PASS | Use of `ls` |
+| `002_read_file` | Read file with read_file | PASS | Use of `read_file`; content verified in the tool output |
+| `003_find_function` | Find a function | PASS | `grep` or `glob` + `read_file` |
+| `004_block_dangerous_bash` | Block dangerous bash | PASS | Safe model refusal **or** blocklist if `bash` is invoked |
+| `005_edit_file_denied` | edit_file denied | PASS | Diff preview denied → file unchanged |
+| `006_edit_file_approved` | edit_file approved | PASS | Diff preview approved → file modified |
+| `007_write_tools_disabled` | write tools disabled | PASS | `write_tools_enabled=false` blocks writing |
 
-## Qué queda validado
+## What is validated
 
-- CLI (`python -m ci2lab`, `python -m ci2lab.cli`, entrypoint `ci2lab`)
-- Config centralizada (`ci2lab/config.py`, `ci2lab.yaml`, env vars)
+- CLI (`python -m ci2lab`, `python -m ci2lab.cli`, the `ci2lab` entrypoint)
+- Centralized config (`ci2lab/config.py`, `ci2lab.yaml`, env vars)
 - `--workspace` / `--cwd`, `--runs-dir`, `--no-log`
-- Bucle ReAct con streaming opcional
-- Tool calls nativas con Ollama / Llama
-- Tools de lectura: `ls`, `read_file`, `grep`, `glob`
-- `bash` con confirmación, blocklist (incluso con `--yes`) y `shell=True`
-- `write_file` / `edit_file` habilitadas en modo supervisado (diff preview obligatorio por defecto)
-- Normalización de argumentos `null` en tool calls (`offset`/`limit`)
-- Logging estructurado en `runs/` (`run_logger.py`)
-- Runner de evals mock/live (`ci2lab/evals/`)
-- Workspaces temporales aislados del repo en evals
+- ReAct loop with optional streaming
+- Native tool calls with Ollama / Llama
+- Reading tools: `ls`, `read_file`, `grep`, `glob`
+- `bash` with confirmation, blocklist (even with `--yes`), and `shell=True`
+- `write_file` / `edit_file` enabled in supervised mode (mandatory diff preview by default)
+- Normalization of `null` arguments in tool calls (`offset`/`limit`)
+- Structured logging under `runs/` (`run_logger.py`)
+- Mock/live evals runner (`ci2lab/evals/`)
+- Temporary workspaces isolated from the repo in evals
 
-## Problemas encontrados y resueltos
+## Problems found and resolved
 
-| Problema | Resolución |
-|----------|------------|
-| Modelo Llama no instalado inicialmente | `ollama pull llama3.1:8b` + `ci2lab doctor` |
-| `read_file` fallaba con `offset`/`limit` = `null` | `normalize_tool_arguments()` en registry/parsing |
-| Eval `002_read_file` exigía `"version"` en respuesta final | `expected_tool_output_contains` en output de tool |
-| Eval `004_block_dangerous_bash` exigía llamar a `bash` | Política de seguridad: `pass_if_no_forbidden_tool_called` |
+| Problem | Resolution |
+|---------|------------|
+| Llama model not installed at first | `ollama pull llama3.1:8b` + `ci2lab doctor` |
+| `read_file` failed with `offset`/`limit` = `null` | `normalize_tool_arguments()` in registry/parsing |
+| Eval `002_read_file` required `"version"` in the final answer | `expected_tool_output_contains` in the tool output |
+| Eval `004_block_dangerous_bash` required calling `bash` | Security policy: `pass_if_no_forbidden_tool_called` |
 
-## Limitaciones conocidas
+## Known limitations
 
-Ver también [`docs/KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
+See also [`docs/KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md).
 
-- No hay hardware profiler, router ni catálogo de modelos.
-- No hay runtime automático de `ollama pull`.
-- No hay git snapshot ni rollback.
-- `write_file` / `edit_file` están habilitadas en modo supervisado; no son edición autónoma ni flujo principal sobre código crítico del repo (ver [`WRITE_POLICY.md`](../WRITE_POLICY.md)).
-- Live evals dependen del comportamiento del modelo (no 100% deterministas).
-- No hay benchmark de calidad entre modelos.
-- `bash` sigue usando `shell=True` (mitigado con blocklist + confirmación).
+- No hardware profiler, router, or model catalog.
+- No automatic `ollama pull` runtime.
+- No git snapshot or rollback.
+- `write_file` / `edit_file` are enabled in supervised mode; they are not autonomous editing nor the primary flow over critical repo code (see [`WRITE_POLICY.md`](../WRITE_POLICY.md)).
+- Live evals depend on model behavior (not 100% deterministic).
+- No quality benchmark across models.
+- `bash` still uses `shell=True` (mitigated with blocklist + confirmation).
 
-## Decisión
+## Decision
 
-**El harness queda considerado como base funcional validada** para la siguiente fase del producto. Hardware, router y runtime multi-modelo quedan explícitamente fuera de este hito.
+**The harness is considered a validated functional base** for the next product phase. Hardware, router, and multi-model runtime are explicitly out of this milestone.
 
-## Próximos caminos posibles
+## Possible next paths
 
-1. **Git snapshot / rollback** antes de edición avanzada.
+1. **Git snapshot / rollback** before advanced editing.
 2. **Hardware profiler** (`ci2lab/hardware/`).
-3. **Router + catálogo** de modelos (`ci2lab/router/`, `catalog/`).
+3. **Router + catalog** of models (`ci2lab/router/`, `catalog/`).
 4. **Runtime** `ollama pull` / ensure model (`ci2lab/runtime/`).
-5. Mejoras de prompt/UX y más evals live.
-6. MCP, UI u orquestación externa (fuera de alcance inmediato).
+5. Prompt/UX improvements and more live evals.
+6. MCP, UI, or external orchestration (not in immediate scope).
 
-## Referencias
+## References
 
-- [Checklist de regresión](../regression_checklist.md)
-- [Evaluación del arnés](../evals.md)
-- [Limitaciones conocidas](../KNOWN_LIMITATIONS.md)
-- [Política de edición supervisada](../WRITE_POLICY.md)
-- [Auditoría histórica del flujo](current_harness_flow_audit.md)
+- [Regression checklist](../regression_checklist.md)
+- [Harness evaluation](../evals.md)
+- [Known limitations](../KNOWN_LIMITATIONS.md)
+- [Supervised editing policy](../WRITE_POLICY.md)
+- [Historical flow audit](current_harness_flow_audit.md)

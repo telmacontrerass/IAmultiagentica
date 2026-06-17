@@ -1,4 +1,4 @@
-"""Ejecución de tareas de evaluación."""
+"""Evaluation task execution."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def run_single_task(
                 CheckResult(
                     name="mock_responses",
                     passed=False,
-                    detail="La tarea no define mock_responses",
+                    detail="The task does not define mock_responses",
                 )
             ],
             tools_used=[],
@@ -132,13 +132,13 @@ def run_single_task(
             final_answer="",
             workspace=str(workspace),
             run_log_dir=None,
-            error="mock requerido pero sin mock_responses",
+            error="mock required but no mock_responses",
         )
 
     final_answer = ""
     error: str | None = None
 
-    # Silencia toda la salida del agente durante la tarea (consola compartida).
+    # Silence all agent output during the task (shared console).
     quiet_console = patch("ci2lab.console.console.print")
     try:
         if use_mock:
@@ -196,7 +196,7 @@ def run_eval_suite(
 
     tasks = load_tasks(tasks_dir, task_ids=task_ids)
     if not tasks:
-        raise ValueError("No hay tareas para ejecutar")
+        raise ValueError("No tasks to run")
 
     model_tag = model or DEFAULT_MODEL
     started = datetime.now()
@@ -252,9 +252,9 @@ def run_eval_suite(
 
 
 def print_summary_table(results: list[TaskEvalResult]) -> None:
-    table = Table(title="Resultados eval")
-    table.add_column("Tarea")
-    table.add_column("Estado")
+    table = Table(title="Eval results")
+    table.add_column("Task")
+    table.add_column("Status")
     table.add_column("Tools")
     for row in results:
         state = "PASS" if row.passed else "FAIL"

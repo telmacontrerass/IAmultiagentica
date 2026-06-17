@@ -1,4 +1,4 @@
-"""Import/export y validación de configs estilo OpenCode (EXPERIMENTAL)."""
+"""Import/export and validation of OpenCode-style configs (EXPERIMENTAL)."""
 
 from __future__ import annotations
 
@@ -27,14 +27,14 @@ _SUPPORTED_OPENCODE_KEYS = frozenset({
 })
 
 _EXTERNAL_ALLOW_WARNING = (
-    "INSEGURO: external_directory=allow permite acceso fuera del workspace "
-    "en opencode_experimental"
+    "UNSAFE: external_directory=allow permits access outside the workspace "
+    "in opencode_experimental"
 )
 
 
 @dataclass(frozen=True)
 class OpenCodeConfigBundle:
-    """Resultado de cargar y normalizar una config OpenCode/CI2Lab."""
+    """Result of loading and normalizing an OpenCode/CI2Lab config."""
 
     config_source: str
     raw_config: dict[str, Any]
@@ -48,27 +48,27 @@ class OpenCodeConfigBundle:
 
 
 def load_opencode_config(path: str | Path) -> dict[str, Any]:
-    """Carga JSON desde disco. Raises ValueError/FileNotFoundError si inválido."""
+    """Load JSON from disk. Raises ValueError/FileNotFoundError if invalid."""
     raw_path = Path(path).expanduser().resolve()
     if not raw_path.is_file():
-        raise FileNotFoundError(f"No existe el archivo de configuración: {raw_path}")
+        raise FileNotFoundError(f"Configuration file does not exist: {raw_path}")
     try:
         data = json.loads(raw_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"JSON inválido en {raw_path}: {exc}") from exc
+        raise ValueError(f"Invalid JSON in {raw_path}: {exc}") from exc
     if not isinstance(data, dict):
-        raise ValueError(f"La configuración debe ser un objeto JSON: {raw_path}")
+        raise ValueError(f"The configuration must be a JSON object: {raw_path}")
     return data
 
 
 def extract_opencode_permission(config: dict[str, Any]) -> dict[str, Any]:
     """
-    Extrae permission desde root-level o security.permission.
+    Extract permission from root-level or security.permission.
 
-    Precedencia: security.permission > permission (root).
+    Precedence: security.permission > permission (root).
     """
     if not isinstance(config, dict):
-        raise ValueError("config debe ser un objeto JSON.")
+        raise ValueError("config must be a JSON object.")
 
     security = config.get("security")
     if isinstance(security, dict):
@@ -84,7 +84,7 @@ def extract_opencode_permission(config: dict[str, Any]) -> dict[str, Any]:
         return dict(config)
 
     raise ValueError(
-        "No se encontró permission: use clave root 'permission' o 'security.permission'."
+        "permission not found: use root key 'permission' or 'security.permission'."
     )
 
 
@@ -96,14 +96,14 @@ def _looks_like_permission_map(data: dict[str, Any]) -> bool:
 def _normalize_action(value: str) -> str:
     action = value.strip().lower()
     if action not in _VALID_ACTIONS:
-        raise ValueError(f"acción de permiso inválida: {value!r} (use allow|ask|deny)")
+        raise ValueError(f"invalid permission action: {value!r} (use allow|ask|deny)")
     return action
 
 
 def normalize_opencode_permission(permission: dict[str, Any]) -> dict[str, Any]:
-    """Normaliza valores allow/ask/deny y external_directory escalar."""
+    """Normalize allow/ask/deny values and scalar external_directory."""
     if not isinstance(permission, dict):
-        raise ValueError("permission debe ser un objeto JSON.")
+        raise ValueError("permission must be a JSON object.")
     return _normalize_permission_node(permission)
 
 
@@ -116,15 +116,15 @@ def _normalize_permission_node(node: dict[str, Any]) -> dict[str, Any]:
             normalized[key] = _normalize_action(value)
         else:
             raise ValueError(
-                f"valor inválido en permission[{key!r}]: debe ser string o objeto"
+                f"invalid value in permission[{key!r}]: must be a string or object"
             )
     return normalized
 
 
 def validate_opencode_permission(permission: dict[str, Any]) -> None:
-    """Valida tipos y acciones. Raises ValueError si inválido."""
+    """Validate types and actions. Raises ValueError if invalid."""
     if not isinstance(permission, dict):
-        raise ValueError("permission debe ser un objeto JSON.")
+        raise ValueError("permission must be a JSON object.")
     _validate_permission_node(permission, path="permission")
 
 
@@ -136,11 +136,11 @@ def _validate_permission_node(node: dict[str, Any], *, path: str) -> None:
         elif isinstance(value, str):
             _normalize_action(value)
         else:
-            raise ValueError(f"{current}: valor debe ser string (allow|ask|deny) u objeto")
+            raise ValueError(f"{current}: value must be a string (allow|ask|deny) or object")
 
 
 def detect_unsupported_opencode_tools(permission: dict[str, Any]) -> list[str]:
-    """Tools OpenCode no mapeadas en CI2Lab (warning, no error)."""
+    """OpenCode tools not mapped in CI2Lab (warning, not error)."""
     unsupported: list[str] = []
     for key in permission:
         if key not in _SUPPORTED_OPENCODE_KEYS:
@@ -153,7 +153,7 @@ def collect_permission_warnings(permission: dict[str, Any]) -> list[str]:
     unsupported = detect_unsupported_opencode_tools(permission)
     if unsupported:
         warnings.append(
-            "Tools OpenCode no soportadas en CI2Lab (ignoradas): "
+            "OpenCode tools not supported in CI2Lab (ignored): "
             + ", ".join(unsupported)
         )
     if _external_directory_allows(permission):
@@ -180,7 +180,7 @@ def load_opencode_config_bundle(
     *,
     config_source: str | None = None,
 ) -> OpenCodeConfigBundle:
-    """Carga, extrae, normaliza y valida permission desde archivo JSON."""
+    """Load, extract, normalize and validate permission from a JSON file."""
     raw_path = Path(path).expanduser().resolve()
     raw = load_opencode_config(raw_path)
     permission = extract_opencode_permission(raw)
@@ -255,7 +255,7 @@ def write_json_output(
     output: Path | None,
     workspace: Path | None = None,
 ) -> None:
-    """Escribe JSON a stdout o archivo (--output dentro de workspace si relativo)."""
+    """Write JSON to stdout or file (--output inside workspace if relative)."""
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     if output is None:
         print(text, end="")

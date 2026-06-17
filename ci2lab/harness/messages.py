@@ -1,4 +1,4 @@
-"""Historial de mensajes para el bucle agéntico."""
+"""Message history for the agentic loop."""
 
 from __future__ import annotations
 

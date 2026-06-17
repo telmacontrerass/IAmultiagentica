@@ -1,4 +1,4 @@
-"""Prompt interactivo de aprobación estilo Claude/OpenCode (motores permission-layer)."""
+"""Interactive Claude/OpenCode-style approval prompt (permission-layer engines)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class ApprovalChoice(str, Enum):
 
 @dataclass(frozen=True)
 class OpenCodeApprovalDecision:
-    """Contexto mostrado al usuario cuando permission devuelve ask."""
+    """Context shown to the user when permission returns ask."""
 
     tool_name: str
     target_summary: str
@@ -71,7 +71,7 @@ def parse_approval_choice(raw: str) -> ApprovalChoice:
     key = raw.strip().lower()
     if key in _CHOICE_ALIASES:
         return _CHOICE_ALIASES[key]
-    raise ValueError(f"opción de aprobación no reconocida: {raw!r}")
+    raise ValueError(f"unrecognized approval option: {raw!r}")
 
 
 def prompt_opencode_approval(
@@ -82,13 +82,13 @@ def prompt_opencode_approval(
     output_func: OutputFunc = print,
 ) -> ApprovalChoice:
     """
-    Muestra menú OpenCode-style y devuelve la elección del usuario.
+    Show an OpenCode-style menu and return the user's choice.
 
-    Opciones: allow once, allow session, deny once, abort.
+    Options: allow once, allow session, deny once, abort.
     """
     engine = normalize_security_engine(security_engine)
     output_func("")
-    output_func(f"[{engine}] Permiso requerido (ask)")
+    output_func(f"[{engine}] Permission required (ask)")
     output_func(f"  tool: {decision.tool_name}")
     output_func(f"  target: {decision.target_summary}")
     if decision.matched_rule:
@@ -127,14 +127,14 @@ def confirm_opencode_ask(
     output_func: OutputFunc = print,
 ) -> OpenCodeConfirmResult:
     """
-    Resuelve un ask permission-layer con prompt o auto_confirm.
+    Resolve a permission-layer ask with a prompt or auto_confirm.
 
-    Aplica a opencode_experimental y claude_experimental.
+    Applies to opencode_experimental and claude_experimental.
     """
     engine = normalize_security_engine(config.security_engine)
     if not uses_permission_layer(engine):
         raise ValueError(
-            "confirm_opencode_ask solo aplica a motores con capa permission "
+            "confirm_opencode_ask only applies to engines with a permission layer "
             "(opencode_experimental, claude_experimental)"
         )
 
@@ -180,7 +180,7 @@ def confirm_opencode_ask(
             proceed=False,
             choice=choice,
             reason="user_abort",
-            message=f"Ejecución cancelada por el usuario (`{tool_name}`).",
+            message=f"Execution cancelled by the user (`{tool_name}`).",
         )
 
     if choice is ApprovalChoice.DENY_ONCE:
@@ -190,7 +190,7 @@ def confirm_opencode_ask(
             proceed=False,
             choice=choice,
             reason="user_deny_once",
-            message=f"Denegado una vez (`{tool_name}`).",
+            message=f"Denied once (`{tool_name}`).",
             session_scope_granted="deny_once",
         )
 
@@ -204,7 +204,7 @@ def confirm_opencode_ask(
             session_scope_granted="allow_session",
         )
 
-    # ALLOW_ONCE: solo esta llamada, sin cache de sesión.
+    # ALLOW_ONCE: only this call, no session cache.
     return OpenCodeConfirmResult(
         proceed=True,
         choice=ApprovalChoice.ALLOW_ONCE,

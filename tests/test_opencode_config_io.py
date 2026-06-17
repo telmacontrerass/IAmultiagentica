@@ -80,16 +80,16 @@ def test_load_security_permission(tmp_path: Path):
 def test_invalid_json_fails_clear(tmp_path: Path):
     bad = tmp_path / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
-    with pytest.raises(ValueError, match="JSON inválido"):
+    with pytest.raises(ValueError, match="Invalid JSON"):
         load_opencode_config(bad)
 
 
 def test_invalid_permission_type_fails_clear():
-    with pytest.raises(ValueError, match="debe ser un objeto"):
+    with pytest.raises(ValueError, match="must be a JSON object"):
         validate_opencode_permission("allow")  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="acción de permiso inválida"):
+    with pytest.raises(ValueError, match="invalid permission action"):
         validate_opencode_permission({"bash": "maybe"})
-    with pytest.raises(ValueError, match="valor debe ser string"):
+    with pytest.raises(ValueError, match="value must be a string"):
         validate_opencode_permission({"bash": 123})  # type: ignore[arg-type]
 
 

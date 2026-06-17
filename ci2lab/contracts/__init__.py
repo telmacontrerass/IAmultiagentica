@@ -1,4 +1,4 @@
-"""Contrato público entre módulos de Ci2Lab."""
+"""Public contract between Ci2Lab modules."""
 
 from ci2lab.contracts.types import (
     HardwareProfile,

@@ -12,7 +12,7 @@ from ci2lab.cli import _expand_tools_shortcut, main
 from ci2lab.cli.parser import _is_global_help_request, _print_global_help
 
 _GLOBAL_MARKERS = (
-    'ci2lab "peticion"',
+    'ci2lab "request"',
     "ci2lab chat",
     "ci2lab menu",
     "ci2lab --multi-agent chat",
@@ -34,7 +34,7 @@ _GLOBAL_MARKERS = (
     "evals run [--live]",
     "python -m ci2lab.evals.run",
     "read_file, ls, glob, grep",
-    "ANTES del subcomando",
+    "BEFORE the subcommand",
 )
 
 

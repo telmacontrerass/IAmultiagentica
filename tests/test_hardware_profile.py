@@ -42,12 +42,12 @@ def test_model_ok_if_memory_freed_when_theoretical_but_not_current():
     assert classification.theoretical_fit is True
     assert classification.current_fit is False
     assert classification.recommendation_status == "OK_IF_MEMORY_FREED"
-    assert classification.fit_label == "Cabe liberando memoria"
+    assert classification.fit_label == "Fits if memory is freed"
 
     status, requires_cleanup, label = classify_memory_fit(3.0, profile)
     assert status == "requires_cleanup"
     assert requires_cleanup is True
-    assert label == "Cabe liberando memoria"
+    assert label == "Fits if memory is freed"
 
 
 def test_model_ok_now_when_theoretical_and_current():
@@ -57,7 +57,7 @@ def test_model_ok_now_when_theoretical_and_current():
     assert classification.theoretical_fit is True
     assert classification.current_fit is True
     assert classification.recommendation_status == "OK_NOW"
-    assert classification.fit_label == "Cabe ahora"
+    assert classification.fit_label == "Fits now"
 
 
 def test_model_not_recommended_when_exceeds_theoretical():
@@ -67,7 +67,7 @@ def test_model_not_recommended_when_exceeds_theoretical():
     assert classification.theoretical_fit is False
     assert classification.current_fit is False
     assert classification.recommendation_status == "NOT_RECOMMENDED"
-    assert classification.fit_label == "No recomendable"
+    assert classification.fit_label == "Not recommended"
 
 
 def test_recommend_marks_llama_3b_ok_if_memory_freed_under_pressure():
@@ -80,8 +80,8 @@ def test_recommend_marks_llama_3b_ok_if_memory_freed_under_pressure():
     assert match.recommendation_status == "OK_IF_MEMORY_FREED"
     assert match.theoretical_fit is True
     assert match.current_fit is False
-    assert match.fit_label == "Cabe liberando memoria"
-    assert "cabe teoricamente" in match.reason
+    assert match.fit_label == "Fits if memory is freed"
+    assert "fits theoretically" in match.reason
 
 
 def test_recommend_excludes_models_above_theoretical_budget():
@@ -106,7 +106,7 @@ def test_recommend_marks_small_model_ok_now_when_ram_available_is_high():
     assert match.recommendation_status == "OK_NOW"
     assert match.theoretical_fit is True
     assert match.current_fit is True
-    assert match.fit_label == "Cabe ahora"
+    assert match.fit_label == "Fits now"
 
 
 def test_hardware_profile_dict_values_are_ascii_safe():
@@ -131,8 +131,8 @@ def test_recommend_budget_messages_are_ascii_safe(monkeypatch):
         line.encode("cp1252")
 
     output = buf.getvalue()
-    assert "teoricamente" in output
-    assert "presion de memoria" in output
+    assert "theoretically" in output
+    assert "memory pressure" in output
 
 
 def test_recommend_fit_labels_are_ascii_safe():

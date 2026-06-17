@@ -11,7 +11,7 @@ def test_classify_connect_error():
     exc = httpx.ConnectError("connection refused")
     err = classify_request_error(exc, model="m:1", url="http://localhost:11434/v1/chat/completions")
     assert isinstance(err, LLMConnectionError)
-    assert "No se pudo conectar" in err.user_message
+    assert "Could not connect" in err.user_message
     assert err.exit_code == 2
 
 

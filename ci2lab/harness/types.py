@@ -1,4 +1,4 @@
-"""Tipos internos del arnes (no forman parte del contrato publico)."""
+"""Internal harness types (not part of the public contract)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ToolCall:
-    """Llamada a herramienta normalizada (native o parsed)."""
+    """Normalized tool call (native or parsed)."""
 
     name: str
     arguments: dict[str, Any]
@@ -23,7 +23,7 @@ class ToolCall:
 
 @dataclass
 class ToolResult:
-    """Resultado de ejecutar una herramienta."""
+    """Result of executing a tool."""
 
     tool_name: str
     content: str
@@ -35,7 +35,7 @@ class ToolResult:
 
 @dataclass
 class AgentConfig:
-    """Configuracion de una ejecucion del arnes."""
+    """Configuration for a harness run."""
 
     cwd: str
     max_rounds: int = 25
@@ -43,36 +43,36 @@ class AgentConfig:
     bash_timeout_seconds: int = 60
     auto_confirm: bool = False
     stream: bool = True
-    """Mostrar tokens del modelo en tiempo real."""
+    """Show model tokens in real time."""
 
     session_id: str | None = None
-    """Si se define, persiste el historial al finalizar cada turno."""
+    """If set, persists the history at the end of each turn."""
 
     confirm_callback: Callable[[str, str], bool] | None = None
 
     run_log_enabled: bool = True
-    """Persistir artefactos de la ejecucion en runs/."""
+    """Persist run artifacts in runs/."""
 
     runs_dir: str = "runs"
-    """Directorio base para logs de ejecucion."""
+    """Base directory for run logs."""
 
     config_snapshot: dict[str, Any] | None = None
-    """Config efectiva para config_snapshot.json (sin secretos)."""
+    """Effective config for config_snapshot.json (without secrets)."""
 
     write_tools_enabled: bool = True
-    """Si False, write_file y edit_file devuelven error sin ejecutar."""
+    """If False, write_file and edit_file return an error without executing."""
 
     require_diff_preview: bool = True
-    """Si True, write/edit siempre muestran diff y piden confirmacion (--yes no omite)."""
+    """If True, write/edit always show a diff and ask for confirmation (--yes does not skip)."""
 
     security_profile: str = "standard"
-    """Perfil de seguridad (strict, standard, dev, audit)."""
+    """Security profile (strict, standard, dev, audit)."""
 
     security_engine: str = "claude_experimental"
-    """Motor de seguridad: claude_experimental (default), ci2lab (legacy) u opencode_experimental."""
+    """Security engine: claude_experimental (default), ci2lab (legacy) or opencode_experimental."""
 
     opencode_permissions: OpenCodePermissionConfig | None = None
-    """Reglas permission estilo OpenCode (solo motor experimental)."""
+    """OpenCode-style permission rules (experimental engine only)."""
 
     skill_allowed_tools: frozenset[str] | None = None
     """When set by an invoked skill, only these tool names are exposed to the model."""
@@ -84,8 +84,8 @@ class AgentConfig:
     """Latest run directory produced by RunLogger for this config instance."""
 
     tool_settings: ToolSettings | None = None
-    """Reglas allow/deny de settings.json (fusionadas global + proyecto).
-    Si es None, no se aplican reglas de settings y todo esta permitido."""
+    """allow/deny rules from settings.json (merged global + project).
+    If None, no settings rules are applied and everything is permitted."""
 
     token_usage: TokenUsageState = field(default_factory=TokenUsageState)
-    """Contadores de tokens del turno y de la sesion actual."""
+    """Token counters for the current turn and session."""

@@ -1,4 +1,8 @@
-"""Mensajes de seguimiento tras edit_file para evitar rondas redundantes."""
+"""Follow-up messages after edit_file to avoid redundant rounds.
+
+The content checks below match tool output in both English and (legacy) Spanish
+so they keep working regardless of the language a tool emits its error in.
+"""
 
 from __future__ import annotations
 
@@ -14,17 +18,17 @@ _FILE_IN_PROMPT_RE = re.compile(
 
 EditSignature = tuple[str, str, str]
 
-_SUCCESS_EDIT_PREFIX = "Editado "
+_SUCCESS_EDIT_PREFIXES = ("Edited ", "Editado ")
 _ALREADY_APPLIED_HINT = (
-    "Este cambio ya está aplicado en el archivo. "
-    "No repitas edit_file con el mismo old_string. "
-    "Responde al usuario confirmando que el cambio está hecho; "
-    "no llames más herramientas salvo que pida otro cambio distinto."
+    "This change is already applied in the file. "
+    "Do not repeat edit_file with the same old_string. "
+    "Tell the user the change is done; do not call more tools unless they ask "
+    "for a different change."
 )
 _SUCCESS_HINT = (
-    "La edición se aplicó correctamente. "
-    "Responde al usuario confirmando el resultado; "
-    "no vuelvas a llamar edit_file ni read_file para el mismo cambio."
+    "The edit was applied successfully. "
+    "Tell the user the result; do not call edit_file or read_file again for the "
+    "same change."
 )
 
 
@@ -42,7 +46,7 @@ def edit_signature(call: ToolCall) -> EditSignature | None:
 
 
 def edit_already_applied(cwd: str, path: str, old_string: str, new_string: str) -> bool:
-    """True si old_string ya no está y new_string sí (mismo edit_file repetido)."""
+    """True if old_string is gone and new_string is present (same edit repeated)."""
     if not new_string:
         return False
     try:
@@ -58,7 +62,7 @@ def edit_already_applied(cwd: str, path: str, old_string: str, new_string: str) 
 
 
 def stale_old_string_hint(cwd: str, path: str, old_string: str) -> str | None:
-    """Cuando old_string ya no está en disco, muestra el contenido actual."""
+    """When old_string is no longer on disk, show the current content."""
     if not old_string:
         return None
     try:
@@ -73,11 +77,11 @@ def stale_old_string_hint(cwd: str, path: str, old_string: str) -> str | None:
     lines = text.splitlines()
     preview = "\n".join(f"  {index + 1}|{line}" for index, line in enumerate(lines[:12]))
     if len(lines) > 12:
-        preview += f"\n  ... ({len(lines)} líneas en total)"
+        preview += f"\n  ... ({len(lines)} lines total)"
     return (
-        f"`{old_string}` ya no está en `{path}`; el archivo cambió desde la última lectura. "
-        f"Contenido actual:\n{preview}\n"
-        "Llama a read_file y usa el texto exacto de la línea a cambiar como old_string."
+        f"`{old_string}` is no longer in `{path}`; the file changed since the last read. "
+        f"Current content:\n{preview}\n"
+        "Call read_file and use the exact text of the line to change as old_string."
     )
 
 
@@ -85,7 +89,7 @@ def _is_successful_edit(result: ToolResult) -> bool:
     return (
         not result.is_error
         and result.tool_name == "edit_file"
-        and result.content.startswith(_SUCCESS_EDIT_PREFIX)
+        and result.content.startswith(_SUCCESS_EDIT_PREFIXES)
     )
 
 
@@ -99,6 +103,10 @@ def _dedupe_hints(hints: list[str]) -> list[str]:
     return unique
 
 
+def _has(content: str, *needles: str) -> bool:
+    return any(needle in content for needle in needles)
+
+
 def process_edit_round(
     calls: list[ToolCall],
     results: list[ToolResult],
@@ -107,7 +115,7 @@ def process_edit_round(
     user_prompt: str,
     completed_edits: set[EditSignature],
 ) -> str | None:
-    """Registra ediciones exitosas y devuelve hints para el siguiente turno del modelo."""
+    """Record successful edits and return hints for the model's next turn."""
     hints: list[str] = []
     had_successful_edit = False
     had_redundant_retry = False
@@ -126,25 +134,25 @@ def process_edit_round(
             continue
 
         content = result.content
-        if "no existe el archivo" in content:
+        if _has(content, "does not exist", "no existe el archivo"):
             hint = (
-                "La ruta del archivo era incorrecta. No inventes rutas de ejemplo "
-                "como src/main.py. Llama primero a read_file con la ruta exacta "
-                "que pidió el usuario (relativa a la raíz del workspace)."
+                "The file path was wrong. Do not invent example paths like "
+                "src/main.py. Call read_file first with the exact path the user "
+                "gave (relative to the workspace root)."
             )
             if mentioned_path:
-                hint += f" El usuario mencionó `{mentioned_path}`."
+                hint += f" The user mentioned `{mentioned_path}`."
             hints.append(hint)
             continue
 
-        if "old_string y new_string son iguales" in content:
+        if _has(content, "are identical", "old_string y new_string son iguales"):
             hints.append(
-                "old_string y new_string deben ser distintos. "
-                "Lee el archivo con read_file y cambia solo la línea pedida."
+                "old_string and new_string must be different. "
+                "Read the file with read_file and change only the requested line."
             )
             continue
 
-        if "old_string no encontrado" in content:
+        if _has(content, "old_string not found", "old_string no encontrado"):
             if sig and (
                 sig in completed_edits
                 or edit_already_applied(cwd, sig[0], sig[1], sig[2])
@@ -156,16 +164,16 @@ def process_edit_round(
                 hints.append(
                     stale
                     or (
-                        "old_string no coincide con el archivo actual. "
-                        "Vuelve a llamar a read_file y copia el texto exacto de la línea a cambiar."
+                        "old_string does not match the current file. "
+                        "Call read_file again and copy the exact text of the line to change."
                     )
                 )
             continue
 
-        if "no se encontró contexto del parche" in content:
+        if _has(content, "patch context not found", "no se encontró contexto del parche"):
             hints.append(
-                "El parche no encaja. Llama a read_file, copia las líneas reales "
-                "y genera apply_patch con esas líneas en el hunk."
+                "The patch does not apply. Call read_file, copy the real lines, "
+                "and build apply_patch with those lines in the hunk."
             )
 
     if had_successful_edit and not had_redundant_retry:

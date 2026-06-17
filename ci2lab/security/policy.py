@@ -1,4 +1,4 @@
-"""Política unificada CI2Lab: workspace, bash guard y perfil de seguridad."""
+"""Unified CI2Lab policy: workspace, bash guard and security profile."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def check_command_allowed(
     *,
     security_profile: str = "standard",
 ) -> SecurityDecision:
-    """Bloqueos duros (blocklist + rutas externas). No salta con --yes."""
+    """Hard blocks (blocklist + external paths). Not bypassed with --yes."""
     from ci2lab.harness.security_profiles import (
         is_tool_blocked_by_profile,
         profile_block_message,
@@ -54,9 +54,14 @@ def check_command_allowed(
 
     blocked = check_bash_blocked(command, cwd=workspace)
     if blocked:
+        # "Comando bloqueado:" is a legacy prefix some bash producers may emit;
+        # keep matching it so such messages pass through verbatim.
         if blocked.startswith("Comando bloqueado:"):
             message = f"Error: {blocked}"
         else:
+            # NOTE: kept in Spanish on purpose. The eval matcher in
+            # ci2lab/evals/task.py detects blocked dangerous commands by the
+            # substring "bloqueado por política"; translating this would break it.
             message = f"Error: comando bloqueado por politica de seguridad ({blocked})."
         return SecurityDecision(
             action=DecisionAction.DENY,

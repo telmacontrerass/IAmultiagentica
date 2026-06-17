@@ -26,76 +26,79 @@ from ci2lab.ui.server_parts.serializers import (
 )
 from ci2lab.ui.server_parts.uploads import DOCUMENT_UPLOAD_SUFFIXES, SUPPORTED_UPLOAD_SUFFIXES
 
+# NOTE: "id", "tool" and "group" are wire/identifier values. "group" shares the
+# vocabulary returned by tool_group() below, which the frontend (app.js groupNames)
+# matches verbatim, so the group labels are intentionally left in Spanish.
 UI_ACTIONS: list[dict[str, str]] = [
     {
         "id": "read_document",
-        "label": "Resumir adjunto",
+        "label": "Summarize attachment",
         "tool": "read_document",
         "group": "Documentos",
-        "prompt": "Lee y resume los archivos adjuntos. Extrae ideas principales y puntos accionables.",
+        "prompt": "Read and summarize the attached files. Extract key ideas and actionable points.",
     },
     {
         "id": "workspace_tree",
-        "label": "Mapa del proyecto",
+        "label": "Project map",
         "tool": "tree",
         "group": "Explorar",
-        "prompt": "Haz un mapa breve del proyecto usando tree, file_info y read_file solo cuando haga falta.",
+        "prompt": "Make a brief map of the project using tree, file_info and read_file only when needed.",
     },
     {
         "id": "search_workspace",
-        "label": "Buscar en archivos",
+        "label": "Search in files",
         "tool": "grep",
         "group": "Explorar",
-        "prompt": "Busca en el workspace el texto o concepto que te indique y dime en qué archivos aparece.",
+        "prompt": "Search the workspace for the text or concept I give you and tell me which files it appears in.",
     },
     {
         "id": "git_status",
-        "label": "Estado Git",
+        "label": "Git status",
         "tool": "git_status",
         "group": "Git",
-        "prompt": "Muestra el estado git del workspace y resume los cambios pendientes.",
+        "prompt": "Show the git status of the workspace and summarize the pending changes.",
     },
     {
         "id": "git_diff",
-        "label": "Revisar diff",
+        "label": "Review diff",
         "tool": "git_diff",
         "group": "Git",
-        "prompt": "Revisa el git diff actual. Señala riesgos, conflictos lógicos y pruebas recomendadas.",
+        "prompt": "Review the current git diff. Point out risks, logical conflicts and recommended tests.",
     },
     {
         "id": "todo_plan",
-        "label": "Plan de tareas",
+        "label": "Task plan",
         "tool": "todo_write",
         "group": "Planificación",
-        "prompt": "Crea o actualiza una lista de tareas para este trabajo usando todo_write.",
+        "prompt": "Create or update a task list for this work using todo_write.",
     },
     {
         "id": "web_reference",
-        "label": "Consultar URL",
+        "label": "Look up URL",
         "tool": "web_fetch",
         "group": "Web",
-        "prompt": "Consulta esta URL con web_fetch y resume lo importante: https://",
+        "prompt": "Look up this URL with web_fetch and summarize what matters: https://",
     },
     {
         "id": "notebook_edit",
-        "label": "Editar notebook",
+        "label": "Edit notebook",
         "tool": "notebook_edit",
         "group": "Notebook",
-        "prompt": "Edita el notebook indicado con notebook_edit. Ruta, celda y contenido:",
+        "prompt": "Edit the given notebook with notebook_edit. Path, cell and content:",
     },
     {
         "id": "skill",
-        "label": "Usar skill",
+        "label": "Use skill",
         "tool": "skill",
         "group": "Skills",
-        "prompt": "Si hay una skill adecuada, invócala con la herramienta skill y sigue sus instrucciones.",
+        "prompt": "If there is a suitable skill, invoke it with the skill tool and follow its instructions.",
     },
     {
         "id": "mcp_call",
-        "label": "Usar MCP",
+        "label": "Use MCP",
         "tool": "mcp_call",
         "group": "MCP",
-        "prompt": "Usa una herramienta MCP configurada si encaja. Servidor, herramienta y argumentos:",
+        "prompt": "Use a configured MCP tool if it fits. Server, tool and arguments:",
     },
 ]
 
@@ -257,6 +260,8 @@ def tools_payload(state: Any) -> dict[str, Any]:
 
 
 def tool_group(name: str) -> str:
+    # Return values are wire-coupled: app.js (groupNames) matches these labels
+    # verbatim to group the tools list, so they are left untranslated.
     if name in {"read_document", "read_file", "ls", "grep", "glob", "file_info", "tree", "inspect_file"}:
         return "Explorar"
     if name in {"write_file", "edit_file", "notebook_edit"}:
@@ -278,16 +283,16 @@ def tool_group(name: str) -> str:
 
 def tool_web_status(name: str) -> str:
     if name == "ask_user":
-        return "Solo terminal; en la web pregunta directamente en el chat."
+        return "Terminal only; on the web it asks directly in the chat."
     if name in CONFIRM_TOOLS:
-        return "Requiere modo técnico para autoaprobar en la web."
-    return "Disponible desde el chat."
+        return "Requires technical mode to auto-approve on the web."
+    return "Available from the chat."
 
 
 def pull_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     tag = str(payload.get("tag") or "").strip()
     if not tag:
-        return {"ok": False, "error": "Falta el tag de Ollama."}
+        return {"ok": False, "error": "The Ollama tag is missing."}
 
     with state.pull_lock:
         for existing in state.pull_tasks.values():
@@ -303,7 +308,7 @@ def pull_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         task = {
             "id": task_id,
             "tag": tag,
-            "status": "Preparando descarga",
+            "status": "Preparing download",
             "completed": 0,
             "total": 0,
             "percent": 0.0,
@@ -325,11 +330,11 @@ def pull_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 def pull_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
     if not task_id or not all(ch.isalnum() or ch in "-_" for ch in task_id):
-        return {"ok": False, "error": "Tarea no valida."}, 400
+        return {"ok": False, "error": "Invalid task."}, 400
     with state.pull_lock:
         task = state.pull_tasks.get(task_id)
         if task is None:
-            return {"ok": False, "error": "Tarea no encontrada."}, 404
+            return {"ok": False, "error": "Task not found."}, 404
         return {"ok": True, "task": public_pull_task(task)}, 200
 
 
@@ -352,9 +357,9 @@ def run_pull_task(state: Any, task_id: str, tag: str) -> None:
                     if isinstance(event, dict):
                         record_pull_event(state, task_id, event)
 
-        finish_pull_task(state, task_id, ok=True, status="Descarga completada")
+        finish_pull_task(state, task_id, ok=True, status="Download complete")
     except Exception as exc:  # noqa: BLE001
-        finish_pull_task(state, task_id, ok=False, status="Error en la descarga", error=str(exc))
+        finish_pull_task(state, task_id, ok=False, status="Download error", error=str(exc))
 
 
 def record_pull_event(state: Any, task_id: str, event: dict[str, Any]) -> None:
@@ -383,7 +388,7 @@ def record_pull_event(state: Any, task_id: str, event: dict[str, Any]) -> None:
         if status.lower() == "success":
             task["done"] = True
             task["ok"] = True
-            task["status"] = "Descarga completada"
+            task["status"] = "Download complete"
             task["percent"] = 100.0
 
 
@@ -430,7 +435,7 @@ def pull_percent(completed: int, total: int) -> float:
 def delete_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     tag = str(payload.get("tag") or "").strip()
     if not tag:
-        return {"ok": False, "error": "Falta el tag de Ollama."}
+        return {"ok": False, "error": "The Ollama tag is missing."}
 
     with state.delete_lock:
         for existing in state.delete_tasks.values():
@@ -446,7 +451,7 @@ def delete_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         task = {
             "id": task_id,
             "tag": tag,
-            "status": "Preparando desinstalación",
+            "status": "Preparing uninstall",
             "percent": 8.0,
             "done": False,
             "ok": None,
@@ -465,28 +470,28 @@ def delete_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 def delete_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
     if not task_id or not all(ch.isalnum() or ch in "-_" for ch in task_id):
-        return {"ok": False, "error": "Tarea no valida."}, 400
+        return {"ok": False, "error": "Invalid task."}, 400
     with state.delete_lock:
         task = state.delete_tasks.get(task_id)
         if task is None:
-            return {"ok": False, "error": "Tarea no encontrada."}, 404
+            return {"ok": False, "error": "Task not found."}, 404
         return {"ok": True, "task": public_delete_task(task)}, 200
 
 
 def run_delete_task(state: Any, task_id: str, tag: str) -> None:
     try:
-        update_delete_task(state, task_id, status="Contactando con Ollama", percent=35.0)
+        update_delete_task(state, task_id, status="Contacting Ollama", percent=35.0)
         with httpx.Client(timeout=60.0) as client:
-            update_delete_task(state, task_id, status="Eliminando modelo local", percent=65.0)
+            update_delete_task(state, task_id, status="Removing local model", percent=65.0)
             response = client.request(
                 "DELETE",
                 f"{state.ollama_base_url}/api/delete",
                 json={"name": tag},
             )
             response.raise_for_status()
-        finish_delete_task(state, task_id, ok=True, status="Modelo desinstalado")
+        finish_delete_task(state, task_id, ok=True, status="Model uninstalled")
     except Exception as exc:  # noqa: BLE001
-        finish_delete_task(state, task_id, ok=False, status="Error al desinstalar", error=str(exc))
+        finish_delete_task(state, task_id, ok=False, status="Uninstall error", error=str(exc))
 
 
 def update_delete_task(state: Any, task_id: str, *, status: str, percent: float) -> None:

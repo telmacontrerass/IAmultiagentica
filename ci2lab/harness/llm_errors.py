@@ -1,4 +1,4 @@
-"""Errores accionables del cliente LLM (Ollama)."""
+"""Actionable errors for the LLM client (Ollama)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import httpx
 
 
 class LLMError(Exception):
-    """Error de inferencia con mensaje listo para el usuario."""
+    """Inference error with a user-ready message."""
 
     exit_code: int = 1
 
@@ -20,33 +20,33 @@ class LLMError(Exception):
 
 
 class LLMConnectionError(LLMError):
-    """Ollama no responde o no hay conectividad."""
+    """Ollama is not responding or there is no connectivity."""
 
     def __init__(self, detail: str = "") -> None:
         lines = [
-            "No se pudo conectar con Ollama.",
-            "Comprueba:",
-            "1. Que Ollama esté abierto.",
-            "2. Que `ollama serve` esté corriendo.",
-            "3. Ejecuta `ci2lab doctor`.",
+            "Could not connect to Ollama.",
+            "Check:",
+            "1. That Ollama is open.",
+            "2. That `ollama serve` is running.",
+            "3. Run `ci2lab doctor`.",
         ]
         if detail:
-            lines.append(f"\nDetalle: {detail}")
+            lines.append(f"\nDetail: {detail}")
         super().__init__("\n".join(lines), exit_code=2)
 
 
 class LLMModelNotFoundError(LLMError):
-    """El modelo solicitado no está disponible en Ollama."""
+    """The requested model is not available in Ollama."""
 
     def __init__(self, model: str, detail: str = "") -> None:
         lines = [
-            f"El modelo `{model}` no parece estar disponible en Ollama.",
-            "Prueba:",
+            f"The model `{model}` does not appear to be available in Ollama.",
+            "Try:",
             f"  ollama pull {model}",
             "  ci2lab doctor",
         ]
         if detail:
-            lines.append(f"\nDetalle: {detail}")
+            lines.append(f"\nDetail: {detail}")
         super().__init__("\n".join(lines), exit_code=3)
 
 
@@ -100,9 +100,9 @@ def classify_http_error(
     ):
         return LLMModelNotFoundError(model, detail)
     return LLMError(
-        f"Error HTTP {exc.response.status_code} al contactar Ollama ({url}).\n"
-        f"Detalle: {detail}\n"
-        "Ejecuta `ci2lab doctor` para diagnosticar.",
+        f"HTTP error {exc.response.status_code} contacting Ollama ({url}).\n"
+        f"Detail: {detail}\n"
+        "Run `ci2lab doctor` to diagnose.",
         exit_code=1,
     )
 
@@ -115,7 +115,7 @@ def classify_request_error(exc: Exception, *, model: str, url: str) -> LLMError:
         return LLMConnectionError(str(exc))
 
     if isinstance(exc, httpx.TimeoutException):
-        return LLMConnectionError(f"Timeout al contactar {url}: {exc}")
+        return LLMConnectionError(f"Timeout contacting {url}: {exc}")
 
     if isinstance(exc, httpx.RequestError):
         return LLMConnectionError(str(exc))
@@ -124,4 +124,4 @@ def classify_request_error(exc: Exception, *, model: str, url: str) -> LLMError:
     if re.search(r"model.*not found|not found.*model", text, re.I):
         return LLMModelNotFoundError(model, text)
 
-    return LLMError(f"Error al contactar el modelo: {text}", exit_code=1)
+    return LLMError(f"Error contacting the model: {text}", exit_code=1)

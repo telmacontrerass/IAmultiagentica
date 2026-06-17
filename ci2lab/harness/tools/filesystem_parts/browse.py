@@ -35,7 +35,7 @@ def read_file(
         return err
     assert resolved is not None
     if not resolved.is_file():
-        return f"Error: no existe el archivo {resolved}"
+        return f"Error: file does not exist: {resolved}"
     if check_sensitive(resolved, cwd, security_engine=security_engine):
         return secret_file_block_message()
     text = extract_document_text(resolved, include_metadata=False)
@@ -51,7 +51,7 @@ def read_document(cwd: str, path: str) -> str:
         return err
     assert resolved is not None
     if not resolved.is_file():
-        return f"Error: no existe el archivo {resolved}"
+        return f"Error: file does not exist: {resolved}"
     if is_sensitive_path(resolved):
         return secret_file_block_message()
     return extract_document_text(resolved, include_metadata=True)
@@ -63,7 +63,7 @@ def ls(cwd: str, path: str = ".") -> str:
         return err
     assert resolved is not None
     if not resolved.is_dir():
-        return f"Error: no es un directorio {resolved}"
+        return f"Error: not a directory: {resolved}"
     dirs: list[str] = []
     files: list[str] = []
     for entry in sorted(resolved.iterdir(), key=lambda p: p.name.lower()):
@@ -76,7 +76,16 @@ def ls(cwd: str, path: str = ".") -> str:
     lines = [f"{resolved}/"]
     lines.extend(dirs)
     lines.extend(files)
-    return "\n".join(lines) if len(lines) > 1 else f"{resolved}/ (vacío)"
+    return "\n".join(lines) if len(lines) > 1 else f"{resolved}/ (empty)"
+
+
+# Dependency/build directories that flood pattern searches with noise and are
+# almost never what the user means. Skipped unless the pattern names them.
+_GLOB_NOISE_DIRS = frozenset({
+    ".git", ".venv", "venv", "env", "__pycache__", ".pytest_cache",
+    ".mypy_cache", ".ruff_cache", "node_modules", "site-packages",
+    ".tox", ".idea", ".vscode", "dist", "build", ".eggs",
+})
 
 
 def glob_search(cwd: str, pattern: str, path: str = ".") -> str:
@@ -85,13 +94,20 @@ def glob_search(cwd: str, pattern: str, path: str = ".") -> str:
         return err
     assert base is not None
     if not base.is_dir():
-        return f"Error: base no es directorio {base}"
-    matches = sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        return f"Error: base is not a directory: {base}"
+    pattern_names_noise = any(part in _GLOB_NOISE_DIRS for part in pattern.split("/"))
+    matches = [
+        match
+        for match in base.glob(pattern)
+        if pattern_names_noise
+        or not any(part in _GLOB_NOISE_DIRS for part in match.parts)
+    ]
+    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     if not matches:
-        return f"Sin coincidencias para `{pattern}` en {base}"
+        return f"No matches for `{pattern}` in {base}"
     lines = [str(m.relative_to(Path(cwd).resolve())) for m in matches[:100]]
     if len(matches) > 100:
-        lines.append(f"... y {len(matches) - 100} más")
+        lines.append(f"... and {len(matches) - 100} more")
     return "\n".join(lines)
 
 
@@ -112,13 +128,13 @@ def grep_search(
     try:
         regex = re.compile(pattern, flags)
     except re.error:
-        # Patrones tipo glob (`**/*.docx`) o con metacaracteres sueltos no son
-        # regex válidas. En vez de fallar, buscamos el texto de forma literal.
-        # Para localizar archivos por nombre conviene `glob`, no `grep`.
+        # Glob-style patterns (`**/*.docx`) or ones with stray metacharacters are
+        # not valid regexes. Instead of failing, we search for the text literally.
+        # To locate files by name, `glob` is preferable to `grep`.
         regex = re.compile(re.escape(pattern), flags)
         fallback_note = (
-            f"(nota: `{pattern}` no es una regex válida; se buscó como texto "
-            "literal. Para encontrar archivos por nombre usa la herramienta `glob`.)\n"
+            f"(note: `{pattern}` is not a valid regex; searched as literal "
+            "text. To find files by name use the `glob` tool.)\n"
         )
 
     if base.is_file():
@@ -141,8 +157,8 @@ def grep_search(
         return fallback_note + (f"{body}\n{notice}" if notice else body)
     if skipped:
         notice = grep_skip_notice(skipped)
-        return fallback_note + f"Sin coincidencias para `{pattern}`\n{notice}"
-    return fallback_note + f"Sin coincidencias para `{pattern}`"
+        return fallback_note + f"No matches for `{pattern}`\n{notice}"
+    return fallback_note + f"No matches for `{pattern}`"
 
 
 def grep_single_file(
@@ -160,15 +176,15 @@ def grep_single_file(
     try:
         content = extract_document_text(file_path, include_metadata=False)
     except OSError:
-        return f"Sin coincidencias para `{regex.pattern}`"
+        return f"No matches for `{regex.pattern}`"
     if content.startswith("Error:"):
-        return f"Sin coincidencias para `{regex.pattern}`"
+        return f"No matches for `{regex.pattern}`"
     for i, line in enumerate(content.splitlines(), start=1):
         if regex.search(line):
             results.append(f"{rel}:{i}:{line}")
             if len(results) >= max_results:
                 break
-    return "\n".join(results) if results else f"Sin coincidencias para `{regex.pattern}`"
+    return "\n".join(results) if results else f"No matches for `{regex.pattern}`"
 
 
 def grep_scan_tree(

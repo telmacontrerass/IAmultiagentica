@@ -1,4 +1,4 @@
-"""Comando sessions."""
+"""sessions command."""
 
 from __future__ import annotations
 
@@ -18,13 +18,13 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
         console.print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        console.print("No hay sesiones guardadas.")
+        console.print("No saved sessions.")
         return 0
-    table = Table(title="Sesiones ~/.ci2lab/sessions")
+    table = Table(title="Sessions ~/.ci2lab/sessions")
     table.add_column("ID")
-    table.add_column("Modelo")
+    table.add_column("Model")
     table.add_column("CWD")
-    table.add_column("Actualizado")
+    table.add_column("Updated")
     for row in rows:
         table.add_row(row["id"], row["model"], row["cwd"][:40], row["updated_at"][:19])
     console.print(table)

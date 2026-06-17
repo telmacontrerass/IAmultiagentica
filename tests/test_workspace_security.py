@@ -42,16 +42,16 @@ def outside_secret(tmp_path: Path) -> Path:
 
 def test_read_file_absolute_outside_blocked(workspace: Path, outside_secret: Path):
     out = read_file(str(workspace), str(outside_secret))
-    assert "fuera del workspace" in out
+    assert "outside the workspace" in out
 
 
 def test_read_file_dotdot_outside_blocked(workspace: Path):
     out = read_file(str(workspace), "../outside/secret.txt")
-    assert "fuera del workspace" in out
+    assert "outside the workspace" in out
 
 
 def test_resolve_path_blocks_traversal(workspace: Path):
-    with pytest.raises(PathViolationError, match="fuera del workspace"):
+    with pytest.raises(PathViolationError, match="outside the workspace"):
         resolve_path("../outside/secret.txt", str(workspace))
 
 
@@ -78,7 +78,7 @@ def test_bash_external_paths_blocked_before_run(
     cmd = command.format(outside=outside_secret)
     blocked = check_bash_blocked(cmd, cwd=str(workspace))
     assert blocked is not None
-    assert "fuera del workspace" in blocked.lower()
+    assert "outside the workspace" in blocked.lower()
 
 
 def test_bash_normal_inside_workspace_allowed(workspace: Path):
@@ -110,7 +110,7 @@ def test_execute_tool_bash_blocked_without_confirmation(
     perm.assert_not_called()
     assert result.is_error
     assert result.outcome == "blocked_by_workspace"
-    assert "fuera del workspace" in result.content.lower()
+    assert "outside the workspace" in result.content.lower()
 
 
 def test_execute_tool_read_file_outside_has_workspace_outcome(
@@ -148,7 +148,7 @@ def test_policy_repeat_blocks_same_call(workspace: Path, outside_secret: Path):
         outcome="blocked_by_policy",
     )
     assert repeat.outcome == "blocked_by_policy"
-    assert "No repitas" in repeat.content
+    assert "Do not repeat" in repeat.content
 
 
 def test_bash_traversal_copy_blocked(workspace: Path, tmp_path: Path):

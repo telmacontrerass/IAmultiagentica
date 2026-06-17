@@ -49,9 +49,9 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name") or "").strip()
     encoded = str(payload.get("content_base64") or "").strip()
     if not name:
-        return {"ok": False, "error": "Falta el nombre del archivo."}
+        return {"ok": False, "error": "The file name is missing."}
     if not encoded:
-        return {"ok": False, "error": "Falta el contenido del archivo."}
+        return {"ok": False, "error": "The file content is missing."}
 
     safe_name = safe_upload_name(name)
     suffix = Path(safe_name).suffix.lower()
@@ -59,7 +59,7 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         allowed = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
         return {
             "ok": False,
-            "error": f"Formato no soportado. Usa uno de estos: {allowed}",
+            "error": f"Unsupported format. Use one of these: {allowed}",
         }
 
     if "," in encoded and encoded.lower().startswith("data:"):
@@ -67,12 +67,12 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError):
-        return {"ok": False, "error": "El archivo no llegó con un contenido válido."}
+        return {"ok": False, "error": "The file did not arrive with valid content."}
 
     if len(raw) > MAX_UPLOAD_BYTES:
         return {
             "ok": False,
-            "error": f"El archivo supera el límite de {format_upload_size(MAX_UPLOAD_BYTES)}.",
+            "error": f"The file exceeds the {format_upload_size(MAX_UPLOAD_BYTES)} limit.",
         }
 
     base = Path(workspace or os.getcwd()).resolve()
@@ -82,7 +82,7 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     if is_sensitive_path(target):
         return {
             "ok": False,
-            "error": "No se admiten nombres que parezcan contener secretos, tokens o credenciales.",
+            "error": "Names that look like they contain secrets, tokens or credentials are not allowed.",
         }
 
     target.write_bytes(raw)
@@ -126,31 +126,33 @@ def prompt_with_uploaded_files(
         if not is_upload_path(path):
             blocks.append(
                 f"### {file['name']}\n"
-                f"Error: archivo adjunto rechazado porque no está en `{UPLOAD_DIR_NAME}/`."
+                f"Error: attachment rejected because it is not in `{UPLOAD_DIR_NAME}/`."
             )
             continue
         content = _read_document(workspace, path)
-        if content.startswith("Error: formato no soportado"):
+        # Spanish prefix kept on purpose: it matches the value returned by
+        # read_document (ci2lab.harness.tools, out of scope and still Spanish).
+        if content.startswith("Error: unsupported format"):
             content = _read_file(workspace, path)
         if content.startswith("Error:"):
             blocks.append(
                 f"### {file['name']}\n"
-                f"Ruta local: {path}\n"
-                f"No se pudo leer el archivo adjunto: {content}\n"
-                "Explica este problema al usuario y pide que instale las dependencias "
-                "o suba un PDF con texto extraible."
+                f"Local path: {path}\n"
+                f"Could not read the attached file: {content}\n"
+                "Explain this problem to the user and ask them to install the dependencies "
+                "or upload a PDF with extractable text."
             )
             continue
         blocks.append(
             f"### {file['name']}\n"
-            f"Ruta local: {path}\n"
-            f"Contenido leído con read_document:\n{content}"
+            f"Local path: {path}\n"
+            f"Content read with read_document:\n{content}"
         )
 
     return (
         f"{prompt}\n\n"
-        "Archivos adjuntos ya leídos localmente por Ci2Lab con read_document. "
-        "Responde usando el contenido siguiente; no digas que no puedes acceder a los archivos.\n\n"
+        "Attached files already read locally by Ci2Lab with read_document. "
+        "Answer using the following content; do not say that you cannot access the files.\n\n"
         + "\n\n".join(blocks)
     )
 

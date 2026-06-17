@@ -15,7 +15,7 @@ def write_file(cwd: str, path: str, content: str) -> str:
         return secret_file_block_message()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
-    return f"Escrito {resolved} ({len(content)} caracteres)"
+    return f"Wrote {resolved} ({len(content)} characters)"
 
 
 def edit_file(
@@ -47,5 +47,5 @@ def edit_file(
         return error
     resolved.write_text(new_text or "", encoding="utf-8")
     replaced = original_count if replace_all else 1
-    return f"Editado {resolved}: {replaced} reemplazo(s)"
+    return f"Edited {resolved}: {replaced} replacement(s)"
 

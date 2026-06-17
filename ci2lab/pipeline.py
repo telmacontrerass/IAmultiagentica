@@ -1,8 +1,8 @@
 """
-Pipeline de preparación: hardware + selección de modelo para el arnés.
+Preparation pipeline: hardware + model selection for the harness.
 
-El router (models recommend) sugiere modelos; el usuario elige cuál ejecutar.
-Al arrancar chat/agent se aplica el tool_mode del catálogo para ese modelo.
+The router (models recommend) suggests models; the user chooses which one to run.
+When chat/agent starts, the catalog tool_mode for that model is applied.
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ def prepare_session(
     pull: bool = True,
 ) -> tuple[HardwareProfile | None, ModelSelection]:
     """
-    Prepara una sesión del arnés para el modelo que el usuario eligió.
+    Prepares a harness session for the model the user chose.
 
-    - No auto-selecciona modelo desde el router (eso es `ci2lab models recommend`).
-    - Aplica tool_mode del catálogo para el tag elegido.
-    - `tool_mode_override` solo cuando el usuario pasa --tool-mode en CLI.
+    - Does not auto-select a model from the router (that is `ci2lab models recommend`).
+    - Applies the catalog tool_mode for the chosen tag.
+    - `tool_mode_override` only when the user passes --tool-mode on the CLI.
     """
     _ = user_prompt
 
@@ -68,11 +68,11 @@ def build_agent_config(
     confirm_callback: Callable[[str, str], bool] | None = None,
 ) -> AgentConfig:
     """
-    AgentConfig efectivo para una ejecución (CLI, UI o scripts).
+    Effective AgentConfig for a single run (CLI, UI or scripts).
 
-    Los kwargs permiten que cada superficie sobrescriba solo lo que le aplica
-    (p. ej. la UI pasa stream/auto_confirm por petición); el resto sale de la
-    config runtime. El snapshot se calcula una sola vez sobre el config final.
+    The kwargs let each surface override only what applies to it (e.g. the UI
+    passes stream/auto_confirm per request); the rest comes from the runtime
+    config. The snapshot is computed once over the final config.
     """
     from ci2lab.harness.run_logger import build_config_snapshot
     from ci2lab.harness.security_profiles import resolved_opencode_permissions

@@ -1,4 +1,4 @@
-"""Validacion de rutas en comandos bash respecto al workspace."""
+"""Validation of paths in bash commands against the workspace."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import shlex
 from pathlib import Path
 
 WORKSPACE_ACCESS_BLOCKED = (
-    "Comando bloqueado: intenta acceder a una ruta fuera del workspace."
+    "Blocked command: tries to access a path outside the workspace."
 )
 
 _FILE_ACCESS_VERBS = re.compile(
@@ -50,7 +50,7 @@ def _strip_quotes(token: str) -> str:
 
 
 def extract_path_candidates(command: str) -> list[str]:
-    """Extrae candidatos a rutas de un comando shell."""
+    """Extract path candidates from a shell command."""
     if not command or not command.strip():
         return []
 
@@ -112,7 +112,7 @@ def extract_path_candidates(command: str) -> list[str]:
 
 
 def path_escapes_workspace(raw_path: str, workspace: Path) -> bool:
-    """True si la ruta resuelta queda fuera del workspace."""
+    """True if the resolved path falls outside the workspace."""
     if not raw_path or not str(raw_path).strip():
         return False
     raw_path = _expand_windows_env_refs(raw_path)

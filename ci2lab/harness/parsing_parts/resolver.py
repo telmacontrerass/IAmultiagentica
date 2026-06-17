@@ -118,7 +118,7 @@ def looks_like_unparsed_tool_attempt(text: str) -> bool:
 
 
 def strip_tool_markup(text: str) -> str:
-    """Quita fences, JSON tool blocks y XML del texto mostrado al usuario."""
+    """Strips fences, JSON tool blocks and XML from the text shown to the user."""
     text = FENCED_RE.sub("", text)
     text = JSON_FENCED_RE.sub("", text)
     text = GENERIC_FENCED_RE.sub("", text)

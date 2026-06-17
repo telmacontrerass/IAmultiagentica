@@ -1,4 +1,4 @@
-"""Comando doctor."""
+"""doctor command."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import shutil
 from ci2lab.console import console
 from ci2lab.config import Ci2LabConfig
 
-# Marcadores ASCII para salida compatible con consolas Windows (cp1252).
+# ASCII markers for output compatible with Windows consoles (cp1252).
 _DOCTOR_OK = "OK"
 _DOCTOR_ERROR = "ERROR"
 _DOCTOR_WARN = "WARN"
@@ -31,7 +31,7 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
     try:
         import ci2lab  # noqa: F401
 
-        console.print(f"[green]{_DOCTOR_OK}[/green] Paquete ci2lab importable")
+        console.print(f"[green]{_DOCTOR_OK}[/green] ci2lab package importable")
     except ImportError as exc:
         console.print(f"[red]{_DOCTOR_ERROR}[/red] ci2lab: {exc}")
         ok = False
@@ -40,23 +40,23 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
     if missing_document_deps:
         names = ", ".join(name for name, _label in missing_document_deps)
         console.print(
-            f"[yellow]{_DOCTOR_WARN}[/yellow] Faltan librerias de documentos: {names}"
+            f"[yellow]{_DOCTOR_WARN}[/yellow] Missing document libraries: {names}"
         )
-        console.print('  Ejecuta: pip install -e ".[dev]"')
+        console.print('  Run: pip install -e ".[dev]"')
     else:
         labels = ", ".join(label for _name, label in _DOCUMENT_DEPENDENCIES)
         console.print(
-            f"[green]{_DOCTOR_OK}[/green] Lectura de documentos disponible ({labels})"
+            f"[green]{_DOCTOR_OK}[/green] Document reading available ({labels})"
         )
 
     if shutil.which("pandoc"):
-        console.print(f"[green]{_DOCTOR_OK}[/green] pandoc disponible en PATH")
+        console.print(f"[green]{_DOCTOR_OK}[/green] pandoc available on PATH")
     else:
         console.print(
-            f"[yellow]{_DOCTOR_WARN}[/yellow] pandoc no encontrado en PATH"
-            " (necesario para write_docx y docx_to_pdf)"
+            f"[yellow]{_DOCTOR_WARN}[/yellow] pandoc not found on PATH"
+            " (required for write_docx and docx_to_pdf)"
         )
-        console.print("  Instálalo con: winget install JohnMacFarlane.Pandoc")
+        console.print("  Install it with: winget install JohnMacFarlane.Pandoc")
 
     base_url = runtime.backend_url.removesuffix("/v1").rstrip("/")
     try:
@@ -64,22 +64,22 @@ def _cmd_doctor(runtime: Ci2LabConfig) -> int:
         r.raise_for_status()
         models = [m.get("name") for m in r.json().get("models", [])]
         console.print(
-            f"[green]{_DOCTOR_OK}[/green] Ollama en {base_url} ({len(models)} modelos)"
+            f"[green]{_DOCTOR_OK}[/green] Ollama at {base_url} ({len(models)} models)"
         )
         if models:
-            console.print(f"  Ejemplos: {', '.join(models[:5])}")
+            console.print(f"  Examples: {', '.join(models[:5])}")
         if runtime.model not in models and not any(
             m and m.startswith(runtime.model.split(":")[0]) for m in models
         ):
             console.print(
-                f"[yellow]{_DOCTOR_WARN}[/yellow] Modelo configurado "
-                f"`{runtime.model}` no aparece en la lista"
+                f"[yellow]{_DOCTOR_WARN}[/yellow] Configured model "
+                f"`{runtime.model}` does not appear in the list"
             )
     except Exception as exc:
         console.print(
-            f"[yellow]{_DOCTOR_WARN}[/yellow] Ollama no responde en {base_url}: {exc}"
+            f"[yellow]{_DOCTOR_WARN}[/yellow] Ollama not responding at {base_url}: {exc}"
         )
-        console.print("  Comprueba que Ollama esté abierto y que `ollama serve` esté corriendo.")
+        console.print("  Check that Ollama is open and that `ollama serve` is running.")
 
     return 0 if ok else 1
 

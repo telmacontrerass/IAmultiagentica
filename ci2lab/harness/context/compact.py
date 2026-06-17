@@ -1,10 +1,10 @@
 """
-Compactación de contexto inspirada en Claude Code (micro-compact + auto-compact).
+Context compaction inspired by Claude Code (micro-compact + auto-compact).
 
-Capas, de barata a cara:
-  1. micro_compact()      — sustituye resultados antiguos de tools por un stub
-  2. summarize_history()  — una llamada LLM que resume turnos antiguos
-  3. trim_messages()      — recorte mecánico (fallback en trim.py)
+Layers, from cheap to expensive:
+  1. micro_compact()      — replaces old tool results with a stub
+  2. summarize_history()  — a single LLM call that summarizes old turns
+  3. trim_messages()      — mechanical trimming (fallback in trim.py)
 """
 
 from __future__ import annotations
@@ -194,7 +194,7 @@ def manage_context(
 
     history, stubbed = micro_compact(history)
     if stubbed:
-        events.append(f"Contexto: micro-compact limpió {stubbed} resultado(s) de tool antiguos.")
+        events.append(f"Context: micro-compact cleared {stubbed} old tool result(s).")
 
     if not should_compact(history, context_length):
         return history, summary_failures, events
@@ -206,13 +206,13 @@ def manage_context(
     if summarized is None:
         summary_failures += 1
         events.append(
-            "Contexto: el resumen automático falló; se usará recorte mecánico."
+            "Context: automatic summary failed; mechanical trimming will be used."
         )
         return history, summary_failures, events
 
     before = conservative_estimate(history)
     after = conservative_estimate(summarized)
     events.append(
-        f"Contexto: historial resumido (~{before} → ~{after} tokens estimados)."
+        f"Context: history summarized (~{before} → ~{after} estimated tokens)."
     )
     return summarized, 0, events

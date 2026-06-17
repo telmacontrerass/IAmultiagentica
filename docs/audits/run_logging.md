@@ -1,28 +1,30 @@
-# Logging estructurado de ejecuciones (runs/)
+# Structured run logging (runs/)
 
-**Fecha:** 2026-06-09  
-**Módulo:** `ci2lab/harness/run_logger.py`
+_Historical snapshot; may not reflect the current implementation._
 
-## Objetivo
+**Date:** 2026-06-09
+**Module:** `ci2lab/harness/run_logger.py`
 
-Persistir cada ejecución del agente en una carpeta bajo `runs/` sin alterar el comportamiento funcional del bucle ReAct. Los fallos de escritura emiten un aviso y no interrumpen la ejecución.
+## Goal
 
-## Activación
+Persist every agent run into a folder under `runs/` without changing the functional behavior of the ReAct loop. Write failures emit a warning and do not interrupt the run.
 
-| Mecanismo | Default |
+## Activation
+
+| Mechanism | Default |
 |-----------|---------|
-| Comportamiento por defecto | Logging **activado** |
-| `--no-log` (CLI) | Desactiva |
-| `CI2LAB_NO_LOG=1` | Desactiva |
-| `no_log: true` en `ci2lab.yaml` | Desactiva |
-| `log_runs: false` en `ci2lab.yaml` | Desactiva |
+| Default behavior | Logging **enabled** |
+| `--no-log` (CLI) | Disables |
+| `CI2LAB_NO_LOG=1` | Disables |
+| `no_log: true` in `ci2lab.yaml` | Disables |
+| `log_runs: false` in `ci2lab.yaml` | Disables |
 
-Directorio base:
+Base directory:
 
 - Default: `runs/`
-- `--runs-dir <path>` o `CI2LAB_RUNS_DIR` o `runs_dir` en yaml
+- `--runs-dir <path>`, or `CI2LAB_RUNS_DIR`, or `runs_dir` in yaml
 
-## Estructura de carpeta
+## Folder structure
 
 ```text
 runs/
@@ -34,61 +36,61 @@ runs/
     config_snapshot.json
 ```
 
-Nombre: `YYYY-MM-DD_HHMMSS_<short_id>` (hora local + 8 hex).
+Name: `YYYY-MM-DD_HHMMSS_<short_id>` (local time + 8 hex).
 
-## Artefactos
+## Artifacts
 
 ### `run_summary.json`
 
-Metadatos de la ejecución: timestamps, duración, modelo, `backend_url`, `tool_mode`, `workspace`, `max_rounds`, `stream`, `auto_confirm`, rondas, conteo de tools, `tools_used`, `status`, `error` si aplica.
+Run metadata: timestamps, duration, model, `backend_url`, `tool_mode`, `workspace`, `max_rounds`, `stream`, `auto_confirm`, rounds, tool count, `tools_used`, `status`, `error` if applicable.
 
 **Status:** `success` | `llm_error` | `max_rounds` | `interrupted`
 
 ### `conversation.json`
 
 ```json
-{ "messages": [ /* historial interno compatible con el bucle */ ] }
+{ "messages": [ /* internal history compatible with the loop */ ] }
 ```
 
-Incluye `system`, `user`, `assistant` (con `tool_calls` si aplica) y `tool`.
+Includes `system`, `user`, `assistant` (with `tool_calls` if applicable), and `tool`.
 
 ### `tool_calls.jsonl`
 
-Una línea JSON por invocación:
+One JSON line per invocation:
 
 - `round`, `tool_call_id`, `tool`, `arguments`
 - `started_at`, `ended_at`, `duration_ms`
-- `ok` (inverso de `is_error`)
-- `output` (truncado a 2000 caracteres en el log)
-- `error` si la tool falló
-- `outcome` (`approved`, `denied`, `blocked_by_config`, `failed`; relevante en `write_file` / `edit_file`)
+- `ok` (inverse of `is_error`)
+- `output` (truncated to 2000 characters in the log)
+- `error` if the tool failed
+- `outcome` (`approved`, `denied`, `blocked_by_config`, `failed`; relevant for `write_file` / `edit_file`)
 
 ### `final_answer.md`
 
-Texto final devuelto por `run_agent`.
+The final text returned by `run_agent`.
 
 ### `config_snapshot.json`
 
-Config efectiva sin secretos: bloques `resolved` (CLI/env/yaml) y `selection` (`ModelSelection`).
+Effective config without secrets: `resolved` (CLI/env/yaml) and `selection` (`ModelSelection`) blocks.
 
-## Integración
+## Integration
 
 ```text
 cli._build_config() → AgentConfig(run_log_enabled, runs_dir, config_snapshot)
   ↓
 loop.run_agent() → RunLogger.maybe_create() → start()
   ↓
-por cada tool → record_tool_call() → append tool_calls.jsonl
+per tool → record_tool_call() → append tool_calls.jsonl
   ↓
-finally → finalize() → resto de artefactos
+finally → finalize() → remaining artifacts
 ```
 
-## Seguridad y privacidad
+## Security and privacy
 
-- No se vuelcan variables de entorno completas.
-- `config_snapshot` solo incluye campos de configuración conocidos.
-- El output de tools en el log está truncado.
+- Full environment variables are not dumped.
+- `config_snapshot` includes only known configuration fields.
+- Tool output in the log is truncated.
 
-## Tests automatizados
+## Automated tests
 
-Ver `tests/test_run_logger.py`.
+See `tests/test_run_logger.py`.

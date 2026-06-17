@@ -1,4 +1,4 @@
-"""Tipos de decision de seguridad compartidos."""
+"""Shared security decision types."""
 
 from __future__ import annotations
 

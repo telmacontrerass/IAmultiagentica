@@ -46,7 +46,7 @@ def test_default_profile_is_standard():
 
 
 def test_unknown_profile_raises():
-    with pytest.raises(UnknownSecurityProfileError, match="desconocido"):
+    with pytest.raises(UnknownSecurityProfileError, match="Unknown"):
         parse_security_config({"profile": "paranoid"})
 
 

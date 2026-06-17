@@ -1,7 +1,7 @@
-"""Consola Rich compartida por CLI, arnés, evals y UI.
+"""Rich console shared by the CLI, harness, evals and UI.
 
-Única instancia para toda la aplicación: la salida es coherente y los tests
-pueden silenciarla con un solo patch (`ci2lab.console.console.print`).
+Single instance for the whole application: output stays consistent and tests
+can silence it with a single patch (`ci2lab.console.console.print`).
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """
-Logging estructurado de ejecuciones del arnés en runs/.
+Structured logging of harness runs in runs/.
 
-Los fallos de escritura no interrumpen el agente; solo emiten un aviso.
+Write failures do not interrupt the agent; they only emit a warning.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class TokenUsageLogEntry:
 
 @dataclass
 class RunLogger:
-    """Persiste artefactos de una ejecución en runs/<timestamp>_<id>/."""
+    """Persists artifacts of a run in runs/<timestamp>_<id>/."""
 
     runs_dir: Path
     selection: ModelSelection
@@ -118,7 +118,7 @@ class RunLogger:
             )
             return self._run_dir
         except Exception as exc:  # noqa: BLE001
-            self._deactivate(f"No se pudo crear la carpeta de run: {exc}")
+            self._deactivate(f"Could not create the run folder: {exc}")
             return None
 
     def set_rounds_completed(self, round_num: int) -> None:
@@ -131,7 +131,7 @@ class RunLogger:
         tokens_prompt_peak: int,
         tokens_completion_total: int,
     ) -> None:
-        """Registra los contadores de tokens reales devueltos por Ollama."""
+        """Records the real token counters returned by Ollama."""
         self._tokens_prompt_last = tokens_prompt_last
         self._tokens_prompt_peak = tokens_prompt_peak
         self._tokens_completion_total = tokens_completion_total
@@ -151,7 +151,7 @@ class RunLogger:
         output = result.content
         truncated = len(output) > LOG_OUTPUT_MAX_CHARS
         if truncated:
-            output = output[:LOG_OUTPUT_MAX_CHARS] + "… (truncado en log)"
+            output = output[:LOG_OUTPUT_MAX_CHARS] + "… (truncated in log)"
         outcome = result.outcome or ("approved" if not result.is_error else "failed")
         entry = ToolCallLogEntry(
             round=round_num,
@@ -173,7 +173,7 @@ class RunLogger:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
         except Exception as exc:  # noqa: BLE001
-            self._warn(f"No se pudo registrar tool call: {exc}")
+            self._warn(f"Could not record tool call: {exc}")
 
     def record_token_usage(self, *, round_num: int, usage: TokenUsage | None) -> None:
         if (
@@ -199,7 +199,7 @@ class RunLogger:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
         except Exception as exc:  # noqa: BLE001
-            self._warn(f"No se pudo registrar token usage: {exc}")
+            self._warn(f"Could not record token usage: {exc}")
 
     def finalize(
         self,
@@ -270,9 +270,9 @@ class RunLogger:
                 final_answer or "",
                 encoding="utf-8",
             )
-            console.print(f"[dim]Run guardado: {self._run_dir}[/dim]")
+            console.print(f"[dim]Run saved: {self._run_dir}[/dim]")
         except Exception as exc:  # noqa: BLE001
-            self._warn(f"No se pudo finalizar el log de ejecución: {exc}")
+            self._warn(f"Could not finalize the run log: {exc}")
         finally:
             session_key = self.agent_config.session_id or (
                 self._run_dir.name if self._run_dir is not None else None
@@ -305,7 +305,7 @@ class RunLogger:
 
     @staticmethod
     def _warn(message: str) -> None:
-        console.print(f"[yellow]Aviso (run log): {message}[/yellow]")
+        console.print(f"[yellow]Warning (run log): {message}[/yellow]")
 
 
 def _iso(dt: datetime) -> str:
@@ -320,7 +320,7 @@ def build_config_snapshot(
     agent_config: AgentConfig,
     selection: ModelSelection,
 ) -> dict[str, Any]:
-    """Snapshot seguro de configuración efectiva (sin secretos ni env completo)."""
+    """Safe snapshot of the effective configuration (no secrets, no full env)."""
     return {
         "resolved": {
             **runtime_fields,

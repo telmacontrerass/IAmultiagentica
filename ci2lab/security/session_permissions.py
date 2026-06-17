@@ -1,4 +1,4 @@
-"""Aprobaciones temporales por sesión/run (solo opencode_experimental)."""
+"""Temporary per-session/run approvals (opencode_experimental only)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ SessionApprovalScope = Literal["allow_once", "allow_session", "deny_once"]
 
 @dataclass(frozen=True)
 class ApprovalFingerprint:
-    """Clave de caché para una decisión de sesión."""
+    """Cache key for a session decision."""
 
     engine: str
     tool_canonical: str
@@ -86,7 +86,7 @@ def grant_session_approval(
     fingerprint: ApprovalFingerprint,
     scope: SessionApprovalScope,
 ) -> None:
-    """Registra aprobación temporal (memoria de proceso, no persiste en disco)."""
+    """Register a temporary approval (process memory, not persisted to disk)."""
     key = (session_key, fingerprint)
     if scope == "allow_session":
         _allow_session[key] = scope
@@ -99,7 +99,7 @@ def grant_session_approval(
     if scope == "deny_once":
         _deny_once[key] = scope
         return
-    raise ValueError(f"scope de sesión no soportado: {scope!r}")
+    raise ValueError(f"unsupported session scope: {scope!r}")
 
 
 def lookup_session_approval(
@@ -133,7 +133,7 @@ def consume_session_approval(
 
 
 def clear_session_permissions(session_key: str | None = None) -> None:
-    """Limpia aprobaciones; si session_key es None, vacía todo."""
+    """Clear approvals; if session_key is None, empties everything."""
     global _allow_session, _allow_once, _deny_once
     if session_key is None:
         _allow_session = {}
@@ -149,9 +149,9 @@ def list_session_approvals(
     session_key: str | None = None,
 ) -> list[dict[str, str]]:
     """
-    Lista aprobaciones en memoria de proceso (solo opencode_experimental).
+    List approvals in process memory (opencode_experimental only).
 
-    No persiste en disco; visible solo en el proceso actual del agente/CLI.
+    Not persisted to disk; visible only in the current agent/CLI process.
     """
     rows: list[dict[str, str]] = []
     stores: tuple[tuple[dict, str], ...] = (

@@ -55,10 +55,10 @@ def sessions_payload() -> list[dict[str, Any]]:
 
 def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
     if not session_id or not all(ch.isalnum() or ch in "-_" for ch in session_id):
-        return {"ok": False, "error": "Sesion no valida."}, 400
+        return {"ok": False, "error": "Invalid session."}, 400
     data = load_session(session_id)
     if not data:
-        return {"ok": False, "error": "Sesion no encontrada."}, 404
+        return {"ok": False, "error": "Session not found."}, 404
 
     messages = []
     for message in data.get("messages", []):
@@ -85,10 +85,10 @@ def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
 
 def delete_session_payload(session_id: str) -> tuple[dict[str, Any], int]:
     if not session_id or not all(ch.isalnum() or ch in "-_" for ch in session_id):
-        return {"ok": False, "error": "Sesion no valida."}, 400
+        return {"ok": False, "error": "Invalid session."}, 400
     deleted = delete_session(session_id)
     if not deleted:
-        return {"ok": False, "error": "Sesion no encontrada."}, 404
+        return {"ok": False, "error": "Session not found."}, 404
     return {"ok": True, "session_id": session_id}, 200
 
 
@@ -101,11 +101,11 @@ def session_title(messages: list[dict[str, Any]]) -> str:
         if text:
             break
     if not text:
-        return "Conversación"
+        return "Conversation"
 
     words = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+", text)
     if not words:
-        return "Conversación"
+        return "Conversation"
 
     stopwords = {
         "a", "al", "and", "are", "can", "como", "con", "de", "del", "do", "el",
@@ -119,7 +119,7 @@ def session_title(messages: list[dict[str, Any]]) -> str:
     title = " ".join(chosen).strip()
     if len(title) > 48:
         title = f"{title[:45].rstrip()}..."
-    return title[:1].upper() + title[1:] if title else "Conversación"
+    return title[:1].upper() + title[1:] if title else "Conversation"
 
 
 def message_text(content: Any) -> str:

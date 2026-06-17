@@ -1,196 +1,196 @@
-# Comandos de Ci2Lab
+# Ci2Lab Commands
 
-Guia practica para empezar desde cero y, despues, consultar el resto de comandos utiles.
+A practical guide to get started from scratch and then look up the rest of the useful commands.
 
-> Nota: el comando `ci2lab` aparece despues de instalar el paquete con `pip install -e ".[dev]"`.
+> Note: the `ci2lab` command becomes available after you install the package with `pip install -e ".[dev]"`.
 
-## 1. Entrar en el proyecto
+## 1. Enter the project
 
 ```powershell
 cd IAmultiagentica
 ```
-Entra en la carpeta del proyecto.
+Enter the project folder.
 
-## 2. Crear y activar el entorno virtual
+## 2. Create and activate the virtual environment
 
 ### Windows PowerShell
 
 ```powershell
 py -m venv .venv
 ```
-Crea el entorno virtual en Windows.
+Create the virtual environment on Windows.
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
-Activa el entorno virtual en PowerShell.
+Activate the virtual environment in PowerShell.
 
 ### macOS / Linux
 
 ```bash
 python3 -m venv .venv
 ```
-Crea el entorno virtual en macOS/Linux.
+Create the virtual environment on macOS/Linux.
 
 ```bash
 source .venv/bin/activate
 ```
-Activa el entorno virtual en macOS/Linux.
+Activate the virtual environment on macOS/Linux.
 
-## 3. Instalar dependencias
+## 3. Install dependencies
 
 ```powershell
 pip install -e ".[dev]"
 ```
-Instala Ci2Lab y dependencias de desarrollo.
+Install Ci2Lab and the development dependencies.
 
-## 4. Instalar Ollama
+## 4. Install Ollama
 
-Ollama es el programa que descarga y ejecuta los modelos locales. Sin esto, `ollama pull ...` no funcionara.
+Ollama is the program that downloads and runs the local models. Without it, `ollama pull ...` will not work.
 
 ### Windows PowerShell
 
 ```powershell
 irm https://ollama.com/install.ps1 | iex
 ```
-Instala Ollama desde PowerShell.
+Install Ollama from PowerShell.
 
 ```powershell
 ollama --version
 ```
-Comprueba que Ollama quedo instalado.
+Check that Ollama was installed.
 
 ```powershell
 ollama serve
 ```
-Arranca Ollama si no esta abierto en segundo plano.
+Start Ollama if it is not already running in the background.
 
-### Instalacion manual
+### Manual install
 
 ```text
 https://ollama.com/download
 ```
-Descarga el instalador oficial desde el navegador.
+Download the official installer from your browser.
 
 ### macOS / Linux
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
-Instala Ollama desde terminal.
+Install Ollama from the terminal.
 
 ```bash
 ollama --version
 ```
-Comprueba que Ollama quedo instalado.
+Check that Ollama was installed.
 
 ```bash
 ollama serve
 ```
-Arranca Ollama si no esta abierto en segundo plano.
+Start Ollama if it is not already running in the background.
 
-## 5. Comprobar que todo responde
+## 5. Check that everything responds
 
 ```powershell
 ci2lab doctor
 ```
-Comprueba instalacion, paquete y conexion con Ollama.
+Check the installation, the package, and the connection to Ollama.
 
-## 6. Detectar la capacidad del ordenador
+## 6. Detect your computer's capacity
 
 ```powershell
 ci2lab hardware
 ```
-Muestra las caracteristicas detectadas del equipo.
+Show the detected characteristics of your machine.
 
 ```powershell
 ci2lab hardware --json
 ```
-Muestra el hardware detectado en JSON.
+Show the detected hardware as JSON.
 
 ```powershell
 ci2lab models recommend
 ```
-Recomienda modelos que caben en tu ordenador.
+Recommend models that fit your computer.
 
 ```powershell
 ci2lab models recommend --limit 3
 ```
-Limita el numero de recomendaciones.
+Limit the number of recommendations.
 
-## 7. Recomendar modelos segun la tarea
-
-```powershell
-ci2lab models recommend "programar en Python"
-```
-Recomienda modelos para programacion.
+## 7. Recommend models by task
 
 ```powershell
-ci2lab models recommend "editar y revisar codigo"
+ci2lab models recommend "program in Python"
 ```
-Recomienda modelos para trabajar sobre codigo.
+Recommend models for programming.
 
 ```powershell
-ci2lab models recommend "razonamiento complejo"
+ci2lab models recommend "edit and review code"
 ```
-Recomienda modelos para razonamiento.
+Recommend models for working on code.
 
 ```powershell
-ci2lab models recommend "resumir documentos largos"
+ci2lab models recommend "complex reasoning"
 ```
-Recomienda modelos para resumen y contexto.
+Recommend models for reasoning.
 
 ```powershell
-ci2lab models recommend "usar en un ordenador con pocos recursos"
+ci2lab models recommend "summarize long documents"
 ```
-Recomienda modelos ligeros.
-
-## 8. Patron para usar cualquier modelo
-
-En la tabla de abajo, `ci2lab` acepta tanto `ID Ci2Lab` como `Tag Ollama`. Si uno falla porque Ollama no encuentra el modelo, Ci2Lab intenta el alias alternativo automaticamente.
-
-Para comandos `ollama`, usa siempre `Tag Ollama`.
+Recommend models for summarization and large context.
 
 ```powershell
-ci2lab models install <MODELO_ID>
+ci2lab models recommend "run on a low-resource computer"
 ```
-Muestra el plan para instalar y usar el modelo.
+Recommend lightweight models.
+
+## 8. Pattern for using any model
+
+In the table below, `ci2lab` accepts either the `Ci2Lab ID` or the `Ollama Tag`. If one fails because Ollama cannot find the model, Ci2Lab tries the alternate alias automatically.
+
+For `ollama` commands, always use the `Ollama Tag`.
+
+```powershell
+ci2lab models install <MODEL_ID>
+```
+Show the plan to install and use the model.
 
 ```powershell
 ollama pull <OLLAMA_TAG>
 ```
-Descarga el modelo en Ollama.
+Download the model in Ollama.
 
 ```powershell
-ci2lab models run <MODELO_ID>
+ci2lab models run <MODEL_ID>
 ```
-Abre el modelo desde Ci2Lab con `ollama run`.
+Open the model from Ci2Lab with `ollama run`.
 
 ```powershell
-ci2lab --model <MODELO_ID> chat
+ci2lab --model <MODEL_ID> chat
 ```
-Abre chat agente con ese modelo.
+Open an agent chat with that model.
 
 ```powershell
-ci2lab --model <MODELO_ID> "hola"
+ci2lab --model <MODEL_ID> "hello"
 ```
-Ejecuta una peticion puntual con ese modelo.
+Run a one-off request with that model.
 
 ```powershell
 ollama rm <OLLAMA_TAG>
 ```
-Elimina el modelo descargado del disco.
+Delete the downloaded model from disk.
 
 ```powershell
 ollama list
 ```
-Muestra los modelos instalados en Ollama.
+Show the models installed in Ollama.
 
-## 9. Tabla de modelos disponibles
+## 9. Table of available models
 
-El catalogo actual tiene 64 modelos. Descarga solo los que te recomiende `ci2lab models recommend` y que quepan en tu equipo.
+The current catalog has 64 models. Download only the ones that `ci2lab models recommend` suggests and that fit on your machine.
 
-| Modelo | ID Ci2Lab | Tag Ollama | Uso | Tier | RAM aprox. |
+| Model | Ci2Lab ID | Ollama Tag | Use | Tier | Approx. RAM |
 |---|---|---|---|---|---|
 | Llama 3.2 1B | `llama3.2-1b` | `llama3.2:1b` | general, edge | edge | 2 GB |
 | Qwen2.5 Coder 1.5B | `qwen2.5-coder-1.5b` | `qwen2.5-coder:1.5b` | coding, edge | edge | 3 GB |
@@ -257,468 +257,459 @@ El catalogo actual tiene 64 modelos. Descarga solo los que te recomiende `ci2lab
 | Qwen3 235B A22B | `qwen3-235b` | `qwen3:235b` | general | enterprise | 218.9 GB |
 | Llama 3.1 405B | `llama3.1-405b` | `llama3.1:405b` | general | enterprise | 378 GB |
 
-Ejemplo de sustitucion: para Qwen2.5 Coder 1.5B, `<MODELO_ID>` es `qwen2.5-coder-1.5b` y `<OLLAMA_TAG>` es `qwen2.5-coder:1.5b`.
+Substitution example: for Qwen2.5 Coder 1.5B, `<MODEL_ID>` is `qwen2.5-coder-1.5b` and `<OLLAMA_TAG>` is `qwen2.5-coder:1.5b`.
 
-## 10. Usar el agente por primera vez
+## 10. Using the agent for the first time
 
-### Modo facil con menu interactivo
-
-```powershell
-ci2lab
-```
-Abre el menu inicial por defecto si estas en una terminal interactiva. Puedes moverte con las flechas y pulsar Enter para lanzar comandos sin escribirlos.
-
-```powershell
-ci2lab menu
-```
-Abre el mismo selector manualmente.
-
-Desde el menu puedes comprobar hardware, revisar Ollama, recomendar modelos, recomendar modelos para una tarea concreta, abrir chat con herramientas, abrir chat multi-agent, abrir la interfaz web, ejecutar evals, revisar permisos y abrir sesiones guardadas.
-Si la revision de Ollama detecta que no esta instalado, el menu ofrece instalarlo o abrir la pagina oficial de descarga.
-
-Al final del menu tienes `Work with commands`, que abre una linea `ci2lab:` para escribir comandos manualmente como antes, por ejemplo `chat`, `doctor`, `models recommend` o `agent "lista los archivos Python"`.
-
-Cuando eliges un chat, aparece un selector de modelos con estado `(installed)` o `(not installed)`. Si eliges un modelo no instalado, pregunta si quieres descargarlo con `ollama pull`.
-
-La opcion de sesiones muestra las conversaciones guardadas y permite abrir el `.json` de una sesion o reanudarla en chat.
-
-### Modo facil con interfaz web
+### Easy mode with the web interface
 
 ```powershell
 ci2lab ui
 ```
-Abre una interfaz web local para usar Ci2Lab sin escribir comandos.
+Open a local web interface to use Ci2Lab without typing commands.
 
 ```powershell
-ci2lab --model <MODELO_ID> ui
+ci2lab --model <MODEL_ID> ui
 ```
-Abre la interfaz web usando un modelo concreto por defecto.
+Open the web interface with a specific default model.
 
 ```powershell
 ci2lab ui --no-open
 ```
-Arranca el servidor local sin abrir el navegador.
+Start the local server without opening the browser.
 
 ```powershell
 ci2lab ui --port 8766
 ```
-Arranca la interfaz en otro puerto local.
+Start the interface on a different local port.
 
-La UI funciona solo en local, usa Ollama como motor y mantiene sesiones/logs en tu equipo.
-En el chat puedes adjuntar PDFs y archivos de texto; se copian a `ci2lab_uploads/` y el agente los lee con `read_file`.
-La pagina de chat muestra un contador permanente de tokens por turno y por conversacion. Pulsa la flecha del contador para ver como se calcula para el modelo seleccionado y enlaces a la documentacion de Ollama.
+The UI runs only locally, uses Ollama as its engine, and keeps sessions/logs on your machine.
+In the chat you can attach PDFs and text files; they are copied to `ci2lab_uploads/` and the agent reads them with `read_file` (or `read_document`).
+The chat page shows a persistent token counter per turn and per conversation. Click the arrow next to the counter to see how it is computed for the selected model, with links to the Ollama documentation.
 
-### Modo terminal
+> Note: as of this writing the web frontend (page text and labels) is still in Spanish; the agent's answers follow the model. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+
+### Terminal mode
 
 ```powershell
 ci2lab chat
 ```
-Abre el modo interactivo con el modelo por defecto.
-Despues de cada interaccion muestra los tokens de entrada, salida, turno y conversacion cuando Ollama devuelve esos datos.
+Open interactive mode with the default model.
+After each interaction it shows the input, output, turn, and conversation tokens when Ollama returns that data.
 
 ```powershell
-ci2lab --model <MODELO_ID> chat
+ci2lab --model <MODEL_ID> chat
 ```
-Abre chat agente con el modelo elegido en la tabla.
+Open an agent chat with the model you picked from the table.
 
-Si acabas de descargar un modelo concreto, usa siempre `--model <MODELO_ID>` para evitar que Ci2Lab intente abrir el modelo por defecto.
+If you have just downloaded a specific model, always use `--model <MODEL_ID>` so Ci2Lab does not try to open the default model.
 
 ```powershell
-ci2lab "lista los archivos Python"
+ci2lab "list the Python files"
 ```
-Ejecuta una peticion puntual al agente.
+Run a one-off request to the agent.
 
 ```powershell
-ci2lab agent "lista los archivos Python"
+ci2lab agent "list the Python files"
 ```
-Ejecuta una peticion puntual usando el subcomando explicito.
+Run a one-off request using the explicit subcommand.
 
 ```powershell
-ci2lab --workspace . --no-stream "resume este proyecto"
+ci2lab --workspace . --no-stream "summarize this project"
 ```
-Pide un resumen del proyecto actual.
+Ask for a summary of the current project.
 
 ```powershell
-ci2lab --workspace . --yes "ejecuta los tests y dime el resultado"
+ci2lab --workspace . --yes "run the tests and tell me the result"
 ```
-Permite al agente lanzar pruebas si lo necesita.
+Let the agent run the tests if it needs to.
 
-## 11. Salir de la conversacion y borrar cosas
+## 11. Leaving the conversation and deleting things
 
-Dentro de `ci2lab chat` o `ci2lab --model ... chat`, escribe uno de estos comandos.
+Inside `ci2lab chat` or `ci2lab --model ... chat`, type one of these commands.
 
-| Comando | Hace |
+| Command | Action |
 |---|---|
-| `/exit` | Sale de la conversacion con el agente |
-| `/quit` | Sale de la conversacion con el agente |
-| `exit` | Sale de la conversacion con el agente |
-| `quit` | Sale de la conversacion con el agente |
-| `Ctrl+C` | Interrumpe y cierra la conversacion |
+| `/exit` | Leave the conversation with the agent |
+| `/quit` | Leave the conversation with the agent |
+| `exit` | Leave the conversation with the agent |
+| `quit` | Leave the conversation with the agent |
+| `Ctrl+C` | Interrupt and close the conversation |
 
-Dentro de `ollama run ...`, usa este comando.
+Inside `ollama run ...`, use this command.
 
-| Comando | Hace |
+| Command | Action |
 |---|---|
-| `/bye` | Sale del chat directo de Ollama |
-| `Ctrl+C` | Interrumpe el chat directo de Ollama |
+| `/bye` | Leave Ollama's direct chat |
+| `Ctrl+C` | Interrupt Ollama's direct chat |
 
-Para ver sesiones guardadas de Ci2Lab.
+To see your saved Ci2Lab sessions.
 
 ```powershell
 ci2lab sessions
 ```
-Lista las conversaciones guardadas.
+List the saved conversations.
 
-Para borrar una sesion guardada en Windows PowerShell.
+To delete a saved session on Windows PowerShell.
 
 ```powershell
-Remove-Item "$HOME\.ci2lab\sessions\<ID_DE_SESION>.json"
+Remove-Item "$HOME\.ci2lab\sessions\<SESSION_ID>.json"
 ```
-Borra una sesion concreta de Ci2Lab.
+Delete a specific Ci2Lab session.
 
-Para borrar una sesion guardada en macOS/Linux.
+To delete a saved session on macOS/Linux.
 
 ```bash
-rm ~/.ci2lab/sessions/<ID_DE_SESION>.json
+rm ~/.ci2lab/sessions/<SESSION_ID>.json
 ```
-Borra una sesion concreta de Ci2Lab.
+Delete a specific Ci2Lab session.
 
-Para eliminar un modelo descargado en Ollama.
+To remove a downloaded model in Ollama.
 
 ```powershell
 ollama rm <OLLAMA_TAG>
 ```
-Elimina del disco el modelo indicado en la tabla.
+Delete the model from disk.
 
 ```powershell
 ollama list
 ```
-Muestra los modelos instalados en Ollama.
+Show the models installed in Ollama.
 
-## 12. Comandos principales de uso diario
+## 12. Main day-to-day commands
 
 ```powershell
 ci2lab doctor
 ```
-Verifica que todo esta listo.
+Verify that everything is ready.
 
 ```powershell
 ci2lab chat
 ```
-Abre una conversacion interactiva.
+Open an interactive conversation.
 
 ```powershell
 ci2lab ui
 ```
-Abre la interfaz web local.
+Open the local web interface.
 
 ```powershell
 ci2lab sessions
 ```
-Lista sesiones guardadas.
+List saved sessions.
 
 ```powershell
 ci2lab sessions --json
 ```
-Lista sesiones guardadas en JSON.
+List saved sessions as JSON.
 
 ```powershell
 ci2lab hardware
 ```
-Consulta el hardware detectado.
+Show the detected hardware.
 
 ```powershell
 ci2lab evals run
 ```
-Valida el harness en modo mock.
+Validate the harness in mock mode.
 
-## Flags del agente
+## Agent flags
 
-Estos flags se pueden usar antes del prompt o con `ci2lab agent`.
-
-```powershell
-ci2lab --model <MODELO_ID> "hola"
-```
-Fuerza un modelo de la tabla para una peticion.
+These flags can be used before the prompt or with `ci2lab agent`.
 
 ```powershell
-ci2lab --model <OLLAMA_TAG> "revisa este proyecto"
+ci2lab --model <MODEL_ID> "hello"
 ```
-Fuerza un modelo usando el tag de Ollama.
+Force a model from the table for one request.
 
 ```powershell
-ci2lab --tool-mode native "haz una tarea"
+ci2lab --model <OLLAMA_TAG> "review this project"
 ```
-Usa tool calling nativo.
+Force a model using its Ollama tag.
 
 ```powershell
-ci2lab --tool-mode fenced "haz una tarea"
+ci2lab --tool-mode native "do a task"
 ```
-Usa formato de herramientas en bloques fenced.
+Use native tool calling.
 
 ```powershell
-ci2lab --workspace . "lista los archivos"
+ci2lab --tool-mode fenced "do a task"
 ```
-Define el directorio de trabajo del agente.
+Use the fenced-block tool format.
 
 ```powershell
-ci2lab --cwd . "lista los archivos"
+ci2lab --workspace . "list the files"
 ```
-Alias legacy de `--workspace`.
+Set the agent's working directory.
 
 ```powershell
-ci2lab --yes "ejecuta los tests"
+ci2lab --cwd . "list the files"
 ```
-Auto-confirma herramientas peligrosas permitidas.
+Legacy alias of `--workspace`.
 
 ```powershell
-ci2lab --no-stream "di hola"
+ci2lab --yes "run the tests"
 ```
-Desactiva streaming de tokens.
+Auto-confirm allowed dangerous tools.
 
 ```powershell
-ci2lab --max-rounds 10 "resuelve esto"
+ci2lab --security-engine ci2lab "do a task"
 ```
-Limita las rondas del bucle agente.
+Use the legacy security engine (no deny/ask/allow rules). The default is `claude_experimental`.
 
 ```powershell
-ci2lab --session mi-sesion chat
+ci2lab --no-stream "say hello"
 ```
-Reanuda o usa una sesion concreta.
+Disable token streaming.
 
 ```powershell
-ci2lab --runs-dir ./_runs "hola"
+ci2lab --max-rounds 10 "solve this"
 ```
-Guarda logs en otro directorio.
+Limit the agent loop rounds.
 
 ```powershell
-ci2lab --no-log "hola"
+ci2lab --session my-session chat
 ```
-Ejecuta sin guardar artefactos en `runs/`.
+Resume or use a specific session.
 
 ```powershell
-ci2lab --workspace . --runs-dir ./_test_runs --no-stream --yes "hola"
+ci2lab --runs-dir ./_runs "hello"
 ```
-Prueba agente con workspace, logs personalizados y sin streaming.
+Save logs in a different directory.
 
 ```powershell
-ci2lab --no-log --no-stream --yes "lista los archivos"
+ci2lab --no-log "hello"
 ```
-Ejecuta rapido sin streaming ni logs.
+Run without saving artifacts under `runs/`.
 
-## Evaluaciones
+```powershell
+ci2lab --workspace . --runs-dir ./_test_runs --no-stream --yes "hello"
+```
+Test the agent with a custom workspace, custom logs, and no streaming.
+
+```powershell
+ci2lab --no-log --no-stream --yes "list the files"
+```
+Run quickly with no streaming and no logs.
+
+```powershell
+ci2lab --multi-agent chat
+```
+Use the sequential subagent orchestrator. Note: the `--multi-agent` orchestrator is not present in this checkout; only the shared subsystems live here.
+
+## Evaluations
 
 ```powershell
 ci2lab evals run
 ```
-Ejecuta evals mock sin Ollama.
+Run the mock evals without Ollama.
 
 ```powershell
 python -m ci2lab.evals.run
 ```
-Entrypoint directo de evals mock.
+Direct entrypoint for the mock evals.
 
 ```powershell
 ci2lab evals run --live
 ```
-Ejecuta evals contra Ollama real.
+Run the evals against a real Ollama.
 
 ```powershell
 ci2lab evals run --live --model llama3.1:8b
 ```
-Ejecuta evals live con modelo concreto.
+Run the live evals with a specific model.
 
 ```powershell
 ci2lab evals run --task 001_list_files
 ```
-Ejecuta solo una tarea de evaluacion.
+Run a single evaluation task.
 
 ```powershell
 ci2lab evals run --task 001_list_files --task 002_read_file
 ```
-Ejecuta varias tareas concretas.
+Run several specific tasks.
 
 ```powershell
 ci2lab evals run --tasks-dir ./evals/tasks
 ```
-Usa un directorio personalizado de tareas.
+Use a custom tasks directory.
 
 ```powershell
 python -m ci2lab.evals.run --task 006_edit_file_approved
 ```
-Ejecuta una tarea concreta desde Python.
+Run a specific task from Python.
 
 ```powershell
 python -m ci2lab.evals.run --live --model llama3.1:8b --task 001_list_files
 ```
-Ejecuta una tarea live con modelo concreto.
+Run a live task with a specific model.
 
 ```powershell
 python -m ci2lab.evals.run --live --model llama3.1:8b
 ```
-Ejecuta toda la suite live.
+Run the full live suite.
 
-## Tests y comprobaciones de desarrollo
+## Tests and development checks
 
 ```powershell
 python -m pytest tests/ -q
 ```
-Ejecuta la suite automatizada.
+Run the automated test suite.
 
 ```powershell
 python -m ci2lab.cli --help
 ```
-Muestra ayuda del CLI principal.
+Show the main CLI help.
 
 ```powershell
 python -m ci2lab --help
 ```
-Muestra ayuda usando el entrypoint de paquete.
+Show the help using the package entrypoint.
 
 ```powershell
 python -m ci2lab.cli --workspace . --help
 ```
-Muestra ayuda con flags del agente.
+Show the help with the agent flags.
 
 ```powershell
 python -m ci2lab.cli doctor
 ```
-Ejecuta `doctor` sin usar el script instalado.
+Run `doctor` without using the installed script.
 
 ```powershell
-python -m ci2lab.cli --no-stream --yes "lista los archivos"
+python -m ci2lab.cli --no-stream --yes "list the files"
 ```
-Ejecuta el agente desde el modulo Python.
+Run the agent from the Python module.
 
 ```powershell
-python -m ci2lab.cli --no-log --no-stream --yes "lista los archivos"
+python -m ci2lab.cli --no-log --no-stream --yes "list the files"
 ```
-Ejecuta sin logs ni streaming desde Python.
+Run without logs or streaming from Python.
 
-## Extensiones del workspace
+## Workspace extensions
 
-Skills, MCP y memoria de proyecto se configuran en el directorio de trabajo (no son flags de CLI).
+Skills, MCP, and project memory are configured in the working directory (they are not CLI flags).
 
 ```text
-.ci2lab/skills/<nombre>/SKILL.md
+.ci2lab/skills/<name>/SKILL.md
 ```
-Define una skill invocable en REPL con `/nombre` o la tool `skill`.
+Define a skill you can invoke in the REPL with `/name` or via the `skill` tool.
 
 ```text
 .ci2lab/mcp.json
 ```
-Configura servidores MCP; las tools aparecen como `mcp__<servidor>__<tool>`.
+Configure MCP servers; their tools appear as `mcp__<server>__<tool>`.
 
 ```text
 CI2LAB.md
 AGENTS.md
 ```
-Instrucciones persistentes inyectadas en el system prompt (project memory).
+Persistent instructions injected into the system prompt (project memory).
 
-## Logging de ejecuciones
-
-```powershell
-ci2lab --workspace . "lista los archivos"
-```
-Guarda una ejecucion normal en `runs/`.
+## Run logging
 
 ```powershell
-ci2lab --no-log "lista los archivos"
+ci2lab --workspace . "list the files"
 ```
-Desactiva logging para esa ejecucion.
+Save a normal run under `runs/`.
 
 ```powershell
-ci2lab --runs-dir ./_runs "hola"
+ci2lab --no-log "list the files"
 ```
-Guarda artefactos en `./_runs`.
+Disable logging for that run.
+
+```powershell
+ci2lab --runs-dir ./_runs "hello"
+```
+Save artifacts under `./_runs`.
 
 ```powershell
 $env:CI2LAB_NO_LOG="1"
 ```
-Desactiva logs por variable de entorno.
+Disable logs via environment variable.
 
 ```powershell
 $env:CI2LAB_RUNS_DIR="./_runs"
 ```
-Define carpeta de logs por variable de entorno.
+Set the logs folder via environment variable.
 
-## Configuracion por variables de entorno
+## Configuration via environment variables
 
 ```powershell
 $env:CI2LAB_MODEL="llama3.1:8b"
 ```
-Define el modelo por defecto.
+Set the default model.
 
 ```powershell
 $env:CI2LAB_OLLAMA_URL="http://localhost:11434"
 ```
-Define la URL base de Ollama.
+Set the Ollama base URL.
 
 ```powershell
 $env:CI2LAB_BACKEND_URL="http://localhost:11434/v1"
 ```
-Define endpoint OpenAI-compatible.
+Set the OpenAI-compatible endpoint.
 
 ```powershell
 $env:CI2LAB_TOOL_MODE="native"
 ```
-Define modo de herramientas.
+Set the tool mode.
 
 ```powershell
 $env:CI2LAB_MAX_ROUNDS="25"
 ```
-Define maximo de rondas.
+Set the maximum number of rounds.
 
 ```powershell
 $env:CI2LAB_WORKSPACE="."
 ```
-Define workspace por defecto.
+Set the default workspace.
 
 ```powershell
 $env:CI2LAB_CWD="."
 ```
-Alias legacy para workspace.
+Legacy alias for the workspace.
 
 ```powershell
 $env:CI2LAB_STREAM="false"
 ```
-Desactiva streaming por defecto.
+Disable streaming by default.
 
 ```powershell
 $env:CI2LAB_AUTO_CONFIRM="1"
 ```
-Activa auto-confirmacion.
+Enable auto-confirmation.
 
 ```powershell
 $env:CI2LAB_YES="1"
 ```
-Activa auto-confirmacion.
+Enable auto-confirmation.
 
 ```powershell
 $env:CI2LAB_CONFIG="./ci2lab.yaml"
 ```
-Fuerza ruta de archivo de configuracion.
+Force the config file path.
 
 ```powershell
 $env:CI2LAB_WRITE_TOOLS_ENABLED="false"
 ```
-Desactiva `write_file` y `edit_file`.
+Disable `write_file` and `edit_file`.
 
 ```powershell
 $env:CI2LAB_REQUIRE_DIFF_PREVIEW="false"
 ```
-Permite saltar preview obligatorio de edicion.
+Allow skipping the mandatory edit preview.
 
-## Configuracion por archivo
+## Configuration via file
 
-Crear `ci2lab.yaml` en la raiz o `~/.ci2lab/ci2lab.yaml`.
+Create `ci2lab.yaml` at the project root or `~/.ci2lab/ci2lab.yaml`.
 
 ```yaml
 model: llama3.1:8b
 runs_dir: runs
 log_runs: true
 ```
-Configura modelo y logging.
+Configure the model and logging.
 
 ```yaml
 workspace: .
@@ -726,136 +717,136 @@ max_rounds: 25
 stream: true
 auto_confirm: false
 ```
-Configura workspace y comportamiento del agente.
+Configure the workspace and agent behavior.
 
 ```yaml
 backend_url: http://localhost:11434/v1
 tool_mode: native
 ```
-Configura endpoint y modo de tools.
+Configure the endpoint and tool mode.
 
 ```yaml
 write_tools_enabled: false
 ```
-Desactiva herramientas de escritura.
+Disable the write tools.
 
 ```yaml
 require_diff_preview: true
 ```
-Mantiene diff obligatorio antes de editar.
+Keep the diff preview mandatory before editing.
 
 ```yaml
 no_log: true
 ```
-Desactiva logging desde YAML.
+Disable logging from YAML.
 
-## Herramientas internas del agente
+## The agent's internal tools
 
-El modelo las invoca durante una tarea (22 built-in + MCP dinámico). Ver `docs/TOOLS_ROADMAP.md`.
+The model invokes these during a task (25 built-in tools + dynamic MCP). See `docs/TOOLS_ROADMAP.md`.
 
-**Lectura / exploración:** `ls`, `read_file`, `read_document`, `grep`, `glob`, `file_info`, `tree`, `inspect_file`
+**Reading / exploration:** `ls`, `read_file`, `read_document`, `grep`, `glob`, `file_info`, `tree`, `inspect_file`
 
-**Escritura:** `write_file`, `edit_file`, `write_docx`, `apply_patch`, `fill_docx_template`, `notebook_edit`
+**Writing / conversion:** `write_file`, `edit_file`, `write_docx`, `apply_patch`, `fill_docx_template`, `docx_to_pdf`, `pdf_to_docx`, `notebook_edit`
 
 **Shell / git:** `bash`, `git_status`, `git_diff`
 
-**Flujo:** `todo_write`, `ask_user`, `web_fetch`, `skill`, `mcp_call`, `mcp__*`
+**Workflow / integrations:** `todo_write`, `ask_user`, `web_search`, `web_fetch`, `skill`, `mcp_call`, `mcp__*`
 
-## Tareas de eval incluidas
+## Included eval tasks
 
 ```text
 001_list_files
 ```
-Comprueba uso de `ls`.
+Checks the use of `ls`.
 
 ```text
 002_read_file
 ```
-Comprueba uso de `read_file`.
+Checks the use of `read_file`.
 
 ```text
 003_find_function
 ```
-Comprueba busqueda con `grep` o `glob` y `read_file`.
+Checks searching with `grep` or `glob` plus `read_file`.
 
 ```text
 004_block_dangerous_bash
 ```
-Comprueba bloqueo de comandos peligrosos.
+Checks that dangerous commands are blocked.
 
 ```text
 005_edit_file_denied
 ```
-Comprueba edicion supervisada denegada.
+Checks supervised editing when denied.
 
 ```text
 006_edit_file_approved
 ```
-Comprueba edicion supervisada aprobada.
+Checks supervised editing when approved.
 
 ```text
 007_write_tools_disabled
 ```
-Comprueba bloqueo de escritura por configuracion.
+Checks that writing is blocked by configuration.
 
-## Secuencia rapida recomendada
+## Recommended quick sequence
 
 ```powershell
 cd IAmultiagentica
 ```
-Entra en el proyecto.
+Enter the project.
 
 ```powershell
 py -m venv .venv
 ```
-Crea el entorno virtual.
+Create the virtual environment.
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
-Activa el entorno virtual.
+Activate the virtual environment.
 
 ```powershell
 pip install -e ".[dev]"
 ```
-Instala dependencias.
+Install the dependencies.
 
 ```powershell
 irm https://ollama.com/install.ps1 | iex
 ```
-Instala Ollama en Windows.
+Install Ollama on Windows.
 
 ```powershell
 ollama --version
 ```
-Comprueba que Ollama esta instalado.
+Check that Ollama is installed.
 
 ```powershell
 ci2lab doctor
 ```
-Comprueba el entorno.
+Check the environment.
 
 ```powershell
 ci2lab hardware
 ```
-Detecta la capacidad del equipo.
+Detect your machine's capacity.
 
 ```powershell
-ci2lab models recommend "programar en Python"
+ci2lab models recommend "program in Python"
 ```
-Elige un modelo para tu caso.
+Pick a model for your case.
 
 ```powershell
-ci2lab models install <MODELO_ID>
+ci2lab models install <MODEL_ID>
 ```
-Obtiene el comando de instalacion del modelo.
+Get the install command for the model.
 
 ```powershell
 ollama pull <OLLAMA_TAG>
 ```
-Descarga el modelo en Ollama.
+Download the model in Ollama.
 
 ```powershell
-ci2lab --model <MODELO_ID> chat
+ci2lab --model <MODEL_ID> chat
 ```
-Abre chat agente con ese modelo.
+Open an agent chat with that model.

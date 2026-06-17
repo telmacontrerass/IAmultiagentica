@@ -1,12 +1,17 @@
 """
-Bucle ReAct del arnés agéntico.
+ReAct loop of the agentic harness.
 
-Flujo por ronda:
-  1. Recortar historial al contexto del modelo
-  2. Llamar al LLM (streaming opcional)
-  3. Detectar tool calls (native, XML o fenced)
-  4. Ejecutar herramientas → añadir resultados
-  5. Repetir hasta respuesta sin tools o max_rounds
+Per round:
+  1. Trim history to the model context
+  2. Call the LLM (optional streaming)
+  3. Detect tool calls (native, XML, or fenced)
+  4. Execute tools -> append results
+  5. Repeat until a tool-free answer or max_rounds
+
+The loop is task-agnostic: it has no per-topic special cases. Robustness comes
+from a small set of general mechanisms — loop detection, an error-streak cutoff,
+workspace-policy handling, edit follow-ups, and a few recovery nudges — all of
+which apply to any task.
 """
 
 from __future__ import annotations
@@ -33,18 +38,14 @@ from ci2lab.harness.parsing import (
 )
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.query.llm_io import call_llm
-from ci2lab.harness.query.documents import (
-    document_direct_answer,
-    document_request_missing_message,
-    forced_document_read_tool_call,
-)
 from ci2lab.harness.query.nudges import (
-    forced_pdf_read_tool_call,
-    is_pdf_read_tool_call,
-    pdf_tool_result_followup,
-    pdf_tool_retry_hint,
     summarize_args,
     web_fetch_failed_nudge,
+)
+from ci2lab.harness.query.retry_governor import (
+    ERROR_CLASS_LIMIT,
+    MAX_SAME_CALL,
+    error_class_key,
 )
 from ci2lab.harness.query.session_hooks import maybe_save_session
 from ci2lab.harness.run_logger import RunLogger
@@ -58,6 +59,76 @@ from ci2lab.harness.security.policy import (
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
+
+_EXPLICIT_URL_RE = re.compile(r"https?://\S+")
+
+# The USER (not the harness) telling the agent to stop using tools and answer
+# now. Computed once from the user's own prompt, never from harness-injected
+# messages, so the loop-break nudge below can never trip it.
+_STOP_TOOLS_RE = re.compile(
+    r"(answer with what you (already )?(know|have)|"
+    r"reply with what you (already )?have|"
+    r"stop searching|don'?t keep searching|just answer|"
+    r"responde con lo que sabes|contesta con lo que tengas|"
+    r"deja de buscar|no sigas buscando)",
+    re.IGNORECASE,
+)
+# A model claiming it has no internet access, so we can remind it about web tools.
+_NO_INTERNET_RE = re.compile(
+    r"(i (do not|don'?t) have (access to )?(the )?internet|"
+    r"i can'?t (search|access) the web|"
+    r"no tengo acceso a internet|"
+    r"no puedo buscar en tiempo real|"
+    r"no tengo capacidad de acceder a la web)",
+    re.IGNORECASE,
+)
+
+_LOOP_BREAK_NUDGE = (
+    "You keep calling the same tool with the same arguments without making "
+    "progress. Stop repeating it. If a tool is blocked by the skill, use an "
+    "allowed equivalent (`ls`, `grep`, `glob`, `read_file`). If the goal cannot "
+    "be reached, say so plainly instead of retrying. Do not explain that you are "
+    "changing strategy. Answer the user's original request now, using the tool "
+    "results already available.\n\nOriginal request: {user_prompt}"
+)
+_LOOP_GIVE_UP = (
+    "I could not complete the task: the same tool repeated without making "
+    "progress. Check the last error shown above (skill permissions, a wrong "
+    "path, or a format issue)."
+)
+_ERROR_STREAK_GIVE_UP = (
+    "I could not complete the task: the tools failed repeatedly. Last error: "
+    "{error}"
+)
+_GOVERNOR_REPEAT_MESSAGE = (
+    "This exact call already failed repeatedly. Do not run it again. Use a "
+    "different tool, different arguments, or stop and explain the blocker."
+)
+_GOVERNOR_GIVE_UP = (
+    "I could not complete the task: `{tool}` kept failing ({error_class}). "
+    "Last error: {error}\n"
+    "Try a different approach, or the task may not be doable as requested."
+)
+_STOP_TOOLS_NUDGE = (
+    "Do not use tools. Answer now with what you have, and add a short warning if "
+    "some sources are missing."
+)
+_WEB_CAPABILITY_NUDGE = (
+    "You can use `web_search` for live info without a URL, then `web_fetch` for "
+    "selected sources."
+)
+_UNPARSED_FENCED_HINT = (
+    "Your previous tool call was not executed. Use a fenced block with the tool "
+    "name as the tag, e.g.\n"
+    "```write_file\n"
+    '{"path": "file.py", "content": "..."}\n'
+    "```\n"
+    "Do not put write_file inside a bash block. Do not reply with plain JSON only."
+)
+_UNPARSED_NATIVE_HINT = (
+    "Your previous tool call was not executed. Invoke the tool through function "
+    "calling, or use a ```write_file fenced block with JSON arguments."
+)
 
 
 def _status(label: str) -> None:
@@ -112,25 +183,12 @@ def _current_request_anchor(user_prompt: str) -> dict[str, str]:
     return {
         "role": "user",
         "content": (
-            "La peticion actual del usuario es:\n"
+            "The user's current request is:\n"
             f"{user_prompt}\n\n"
-            "Responde solo a eso usando los resultados de herramientas ya "
-            "disponibles. No retomes una tarea anterior ni propongas crear "
-            "archivos si el usuario no lo pidio."
+            "Answer only that, using the tool results already available. Do not "
+            "resume an earlier task."
         ),
     }
-
-
-def _role_anchor_message(role_anchor: str) -> dict[str, str]:
-    return {
-        "role": "user",
-        "content": role_anchor,
-    }
-
-
-_EXPLICIT_URL_RE = re.compile(r"https?://\S+")
-_DOCX_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.docx)\b", re.IGNORECASE)
-_LS_DIR_RE = re.compile(r"(?:^|\s)ls\s+(?P<path>[^\s;&|]+)")
 
 
 def _print_model_step(content: str, *, already_streamed: bool) -> None:
@@ -138,117 +196,7 @@ def _print_model_step(content: str, *, already_streamed: bool) -> None:
     display = strip_tool_markup(content).strip()
     if not display or already_streamed:
         return
-    console.print(f"[dim]Modelo:[/dim] {display}")
-
-
-def _looks_like_docx_to_pdf_goal(user_prompt: str) -> bool:
-    text = user_prompt.lower()
-    convert_words = ("convert", "convierte", "convertir", "pasar", "export")
-    docx_words = ("docx", "word")
-    return (
-        any(word in text for word in convert_words)
-        and any(word in text for word in docx_words)
-        and "pdf" in text
-    )
-
-
-def _output_pdf_for_docx(source: str) -> str:
-    return re.sub(r"\.docx$", ".pdf", source, flags=re.IGNORECASE)
-
-
-def _first_docx_path_from_result(call: ToolCall, result: ToolResult) -> str | None:
-    if result.is_error:
-        return None
-    matches = [match.group("path") for match in _DOCX_PATH_RE.finditer(result.content)]
-    if not matches:
-        return None
-    for match in matches:
-        if "/" in match or "\\" in match:
-            return match
-
-    dirname: str | None = None
-    if call.name in {"ls", "tree", "glob"}:
-        dirname = str(call.arguments.get("path") or "").strip()
-    elif call.name == "bash":
-        command = str(call.arguments.get("command") or "")
-        ls_match = _LS_DIR_RE.search(command)
-        if ls_match:
-            dirname = ls_match.group("path").strip()
-
-    filename = matches[0]
-    if dirname and dirname not in {".", "./"}:
-        return f"{dirname.rstrip('/')}/{filename}"
-    return filename
-
-
-def _is_repeated_discovery_call(calls: list[ToolCall]) -> bool:
-    if len(calls) != 1:
-        return False
-    call = calls[0]
-    if call.name in {"ls", "glob", "grep", "tree"}:
-        return True
-    if call.name == "bash":
-        command = str(call.arguments.get("command") or "").strip().lower()
-        return command.startswith(("ls ", "find ", "dir "))
-    return False
-
-
-def _forced_docx_to_pdf_call(
-    user_prompt: str,
-    calls: list[ToolCall],
-    found_docx_path: str | None,
-) -> ToolCall | None:
-    if (
-        not found_docx_path
-        or not _looks_like_docx_to_pdf_goal(user_prompt)
-        or not _is_repeated_discovery_call(calls)
-    ):
-        return None
-    return ToolCall(
-        name="docx_to_pdf",
-        arguments={
-            "source": found_docx_path,
-            "output": _output_pdf_for_docx(found_docx_path),
-        },
-        call_id=f"auto_docx_to_pdf_{uuid.uuid4().hex[:8]}",
-    )
-
-
-_NO_INTERNET_RE = re.compile(
-    r"(no tengo acceso a internet|"
-    r"no puedo buscar en tiempo real|"
-    r"no tengo capacidad de acceder a la web)",
-    re.IGNORECASE,
-)
-_STOP_TOOLS_RE = re.compile(
-    r"(responde con lo que sabes|"
-    r"deja de repetir|"
-    r"contesta con lo que tengas|"
-    r"no sigas buscando)",
-    re.IGNORECASE,
-)
-_FACTUAL_TOPIC_RE = re.compile(
-    r"\b(resultado|marcador|score|partido|vs\b|bitcoin|btc|precio|latest|actual|"
-    r"noticia|version|versi[oó]n|cotizaci[oó]n)\b",
-    re.IGNORECASE,
-)
-_WEB_SIGNAL_RE = re.compile(
-    r"\b(web|internet|online|tiempo real|live|hoy|now|actual|latest|precio|bitcoin|btc)\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_LOCAL_RE = re.compile(
-    r"\b(repo|repositorio|archivo|archivos|file|files|carpeta|directorio|"
-    r"path|ruta|read_file|tree|ls|glob|grep)\b",
-    re.IGNORECASE,
-)
-_MCP_PLACEHOLDER_RE = re.compile(
-    r"(mcp_server_name|placeholder|example|your[_-]?server)",
-    re.IGNORECASE,
-)
-_FACTUAL_FILESYSTEM_TOOLS = {"ls", "tree", "glob", "grep", "read_file", "read_document"}
-_BTC_PRICE_QUERY_RE = re.compile(r"\b(bitcoin|btc)\b.*\b(precio|price|cotizaci[oó]n)\b|\b(precio|price|cotizaci[oó]n)\b.*\b(bitcoin|btc)\b", re.IGNORECASE)
-_BTC_SUPPLY_DRIFT_RE = re.compile(r"\b(circulaci[oó]n|suministro|miner[ií]a|en circulaci[oó]n)\b", re.IGNORECASE)
-_PRICE_LIKE_ANSWER_RE = re.compile(r"(\$|usd|eur|d[oó]lar|precio|price|cotizaci[oó]n)", re.IGNORECASE)
+    console.print(f"[dim]Model:[/dim] {display}")
 
 
 def _redirect_fetch_to_search(
@@ -283,95 +231,10 @@ def _redirect_fetch_to_search(
         redirected.append(call)
     if changed:
         console.print(
-            "[yellow]web_fetch redirigido a web_search "
-            "(el modelo invento una URL; buscando primero).[/yellow]"
+            "[yellow]web_fetch redirected to web_search "
+            "(the model invented a URL; searching first).[/yellow]"
         )
     return redirected
-
-
-def _history_requests_stop_tools(history: list[dict[str, Any]]) -> bool:
-    return any(
-        m.get("role") == "user" and _STOP_TOOLS_RE.search(str(m.get("content", "")))
-        for m in history
-    )
-
-
-def _is_factual_web_task(user_prompt: str) -> bool:
-    prompt = user_prompt.strip()
-    if prompt.startswith("/live_fact_lookup"):
-        return True
-    return (
-        bool(_FACTUAL_TOPIC_RE.search(prompt))
-        and bool(_WEB_SIGNAL_RE.search(prompt))
-        and not bool(_EXPLICIT_LOCAL_RE.search(prompt))
-    )
-
-
-def _normalize_query(query: str) -> str:
-    return " ".join(query.lower().split())
-
-
-def _is_filesystem_bash(call: ToolCall) -> bool:
-    if call.name != "bash":
-        return False
-    command = str(call.arguments.get("command") or "").strip().lower()
-    return command.startswith(("ls", "dir", "tree", "cat ", "type "))
-
-
-def _contains_web_tool_call(calls: list[ToolCall]) -> bool:
-    return any(call.name in {"web_search", "web_fetch"} for call in calls)
-
-
-def _web_focus_followup(user_prompt: str) -> str:
-    return (
-        "Pregunta original del usuario:\n"
-        f"{user_prompt}\n\n"
-        "Responde SOLO a esa pregunta. No cambies la pregunta a otro dato "
-        "relacionado encontrado en la fuente (por ejemplo, suministro, historia "
-        "o minería). Si no puedes extraer claramente el dato pedido, dilo con "
-        "una advertencia y explica que te basas solo en snippets o datos "
-        "parciales."
-    )
-
-
-def _looks_like_bitcoin_price_drift(user_prompt: str, final_text: str) -> bool:
-    if not _BTC_PRICE_QUERY_RE.search(user_prompt):
-        return False
-    if not _BTC_SUPPLY_DRIFT_RE.search(final_text):
-        return False
-    return not bool(_PRICE_LIKE_ANSWER_RE.search(final_text))
-
-
-def _filter_factual_web_calls(
-    calls: list[ToolCall],
-    *,
-    factual_web_task: bool,
-    seen_web_queries: set[str],
-) -> tuple[list[ToolCall], bool]:
-    if not factual_web_task:
-        return calls, False
-
-    filtered: list[ToolCall] = []
-    seen_this_batch: set[str] = set()
-    blocked_any = False
-    for call in calls:
-        if call.name in _FACTUAL_FILESYSTEM_TOOLS or _is_filesystem_bash(call):
-            blocked_any = True
-            continue
-        if call.name == "mcp_call":
-            server = str(call.arguments.get("server", ""))
-            if not server or _MCP_PLACEHOLDER_RE.search(server):
-                blocked_any = True
-                continue
-        if call.name == "web_search":
-            query = _normalize_query(str(call.arguments.get("query", "")))
-            if query and (query in seen_web_queries or query in seen_this_batch):
-                blocked_any = True
-                continue
-            if query:
-                seen_this_batch.add(query)
-        filtered.append(call)
-    return filtered, blocked_any
 
 
 def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[ToolCall]:
@@ -420,9 +283,9 @@ def run_agent(
     if cfg.session_id and is_delete_session_request(user_prompt):
         deleted = delete_session(cfg.session_id)
         final_text = (
-            f"Sesión {cfg.session_id} eliminada."
+            f"Session {cfg.session_id} deleted."
             if deleted
-            else "No había sesión guardada que eliminar."
+            else "There was no saved session to delete."
         )
         console.print(final_text)
         return final_text
@@ -441,22 +304,22 @@ def run_agent(
             history.insert(0, {"role": "system", "content": system})
         history.append({"role": "user", "content": user_prompt})
 
+    # Read once from the user's own words; harness nudges never change this.
+    stop_tools_requested = bool(_STOP_TOOLS_RE.search(user_prompt))
+
     recent_sigs: deque[str] = deque(maxlen=6)
     policy_blocked_sigs: set[str] = set()
+    # Retry governor: bound repeated failures (Phase 2).
+    failed_call_sigs: dict[str, int] = {}      # exact call -> error count
+    error_class_counts: dict[str, int] = {}    # tool::error_class -> count
+    error_class_last: dict[str, str] = {}      # tool::error_class -> last error text
     policy_nudge_sent = False
     stuck_rounds = 0
     stuck_nudges = 0
     error_streak = 0
     unparsed_tool_nudges = 0
     summary_failures = 0
-    pdf_tool_nudges = 0
-    pdf_tool_used = False
     web_search_used = False  # becomes True once web_search runs in this turn
-    web_fetch_http_error_seen = False
-    web_focus_nudges = 0
-    price_drift_nudges = 0
-    seen_web_queries: set[str] = set()
-    found_docx_path: str | None = None
     web_capability_nudge_sent = False
     stop_tools_nudge_sent = False
     completed_edits: set[EditSignature] = set()
@@ -464,12 +327,10 @@ def run_agent(
     content = ""
     status = "success"
     log_error: str | None = None
-    rounds_completed = 0
-    hit_max_rounds = False
-    # Contadores de tokens reales (rellenados por Ollama tras cada llamada LLM).
-    tokens_prompt_last: int = 0       # prompt_tokens de la última ronda
-    tokens_prompt_peak: int = 0       # máximo de prompt_tokens visto en cualquier ronda
-    tokens_completion_total: int = 0  # completion_tokens acumulados (generación real)
+    # Real token counters (filled in by Ollama after each LLM call).
+    tokens_prompt_last: int = 0       # prompt_tokens from the last round
+    tokens_prompt_peak: int = 0       # max prompt_tokens seen in any round
+    tokens_completion_total: int = 0  # accumulated completion_tokens (real output)
 
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
@@ -477,8 +338,7 @@ def run_agent(
 
     try:
         for round_num in range(1, cfg.max_rounds + 1):
-            console.print(f"[dim]── Ronda {round_num} ──[/dim]")
-            rounds_completed = round_num
+            console.print(f"[dim]── Round {round_num} ──[/dim]")
             if run_log:
                 run_log.set_rounds_completed(round_num)
             streamed_this_round = False
@@ -494,164 +354,83 @@ def run_agent(
 
             content = ""
             calls: list[ToolCall] = []
-            factual_web_task = _is_factual_web_task(user_prompt)
-            initial_document_call = (
-                forced_document_read_tool_call(user_prompt, cfg.cwd)
-                if round_num == 1
+
+            trimmed = trim_messages(history, selection.context_length)
+            tools = (
+                get_function_schemas(cfg)
+                if selection.supports_tools and not stop_tools_requested
                 else None
             )
-            if initial_document_call:
-                calls = [initial_document_call]
-                _status(_tool_progress_label(calls))
-            else:
-                missing_document_message = (
-                    document_request_missing_message(user_prompt, cfg.cwd)
-                    if round_num == 1
-                    else None
+            web_search_available = bool(
+                tools
+                and any(
+                    (t.get("function") or {}).get("name") == "web_search"
+                    for t in tools
                 )
-                if missing_document_message:
-                    final_text = missing_document_message
-                    console.print(final_text)
-                    append_assistant_turn(history, final_text)
-                    maybe_save_session(cfg, history, selection)
-                    break
-
-                trimmed = trim_messages(history, selection.context_length)
-                stop_tools_requested = _history_requests_stop_tools(history)
-                tools = (
-                    get_function_schemas(cfg)
-                    if selection.supports_tools and not stop_tools_requested
-                    else None
-                )
-                web_search_available = bool(
-                    tools
-                    and any(
-                        (t.get("function") or {}).get("name") == "web_search"
-                        for t in tools
-                    )
-                )
-                # Avoid leaking provisional model prose before tool execution.
-                # When tools are available, parse first and only render final text.
-                stream_this_round = cfg.stream and not bool(tools)
-                _status(_initial_progress_label(user_prompt))
-                streamed_this_round = stream_this_round
-                try:
-                    llm_response = call_llm(
-                        client,
-                        trimmed,
-                        tools=tools,
-                        stream=stream_this_round,
-                    )
-                except LLMError as exc:
-                    status = "llm_error"
-                    log_error = exc.user_message
-                    maybe_save_session(cfg, history, selection)
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    err = classify_request_error(
-                        exc, model=selection.ollama_tag, url=client.chat_url
-                    )
-                    console.print(f"[red]{err.user_message}[/red]")
-                    status = "llm_error"
-                    log_error = err.user_message
-                    maybe_save_session(cfg, history, selection)
-                    raise err from exc
-
-                content = llm_response.content or ""
-                usage = llm_response.usage
-                cfg.token_usage.record_call(usage)
-                if usage and usage.available:
-                    tokens_prompt_last = usage.prompt_tokens
-                    tokens_completion_total += usage.completion_tokens
-                    if usage.prompt_tokens > tokens_prompt_peak:
-                        tokens_prompt_peak = usage.prompt_tokens
-                if run_log:
-                    run_log.record_token_usage(
-                        round_num=round_num,
-                        usage=usage,
-                    )
-                if on_round:
-                    on_round(round_num, content)
-                calls = resolve_tool_calls(
-                    content,
-                    llm_response.tool_calls,
-                    tool_mode=selection.tool_mode,
-                )
-                if _history_requests_stop_tools(history):
-                    calls = []
-                calls = _prepend_missing_reads(calls, user_prompt)
-                calls = _redirect_fetch_to_search(
-                    calls, user_prompt, web_search_used
-                )
-                calls, blocked_web_calls = _filter_factual_web_calls(
-                    calls,
-                    factual_web_task=factual_web_task,
-                    seen_web_queries=seen_web_queries,
-                )
-                if blocked_web_calls:
-                    append_assistant_turn(history, content)
-                    history.append({
-                        "role": "user",
-                        "content": (
-                            "No repitas la misma búsqueda. Usa los resultados ya "
-                            "disponibles o intenta leer una fuente si procede. Si no "
-                            "puedes verificar más, responde con advertencia."
-                        ),
-                    })
-                    maybe_save_session(cfg, history, selection)
-                    continue
-                if calls:
-                    if not (factual_web_task and _contains_web_tool_call(calls)):
-                        _print_model_step(content, already_streamed=streamed_this_round)
-                    # No conservar texto libre del modelo antes del resultado real de tools.
-                    content = ""
-            forced_pdf_call = (
-                forced_pdf_read_tool_call(user_prompt)
-                if not calls and not pdf_tool_used and pdf_tool_nudges >= 1
-                else None
             )
-            if forced_pdf_call:
-                _status(_tool_progress_label([forced_pdf_call]))
-                console.print(
-                    "[yellow]El modelo siguió sin usar herramientas; ejecutando "
-                    "read_file automáticamente para el PDF mencionado.[/yellow]"
+            # Avoid leaking provisional model prose before tool execution.
+            # When tools are available, parse first and only render final text.
+            stream_this_round = cfg.stream and not bool(tools)
+            _status("Thinking...")
+            streamed_this_round = stream_this_round
+            try:
+                llm_response = call_llm(
+                    client,
+                    trimmed,
+                    tools=tools,
+                    stream=stream_this_round,
                 )
-                calls = [forced_pdf_call]
+            except LLMError as exc:
+                status = "llm_error"
+                log_error = exc.user_message
+                maybe_save_session(cfg, history, selection)
+                raise
+            except Exception as exc:  # noqa: BLE001
+                err = classify_request_error(
+                    exc, model=selection.ollama_tag, url=client.chat_url
+                )
+                console.print(f"[red]{err.user_message}[/red]")
+                status = "llm_error"
+                log_error = err.user_message
+                maybe_save_session(cfg, history, selection)
+                raise err from exc
+
+            content = llm_response.content or ""
+            usage = llm_response.usage
+            cfg.token_usage.record_call(usage)
+            if usage and usage.available:
+                tokens_prompt_last = usage.prompt_tokens
+                tokens_completion_total += usage.completion_tokens
+                if usage.prompt_tokens > tokens_prompt_peak:
+                    tokens_prompt_peak = usage.prompt_tokens
+            if run_log:
+                run_log.record_token_usage(round_num=round_num, usage=usage)
+            if on_round:
+                on_round(round_num, content)
+
+            calls = resolve_tool_calls(
+                content,
+                llm_response.tool_calls,
+                tool_mode=selection.tool_mode,
+            )
+            if stop_tools_requested:
+                calls = []
+            calls = _prepend_missing_reads(calls, user_prompt)
+            calls = _redirect_fetch_to_search(calls, user_prompt, web_search_used)
+            if calls:
+                _print_model_step(content, already_streamed=streamed_this_round)
+                # Do not keep free-form model text before the real tool result.
+                content = ""
 
             if not calls:
                 if (
-                    _history_requests_stop_tools(history)
+                    stop_tools_requested
                     and not (strip_tool_markup(content).strip() or content.strip())
                     and not stop_tools_nudge_sent
                 ):
                     stop_tools_nudge_sent = True
                     append_assistant_turn(history, content)
-                    history.append({
-                        "role": "user",
-                        "content": (
-                            "No uses herramientas. Responde ahora con lo disponible y "
-                            "añade una advertencia breve si faltan fuentes completas."
-                        ),
-                    })
-                    maybe_save_session(cfg, history, selection)
-                    continue
-                pdf_hint = pdf_tool_retry_hint(
-                    user_prompt,
-                    selection_tool_mode=selection.tool_mode,
-                )
-                if (
-                    pdf_hint
-                    and not pdf_tool_used
-                    and pdf_tool_nudges < 1
-                    and selection.supports_tools
-                ):
-                    pdf_tool_nudges += 1
-                    console.print(
-                        "[yellow]La petición menciona un PDF pero el modelo no usó "
-                        "herramientas; reintentando con read_file/grep.[/yellow]"
-                    )
-                    append_assistant_turn(history, content)
-                    history.append({"role": "user", "content": pdf_hint})
+                    history.append({"role": "user", "content": _STOP_TOOLS_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
 
@@ -666,22 +445,11 @@ def run_agent(
                         "asking the model to retry.[/yellow]"
                     )
                     append_assistant_turn(history, content)
-                    if selection.tool_mode == "fenced":
-                        hint = (
-                            "Your previous tool call was not executed. "
-                            "Use a fenced block with the tool name as the tag, e.g.\n"
-                            "```write_file\n"
-                            '{"path": "file.py", "content": "..."}\n'
-                            "```\n"
-                            "Do not put write_file inside a bash block. "
-                            "Do not reply with plain JSON only."
-                        )
-                    else:
-                        hint = (
-                            "Your previous tool call was not executed. "
-                            "Invoke the tool through function calling, or use a "
-                            "```write_file fenced block with JSON arguments."
-                        )
+                    hint = (
+                        _UNPARSED_FENCED_HINT
+                        if selection.tool_mode == "fenced"
+                        else _UNPARSED_NATIVE_HINT
+                    )
                     history.append({"role": "user", "content": hint})
                     maybe_save_session(cfg, history, selection)
                     continue
@@ -689,34 +457,13 @@ def run_agent(
                 final_text = strip_tool_markup(content).strip() or content.strip()
                 if (
                     final_text
-                    and factual_web_task
-                    and price_drift_nudges < 1
-                    and _looks_like_bitcoin_price_drift(user_prompt, final_text)
-                ):
-                    price_drift_nudges += 1
-                    append_assistant_turn(history, final_text or content)
-                    history.append({
-                        "role": "user",
-                        "content": _web_focus_followup(user_prompt),
-                    })
-                    maybe_save_session(cfg, history, selection)
-                    continue
-                if (
-                    final_text
-                    and not calls
                     and web_search_available
                     and not web_capability_nudge_sent
                     and _NO_INTERNET_RE.search(final_text)
                 ):
                     web_capability_nudge_sent = True
                     append_assistant_turn(history, final_text or content)
-                    history.append({
-                        "role": "user",
-                        "content": (
-                            "You can use `web_search` for live info without a URL, "
-                            "then `web_fetch` for selected sources."
-                        ),
-                    })
+                    history.append({"role": "user", "content": _WEB_CAPABILITY_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
                 _status("Finalizing the answer...")
@@ -728,32 +475,12 @@ def run_agent(
                 maybe_save_session(cfg, history, selection)
                 break
 
-            forced_conversion_call = _forced_docx_to_pdf_call(
-                user_prompt,
-                calls,
-                found_docx_path,
-            )
-            if forced_conversion_call:
-                console.print(
-                    "[yellow]Ya se encontró un .docx; avanzando a docx_to_pdf "
-                    "en vez de repetir la búsqueda.[/yellow]"
-                )
-                calls = [forced_conversion_call]
-                stuck_rounds = 0
-
             sig = "|".join(
                 f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
                 for c in calls
             )
-            if any(is_pdf_read_tool_call(c.name, c.arguments) for c in calls):
-                pdf_tool_used = True
             if any(c.name == "web_search" for c in calls):
                 web_search_used = True
-                for call in calls:
-                    if call.name == "web_search":
-                        query = _normalize_query(str(call.arguments.get("query", "")))
-                        if query:
-                            seen_web_queries.add(query)
             if sig in recent_sigs:
                 stuck_rounds += 1
             else:
@@ -764,32 +491,19 @@ def run_agent(
                 stuck_nudges += 1
                 if stuck_nudges > 2:
                     console.print(
-                        "[yellow]Bucle persistente; deteniendo y respondiendo "
-                        "con lo disponible.[/yellow]")
-                    status = "stuck"
-                    final_text = (
-                        strip_tool_markup(content).strip()
-                        or "No pude completar la tarea: se repitió la misma "
-                        "herramienta sin avanzar. Revisa el último error mostrado "
-                        "arriba (permisos del skill, archivo o formato)."
+                        "[yellow]Persistent loop; stopping and answering with "
+                        "what is available.[/yellow]"
                     )
+                    status = "stuck"
+                    final_text = strip_tool_markup(content).strip() or _LOOP_GIVE_UP
                     console.print(final_text)
                     append_assistant_turn(history, final_text)
                     maybe_save_session(cfg, history, selection)
                     break
-                console.print("[yellow]Bucle detectado; pidiendo respuesta final.[/yellow]")
+                console.print("[yellow]Loop detected; asking for a final answer.[/yellow]")
                 history.append({
                     "role": "user",
-                    "content": (
-                        "Deja de repetir la misma herramienta o los mismos "
-                        "argumentos. Si una herramienta está bloqueada por el "
-                        "skill, usa la herramienta permitida equivalente "
-                        "(`ls`, `grep`, `glob`, `read_file`). No respondas a esta "
-                        "instrucción ni expliques que vas a cambiar de estrategia. "
-                        "Responde ahora a la petición original del usuario usando "
-                        "los resultados de herramientas ya disponibles.\n\n"
-                        f"Petición original: {user_prompt}"
-                    ),
+                    "content": _LOOP_BREAK_NUDGE.format(user_prompt=user_prompt),
                 })
                 continue
 
@@ -800,8 +514,8 @@ def run_agent(
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
-                sig = tool_call_signature(call)
-                if sig in policy_blocked_sigs:
+                psig = tool_call_signature(call)
+                if psig in policy_blocked_sigs:
                     result = ToolResult(
                         tool_name=call.name,
                         content=POLICY_REPEAT_MESSAGE,
@@ -809,11 +523,26 @@ def run_agent(
                         call_id=call.call_id,
                         outcome="blocked_by_policy",
                     )
+                elif failed_call_sigs.get(psig, 0) >= MAX_SAME_CALL:
+                    # This exact call already failed repeatedly; do not run it
+                    # again — force the model to change tack.
+                    result = ToolResult(
+                        tool_name=call.name,
+                        content=_GOVERNOR_REPEAT_MESSAGE,
+                        is_error=True,
+                        call_id=call.call_id,
+                        outcome="repeated_failure",
+                    )
                 else:
                     result = execute_tool(call, cfg)
                     if is_policy_error(result):
-                        policy_blocked_sigs.add(sig)
+                        policy_blocked_sigs.add(psig)
                         round_policy_error = True
+                if result.is_error and result.outcome != "blocked_by_policy":
+                    failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
+                    eclass = error_class_key(call, result)
+                    error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
+                    error_class_last[eclass] = result.content
                 ended_at = datetime.now(timezone.utc)
                 if run_log:
                     run_log.record_tool_call(
@@ -834,45 +563,49 @@ def run_agent(
             if cfg.role_anchor:
                 history.append(_role_anchor_message(cfg.role_anchor))
             history.append(_current_request_anchor(user_prompt))
-            for call, result in zip(calls, results, strict=False):
-                docx_path = _first_docx_path_from_result(call, result)
-                if docx_path:
-                    found_docx_path = docx_path
 
-            # Corte por racha de errores: aunque los argumentos cambien cada
-            # ronda (y el detector de firmas no lo vea como bucle), si todas las
-            # herramientas fallan varias rondas seguidas, paramos en vez de
-            # gastar todas las rondas contra el mismo obstáculo.
+            # Error-streak cutoff: even when arguments change each round (so the
+            # signature detector does not see a loop), if every tool fails for
+            # several rounds in a row, stop instead of spending every round
+            # against the same obstacle.
             if results and all(r.is_error for r in results):
                 error_streak += 1
             else:
                 error_streak = 0
             if error_streak >= 4:
                 console.print(
-                    "[yellow]Las herramientas fallaron repetidamente; "
-                    "deteniendo.[/yellow]")
+                    "[yellow]Tools failed repeatedly; stopping.[/yellow]"
+                )
                 status = "stuck"
                 last_error = next(
                     (r.content for r in reversed(results) if r.is_error), ""
                 )
-                final_text = (
-                    "No pude completar la tarea: las herramientas fallaron "
-                    "repetidamente. Último error: "
-                    f"{last_error[:300]}"
+                final_text = _ERROR_STREAK_GIVE_UP.format(error=last_error[:300])
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                maybe_save_session(cfg, history, selection)
+                break
+
+            # Retry governor: one tool failing with the same error class too many
+            # times (even with varying arguments) is a dead end — stop with a
+            # blocker summary instead of burning the round budget.
+            worst_class = max(error_class_counts, key=error_class_counts.get, default=None)
+            if worst_class and error_class_counts[worst_class] >= ERROR_CLASS_LIMIT:
+                console.print(
+                    "[yellow]Repeated tool failure of the same kind; stopping.[/yellow]"
+                )
+                status = "stuck"
+                tool_name, _, eclass = worst_class.partition("::")
+                final_text = _GOVERNOR_GIVE_UP.format(
+                    tool=tool_name,
+                    error_class=eclass,
+                    error=error_class_last.get(worst_class, "")[:300],
                 )
                 console.print(final_text)
                 append_assistant_turn(history, final_text)
                 maybe_save_session(cfg, history, selection)
                 break
 
-            direct_answer = document_direct_answer(results, user_prompt)
-            if direct_answer:
-                final_text = direct_answer
-                _status("Finalizing the answer...")
-                console.print(final_text)
-                append_assistant_turn(history, final_text)
-                maybe_save_session(cfg, history, selection)
-                break
             edit_followup = process_edit_round(
                 calls,
                 results,
@@ -882,37 +615,22 @@ def run_agent(
             )
             if edit_followup:
                 history.append({"role": "user", "content": edit_followup})
-            pdf_followup = pdf_tool_result_followup(results, user_prompt)
-            if pdf_followup:
-                history.append({"role": "user", "content": pdf_followup})
             web_nudge = web_fetch_failed_nudge(results)
             if web_nudge:
-                web_fetch_http_error_seen = True
                 console.print(
-                    "[yellow]web_fetch falló; redirigiendo al modelo hacia web_search.[/yellow]"
+                    "[yellow]web_fetch failed; redirecting the model to web_search.[/yellow]"
                 )
                 history.append({"role": "user", "content": web_nudge})
-            elif (
-                factual_web_task
-                and _contains_web_tool_call(calls)
-                and web_focus_nudges < 2
-            ):
-                web_focus_nudges += 1
-                history.append({
-                    "role": "user",
-                    "content": _web_focus_followup(user_prompt),
-                })
             if round_policy_error and not policy_nudge_sent:
                 history.append({"role": "user", "content": POLICY_NUDGE_MESSAGE})
                 policy_nudge_sent = True
             maybe_save_session(cfg, history, selection)
         else:
-            hit_max_rounds = True
             status = "max_rounds"
             final_text = (
                 strip_tool_markup(content).strip()
                 if content
-                else "Se alcanzó el límite de rondas sin respuesta final."
+                else "Reached the round limit without a final answer."
             )
             maybe_save_session(cfg, history, selection)
 
@@ -929,8 +647,8 @@ def run_agent(
             color = "green" if pct < 60 else "yellow" if pct < 85 else "red"
             console.print(
                 f"[dim]Tokens: {tokens_prompt_last:,} prompt | "
-                f"{tokens_completion_total:,} generados | "
-                f"[{color}]{tokens_prompt_peak:,}/{ctx:,} pico contexto "
+                f"{tokens_completion_total:,} generated | "
+                f"[{color}]{tokens_prompt_peak:,}/{ctx:,} context peak "
                 f"({pct:.0f}%)[/{color}][/dim]"
             )
         if run_log:
@@ -941,7 +659,7 @@ def run_agent(
             )
             finalize_error = log_error
             if status == "max_rounds" and not finalize_error:
-                finalize_error = final_text or "Se alcanzó el límite de rondas sin respuesta final."
+                finalize_error = final_text or "Reached the round limit without a final answer."
             run_log.finalize(
                 status=status,
                 final_answer=final_text,

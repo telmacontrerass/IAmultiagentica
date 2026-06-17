@@ -1,8 +1,8 @@
 """
-Contrato de integración Ci2Lab — COMPARTIDO entre router y arnés.
+Ci2Lab integration contract — SHARED between router and harness.
 
-⚠️  No romper compatibilidad sin acuerdo entre ambas partes.
-    Campos nuevos: solo como opcionales con default.
+⚠️  Do not break compatibility without agreement between both sides.
+    New fields: only as optional with a default.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ ToolMode = Literal["native", "fenced"]
 
 @dataclass
 class HardwareProfile:
-    """Foto del sistema en el momento del escaneo."""
+    """Snapshot of the system at scan time."""
 
     ram_total_gb: float
     ram_available_gb: float
@@ -41,25 +41,25 @@ class HardwareProfile:
     cpu_cores: int
     os: Literal["windows", "linux", "darwin"]
     inference_mode: InferenceMode
-    """gpu si hay VRAM utilizable (≥4 GB); si no, cpu."""
+    """gpu if there is usable VRAM (≥4 GB); otherwise cpu."""
 
     inference_budget_gb: float
-    """Presupuesto efectivo para filtrar modelos (max teórico/disponible según modo)."""
+    """Effective budget for filtering models (max theoretical/available depending on mode)."""
 
     inference_budget_theoretical_gb: float = 0.0
-    """Capacidad teórica del equipo (p. ej. 45 % RAM total o VRAM total - 2 GB)."""
+    """Theoretical capacity of the machine (e.g. 45% total RAM or total VRAM - 2 GB)."""
 
     inference_budget_available_gb: float = 0.0
-    """Memoria segura según disponibilidad actual (p. ej. 60 % RAM libre o VRAM libre - 2 GB)."""
+    """Safe memory given current availability (e.g. 60% free RAM or free VRAM - 2 GB)."""
 
     memory_pressure: bool = False
-    """True si la memoria libre actual es claramente menor que el techo teórico."""
+    """True if current free memory is clearly lower than the theoretical ceiling."""
 
     hardware_tier: HardwareTier = "workstation"
-    """edge | workstation | enterprise — calculado por el profiler o router."""
+    """edge | workstation | enterprise — computed by the profiler or router."""
 
     raw: dict[str, Any] = field(default_factory=dict)
-    """Datos extra del escaneo (ej. salida nvidia-smi) para debug."""
+    """Extra scan data (e.g. nvidia-smi output) for debugging."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,7 +82,7 @@ class HardwareProfile:
 
 @dataclass
 class IntentResult:
-    """Salida del clasificador de intención (router)."""
+    """Output of the intent classifier (router)."""
 
     category: IntentCategory
     confidence: float
@@ -92,7 +92,7 @@ class IntentResult:
 
 @dataclass
 class ModelSpec:
-    """Entrada de catálogo — referencia; el router la carga desde models.json."""
+    """Catalog entry — reference; the router loads it from models.json."""
 
     id: str
     display_name: str
@@ -118,9 +118,9 @@ class ModelAlternative:
 @dataclass
 class ModelSelection:
     """
-    Salida del router → entrada del arnés.
+    Router output → harness input.
 
-    El arnés debe poder arrancar solo con este objeto (+ user_prompt).
+    The harness must be able to start from just this object (+ user_prompt).
     """
 
     model_id: str

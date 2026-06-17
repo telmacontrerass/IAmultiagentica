@@ -1,4 +1,4 @@
-"""Ensamblado del system prompt del arnés."""
+"""Assembly of the harness system prompt."""
 
 from __future__ import annotations
 
@@ -25,18 +25,18 @@ def build_system_prompt(
     parts = [_read("system.md")]
 
     parts.append(
-        f"\n## Entorno\n"
-        f"- Directorio de trabajo: {cwd}\n"
-        f"- Fecha: {datetime.now().strftime('%Y-%m-%d')}\n"
-        f"- Modelo: {selection.display_name} ({selection.ollama_tag})\n"
-        f"- SO: {os.name}"
+        f"\n## Environment\n"
+        f"- Working directory: {cwd}\n"
+        f"- Date: {datetime.now().strftime('%Y-%m-%d')}\n"
+        f"- Model: {selection.display_name} ({selection.ollama_tag})\n"
+        f"- OS: {os.name}"
     )
     if os.name == "nt":
         parts.append(
             "## Windows shell\n\n"
-            "- Para explorar el repo, prioriza `tree`, `ls`, `glob` y `grep`.\n"
-            "- No uses `bash` para comandos Unix de listado como `ls -l`.\n"
-            "- Si necesitas shell en Windows, usa un comando valido en Windows."
+            "- To explore the repo, prefer `tree`, `ls`, `glob`, and `grep`.\n"
+            "- Do not use `bash` for Unix listing commands like `ls -l`.\n"
+            "- If you need a shell on Windows, use a command that is valid on Windows."
         )
 
     memory = load_project_memory(cwd)

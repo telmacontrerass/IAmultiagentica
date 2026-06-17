@@ -40,8 +40,8 @@ def numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str:
     slice_lines = lines[start - 1 : end]
     numbered = [f"{i + start:6d}|{line}" for i, line in enumerate(slice_lines)]
     if len(lines) > end:
-        numbered.append(f"... ({len(lines) - end} líneas más; usa offset/limit)")
-    return "\n".join(numbered) if numbered else "(archivo vacío)"
+        numbered.append(f"... ({len(lines) - end} more lines; use offset/limit)")
+    return "\n".join(numbered) if numbered else "(empty file)"
 
 
 def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
@@ -57,24 +57,24 @@ def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
         )
     elif suffix == ".docx":
         text = extract_docx_text(path)
-        sections = "desconocido"
+        sections = "unknown"
     elif suffix == ".pptx":
         text, sections = extract_pptx_text(path)
     elif suffix == ".xlsx":
         text, sections = extract_xlsx_text(path)
     elif suffix in {".csv", ".tsv"}:
         text = extract_csv_text(path)
-        sections = "1 tabla"
+        sections = "1 table"
     elif suffix in TEXT_DOCUMENT_SUFFIXES or not suffix:
         text = path.read_text(encoding="utf-8", errors="replace")
-        sections = "texto plano"
+        sections = "plain text"
     elif not include_metadata:
         text = path.read_text(encoding="utf-8", errors="replace")
-        sections = "texto plano"
+        sections = "plain text"
     else:
         return (
-            f"Error: formato no soportado para lectura documental: "
-            f"{suffix or '(sin extension)'}"
+            f"Error: unsupported format for document reading: "
+            f"{suffix or '(no extension)'}"
         )
 
     if text.startswith("Error:") or not include_metadata:
@@ -82,10 +82,10 @@ def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
 
     text = truncate_document_text(text)
     return (
-        f"Documento: {path.name}\n"
-        f"Tipo: {suffix.lstrip('.') or 'texto'}\n"
-        f"Paginas/secciones: {sections or 'desconocido'}\n"
-        "Texto extraido:\n\n"
+        f"Document: {path.name}\n"
+        f"Type: {suffix.lstrip('.') or 'text'}\n"
+        f"Pages/sections: {sections or 'unknown'}\n"
+        "Extracted text:\n\n"
         f"{text}"
     ).strip()
 
@@ -95,7 +95,7 @@ def truncate_document_text(text: str) -> str:
         return text
     return (
         text[:MAX_DOCUMENT_CHARS].rstrip()
-        + f"\n\n... (texto truncado; limite {MAX_DOCUMENT_CHARS} caracteres)"
+        + f"\n\n... (text truncated; limit {MAX_DOCUMENT_CHARS} characters)"
     )
 
 
@@ -103,7 +103,7 @@ def pdf_section_count(path: Path) -> str | None:
     try:
         from pypdf import PdfReader
 
-        return f"{len(PdfReader(str(path)).pages)} paginas"
+        return f"{len(PdfReader(str(path)).pages)} pages"
     except Exception:  # noqa: BLE001
         return None
 
@@ -114,8 +114,8 @@ def extract_pdf_text(path: Path) -> str:
         from pypdf import PdfReader
     except ImportError:
         return (
-            "Error: no se puede leer PDF porque falta la dependencia `pypdf`. "
-            "Instala el proyecto de nuevo para activar soporte PDF."
+            "Error: cannot read PDF because the `pypdf` dependency is missing. "
+            "Reinstall the project to enable PDF support."
         )
 
     logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -123,7 +123,7 @@ def extract_pdf_text(path: Path) -> str:
     try:
         reader = PdfReader(str(path))
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo abrir el PDF {path}: {exc}"
+        return f"Error: could not open the PDF {path}: {exc}"
 
     total_pages = len(reader.pages)
     page_count = min(total_pages, MAX_PDF_PAGES)
@@ -136,21 +136,21 @@ def extract_pdf_text(path: Path) -> str:
         try:
             page_text = page.extract_text() or ""
         except Exception as exc:  # noqa: BLE001
-            page_text = f"Error extrayendo texto de esta pagina: {exc}"
+            page_text = f"Error extracting text from this page: {exc}"
         page_text = page_text.strip()
         if page_text:
             has_extractable_text = True
-        chunks.append(page_text or "(sin texto extraible en esta pagina)")
+        chunks.append(page_text or "(no extractable text on this page)")
 
     if total_pages > page_count:
         chunks.append(
-            f"... ({total_pages - page_count} paginas mas; limite PDF {MAX_PDF_PAGES})"
+            f"... ({total_pages - page_count} more pages; PDF limit {MAX_PDF_PAGES})"
         )
 
     if not has_extractable_text:
         return (
-            "Error: el PDF no contiene texto extraible. Puede ser un PDF escaneado; "
-            "hace falta OCR para leer imagenes."
+            "Error: the PDF has no extractable text. It may be a scanned PDF; "
+            "OCR is needed to read images."
         )
     return "\n".join(chunks).strip()
 
@@ -166,7 +166,7 @@ def extract_docx_text(path: Path) -> str:
     try:
         document = Document(str(path))
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo abrir el DOCX {path}: {exc}"
+        return f"Error: could not open the DOCX {path}: {exc}"
 
     chunks: list[str] = []
     for paragraph in document.paragraphs:
@@ -188,7 +188,7 @@ def extract_docx_text(path: Path) -> str:
             chunks.append(f"[Table {table_index}]")
             chunks.extend(rows)
 
-    return "\n".join(chunks).strip() or "(documento DOCX sin texto extraible)"
+    return "\n".join(chunks).strip() or "(DOCX document with no extractable text)"
 
 
 def extract_pptx_text(path: Path) -> tuple[str, str]:
@@ -196,14 +196,14 @@ def extract_pptx_text(path: Path) -> tuple[str, str]:
         from pptx import Presentation
     except ImportError:
         return (
-            "Error: no se puede leer PPTX porque falta la dependencia `python-pptx`. "
-            "Instala el proyecto de nuevo para activar soporte PowerPoint."
+            "Error: cannot read PPTX because the `python-pptx` dependency is missing. "
+            "Reinstall the project to enable PowerPoint support."
         ), "desconocido"
 
     try:
         presentation = Presentation(str(path))
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo abrir el PPTX {path}: {exc}", "desconocido"
+        return f"Error: could not open the PPTX {path}: {exc}", "desconocido"
 
     total_slides = len(presentation.slides)
     chunks: list[str] = []
@@ -217,15 +217,15 @@ def extract_pptx_text(path: Path) -> tuple[str, str]:
                 if text:
                     slide_text.append(text)
         chunks.append(f"[Slide {slide_index}]")
-        chunks.append("\n".join(slide_text) if slide_text else "(sin texto extraible)")
+        chunks.append("\n".join(slide_text) if slide_text else "(no extractable text)")
 
     if total_slides > MAX_PRESENTATION_SLIDES:
         chunks.append(
-            f"... ({total_slides - MAX_PRESENTATION_SLIDES} diapositivas mas; "
+            f"... ({total_slides - MAX_PRESENTATION_SLIDES} more slides; "
             f"limite {MAX_PRESENTATION_SLIDES})"
         )
 
-    return "\n".join(chunks).strip(), f"{total_slides} diapositivas"
+    return "\n".join(chunks).strip(), f"{total_slides} slides"
 
 
 def extract_xlsx_text(path: Path) -> tuple[str, str]:
@@ -233,14 +233,14 @@ def extract_xlsx_text(path: Path) -> tuple[str, str]:
         from openpyxl import load_workbook
     except ImportError:
         return (
-            "Error: no se puede leer XLSX porque falta la dependencia `openpyxl`. "
-            "Instala el proyecto de nuevo para activar soporte Excel."
+            "Error: cannot read XLSX because the `openpyxl` dependency is missing. "
+            "Reinstall the project to enable Excel support."
         ), "desconocido"
 
     try:
         workbook = load_workbook(str(path), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo abrir el XLSX {path}: {exc}", "desconocido"
+        return f"Error: could not open the XLSX {path}: {exc}", "desconocido"
 
     chunks: list[str] = []
     for sheet in workbook.worksheets:
@@ -258,14 +258,14 @@ def extract_xlsx_text(path: Path) -> tuple[str, str]:
             chunks.append(" | ".join(values).rstrip())
         if row_count >= MAX_SPREADSHEET_ROWS:
             chunks.append(
-                f"... (hoja truncada; limite {MAX_SPREADSHEET_ROWS} filas x "
-                f"{MAX_SPREADSHEET_COLS} columnas)"
+                f"... (sheet truncated; limit {MAX_SPREADSHEET_ROWS} rows x "
+                f"{MAX_SPREADSHEET_COLS} columns)"
             )
 
     close = getattr(workbook, "close", None)
     if callable(close):
         close()
-    return "\n".join(chunks).strip(), f"{len(workbook.worksheets)} hojas"
+    return "\n".join(chunks).strip(), f"{len(workbook.worksheets)} sheets"
 
 
 def extract_csv_text(path: Path) -> str:
@@ -286,7 +286,7 @@ def extract_csv_text(path: Path) -> str:
         values = trim_empty_tail(row)
         if values:
             rows.append(" | ".join(values))
-    return "\n".join(rows).strip() or "(archivo CSV vacio)"
+    return "\n".join(rows).strip() or "(empty CSV file)"
 
 
 def trim_empty_tail(values: list[str]) -> list[str]:
