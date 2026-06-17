@@ -77,6 +77,13 @@ def _current_request_anchor(user_prompt: str) -> dict[str, str]:
     }
 
 
+def _role_anchor_message(role_anchor: str) -> dict[str, str]:
+    return {
+        "role": "user",
+        "content": role_anchor,
+    }
+
+
 _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
 _DOCX_PATH_RE = re.compile(r"(?P<path>[^\s`\"']+\.docx)\b", re.IGNORECASE)
 _LS_DIR_RE = re.compile(r"(?:^|\s)ls\s+(?P<path>[^\s;&|]+)")
@@ -786,6 +793,8 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            if cfg.role_anchor:
+                history.append(_role_anchor_message(cfg.role_anchor))
             history.append(_current_request_anchor(user_prompt))
             for call, result in zip(calls, results, strict=False):
                 docx_path = _first_docx_path_from_result(call, result)

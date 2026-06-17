@@ -77,6 +77,9 @@ class AgentConfig:
     skill_allowed_tools: frozenset[str] | None = None
     """When set by an invoked skill, only these tool names are exposed to the model."""
 
+    role_anchor: str | None = None
+    """English role-discipline anchor reinjected for subagents after tool rounds."""
+
     tool_settings: ToolSettings | None = None
     """Reglas allow/deny de settings.json (fusionadas global + proyecto).
     Si es None, no se aplican reglas de settings y todo esta permitido."""

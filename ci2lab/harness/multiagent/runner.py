@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.multiagent.roles import ROLE_SPECS
+from ci2lab.harness.multiagent.roles import ROLE_SPECS, RoleSpec
 from ci2lab.harness.multiagent.state import AgentRole, SubAgentResult
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.query.loop import run_agent
@@ -22,6 +22,22 @@ def _resolve_subagent_allowed_tools(
     if config.skill_allowed_tools is None:
         return role_allowed_tools
     return frozenset(config.skill_allowed_tools & role_allowed_tools)
+
+
+def build_role_anchor(role: AgentRole) -> str:
+    """Build a short English role anchor for reinjection after tool rounds."""
+    spec = ROLE_SPECS[role]
+    return _role_anchor_from_spec(spec)
+
+
+def _role_anchor_from_spec(spec: RoleSpec) -> str:
+    return (
+        f"Role anchor: You are currently acting as {spec.role.value}. "
+        f"Your purpose in this phase is: {spec.phase_purpose} "
+        f"Stay within this role. {spec.must_not} "
+        "If blocked, report why instead of switching roles. "
+        f"Expected output: {spec.expected_output}"
+    )
 
 
 def build_subagent_system_prompt(
@@ -40,6 +56,8 @@ def build_subagent_system_prompt(
         f"- Can write files: {'yes' if spec.can_write else 'no'}\n\n"
         "## Role Instructions\n"
         f"{spec.system_instructions}\n\n"
+        "## Role Anchor\n"
+        f"{_role_anchor_from_spec(spec)}\n\n"
         "You are running with an isolated subagent context. Use only the "
         "information provided in this task prompt and any context you gather "
         "with your allowed tools."
@@ -56,6 +74,7 @@ def build_subagent_config(
         stream=False,
         session_id=None,
         skill_allowed_tools=_resolve_subagent_allowed_tools(role, config),
+        role_anchor=build_role_anchor(role),
     )
 
 

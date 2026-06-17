@@ -487,6 +487,100 @@ def test_final_answer_after_tree_stays_anchored_to_latest_user_prompt():
     )
 
 
+def test_role_anchor_reinjected_after_tool_round():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        role_anchor=(
+            "Role anchor: You are currently acting as reviewer. "
+            "Your purpose in this phase is: Review the completed result for bugs and gaps. "
+            "Stay within this role. Do not implement changes. "
+            "If blocked, report why instead of switching roles. "
+            "Expected output: A concise review with findings."
+        ),
+    )
+    prompt = "Review the result after checking the repository tree."
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
+        }],
+    )
+    final = LLMResponse(content="Review complete: no major issues found.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="tree",
+                content="ci2lab/harness/query/loop.py\n",
+                is_error=False,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent(prompt, selection, config=config)
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user"
+        and "Role anchor: You are currently acting as reviewer." in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+    assert any(
+        m.get("role") == "user"
+        and "La peticion actual del usuario es:" in str(m.get("content", ""))
+        and prompt in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+
+
+def test_classic_loop_has_no_role_anchor_by_default():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    with_tool = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
+        }],
+    )
+    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="tree",
+                content="ci2lab/harness/query/loop.py\n",
+                is_error=False,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [with_tool, final]
+        run_agent("Find the harness loop.", selection, config=config)
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert not any(
+        m.get("role") == "user"
+        and "Role anchor:" in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+
+
 def test_context_summary_does_not_override_current_user_request():
     selection = default_selection("test:1b")
     selection.context_length = 8192

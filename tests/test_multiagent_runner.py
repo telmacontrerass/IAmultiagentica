@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 from ci2lab.harness import AgentConfig, default_selection
 from ci2lab.harness.multiagent import AgentRole, run_subagent
-from ci2lab.harness.multiagent.runner import build_subagent_config
+from ci2lab.harness.multiagent.runner import (
+    build_role_anchor,
+    build_subagent_config,
+    build_subagent_system_prompt,
+)
 
 
 def test_build_subagent_config_filters_tools_without_mutating_parent():
@@ -47,6 +51,23 @@ def test_build_subagent_config_keeps_empty_intersection_blocked():
     assert subagent.skill_allowed_tools == frozenset()
 
 
+def test_subagent_system_prompt_includes_english_role_purpose():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".")
+
+    prompt = build_subagent_system_prompt(
+        AgentRole.RESEARCHER,
+        selection,
+        config,
+    )
+
+    assert "## Role Anchor" in prompt
+    assert "You are currently acting as researcher." in prompt
+    assert "Your purpose in this phase is: Gather evidence" in prompt
+    assert "Do not implement changes" in prompt
+    assert "Expected output:" in prompt
+
+
 def test_run_subagent_uses_isolated_system_context_and_role_tools():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=True, session_id="session-1")
@@ -74,10 +95,32 @@ def test_run_subagent_uses_isolated_system_context_and_role_tools():
     assert subagent_config.session_id is None
     assert subagent_config.stream is False
     assert subagent_config.skill_allowed_tools == frozenset()
+    assert subagent_config.role_anchor == build_role_anchor(AgentRole.PLANNER)
     assert len(messages) == 1
     assert messages[0]["role"] == "system"
     assert "Role: planner" in messages[0]["content"]
+    assert "You are currently acting as planner." in messages[0]["content"]
     assert "isolated subagent context" in messages[0]["content"]
+
+
+def test_subagent_role_anchor_is_passed_to_run_agent():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=True)
+
+    with patch("ci2lab.harness.multiagent.runner.run_agent") as mock_run_agent:
+        mock_run_agent.return_value = "done"
+
+        run_subagent(
+            AgentRole.VALIDATOR,
+            "Validate this change",
+            selection,
+            config,
+        )
+
+    _, _, kwargs = mock_run_agent.mock_calls[0]
+    subagent_config = kwargs["config"]
+    assert subagent_config.role_anchor == build_role_anchor(AgentRole.VALIDATOR)
+    assert "Validate the current result using tests or deterministic checks." in subagent_config.role_anchor
 
 
 def test_run_subagent_passes_user_selected_model_to_run_agent():

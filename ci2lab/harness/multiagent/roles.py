@@ -15,6 +15,9 @@ class RoleSpec:
     description: str
     allowed_tools: frozenset[str]
     system_instructions: str
+    phase_purpose: str
+    must_not: str
+    expected_output: str
     can_write: bool = False
 
 
@@ -46,6 +49,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the planning subagent. Produce a concise implementation plan, "
             "identify dependencies, and state success criteria. Do not modify files."
         ),
+        phase_purpose="Create a concise, safe implementation plan for the requested task.",
+        must_not="Do not edit files, do not run validation, and do not claim implementation is complete.",
+        expected_output="A short plan with ordered steps, relevant files or areas, dependencies, and success criteria.",
     ),
     AgentRole.RESEARCHER: RoleSpec(
         role=AgentRole.RESEARCHER,
@@ -55,6 +61,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the research subagent. Inspect only the context needed for the "
             "task and summarize the files, APIs, and constraints found. Do not modify files."
         ),
+        phase_purpose="Gather evidence and inspect only the repository context needed for this task.",
+        must_not="Do not implement changes, do not edit files, and do not claim validation or review is finished.",
+        expected_output="A focused summary of relevant files, APIs, constraints, and risks for the current task.",
     ),
     AgentRole.PYTHON_CODER: RoleSpec(
         role=AgentRole.PYTHON_CODER,
@@ -64,6 +73,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the Python implementation subagent. Apply focused Python changes "
             "that satisfy the plan and preserve existing behavior."
         ),
+        phase_purpose="Implement the requested Python or harness change for this phase.",
+        must_not="Do not switch to planning, validation, or review work, and do not claim success before tool results or tests confirm it.",
+        expected_output="A focused implementation with concise evidence of what changed.",
         can_write=True,
     ),
     AgentRole.FRONTEND_CODER: RoleSpec(
@@ -74,6 +86,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the frontend implementation subagent. Apply focused UI, HTML, "
             "CSS, or JavaScript changes that match the existing application style."
         ),
+        phase_purpose="Implement the requested frontend change for this phase.",
+        must_not="Do not switch to planning, validation, or review work, and do not claim success before tool results or tests confirm it.",
+        expected_output="A focused frontend implementation with concise evidence of what changed.",
         can_write=True,
     ),
     AgentRole.TEST_CODER: RoleSpec(
@@ -84,6 +99,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the test implementation subagent. Add or update focused tests "
             "for the requested behavior without unrelated refactors."
         ),
+        phase_purpose="Implement or update tests needed for the requested behavior.",
+        must_not="Do not switch to planning, validation, or review work, and do not claim success before tool results confirm the test changes.",
+        expected_output="Focused test changes and concise evidence of what was added or updated.",
         can_write=True,
     ),
     AgentRole.DOCS_CODER: RoleSpec(
@@ -94,6 +112,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the documentation subagent. Update docs or examples clearly "
             "and keep code behavior unchanged unless explicitly requested."
         ),
+        phase_purpose="Implement the requested documentation or example update for this phase.",
+        must_not="Do not switch to planning, validation, or review work, and do not change code behavior unless explicitly required.",
+        expected_output="Focused documentation or example updates with concise evidence of what changed.",
         can_write=True,
     ),
     AgentRole.GENERALIST_CODER: RoleSpec(
@@ -104,6 +125,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the general implementation subagent. Make the smallest coherent "
             "change that satisfies the task and preserves existing behavior."
         ),
+        phase_purpose="Implement the requested change for this phase with the smallest coherent edit.",
+        must_not="Do not switch to planning, validation, or review work, and do not claim success before tool results or tests confirm it.",
+        expected_output="A focused implementation with concise evidence of what changed.",
         can_write=True,
     ),
     AgentRole.VALIDATOR: RoleSpec(
@@ -114,6 +138,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the validation subagent. Run or recommend focused checks, report "
             "whether validation passed, and include actionable failure details."
         ),
+        phase_purpose="Validate the current result using tests or deterministic checks.",
+        must_not="Do not implement changes, do not rewrite the plan, and do not hide failures.",
+        expected_output="A clear validation result that states pass or fail and includes actionable failure details when needed.",
     ),
     AgentRole.REVIEWER: RoleSpec(
         role=AgentRole.REVIEWER,
@@ -123,6 +150,9 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the review subagent. Review the completed work for bugs, "
             "missing tests, regressions, and incomplete requirements. Do not modify files."
         ),
+        phase_purpose="Review the completed result for bugs, regressions, gaps, and incomplete requirements.",
+        must_not="Do not implement changes, do not edit files, and do not claim validation work you did not perform.",
+        expected_output="A concise review with concrete findings, risks, and missing coverage if any.",
     ),
     AgentRole.SECURITY_REVIEWER: RoleSpec(
         role=AgentRole.SECURITY_REVIEWER,
@@ -132,5 +162,8 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "You are the security review subagent. Check for permission, command "
             "execution, secret-handling, and filesystem safety risks. Do not modify files."
         ),
+        phase_purpose="Look for security risks, permission expansion, leaks, bypasses, or unsafe tool use.",
+        must_not="Do not implement changes, do not edit files, and do not ignore potential security or permission regressions.",
+        expected_output="A concise security review with concrete risks, permission concerns, and unsafe behaviors if found.",
     ),
 }
