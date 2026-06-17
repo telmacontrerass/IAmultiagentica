@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
-
 from dataclasses import replace
+from pathlib import Path
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -17,6 +16,19 @@ from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.types import AgentConfig
 
 TRACE_PREVIEW_CHARS = 600
+
+ROLE_MAX_ROUNDS: dict[AgentRole, int] = {
+    AgentRole.PLANNER: 5,
+    AgentRole.RESEARCHER: 10,
+    AgentRole.PYTHON_CODER: 15,
+    AgentRole.FRONTEND_CODER: 15,
+    AgentRole.TEST_CODER: 12,
+    AgentRole.DOCS_CODER: 10,
+    AgentRole.GENERALIST_CODER: 15,
+    AgentRole.VALIDATOR: 8,
+    AgentRole.REVIEWER: 6,
+    AgentRole.SECURITY_REVIEWER: 6,
+}
 
 
 def _resolve_subagent_allowed_tools(
@@ -66,7 +78,10 @@ def build_subagent_system_prompt(
         f"{_role_anchor_from_spec(spec)}\n\n"
         "You are running with an isolated subagent context. Use only the "
         "information provided in this task prompt and any context you gather "
-        "with your allowed tools."
+        "with your allowed tools. If your role cannot complete the task with "
+        "the provided context and allowed tools, stop and return `BLOCKED:` "
+        "followed by the missing dependency or exact reason. Do not keep "
+        "retrying the same action."
     )
 
 
@@ -153,8 +168,10 @@ def build_subagent_config(
     config: AgentConfig,
 ) -> AgentConfig:
     """Copy the parent config and apply role-specific tool restrictions."""
+    role_max_rounds = min(config.max_rounds, ROLE_MAX_ROUNDS[role])
     return replace(
         config,
+        max_rounds=role_max_rounds,
         stream=False,
         session_id=None,
         skill_allowed_tools=_resolve_subagent_allowed_tools(role, config),

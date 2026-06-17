@@ -8,6 +8,7 @@ explicitly enabled by a later CLI/config integration.
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 
 from ci2lab.console import console
@@ -63,14 +64,119 @@ _SECURITY_REVIEW_MARKERS = (
 TRACE_PROMPT_PREVIEW_CHARS = 1200
 TRACE_OUTPUT_PREVIEW_CHARS = 1200
 
+_READ_ONLY_TASK_MARKERS = (
+    "read",
+    "summarize",
+    "summary",
+    "extract",
+    "explain",
+    "analyze",
+    "analyse",
+    "inspect",
+    "review",
+    "access",
+    "open",
+    "lee",
+    "leer",
+    "resume",
+    "resumir",
+    "resumelo",
+    "resúmelo",
+    "resumen",
+    "extrae",
+    "extraer",
+    "explica",
+    "analiza",
+    "revisa",
+    "accede",
+    "acceder",
+    "abre",
+    "abrir",
+)
+
+_DOCUMENT_TASK_MARKERS = (
+    "pdf",
+    "docx",
+    "document",
+    "documento",
+    "file",
+    "archivo",
+)
+
+_IMPLEMENTATION_TASK_MARKERS = (
+    "add",
+    "create",
+    "write",
+    "edit",
+    "modify",
+    "update",
+    "implement",
+    "fix",
+    "change",
+    "convert",
+    "generate code",
+    "añade",
+    "agrega",
+    "crea",
+    "crear",
+    "escribe",
+    "editar",
+    "edita",
+    "modifica",
+    "actualiza",
+    "implementa",
+    "arregla",
+    "corrige",
+    "cambia",
+    "convierte",
+    "convertir",
+    "genera codigo",
+    "genera código",
+)
+
 
 def _combined_output(*results: SubAgentResult) -> str:
     return "\n\n".join(result.output for result in results if result.output)
 
 
+def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
+    return any(
+        re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text)
+        for marker in markers
+    )
+
+
 def _role_label(role: AgentRole, attempt: int) -> str:
     suffix = f" attempt {attempt}" if attempt > 1 else ""
     return f"{role.value}{suffix}"
+
+
+def _role_progress_label(role: AgentRole, attempt: int) -> str:
+    labels = {
+        AgentRole.PLANNER: "Planning the work",
+        AgentRole.RESEARCHER: "Gathering the needed context",
+        AgentRole.PYTHON_CODER: "Applying Python changes",
+        AgentRole.FRONTEND_CODER: "Applying interface changes",
+        AgentRole.TEST_CODER: "Updating tests",
+        AgentRole.DOCS_CODER: "Updating documentation",
+        AgentRole.GENERALIST_CODER: "Applying the requested changes",
+        AgentRole.VALIDATOR: "Checking the result",
+        AgentRole.REVIEWER: "Reviewing the outcome",
+        AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+    }
+    label = labels[role]
+    return f"{label} (attempt {attempt})" if attempt > 1 else label
+
+
+def subagent_blocked(result: SubAgentResult) -> bool:
+    """Detect explicit subagent stop conditions."""
+    text = result.output.strip().lower()
+    return (
+        result.status == "blocked"
+        or text.startswith("blocked:")
+        or "se alcanzó el límite de rondas" in text
+        or "max rounds" in text
+    )
 
 
 def _preview_text(text: str | None, *, limit: int) -> str:
@@ -260,7 +366,7 @@ def _run_subagent_stage(
     attempt: int = 1,
 ) -> SubAgentResult:
     label = _role_label(role, attempt)
-    console.print(f"[cyan][multi-agent][/cyan] starting {label}")
+    console.print(f"[cyan][multi-agent][/cyan] {_role_progress_label(role, attempt)}...")
     try:
         result = run_subagent(
             role,
@@ -306,6 +412,9 @@ def _execute_phase(
         state.add_result(failed)
         raise
     state.add_result(result)
+    if subagent_blocked(result):
+        state.failed_phase = role.value
+        state.error = result.output or result.error
     return result
 
 
@@ -324,6 +433,29 @@ def choose_coder_role(plan: SubAgentResult, research: SubAgentResult) -> AgentRo
     if any(marker in text for marker in (".py", "python", "ci2lab/", "harness")):
         return AgentRole.PYTHON_CODER
     return AgentRole.GENERALIST_CODER
+
+
+def should_skip_implementation(
+    user_prompt: str,
+    plan: SubAgentResult,
+    research: SubAgentResult,
+) -> bool:
+    """Return true when the request only needs information gathering."""
+    prompt = user_prompt.lower()
+    if _contains_marker(prompt, _IMPLEMENTATION_TASK_MARKERS):
+        return False
+    has_read_intent = _contains_marker(prompt, _READ_ONLY_TASK_MARKERS)
+    has_document_target = _contains_marker(prompt, _DOCUMENT_TASK_MARKERS)
+    if has_read_intent and has_document_target:
+        return True
+
+    evidence = _combined_output(plan, research).lower()
+    if _contains_marker(evidence, _IMPLEMENTATION_TASK_MARKERS):
+        return False
+    return (
+        _contains_marker(evidence, _READ_ONLY_TASK_MARKERS)
+        and _contains_marker(evidence, _DOCUMENT_TASK_MARKERS)
+    )
 
 
 def validation_failed(validation: SubAgentResult) -> bool:
@@ -347,8 +479,18 @@ def should_run_security_review(run: MultiAgentRun) -> bool:
 
 def _build_planner_prompt(user_prompt: str) -> str:
     return (
-        "Create an ordered plan for this task. Include likely files/areas, "
-        "dependencies, success criteria, and the kind of implementer needed.\n\n"
+        "Create the authoritative execution plan for this task. The rest of "
+        "the subagents must follow your plan, so make the delegation explicit.\n\n"
+        "Your plan must include these sections:\n"
+        "1. Goal\n"
+        "2. Ordered steps\n"
+        "3. Role assignments: one bullet per needed role, with the exact task "
+        "that role owns\n"
+        "4. Dependencies: what each role must wait for or use from previous roles\n"
+        "5. Boundaries: files or responsibilities each role must not touch\n"
+        "6. Success criteria\n\n"
+        "Keep role ownership non-overlapping. If the task is read-only, say so "
+        "and assign no implementation role.\n\n"
         f"User task:\n{user_prompt}"
     )
 
@@ -356,8 +498,13 @@ def _build_planner_prompt(user_prompt: str) -> str:
 def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str:
     plan_text = plan.output if plan else "No explicit plan was produced for this task."
     return (
-        "Inspect the repository context needed for this plan. Summarize relevant "
-        "files, APIs, constraints, and risks. Do not modify files.\n\n"
+        "Follow the planner's execution plan. Only perform the research/context "
+        "gathering assigned to the researcher role. Do not take over coding, "
+        "validation, or review responsibilities, and do not modify files.\n\n"
+        "Report:\n"
+        "- which planner-assigned researcher tasks you completed\n"
+        "- relevant files, APIs, constraints, and risks\n"
+        "- any missing dependency as `BLOCKED:` if the plan cannot continue\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}"
     )
 
@@ -368,8 +515,14 @@ def _build_implementation_prompt(
     research: SubAgentResult,
 ) -> str:
     return (
-        "Implement the requested change using the plan and research context. "
-        "Keep the change focused and preserve existing behavior.\n\n"
+        "Follow the planner's execution plan and the researcher findings. "
+        "Implement only the tasks assigned to your implementer role. Do not "
+        "take over validation, review, security review, or unrelated role "
+        "responsibilities. Do not touch files or areas outside the planner's "
+        "boundaries unless the research context proves they are required; if "
+        "that happens, explain why.\n\n"
+        "If a dependency from the plan or research is missing, return `BLOCKED:` "
+        "with the exact missing dependency instead of guessing.\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}"
     )
@@ -382,9 +535,13 @@ def _build_validation_prompt(
     implementation: SubAgentResult,
 ) -> str:
     return (
-        "Validate the implementation. Run focused tests or checks when possible. "
-        "Clearly state whether validation passed or failed, and include actionable "
-        "failure details.\n\n"
+        "Follow the planner's validation expectations. Validate only the "
+        "implemented work against the plan, research findings, and success "
+        "criteria. Run focused tests or checks when possible. Clearly state "
+        "whether validation passed or failed, and include actionable failure "
+        "details tied to the plan.\n\n"
+        "If the implementation did not follow the plan, report validation as "
+        "failed and explain the mismatch.\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}\n\nImplementation:\n{implementation.output}"
     )
@@ -399,8 +556,11 @@ def _build_repair_prompt(
 ) -> str:
     return (
         "The validator reported a failure. Repair the implementation while "
-        "staying within the same implementer role. Address the validation output "
-        "directly and keep unrelated behavior unchanged.\n\n"
+        "staying within the same implementer role and the planner's assigned "
+        "boundaries. Address the validation output directly and keep unrelated "
+        "behavior unchanged.\n\n"
+        "If the repair would require work outside your assigned role or files, "
+        "return `BLOCKED:` with the reason instead of expanding scope.\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}\n\nPrevious implementation:\n"
         f"{previous_implementation.output}\n\nValidation failure:\n"
@@ -414,8 +574,11 @@ def _build_review_prompt(run: MultiAgentRun) -> str:
         for result in run.results
     )
     return (
-        "Review the completed multi-agent run. Identify remaining risks, missing "
-        "tests, regressions, or incomplete requirements. Do not modify files.\n\n"
+        "Review the completed multi-agent run against the planner's execution "
+        "plan. Check whether each subagent stayed within its assigned task, "
+        "respected dependencies, avoided overlapping responsibilities, and met "
+        "the success criteria. Identify remaining risks, missing tests, "
+        "regressions, or incomplete requirements. Do not modify files.\n\n"
         f"User task:\n{run.user_prompt}\n\nRun evidence:\n{evidence}"
     )
 
@@ -427,14 +590,25 @@ def _build_security_review_prompt(run: MultiAgentRun) -> str:
     )
     return (
         "Review the completed multi-agent run specifically for security and "
-        "permission risks. Check command execution, filesystem writes, secret "
-        "handling, approval behavior, and path safety. Do not modify files.\n\n"
+        "permission risks, using the planner's boundaries as the source of "
+        "truth. Check command execution, filesystem writes, secret handling, "
+        "approval behavior, path safety, and whether any role exceeded its "
+        "assigned scope. Do not modify files.\n\n"
         f"User task:\n{run.user_prompt}\n\nRun evidence:\n{evidence}"
     )
 
 
 def synthesize_final_answer(run: MultiAgentRun) -> str:
     """Create a concise final answer from orchestrator state."""
+    blocked = next((result for result in run.results if subagent_blocked(result)), None)
+    if blocked:
+        return (
+            "Multi-agent run finished with status: blocked\n"
+            f"Blocked role: {blocked.role.value}\n\n"
+            f"Reason:\n{blocked.output or blocked.error or 'No reason provided.'}"
+        )
+
+    research = run.latest_for(AgentRole.RESEARCHER)
     last_validation = run.latest_for(AgentRole.VALIDATOR)
     reviewer = run.latest_for(AgentRole.REVIEWER)
     security_reviewer = run.latest_for(AgentRole.SECURITY_REVIEWER)
@@ -443,7 +617,11 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
         if last_validation and validation_failed(last_validation)
         else "completed"
     )
-    coder = run.selected_coder_role.value if run.selected_coder_role else "unknown"
+    coder = (
+        run.selected_coder_role.value
+        if run.selected_coder_role
+        else "none (read-only task)"
+    )
     review_text = reviewer.output if reviewer else "No reviewer output was produced."
     security_text = (
         f"\n\nSecurity review:\n{security_reviewer.output}"
@@ -453,6 +631,17 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     validation_text = (
         last_validation.output if last_validation else "No validation output was produced."
     )
+    if run.selected_coder_role is None:
+        research_text = (
+            research.output if research else "No research output was produced."
+        )
+        return (
+            f"Multi-agent run finished with status: completed\n"
+            f"Selected implementer: {coder}\n\n"
+            f"Research:\n{research_text}\n\n"
+            f"Review:\n{review_text}"
+            f"{security_text}"
+        )
     return (
         f"Multi-agent run finished with status: {status}\n"
         f"Selected implementer: {coder}\n\n"
@@ -504,6 +693,9 @@ def run_multi_agent(
                 selection,
                 cfg,
             )
+            if subagent_blocked(plan):
+                state.final_answer = synthesize_final_answer(state)
+                return state.final_answer
 
         research: SubAgentResult | None = None
         if "researcher" in planned_phases:
@@ -515,6 +707,9 @@ def run_multi_agent(
                 selection,
                 cfg,
             )
+            if subagent_blocked(research):
+                state.final_answer = synthesize_final_answer(state)
+                return state.final_answer
 
         # Implementation + validation only run when the intent allows writes.
         if "coder" in planned_phases:
@@ -529,6 +724,9 @@ def run_multi_agent(
                 selection,
                 cfg,
             )
+            if subagent_blocked(implementation):
+                state.final_answer = synthesize_final_answer(state)
+                return state.final_answer
 
             if "validator" in planned_phases:
                 validation_prompt = _build_validation_prompt(
@@ -541,6 +739,9 @@ def run_multi_agent(
                     selection,
                     cfg,
                 )
+                if subagent_blocked(validation):
+                    state.final_answer = synthesize_final_answer(state)
+                    return state.final_answer
 
                 repair_attempt = 0
                 while validation_failed(validation) and repair_attempt < max_repair_attempts:
@@ -560,6 +761,9 @@ def run_multi_agent(
                         cfg,
                         attempt=repair_attempt + 1,
                     )
+                    if subagent_blocked(implementation):
+                        state.final_answer = synthesize_final_answer(state)
+                        return state.final_answer
 
                     validation_prompt = _build_validation_prompt(
                         user_prompt,
@@ -575,26 +779,35 @@ def run_multi_agent(
                         cfg,
                         attempt=repair_attempt + 1,
                     )
+                    if subagent_blocked(validation):
+                        state.final_answer = synthesize_final_answer(state)
+                        return state.final_answer
 
         if "reviewer" in planned_phases:
             review_prompt = _build_review_prompt(state)
-            _execute_phase(
+            review = _execute_phase(
                 state,
                 AgentRole.REVIEWER,
                 review_prompt,
                 selection,
                 cfg,
             )
+            if subagent_blocked(review):
+                state.final_answer = synthesize_final_answer(state)
+                return state.final_answer
 
             if should_run_security_review(state):
                 security_prompt = _build_security_review_prompt(state)
-                _execute_phase(
+                security_review = _execute_phase(
                     state,
                     AgentRole.SECURITY_REVIEWER,
                     security_prompt,
                     selection,
                     cfg,
                 )
+                if subagent_blocked(security_review):
+                    state.final_answer = synthesize_final_answer(state)
+                    return state.final_answer
             else:
                 state.add_result(
                     _skipped_result(

@@ -4,9 +4,16 @@ import pytest
 
 from ci2lab.harness import AgentConfig, default_selection
 from ci2lab.harness.multiagent.orchestrator import (
+    _build_implementation_prompt,
+    _build_planner_prompt,
+    _build_research_prompt,
+    _build_review_prompt,
+    _build_validation_prompt,
     choose_coder_role,
     run_multi_agent,
     should_run_security_review,
+    should_skip_implementation,
+    subagent_blocked,
     validation_failed,
 )
 from ci2lab.harness.multiagent.state import AgentRole, SubAgentResult
@@ -34,10 +41,86 @@ def test_choose_coder_role_prefers_specific_evidence():
     assert choose_coder_role(plan, research) == AgentRole.FRONTEND_CODER
 
 
+def test_should_skip_implementation_for_read_only_pdf_task():
+    plan = _result(AgentRole.PLANNER, "Read the PDF and summarize its contents.")
+    research = _result(AgentRole.RESEARCHER, "Relevant document: paper.pdf")
+
+    assert should_skip_implementation(
+        "accede al contenido del pdf y resumelo",
+        plan,
+        research,
+    )
+
+
+def test_should_not_skip_implementation_for_document_edit_task():
+    plan = _result(AgentRole.PLANNER, "Update README.md")
+    research = _result(AgentRole.RESEARCHER, "Relevant document: README.md")
+
+    assert not should_skip_implementation(
+        "actualiza el README con un ejemplo nuevo",
+        plan,
+        research,
+    )
+
+
 def test_validation_failed_detects_failure_and_pass():
     assert validation_failed(_result(AgentRole.VALIDATOR, "pytest failed"))
     assert not validation_failed(_result(AgentRole.VALIDATOR, "pytest passed"))
     assert not validation_failed(_result(AgentRole.VALIDATOR, "no errors"))
+
+
+def test_subagent_blocked_detects_explicit_and_round_limit_blocks():
+    assert subagent_blocked(_result(AgentRole.RESEARCHER, "BLOCKED: missing file"))
+    assert subagent_blocked(
+        _result(AgentRole.RESEARCHER, "Se alcanzó el límite de rondas sin respuesta final.")
+    )
+    assert not subagent_blocked(_result(AgentRole.RESEARCHER, "Found the context."))
+
+
+def test_planner_prompt_requires_role_assignments_dependencies_and_boundaries():
+    prompt = _build_planner_prompt("Add a feature")
+
+    assert "authoritative execution plan" in prompt
+    assert "Role assignments" in prompt
+    assert "Dependencies" in prompt
+    assert "Boundaries" in prompt
+    assert "non-overlapping" in prompt
+
+
+def test_downstream_prompts_require_following_planner_contract():
+    plan = _result(
+        AgentRole.PLANNER,
+        "Role assignments: researcher reads files; python_coder edits app.py.\n"
+        "Dependencies: coder uses researcher findings.\n"
+        "Boundaries: reviewer does not edit files.",
+    )
+    research = _result(AgentRole.RESEARCHER, "Relevant file: app.py")
+    implementation = _result(AgentRole.PYTHON_CODER, "Changed app.py")
+
+    research_prompt = _build_research_prompt("Add a feature", plan)
+    implementation_prompt = _build_implementation_prompt("Add a feature", plan, research)
+    validation_prompt = _build_validation_prompt(
+        "Add a feature",
+        plan,
+        research,
+        implementation,
+    )
+    from ci2lab.harness.multiagent.state import MultiAgentRun
+
+    run = MultiAgentRun(user_prompt="Add a feature")
+    run.add_result(plan)
+    run.add_result(research)
+    run.add_result(implementation)
+    review_prompt = _build_review_prompt(run)
+
+    assert "Follow the planner's execution plan" in research_prompt
+    assert "Only perform the research/context gathering assigned" in research_prompt
+    assert "Implement only the tasks assigned" in implementation_prompt
+    assert "outside the planner's boundaries" in implementation_prompt
+    assert "planner's validation expectations" in validation_prompt
+    assert "did not follow the plan" in validation_prompt
+    assert "against the planner's execution plan" in review_prompt
+    assert "avoided overlapping responsibilities" in review_prompt
 
 
 def test_should_run_security_review_for_sensitive_terms():
@@ -89,6 +172,66 @@ def test_run_multi_agent_sequential_flow(monkeypatch):
     assert "pytest passed" in result
 
 
+def test_run_multi_agent_skips_coder_for_read_only_pdf_task(monkeypatch):
+    calls: list[tuple[AgentRole, int]] = []
+    outputs = {
+        AgentRole.PLANNER: "Plan: read the PDF and answer from its content.",
+        AgentRole.RESEARCHER: "The PDF content says the main topic is formal writing.",
+        AgentRole.REVIEWER: "The answer is grounded in the document. No code needed.",
+    }
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append((role, attempt))
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert calls == [
+        (AgentRole.PLANNER, 1),
+        (AgentRole.RESEARCHER, 1),
+        (AgentRole.REVIEWER, 1),
+    ]
+    assert "Selected implementer: none (read-only task)" in result
+    assert "formal writing" in result
+
+
+def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
+    calls: list[AgentRole] = []
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        if role == AgentRole.PLANNER:
+            return _result(role, "Plan: inspect the requested PDF.")
+        if role == AgentRole.RESEARCHER:
+            return _result(role, "BLOCKED: prueba.pdf was not found.")
+        raise AssertionError(f"Unexpected role after blocked researcher: {role}")
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert calls == [AgentRole.PLANNER, AgentRole.RESEARCHER]
+    assert "status: blocked" in result
+    assert "Blocked role: researcher" in result
+    assert "prueba.pdf was not found" in result
+
+
 def test_run_multi_agent_prints_subagent_progress(monkeypatch):
     outputs = {
         AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
@@ -117,11 +260,11 @@ def test_run_multi_agent_prints_subagent_progress(monkeypatch):
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
 
-    assert any("starting planner" in message for message in printed)
+    assert any("Planning the work" in message for message in printed)
     assert any("completed planner" in message for message in printed)
-    assert any("starting researcher" in message for message in printed)
+    assert any("Gathering the needed context" in message for message in printed)
     assert any("completed python_coder" in message for message in printed)
-    assert any("starting validator" in message for message in printed)
+    assert any("Checking the result" in message for message in printed)
     assert any("completed reviewer" in message for message in printed)
 
 

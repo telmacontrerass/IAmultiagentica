@@ -3,6 +3,7 @@ from unittest.mock import patch
 from ci2lab.harness import AgentConfig, default_selection
 from ci2lab.harness.multiagent import AgentRole, run_subagent
 from ci2lab.harness.multiagent.runner import (
+    ROLE_MAX_ROUNDS,
     build_role_anchor,
     build_subagent_config,
     build_subagent_system_prompt,
@@ -22,6 +23,27 @@ def test_build_subagent_config_filters_tools_without_mutating_parent():
     assert subagent.skill_allowed_tools is not None
     assert "read_file" in subagent.skill_allowed_tools
     assert "write_file" not in subagent.skill_allowed_tools
+
+
+def test_build_subagent_config_applies_role_round_budget():
+    parent = AgentConfig(cwd=".", max_rounds=25)
+
+    planner = build_subagent_config(AgentRole.PLANNER, parent)
+    researcher = build_subagent_config(AgentRole.RESEARCHER, parent)
+    coder = build_subagent_config(AgentRole.PYTHON_CODER, parent)
+
+    assert planner.max_rounds == ROLE_MAX_ROUNDS[AgentRole.PLANNER]
+    assert researcher.max_rounds == ROLE_MAX_ROUNDS[AgentRole.RESEARCHER]
+    assert coder.max_rounds == ROLE_MAX_ROUNDS[AgentRole.PYTHON_CODER]
+    assert parent.max_rounds == 25
+
+
+def test_build_subagent_config_never_exceeds_parent_round_budget():
+    parent = AgentConfig(cwd=".", max_rounds=3)
+
+    subagent = build_subagent_config(AgentRole.PYTHON_CODER, parent)
+
+    assert subagent.max_rounds == 3
 
 
 def test_build_subagent_config_intersects_skill_and_role_tools():
@@ -101,6 +123,8 @@ def test_run_subagent_uses_isolated_system_context_and_role_tools():
     assert "Role: planner" in messages[0]["content"]
     assert "You are currently acting as planner." in messages[0]["content"]
     assert "isolated subagent context" in messages[0]["content"]
+    assert "BLOCKED:" in messages[0]["content"]
+    assert "Do not keep retrying the same action" in messages[0]["content"]
 
 
 def test_subagent_role_anchor_is_passed_to_run_agent():
