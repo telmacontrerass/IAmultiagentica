@@ -102,6 +102,7 @@ class RunLogger:
             stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             self._run_dir = self.runs_dir / f"{stamp}_{short_id}"
             self._run_dir.mkdir(parents=True, exist_ok=False)
+            self.agent_config.last_run_dir = str(self._run_dir)
             self._write_json("config_snapshot.json", self.config_snapshot)
             set_audit_persist_context(
                 AuditPersistContext(
@@ -289,6 +290,13 @@ class RunLogger:
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    @property
+    def run_dir(self) -> Path | None:
+        return self._run_dir
+
+    def write_json_artifact(self, name: str, data: Any) -> None:
+        self._write_json(name, data)
 
     def _deactivate(self, message: str) -> None:
         self._active = False

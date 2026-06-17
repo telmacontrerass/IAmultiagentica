@@ -80,6 +80,9 @@ class AgentConfig:
     role_anchor: str | None = None
     """English role-discipline anchor reinjected for subagents after tool rounds."""
 
+    last_run_dir: str | None = None
+    """Latest run directory produced by RunLogger for this config instance."""
+
     tool_settings: ToolSettings | None = None
     """Reglas allow/deny de settings.json (fusionadas global + proyecto).
     Si es None, no se aplican reglas de settings y todo esta permitido."""

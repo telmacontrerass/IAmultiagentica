@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
+
 from dataclasses import replace
 
 from ci2lab.console import console
@@ -11,6 +15,8 @@ from ci2lab.harness.multiagent.state import AgentRole, SubAgentResult
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.query.loop import run_agent
 from ci2lab.harness.types import AgentConfig
+
+TRACE_PREVIEW_CHARS = 600
 
 
 def _resolve_subagent_allowed_tools(
@@ -64,6 +70,84 @@ def build_subagent_system_prompt(
     )
 
 
+def _preview_text(text: str, *, limit: int = TRACE_PREVIEW_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "… (truncated)"
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    try:
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | None]:
+    if not summary:
+        return "completed", None
+    raw_status = str(summary.get("status") or "success")
+    error = summary.get("error")
+    low_error = str(error or "").lower()
+    if raw_status == "success":
+        return "completed", None
+    if raw_status == "max_rounds":
+        return "blocked", str(error or "Reached max rounds.")
+    if raw_status == "interrupted":
+        return "blocked", str(error or "Interrupted.")
+    if "timeout" in low_error:
+        return "timeout", str(error)
+    return "failed", str(error) if error is not None else raw_status
+
+
+def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
+    if not run_dir:
+        return {
+            "status": "completed",
+            "error": None,
+            "duration_ms": None,
+            "rounds": None,
+            "tool_calls": [],
+        }
+
+    path = Path(run_dir)
+    summary = _read_json(path / "run_summary.json")
+    tool_entries = _read_jsonl(path / "tool_calls.jsonl")
+    status, error = _trace_status_from_run_summary(summary)
+    tool_calls = [
+        {
+            "tool": str(entry.get("tool", "")),
+            "ok": bool(entry.get("ok", False)),
+            "outcome": entry.get("outcome"),
+            "arguments": entry.get("arguments") or {},
+            "output_preview": _preview_text(str(entry.get("output", ""))),
+            "error_preview": _preview_text(str(entry.get("error", "")))
+            if entry.get("error")
+            else None,
+        }
+        for entry in tool_entries
+    ]
+    duration_s = summary.get("duration_seconds") if summary else None
+    return {
+        "status": status,
+        "error": error,
+        "duration_ms": int(float(duration_s) * 1000) if duration_s is not None else None,
+        "rounds": int(summary.get("rounds", 0)) if summary and summary.get("rounds") is not None else None,
+        "tool_calls": tool_calls,
+    }
+
+
 def build_subagent_config(
     role: AgentRole,
     config: AgentConfig,
@@ -89,6 +173,7 @@ def run_subagent(
 ) -> SubAgentResult:
     """Execute one role-specific subagent with its own message context."""
     subagent_config = build_subagent_config(role, config)
+    spec = ROLE_SPECS[role]
     system_prompt = build_subagent_system_prompt(role, selection, subagent_config)
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -108,10 +193,20 @@ def run_subagent(
             messages=messages,
         )
 
+    trace_data = _load_subagent_run_artifacts(subagent_config.last_run_dir)
     return SubAgentResult(
         role=role,
         task=task_prompt,
         output=output,
-        status="completed",
+        status=str(trace_data["status"]),
         attempt=attempt,
+        error=trace_data["error"],  # type: ignore[index]
+        role_anchor=subagent_config.role_anchor,
+        allowed_tools=sorted(subagent_config.skill_allowed_tools or ()),
+        can_write=spec.can_write,
+        input_prompt=_preview_text(task_prompt),
+        subagent_run_dir=subagent_config.last_run_dir,
+        tool_calls=list(trace_data["tool_calls"]),  # type: ignore[index]
+        duration_ms=trace_data["duration_ms"],  # type: ignore[index]
+        rounds=trace_data["rounds"],  # type: ignore[index]
     )
