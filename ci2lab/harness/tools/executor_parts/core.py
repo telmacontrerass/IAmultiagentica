@@ -5,7 +5,10 @@ from __future__ import annotations
 from ci2lab.harness.security.policy import outcome_for_tool_output
 from ci2lab.harness.security.write_permissions import WRITE_TOOLS
 from ci2lab.harness.tools.bash import _format_bash_block_message
-from ci2lab.harness.tools.bash_redirect import tool_call_from_bash_command
+from ci2lab.harness.tools.bash_redirect import (
+    shell_command_to_tool,
+    tool_call_from_bash_command,
+)
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.dispatch import DISPATCH
 from ci2lab.harness.tools.executor_parts.arguments import normalize_tool_arguments
@@ -23,6 +26,31 @@ from ci2lab.security.permissions import evaluate_tool_gate
 from ci2lab.settings import check_tool_allowed
 
 
+# Equivalencias que sugerimos cuando el skill bloquea una herramienta de shell.
+_SHELL_TOOL_EQUIVALENT = {
+    "bash": ("ls", "grep", "glob", "read_file"),
+    "ls": ("ls",),
+    "cat": ("read_file",),
+    "find": ("glob",),
+    "grep": ("grep",),
+}
+
+
+def _skill_block_hint(name: str, allowed_canon: set[str]) -> str:
+    """Sugiere la herramienta permitida equivalente para que el modelo no entre en bucle."""
+    from ci2lab.harness.parsing_parts.common import map_name
+
+    candidates = _SHELL_TOOL_EQUIVALENT.get(map_name(name), ())
+    usable = [c for c in candidates if c in allowed_canon]
+    if not usable:
+        return " Do not retry the same tool; respond with what you already know."
+    listed = ", ".join(f"`{t}`" for t in usable)
+    return (
+        f" Use {listed} instead of `{name}`"
+        " (e.g. `ls` to list a directory, `grep`/`glob` to find files)."
+    )
+
+
 def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
     from ci2lab.harness.mcp.session import get_mcp_manager
 
@@ -36,26 +64,52 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
         )
 
-    if (
-        config.skill_allowed_tools is not None
-        and name not in config.skill_allowed_tools
-        and name != "skill"
-    ):
-        return ToolResult(
-            tool_name=name,
-            content=(
-                f"Error: tool `{name}` is not allowed by the active skill. "
-                f"Allowed: {', '.join(sorted(config.skill_allowed_tools))}"
-            ),
-            is_error=True,
-            call_id=call.call_id,
-        )
+    # `bash read_file ...` (un tool nativo escrito como comando) siempre se
+    # redirige al tool real.
+    if name == "bash":
+        command = str(call.arguments.get("command", ""))
+        redirected = tool_call_from_bash_command(command, call_id=call.call_id)
+        if redirected is not None and redirected.name != "bash":
+            return execute_tool(redirected, config)
+        # Si el skill NO permite `bash`, traducimos comandos POSIX simples
+        # (`ls`, `grep`, `find`, `cat`) al tool equivalente. Sin esto, un skill
+        # restringido deja al modelo en bucle infinito contra el filtro.
+        if config.skill_allowed_tools is not None:
+            from ci2lab.harness.parsing_parts.common import map_name as _mn
+
+            if "bash" not in {_mn(t) for t in config.skill_allowed_tools}:
+                translated = shell_command_to_tool(command, call_id=call.call_id)
+                if translated is not None:
+                    return execute_tool(translated, config)
+
+    if config.skill_allowed_tools is not None and name != "skill":
+        # Canonicaliza nombres (list_files→ls, dir→ls...) en ambos lados para
+        # tolerar allow-lists de skills escritos con sinónimos.
+        from ci2lab.harness.parsing_parts.common import map_name
+
+        canonical = map_name(name)
+        allowed_canon = {map_name(t) for t in config.skill_allowed_tools}
+        if canonical not in allowed_canon and name not in config.skill_allowed_tools:
+            allowed_list = ", ".join(sorted(config.skill_allowed_tools))
+            hint = _skill_block_hint(name, allowed_canon)
+            return ToolResult(
+                tool_name=name,
+                content=(
+                    f"Error: tool `{name}` is not allowed by the active skill. "
+                    f"Allowed: {allowed_list}.{hint}"
+                ),
+                is_error=True,
+                call_id=call.call_id,
+                outcome="blocked_by_skill",
+            )
 
     args = normalize_tool_arguments(call.arguments, tool_name=name)
 
+    # La redirección bash→tool ya ocurrió arriba (antes del filtro del skill).
+    # Aquí solo validamos que el comando no esté vacío para evitar ejecuciones
+    # erróneas con modelos que emiten un bloque bash sin contenido.
     if name == "bash":
-        command = str(args.get("command", ""))
-        if not command.strip():
+        if not str(args.get("command", "")).strip():
             return ToolResult(
                 tool_name=name,
                 content="Error: bash requiere un `command` no vacio.",
@@ -63,11 +117,6 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
                 call_id=call.call_id,
                 outcome="invalid_arguments",
             )
-        redirected = tool_call_from_bash_command(
-            command, call_id=call.call_id
-        )
-        if redirected is not None:
-            return execute_tool(redirected, config)
 
     if name.startswith("mcp__"):
         mgr = get_mcp_manager(config.cwd, connect=True)

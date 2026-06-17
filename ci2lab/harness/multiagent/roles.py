@@ -19,7 +19,8 @@ class RoleSpec:
 
 
 READ_TOOLS = frozenset({
-    "list_files",
+    "ls",
+    "glob",
     "read_file",
     "read_document",
     "grep",

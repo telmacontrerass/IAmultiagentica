@@ -88,7 +88,7 @@ Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 
 ### docx_to_pdf (convert Word to PDF)
 
-Convert a `.docx` file to PDF using pandoc. Requires pandoc on PATH and a PDF engine (e.g. wkhtmltopdf, weasyprint).
+Convert a `.docx` file to PDF. Tries LibreOffice first (best for non-Latin text), then pandoc with a Unicode-capable engine. Pass the existing `.docx` path as `source`; do not pass a glob pattern.
 
 ```docx_to_pdf
 {"source": "informe.docx", "output": "informe.pdf"}

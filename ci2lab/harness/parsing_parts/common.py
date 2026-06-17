@@ -26,6 +26,14 @@ NAME_MAP = {
     "todo": "todo_write",
     "notebook": "notebook_edit",
     "git": "git_status",
+    # Sinónimos de listado/búsqueda: distintos modelos (y los allow-lists de
+    # algunos skills) usan estos nombres para la misma herramienta `ls`/`grep`.
+    "list_files": "ls",
+    "list_dir": "ls",
+    "listdir": "ls",
+    "dir": "ls",
+    "find": "glob",
+    "search": "grep",
 }
 
 

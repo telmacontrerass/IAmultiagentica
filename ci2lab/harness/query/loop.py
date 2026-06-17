@@ -394,6 +394,8 @@ def run_agent(
     policy_blocked_sigs: set[str] = set()
     policy_nudge_sent = False
     stuck_rounds = 0
+    stuck_nudges = 0
+    error_streak = 0
     unparsed_tool_nudges = 0
     summary_failures = 0
     pdf_tool_nudges = 0
@@ -711,11 +713,30 @@ def run_agent(
             recent_sigs.append(sig)
 
             if stuck_rounds >= 2:
+                stuck_nudges += 1
+                if stuck_nudges > 2:
+                    console.print(
+                        "[yellow]Bucle persistente; deteniendo y respondiendo "
+                        "con lo disponible.[/yellow]")
+                    status = "stuck"
+                    final_text = (
+                        strip_tool_markup(content).strip()
+                        or "No pude completar la tarea: se repitió la misma "
+                        "herramienta sin avanzar. Revisa el último error mostrado "
+                        "arriba (permisos del skill, archivo o formato)."
+                    )
+                    console.print(final_text)
+                    append_assistant_turn(history, final_text)
+                    maybe_save_session(cfg, history, selection)
+                    break
                 console.print("[yellow]Bucle detectado; pidiendo respuesta final.[/yellow]")
                 history.append({
                     "role": "user",
                     "content": (
-                        "Deja de repetir la misma herramienta. No respondas a esta "
+                        "Deja de repetir la misma herramienta o los mismos "
+                        "argumentos. Si una herramienta está bloqueada por el "
+                        "skill, usa la herramienta permitida equivalente "
+                        "(`ls`, `grep`, `glob`, `read_file`). No respondas a esta "
                         "instrucción ni expliques que vas a cambiar de estrategia. "
                         "Responde ahora a la petición original del usuario usando "
                         "los resultados de herramientas ya disponibles.\n\n"
@@ -770,6 +791,33 @@ def run_agent(
                 docx_path = _first_docx_path_from_result(call, result)
                 if docx_path:
                     found_docx_path = docx_path
+
+            # Corte por racha de errores: aunque los argumentos cambien cada
+            # ronda (y el detector de firmas no lo vea como bucle), si todas las
+            # herramientas fallan varias rondas seguidas, paramos en vez de
+            # gastar todas las rondas contra el mismo obstáculo.
+            if results and all(r.is_error for r in results):
+                error_streak += 1
+            else:
+                error_streak = 0
+            if error_streak >= 4:
+                console.print(
+                    "[yellow]Las herramientas fallaron repetidamente; "
+                    "deteniendo.[/yellow]")
+                status = "stuck"
+                last_error = next(
+                    (r.content for r in reversed(results) if r.is_error), ""
+                )
+                final_text = (
+                    "No pude completar la tarea: las herramientas fallaron "
+                    "repetidamente. Último error: "
+                    f"{last_error[:300]}"
+                )
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                maybe_save_session(cfg, history, selection)
+                break
+
             direct_answer = document_direct_answer(results, user_prompt)
             if direct_answer:
                 final_text = direct_answer

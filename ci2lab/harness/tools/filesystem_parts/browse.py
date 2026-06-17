@@ -108,15 +108,25 @@ def grep_search(
         return err
     assert base is not None
     flags = re.IGNORECASE if ignore_case else 0
+    fallback_note = ""
     try:
         regex = re.compile(pattern, flags)
-    except re.error as exc:
-        return f"Error: expresión regular inválida: {exc}"
+    except re.error:
+        # Patrones tipo glob (`**/*.docx`) o con metacaracteres sueltos no son
+        # regex válidas. En vez de fallar, buscamos el texto de forma literal.
+        # Para localizar archivos por nombre conviene `glob`, no `grep`.
+        regex = re.compile(re.escape(pattern), flags)
+        fallback_note = (
+            f"(nota: `{pattern}` no es una regex válida; se buscó como texto "
+            "literal. Para encontrar archivos por nombre usa la herramienta `glob`.)\n"
+        )
 
     if base.is_file():
         if is_sensitive_path(base, workspace=cwd):
             return secret_file_block_message()
-        return grep_single_file(base, root=Path(cwd).resolve(), regex=regex, max_results=max_results)
+        return fallback_note + grep_single_file(
+            base, root=Path(cwd).resolve(), regex=regex, max_results=max_results
+        )
 
     results, skipped = grep_scan_tree(
         base,
@@ -128,11 +138,11 @@ def grep_search(
     if results:
         body = "\n".join(results)
         notice = grep_skip_notice(skipped)
-        return f"{body}\n{notice}" if notice else body
+        return fallback_note + (f"{body}\n{notice}" if notice else body)
     if skipped:
         notice = grep_skip_notice(skipped)
-        return f"Sin coincidencias para `{pattern}`\n{notice}"
-    return f"Sin coincidencias para `{pattern}`"
+        return fallback_note + f"Sin coincidencias para `{pattern}`\n{notice}"
+    return fallback_note + f"Sin coincidencias para `{pattern}`"
 
 
 def grep_single_file(
