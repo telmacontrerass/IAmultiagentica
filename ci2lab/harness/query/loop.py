@@ -191,6 +191,13 @@ def _current_request_anchor(user_prompt: str) -> dict[str, str]:
     }
 
 
+def _role_anchor_message(role_anchor: str) -> dict[str, str]:
+    return {
+        "role": "user",
+        "content": role_anchor,
+    }
+
+
 def _print_model_step(content: str, *, already_streamed: bool) -> None:
     """Show non-tool text from a model round before executing tools."""
     display = strip_tool_markup(content).strip()

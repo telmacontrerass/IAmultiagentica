@@ -6,17 +6,23 @@ from ci2lab.harness import AgentConfig, default_selection
 from ci2lab.harness.multiagent.orchestrator import (
     _build_implementation_prompt,
     _build_planner_prompt,
+    _build_repair_prompt,
     _build_research_prompt,
     _build_review_prompt,
+    _build_security_review_prompt,
     _build_validation_prompt,
     choose_coder_role,
+    final_run_status,
+    has_write_tool_evidence,
+    looks_like_untraceable_fs_mutation,
     run_multi_agent,
     should_run_security_review,
     should_skip_implementation,
     subagent_blocked,
     validation_failed,
+    write_task_lacks_evidence,
 )
-from ci2lab.harness.multiagent.state import AgentRole, SubAgentResult
+from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
 
 
 def _result(role: AgentRole, output: str, *, attempt: int = 1, **kwargs) -> SubAgentResult:
@@ -121,6 +127,94 @@ def test_downstream_prompts_require_following_planner_contract():
     assert "did not follow the plan" in validation_prompt
     assert "against the planner's execution plan" in review_prompt
     assert "avoided overlapping responsibilities" in review_prompt
+
+
+def test_validator_prompt_requires_real_tool_evidence_for_claims():
+    plan = _result(AgentRole.PLANNER, "Create prueba_multiagente.txt.")
+    research = _result(AgentRole.RESEARCHER, "No existing target file found.")
+    implementation = _result(
+        AgentRole.GENERALIST_CODER,
+        "I created prueba_multiagente.txt and checked the content.",
+        tool_calls=[],
+    )
+
+    prompt = _build_validation_prompt(
+        "Create prueba_multiagente.txt with MULTIAGENTE_OK.",
+        plan,
+        research,
+        implementation,
+    )
+
+    assert "Real tool-call evidence available" in prompt
+    assert "Filesystem write evidence:\nnone" in prompt
+    assert "Readback/content evidence:\nnone" in prompt
+    assert "insufficient evidence" in prompt
+    assert "non-existent verification helpers" in prompt
+    assert "verificar_archivo" not in prompt
+    assert "check_content" not in prompt
+
+
+def test_validator_prompt_records_successful_write_and_readback_evidence():
+    plan = _result(AgentRole.PLANNER, "Create prueba_multiagente.txt.")
+    research = _result(AgentRole.RESEARCHER, "No existing target file found.")
+    implementation = _result(
+        AgentRole.GENERALIST_CODER,
+        "Implemented requested file.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "prueba_multiagente.txt"},
+                "output_preview": "Wrote prueba_multiagente.txt",
+            },
+            {
+                "tool": "read_file",
+                "ok": True,
+                "arguments": {"path": "prueba_multiagente.txt"},
+                "output_preview": "MULTIAGENTE_OK",
+            },
+        ],
+    )
+
+    prompt = _build_validation_prompt(
+        "Create prueba_multiagente.txt with MULTIAGENTE_OK.",
+        plan,
+        research,
+        implementation,
+    )
+
+    assert "generalist_coder: write_file(prueba_multiagente.txt)" in prompt
+    assert "generalist_coder: read_file(prueba_multiagente.txt)" in prompt
+    assert "MULTIAGENTE_OK" in prompt
+
+
+def test_reviewer_prompt_does_not_allow_creation_claim_without_implementer():
+    from ci2lab.harness.multiagent.state import MultiAgentRun
+
+    run = MultiAgentRun(user_prompt="Read the PDF and summarize it.")
+    run.add_result(_result(AgentRole.RESEARCHER, "Found the PDF summary."))
+
+    prompt = _build_review_prompt(run)
+
+    assert "Selected implementer: none selected" in prompt
+    assert "Filesystem write evidence:\nnone" in prompt
+    assert "You may say a file was created or modified only" in prompt
+    assert "insufficient evidence" in prompt
+
+
+def test_security_reviewer_prompt_does_not_allow_filesystem_write_claim_without_tool_result():
+    from ci2lab.harness.multiagent.state import MultiAgentRun
+
+    run = MultiAgentRun(user_prompt="Review filesystem safety.")
+    run.add_result(_result(AgentRole.RESEARCHER, "No writes needed."))
+    run.add_result(_result(AgentRole.REVIEWER, "Looks safe."))
+
+    prompt = _build_security_review_prompt(run)
+
+    assert "Selected implementer: none selected" in prompt
+    assert "Filesystem write evidence:\nnone" in prompt
+    assert "do not state that an implementer created, modified, or wrote files" in prompt
+    assert "insufficient evidence of filesystem writes" in prompt
 
 
 def test_should_run_security_review_for_sensitive_terms():
@@ -454,6 +548,228 @@ def test_multiagent_trace_records_skipped_or_failed_phase(tmp_path, monkeypatch)
     researcher = next(item for item in trace["phases"] if item["role"] == "researcher")
     assert researcher["status"] == "failed"
     assert "research exploded" in researcher["error"]
+
+
+_WRITE_PROMPT = (
+    "Crea un archivo llamado prueba_multiagente.txt en la raíz del workspace con "
+    "exactamente este contenido: MULTIAGENTE_OK. Después verifica que el archivo "
+    "existe y que el contenido es correcto. No modifiques ningún otro archivo."
+)
+
+_PYTHON_SCRIPT_OUTPUT = (
+    "```python\n"
+    'with open("prueba_multiagente.txt", "w") as f:\n'
+    '    f.write("MULTIAGENTE_OK")\n'
+    "```"
+)
+
+_WRITE_READBACK_TOOL_CALLS = [
+    {
+        "tool": "write_file",
+        "ok": True,
+        "arguments": {"path": "prueba_multiagente.txt"},
+        "output_preview": "Wrote prueba_multiagente.txt",
+    },
+    {
+        "tool": "read_file",
+        "ok": True,
+        "arguments": {"path": "prueba_multiagente.txt"},
+        "output_preview": "MULTIAGENTE_OK",
+    },
+]
+
+
+def _force_code_change_intent(monkeypatch) -> None:
+    """Pin the intent decision so these orchestrator tests exercise the evidence
+    gate, not the (separately tested) intent-routing classifier."""
+    from ci2lab.harness.multiagent.intent import (
+        MultiAgentIntent,
+        MultiAgentIntentDecision,
+    )
+
+    decision = MultiAgentIntentDecision(
+        intent=MultiAgentIntent.CODE_CHANGE,
+        requires_write=True,
+        allowed_phases=["planner", "researcher", "coder", "validator", "reviewer"],
+        reason="forced code_change for orchestrator evidence-gate test",
+        confidence="high",
+    )
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.classify_multiagent_intent",
+        lambda _prompt: decision,
+    )
+
+
+def _write_run(implementation: SubAgentResult, validation_output: str) -> MultiAgentRun:
+    run = MultiAgentRun(user_prompt=_WRITE_PROMPT)
+    run.requires_write = True
+    run.selected_coder_role = implementation.role
+    run.add_result(_result(AgentRole.PLANNER, "Plan: create the file."))
+    run.add_result(_result(AgentRole.RESEARCHER, "No existing target file."))
+    run.add_result(implementation)
+    run.add_result(_result(AgentRole.VALIDATOR, validation_output))
+    return run
+
+
+# --- Evidence-gate regression coverage ------------------------------------
+#
+# Root cause reproduced from run 2026-06-18_122425_20a4d28d: the coder returned
+# a Python `open(..., "w")` script instead of calling write_file, so no tool
+# evidence existed, yet the run was reported as completed because the validator
+# text contained the substring "ok" (from MULTIAGENTE_OK).
+
+
+def test_validation_failed_treats_insufficient_evidence_as_failure():
+    assert validation_failed(
+        _result(AgentRole.VALIDATOR, "Insufficient evidence: no write_file result.")
+    )
+    assert validation_failed(
+        _result(AgentRole.VALIDATOR, "Insuficiente Evidencia. No hay evidencia de escritura.")
+    )
+
+
+def test_validation_failed_ignores_ok_substring_in_content():
+    # The literal content token must not be read as a success ("ok" inside
+    # MULTIAGENTE_OK) — this is the exact false-positive from the failing run.
+    assert not validation_failed(_result(AgentRole.VALIDATOR, "Result content: MULTIAGENTE_OK"))
+    # And when the validator reports insufficient evidence, the same content
+    # token must not flip it back to success.
+    assert validation_failed(
+        _result(
+            AgentRole.VALIDATOR,
+            "No hay evidencia. MULTIAGENTE_OK. Insufficient evidence to confirm the write.",
+        )
+    )
+
+
+def test_looks_like_untraceable_fs_mutation_detects_returned_script():
+    assert looks_like_untraceable_fs_mutation(_PYTHON_SCRIPT_OUTPUT)
+    assert looks_like_untraceable_fs_mutation('Path("x.txt").write_text("hi")')
+    assert not looks_like_untraceable_fs_mutation("I will use write_file to create the file.")
+
+
+def test_has_write_tool_evidence_requires_successful_write_tool():
+    no_evidence = _result(AgentRole.GENERALIST_CODER, _PYTHON_SCRIPT_OUTPUT, tool_calls=[])
+    assert not has_write_tool_evidence([no_evidence])
+
+    failed_write = _result(
+        AgentRole.GENERALIST_CODER,
+        "tried",
+        tool_calls=[{"tool": "write_file", "ok": False, "arguments": {"path": "x"}}],
+    )
+    assert not has_write_tool_evidence([failed_write])
+
+    real_write = _result(
+        AgentRole.GENERALIST_CODER, "done", tool_calls=_WRITE_READBACK_TOOL_CALLS
+    )
+    assert has_write_tool_evidence([real_write])
+
+
+def test_write_task_lacks_evidence_for_returned_script_but_not_for_real_write():
+    script_run = _write_run(
+        _result(AgentRole.GENERALIST_CODER, _PYTHON_SCRIPT_OUTPUT, tool_calls=[]),
+        "Insufficient evidence.",
+    )
+    assert write_task_lacks_evidence(script_run)
+    assert final_run_status(script_run) != "completed"
+
+    real_run = _write_run(
+        _result(AgentRole.GENERALIST_CODER, "Created via tools.", tool_calls=_WRITE_READBACK_TOOL_CALLS),
+        "Validation passed.",
+    )
+    assert not write_task_lacks_evidence(real_run)
+    assert final_run_status(real_run) == "completed"
+
+
+def test_final_run_status_downgrades_write_task_without_evidence_even_if_validator_passes():
+    # Even when the validator is fooled into reporting success, the deterministic
+    # evidence gate must refuse a clean completion for a write task.
+    fooled = _write_run(
+        _result(AgentRole.GENERALIST_CODER, _PYTHON_SCRIPT_OUTPUT, tool_calls=[]),
+        "All checks passed, looks ok.",
+    )
+    assert final_run_status(fooled) == "insufficient_evidence"
+
+
+def test_implementation_and_repair_prompts_require_traceable_write_tools():
+    plan = _result(AgentRole.PLANNER, "Create prueba_multiagente.txt.")
+    research = _result(AgentRole.RESEARCHER, "No existing file.")
+    impl_prompt = _build_implementation_prompt(_WRITE_PROMPT, plan, research)
+    assert "write_file" in impl_prompt
+    assert 'open(path, "w")' in impl_prompt
+    assert "never executed" in impl_prompt
+
+    repair_prompt = _build_repair_prompt(
+        _WRITE_PROMPT,
+        plan,
+        research,
+        _result(AgentRole.GENERALIST_CODER, _PYTHON_SCRIPT_OUTPUT),
+        _result(AgentRole.VALIDATOR, "Insufficient evidence."),
+    )
+    assert "write_file" in repair_prompt
+    assert 'open(path, "w")' in repair_prompt
+
+
+def test_run_multi_agent_write_task_without_tool_evidence_is_not_completed(monkeypatch):
+    _force_code_change_intent(monkeypatch)
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PLANNER:
+            return _result(role, "Plan: create the file.")
+        if role == AgentRole.RESEARCHER:
+            return _result(role, "No existing target file.")
+        if role == AgentRole.GENERALIST_CODER:
+            return _result(role, _PYTHON_SCRIPT_OUTPUT, attempt=attempt, tool_calls=[])
+        if role == AgentRole.VALIDATOR:
+            return _result(role, "Insufficient evidence of the file write.", attempt=attempt)
+        return _result(role, "Review complete.", attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        _WRITE_PROMPT,
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+        max_repair_attempts=0,
+    )
+
+    assert "status: completed" not in result
+    assert "Selected implementer: generalist_coder" in result
+
+
+def test_run_multi_agent_write_task_with_tool_evidence_completes(monkeypatch):
+    _force_code_change_intent(monkeypatch)
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PLANNER:
+            return _result(role, "Plan: create the file.")
+        if role == AgentRole.RESEARCHER:
+            return _result(role, "No existing target file.")
+        if role == AgentRole.GENERALIST_CODER:
+            return _result(
+                role, "Created the file with tools.", attempt=attempt,
+                tool_calls=_WRITE_READBACK_TOOL_CALLS,
+            )
+        if role == AgentRole.VALIDATOR:
+            return _result(role, "Validation passed; content is correct.", attempt=attempt)
+        return _result(role, "Review complete.", attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        _WRITE_PROMPT,
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert "status: completed" in result
+    assert "Selected implementer: generalist_coder" in result
 
 
 def test_multiagent_trace_truncates_large_tool_results(tmp_path, monkeypatch):
