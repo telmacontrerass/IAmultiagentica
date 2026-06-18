@@ -27,6 +27,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     prompt_for_model = prompt_with_uploaded_files(prompt, workspace, attachments)
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     stream = bool(payload.get("stream", False))
+    multi_agent = bool(payload.get("multi_agent", False))
     loaded = load_session(session_id)
     messages = loaded.get("messages") if loaded else None
     existing_token_usage = loaded.get("token_usage") if loaded else None
@@ -40,7 +41,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        prepare_session, build_agent_config, run_agent = _agent_dependencies()
+        prepare_session, build_agent_config, run_agent, run_multi_agent = _agent_dependencies()
         _, selection = prepare_session(
             prompt_for_model,
             force_model=model,
@@ -57,13 +58,26 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             auto_confirm=True,
             confirm_callback=(lambda _tool, _summary: True),
         )
-        answer = run_agent(prompt_for_model, selection, config=agent, messages=messages)
+        if multi_agent:
+            answer = run_multi_agent(prompt_for_model, selection, config=agent)
+            save_completed_session(
+                session_id=session_id,
+                messages=messages,
+                prompt=prompt,
+                answer=answer,
+                model_tag=selection.ollama_tag,
+                cwd=workspace,
+                token_usage=agent.token_usage.to_dict(),
+            )
+        else:
+            answer = run_agent(prompt_for_model, selection, config=agent, messages=messages)
         return {
             "ok": True,
             "answer": answer,
             "session_id": session_id,
             "model": selection.ollama_tag,
             "display_name": selection.display_name,
+            "multi_agent": multi_agent,
             "usage": agent.token_usage.to_dict(),
         }
     except LLMError as exc:
@@ -79,10 +93,11 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     model = str(model_result["model"])
     workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
+    multi_agent = bool(payload.get("multi_agent", False))
     warnings: list[str] = []
 
     try:
-        prepare_session, _build_agent_config, _run_agent = _agent_dependencies()
+        prepare_session, _build_agent_config, _run_agent, _run_multi_agent = _agent_dependencies()
         _, selection = prepare_session(
             "",
             force_model=model,
@@ -106,7 +121,8 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "display_name": display_name,
         "tool_mode": tool_mode,
         "cwd": workspace,
-        "ui_mode": "herramientas_activas",
+        "ui_mode": "multi_agent" if multi_agent else "herramientas_activas",
+        "multi_agent": multi_agent,
         "security_profile": state.runtime.security.profile,
         "security_engine": state.runtime.security.engine,
         "warnings": warnings,
@@ -167,7 +183,12 @@ def save_completed_session(
 def _agent_dependencies():
     from ci2lab.ui import server as facade
 
-    return facade.prepare_session, facade.build_agent_config, facade.run_agent
+    return (
+        facade.prepare_session,
+        facade.build_agent_config,
+        facade.run_agent,
+        facade.run_multi_agent,
+    )
 
 
 def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:

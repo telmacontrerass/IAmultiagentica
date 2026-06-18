@@ -13,6 +13,7 @@ _CLI_COMMANDS = frozenset(
         "hardware",
         "models",
         "evals",
+        "skills",
         "permissions",
         "ui",
         "tools",
@@ -42,10 +43,12 @@ def _print_global_help() -> None:
         "Main commands:",
         '  ci2lab agent "request"            One task and exit',
         "  ci2lab chat                       Interactive mode (REPL)",
+        "  ci2lab menu                       Open the interactive launcher",
         "  ci2lab --multi-agent chat         REPL with subagent orchestrator",
         "  ci2lab tools qwen:1.8b            Simple chat with tools",
         "  ci2lab qwen:1.8b tools            Same thing, short form",
         "  ci2lab sessions [--json]          List saved sessions",
+        "  ci2lab skills [--json]            List available built-in/user/workspace skills",
         "  ci2lab doctor                     Check Python, Ollama and models",
         "  ci2lab hardware [--json]          RAM, GPU, memory budget",
         "  ci2lab models recommend [query]",
@@ -172,9 +175,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_agent_flags(agent_p)
 
     sub.add_parser("chat", help="Interactive REPL mode").set_defaults(command="chat")
+    sub.add_parser("menu", help="Open the interactive launcher").set_defaults(command="menu")
 
     sessions_p = sub.add_parser("sessions", help="List saved sessions")
     sessions_p.add_argument("--json", action="store_true")
+
+    skills_p = sub.add_parser("skills", help="List available skills")
+    skills_p.add_argument("--json", action="store_true")
 
     sub.add_parser("doctor", help="Check environment")
 

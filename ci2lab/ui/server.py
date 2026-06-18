@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ci2lab.harness import run_agent
+from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.tools.filesystem import read_document, read_file
 from ci2lab.hardware import scan_hardware
 from ci2lab.pipeline import build_agent_config, prepare_session

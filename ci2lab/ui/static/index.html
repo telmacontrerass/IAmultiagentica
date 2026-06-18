@@ -153,6 +153,18 @@
               <div id="sessionsList" class="sessions-list"></div>
             </article>
           </section>
+
+          <section id="toolsPanel" class="panel tool-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Herramientas</p>
+                <h3>Acciones rapidas e integraciones</h3>
+              </div>
+              <p id="toolsSummary" class="panel-note">Cargando herramientas...</p>
+            </div>
+            <div id="quickActions" class="quick-actions"></div>
+            <div id="toolsList" class="tools-list"></div>
+          </section>
         </section>
 
         <section id="chatView" class="view" hidden>
@@ -168,21 +180,21 @@
               </div>
               <div class="control-with-help">
                 <div class="control-main-row">
-                  <label class="toggle technical-toggle" title="Permite herramientas con confirmación automática">
-                    <input id="technicalMode" type="checkbox" />
-                    <span id="technicalModeLabel">Modo técnico</span>
+                  <label class="toggle agents-toggle" title="Activa subagentes secuenciales">
+                    <input id="agentsMode" type="checkbox" />
+                    <span id="agentsModeLabel">Modo agentes</span>
                   </label>
                   <button
                     class="help-toggle"
                     type="button"
-                    data-help-toggle="technicalHelp"
+                    data-help-toggle="agentsHelp"
                     aria-expanded="false"
-                    aria-label="Explicar modo tecnico"
-                    title="Ver explicación"
+                    aria-label="Explicar modo agentes"
+                    title="Ver explicacion"
                   ></button>
                 </div>
-                <p id="technicalHelp" class="control-help-text" hidden>
-                  Activa herramientas avanzadas y confirmaciones automáticas para tareas técnicas.
+                <p id="agentsHelp" class="control-help-text" hidden>
+                  Usa subagentes secuenciales para planificar, investigar, implementar, validar y revisar.
                 </p>
               </div>
               <div class="control-with-help">

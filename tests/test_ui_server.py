@@ -63,7 +63,7 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
 
     payload = _chat_start(
         state,
-        {"technical_mode": True, "model": "qwen2.5-coder-1.5b"},
+        {"model": "qwen2.5-coder-1.5b"},
     )
 
     assert payload["ok"] is True
@@ -72,6 +72,36 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
     assert payload["cwd"] == str(tmp_path)
     assert payload["session_id"]
     assert payload["ui_mode"] == "herramientas_activas"
+    assert payload["multi_agent"] is False
+
+
+def test_chat_start_reports_multi_agent_mode(tmp_path, monkeypatch):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path), model="qwen2.5-coder:1.5b"))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+            tool_mode="fenced",
+        )
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+
+    payload = _chat_start(
+        state,
+        {"multi_agent": True, "model": "qwen2.5-coder-1.5b"},
+    )
+
+    assert payload["ok"] is True
+    assert payload["multi_agent"] is True
+    assert payload["ui_mode"] == "multi_agent"
+    assert payload["security_profile"] == state.runtime.security.profile
 
 
 def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
@@ -314,6 +344,78 @@ def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["usage"]["last_turn"]["total_tokens"] == 16
     assert payload["usage"]["session_total"]["prompt_tokens"] == 12
+
+
+def test_chat_keeps_tools_available_from_ui(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_agent(_prompt, _selection, *, config, **_kwargs):
+        assert config.auto_confirm is True
+        assert config.write_tools_enabled is True
+        return "respuesta"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "hola",
+            "model": "qwen2.5-coder:1.5b",
+        },
+    )
+
+    assert payload["ok"] is True
+
+
+def test_chat_agents_mode_uses_multi_agent_orchestrator(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_multi_agent(_prompt, _selection, *, config):
+        assert config.auto_confirm is True
+        return "respuesta multiagente"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_multi_agent", fake_run_multi_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "hola",
+            "model": "qwen2.5-coder:1.5b",
+            "multi_agent": True,
+        },
+    )
+
+    assert payload["ok"] is True
+    assert payload["answer"] == "respuesta multiagente"
+    assert payload["multi_agent"] is True
 
 
 def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):

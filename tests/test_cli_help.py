@@ -17,6 +17,7 @@ _GLOBAL_MARKERS = (
     "ci2lab menu",
     "ci2lab --multi-agent chat",
     "ci2lab sessions",
+    "ci2lab skills",
     "ci2lab doctor",
     "ci2lab hardware",
     "ci2lab models recommend",

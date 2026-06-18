@@ -16,7 +16,7 @@ def invoke_skill(config: AgentConfig, skill_name: str, args: str | None = None) 
     if skill.disable_model_invocation:
         return (
             f"Error: skill `{skill_name}` is user-invocable only "
-            "(disable-model-invocation: true). Use /{name} in the REPL."
+            f"(disable-model-invocation: true). Use /{skill_name} in the REPL."
         )
 
     if skill.allowed_tools:

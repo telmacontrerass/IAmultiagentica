@@ -285,7 +285,7 @@ def tool_web_status(name: str) -> str:
     if name == "ask_user":
         return "Terminal only; on the web it asks directly in the chat."
     if name in CONFIRM_TOOLS:
-        return "Requires technical mode to auto-approve on the web."
+        return "Available from the chat with the same tool access as the CLI."
     return "Available from the chat."
 
 

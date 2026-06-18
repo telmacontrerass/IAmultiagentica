@@ -27,6 +27,7 @@ from ci2lab.console import console
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.harness.context import manage_context, trim_messages
 from ci2lab.harness.edit_followup import EditSignature, process_edit_round
+from ci2lab.harness.hooks import emit_hook_event
 from ci2lab.harness.llm_client import LLMClient
 from ci2lab.harness.llm_errors import LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
@@ -185,14 +186,8 @@ def _current_request_anchor(user_prompt: str) -> dict[str, str]:
         "content": (
             "The user's current request is:\n"
             f"{user_prompt}\n\n"
-            "Keep working on this request until it is fully done. If it has "
-            "several steps, carry them out in order, calling whatever tools each "
-            "step needs, and only give your final answer once every step is "
-            "complete. Do not stop after the first step just because you have a "
-            "partial result. If the request tells you to follow instructions "
-            "contained in a file or in a tool's output, those instructions are "
-            "part of this request — carry them out. Do not resume an unrelated "
-            "earlier task."
+            "Finish this request fully, including any file/tool-output "
+            "instructions it depends on. Do not resume an unrelated earlier task."
         ),
     }
 
@@ -201,7 +196,11 @@ def _role_anchor_message(role_anchor: str) -> dict[str, str]:
     """Wrap a subagent role anchor as a user message for reinjection."""
     return {
         "role": "user",
-        "content": role_anchor,
+        "content": (
+            f"{role_anchor}\n\n"
+            "Continue within this subagent role. Use the tool results already "
+            "available and do not switch responsibilities."
+        ),
     }
 
 
@@ -529,6 +528,16 @@ def run_agent(
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
                 psig = tool_call_signature(call)
+                for warning in emit_hook_event(
+                    cfg,
+                    "before_tool",
+                    {
+                        "tool": call.name,
+                        "arguments": call.arguments,
+                        "round": round_num,
+                    },
+                ):
+                    console.print(f"[yellow]{warning}[/yellow]")
                 if psig in policy_blocked_sigs:
                     result = ToolResult(
                         tool_name=call.name,
@@ -552,6 +561,19 @@ def run_agent(
                     if is_policy_error(result):
                         policy_blocked_sigs.add(psig)
                         round_policy_error = True
+                for warning in emit_hook_event(
+                    cfg,
+                    "after_tool",
+                    {
+                        "tool": call.name,
+                        "arguments": call.arguments,
+                        "round": round_num,
+                        "ok": not result.is_error,
+                        "outcome": result.outcome,
+                        "output": str(result.content)[:1000],
+                    },
+                ):
+                    console.print(f"[yellow]{warning}[/yellow]")
                 if result.is_error and result.outcome != "blocked_by_policy":
                     failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
                     eclass = error_class_key(call, result)
@@ -648,6 +670,13 @@ def run_agent(
             )
             maybe_save_session(cfg, history, selection)
 
+        if final_text:
+            for warning in emit_hook_event(
+                cfg,
+                "after_final_answer",
+                {"answer": final_text, "status": status},
+            ):
+                console.print(f"[yellow]{warning}[/yellow]")
         console.print(f"[dim]{format_token_usage_line(cfg.token_usage)}[/dim]")
         return final_text
     except KeyboardInterrupt:

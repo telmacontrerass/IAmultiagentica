@@ -10,6 +10,7 @@ const state = {
   deleteTasks: {},
   deletePolls: {},
   tokenUsage: null,
+  agentsMode: false,
 };
 
 const STORAGE_KEY = "ci2lab.ui.state.v1";
@@ -40,6 +41,11 @@ const els = {
   sendButton: document.querySelector("#sendButton"),
   commandPreview: document.querySelector("#commandPreview"),
   chatTools: document.querySelector(".chat-tools"),
+  agentsMode: document.querySelector("#agentsMode"),
+  agentsModeLabel: document.querySelector("#agentsModeLabel"),
+  toolsSummary: document.querySelector("#toolsSummary"),
+  quickActions: document.querySelector("#quickActions"),
+  toolsList: document.querySelector("#toolsList"),
   refreshButton: document.querySelector("#refreshButton"),
   chatRefreshButton: document.querySelector("#chatRefreshButton"),
   tokenCounter: document.querySelector("#tokenCounter"),
@@ -180,6 +186,7 @@ function persistUiState() {
     uploadedFiles: state.uploadedFiles,
     activeView: state.activeView,
     tokenUsage: state.tokenUsage,
+    agentsMode: Boolean(els.agentsMode?.checked),
     selectedModel: els.modelSelect?.value || "",
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -194,6 +201,7 @@ function restoreUiState() {
     state.chatMessages = Array.isArray(payload.chatMessages) ? payload.chatMessages : [];
     state.uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
     state.tokenUsage = normalizeTokenUsage(payload.tokenUsage);
+    state.agentsMode = Boolean(payload.agentsMode);
     state.activeView = "homeView";
     if (payload.selectedModel) {
       els.modelSelect.dataset.pendingValue = payload.selectedModel;
@@ -203,6 +211,7 @@ function restoreUiState() {
     state.chatMessages = [];
     state.uploadedFiles = [];
     state.tokenUsage = emptyTokenUsage();
+    state.agentsMode = false;
     state.activeView = "homeView";
   }
 }
@@ -425,6 +434,7 @@ function buildSessionInfoMessage(payload) {
     `Tool mode: ${payload.tool_mode || "?"}`,
     `CWD: ${payload.cwd || "?"}`,
     `Sesion: ${payload.session_id || "?"}`,
+    `Modo: ${payload.multi_agent ? "agentes" : "chat clasico"}`,
     `Seguridad: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
     "",
     "Listo. Escribe tu peticion o adjunta archivos.",
@@ -438,6 +448,7 @@ async function startChatSession({ forceNew = false } = {}) {
     method: "POST",
     body: JSON.stringify({
       model: els.modelSelect.value,
+      multi_agent: Boolean(els.agentsMode?.checked),
     }),
   });
   if (!result.ok) {
@@ -454,15 +465,16 @@ async function startChatSession({ forceNew = false } = {}) {
 function updateCommandPreview() {
   const model = els.modelSelect.value || "<modelo>";
   if (els.commandPreview) {
-    els.commandPreview.textContent = `ci2lab --model ${model} chat`;
+    const agentsFlag = els.agentsMode?.checked ? " --multi-agent" : "";
+    els.commandPreview.textContent = `ci2lab --model ${model}${agentsFlag} chat`;
   }
 }
 
-function updateTechnicalModeState({ persist = true } = {}) {
-  const active = Boolean(els.technicalMode?.checked);
-  els.chatTools?.classList.toggle("technical-active", active);
-  if (els.technicalModeLabel) {
-    els.technicalModeLabel.textContent = active ? "Modo técnico activo" : "Modo técnico";
+function updateAgentsModeState({ persist = true } = {}) {
+  const active = Boolean(els.agentsMode?.checked);
+  els.chatTools?.classList.toggle("agents-active", active);
+  if (els.agentsModeLabel) {
+    els.agentsModeLabel.textContent = active ? "Modo agentes activo" : "Modo agentes";
   }
   updateCommandPreview();
   if (persist) persistUiState();
@@ -886,6 +898,9 @@ async function refreshAll() {
 
   const sessions = await api("/api/sessions");
   renderSessions(sessions.sessions || []);
+
+  const toolsPayload = await api("/api/tools");
+  renderTools(toolsPayload);
 }
 
 async function runRefreshFromButton(button) {
@@ -928,6 +943,7 @@ async function sendMessage(event) {
         attachments: files,
         model,
         session_id: sessionId,
+        multi_agent: Boolean(els.agentsMode?.checked),
         stream: false,
       }),
     });
@@ -1174,6 +1190,12 @@ function bindEvents() {
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
   els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
+  els.agentsMode?.addEventListener("change", updateAgentsModeState);
+  els.quickActions?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-action-prompt]");
+    if (!button) return;
+    applyActionPrompt(button.dataset.actionPrompt || "");
+  });
   els.tokenCounter?.addEventListener("click", () => {
     renderTokenInfo();
     switchView("tokenInfoView");
@@ -1187,7 +1209,11 @@ function bindEvents() {
     state.chatMessages = [];
     state.uploadedFiles = [];
     state.tokenUsage = emptyTokenUsage();
+    if (els.agentsMode) {
+      els.agentsMode.checked = false;
+    }
     updateTokenDisplay();
+    updateAgentsModeState({ persist: false });
     renderAttachments();
     setEmptyChat();
     persistUiState();
@@ -1217,7 +1243,11 @@ function bindEvents() {
 
 restoreUiState();
 state.tokenUsage = normalizeTokenUsage(state.tokenUsage);
+if (els.agentsMode) {
+  els.agentsMode.checked = Boolean(state.agentsMode);
+}
 updateTokenDisplay();
+updateAgentsModeState({ persist: false });
 renderChatMessages();
 renderAttachments();
 bindEvents();

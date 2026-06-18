@@ -14,6 +14,7 @@ from ci2lab.cli.commands.models import (
     _cmd_models_run,
 )
 from ci2lab.cli.commands.sessions import _cmd_sessions
+from ci2lab.cli.commands.skills import _cmd_skills
 from ci2lab.cli.commands.ui import _cmd_ui
 from ci2lab.cli.parser import (
     _CLI_COMMANDS,
@@ -73,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_start_menu(runtime)
     if args.command == "sessions":
         return _cmd_sessions(args)
+    if args.command == "skills":
+        return _cmd_skills(args, runtime)
     if args.command == "doctor":
         return _cmd_doctor(runtime)
     if args.command == "hardware":

@@ -272,7 +272,7 @@ button {
   accent-color: var(--gold);
 }
 
-.technical-toggle {
+.agents-toggle {
   min-height: 52px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -281,11 +281,11 @@ button {
   justify-content: center;
 }
 
-.chat-tools.technical-active {
+.chat-tools.agents-active {
   border-top-color: var(--blue);
 }
 
-.chat-tools.technical-active .technical-toggle {
+.chat-tools.agents-active .agents-toggle {
   border-color: var(--blue-line);
   background: var(--blue-soft);
   color: var(--blue);
@@ -404,10 +404,6 @@ textarea:focus {
   justify-content: start;
 }
 
-.control-with-help:has(#technicalMode) {
-  display: none;
-}
-
 .token-counter {
   width: fit-content;
   max-width: 100%;
@@ -501,7 +497,7 @@ textarea:focus {
 }
 
 .control-main-row .ghost-button,
-.control-main-row .technical-toggle,
+.control-main-row .agents-toggle,
 .help-toggle {
   min-height: 52px;
 }
@@ -544,7 +540,7 @@ textarea:focus {
   border-top-color: var(--gold);
 }
 
-.chat-tools.technical-active .control-main-row:has(.technical-toggle) .help-toggle {
+.chat-tools.agents-active .control-main-row:has(.agents-toggle) .help-toggle {
   border-color: var(--blue-line);
   background: var(--blue-soft);
 }
