@@ -186,3 +186,28 @@ def test_run_subagent_captures_internal_console_output(capsys):
 
     assert result.output == "captured result"
     assert "internal subagent output" not in capsys.readouterr().out
+
+
+def test_run_subagent_forwards_concise_progress_while_output_is_captured(capsys):
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)
+
+    def progressing_run_agent(*args, **kwargs):
+        kwargs["on_progress"]("Searching the project files...")
+        kwargs["on_progress"]("Reviewing the latest results...")
+        return "done"
+
+    with patch(
+        "ci2lab.harness.multiagent.runner.run_agent",
+        side_effect=progressing_run_agent,
+    ):
+        run_subagent(
+            AgentRole.RESEARCHER,
+            "Research this",
+            selection,
+            config,
+        )
+
+    output = capsys.readouterr().out
+    assert "[multi-agent:researcher] Searching the project files..." in output
+    assert "[multi-agent:researcher] Reviewing the latest results..." in output

@@ -6,6 +6,7 @@ from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.query.loop import (
     _initial_progress_label,
+    _model_progress_label,
     _prepend_missing_reads,
     _tool_progress_label,
 )
@@ -15,8 +16,22 @@ from ci2lab.harness.types import ToolCall, ToolResult
 def test_initial_progress_label_describes_user_visible_work():
     assert _initial_progress_label("summarize test.pdf") == "Preparing to read the document..."
     assert _initial_progress_label("fix this test") == "Planning the code change..."
+    assert _initial_progress_label("corrige esta prueba") == "Planning the code change..."
     assert _initial_progress_label("what is the latest price?") == "Checking what information is needed..."
     assert _initial_progress_label("hello") == "Deciding the next step..."
+    assert (
+        _initial_progress_label("lista los archivos del repositorio")
+        == "Inspecting the relevant project context..."
+    )
+    assert _initial_progress_label("hola") == "Deciding the next step..."
+
+
+def test_model_progress_label_explains_later_rounds():
+    assert _model_progress_label("fix this test", 1) == "Planning the code change..."
+    assert (
+        _model_progress_label("fix this test", 2)
+        == "Reviewing the latest results and deciding the next step..."
+    )
 
 
 def test_tool_progress_label_uses_real_tool_work():
@@ -42,6 +57,43 @@ def test_run_agent_single_turn_no_tools():
         result = run_agent("summarize the project", selection, config=config)
 
     assert "summary" in result.lower()
+
+
+def test_run_agent_replaces_generic_thinking_with_task_progress():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    response = LLMResponse(content="Cambio preparado.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.call_llm", return_value=response),
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        run_agent("fix this test", selection, config=config)
+
+    printed = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+    assert any("Planning the code change..." in message for message in printed)
+    assert not any("Thinking..." in message for message in printed)
+
+
+def test_run_agent_can_forward_progress_to_chat_callback():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    response = LLMResponse(content="Cambio preparado.", tool_calls=[])
+    progress: list[str] = []
+
+    with patch("ci2lab.harness.query.loop.call_llm", return_value=response):
+        run_agent(
+            "fix this test",
+            selection,
+            config=config,
+            on_progress=progress.append,
+        )
+
+    assert progress == [
+        "Planning the code change...",
+        "Reviewing the latest results and deciding the next step...",
+        "Finalizing the answer...",
+    ]
 
 
 def test_run_agent_accumulates_token_usage_across_rounds():

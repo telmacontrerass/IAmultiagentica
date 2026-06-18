@@ -180,16 +180,46 @@ def _status(label: str) -> None:
     console.print(f"[dim cyan]{label}[/dim cyan]")
 
 
+def _emit_progress(
+    label: str,
+    on_progress: Callable[[str], None] | None,
+) -> None:
+    if on_progress:
+        on_progress(label)
+        return
+    _status(label)
+
+
 def _initial_progress_label(user_prompt: str) -> str:
     """Describe the first model round in user-friendly terms."""
     text = user_prompt.lower()
-    if any(word in text for word in ("pdf", "docx", "document", "file")):
+    if any(word in text for word in ("pdf", "docx", "document", "documento")):
         return "Preparing to read the document..."
-    if any(word in text for word in ("web", "internet", "latest", "current")):
+    if any(
+        word in text
+        for word in ("web", "internet", "latest", "current", "hoy", "actual")
+    ):
         return "Checking what information is needed..."
-    if re.search(r"\b(code|test|bug|fix|implement)\b", text):
+    if re.search(
+        r"\b(code|codigo|código|test|prueba|bug|fix|implement|implementa|"
+        r"arregla|corrige|modifica|cambia)\b",
+        text,
+    ):
         return "Planning the code change..."
+    if re.search(
+        r"\b(repo|repository|repositorio|project|proyecto|file|files|"
+        r"archivo|archivos|carpeta|directorio)\b",
+        text,
+    ):
+        return "Inspecting the relevant project context..."
     return "Deciding the next step..."
+
+
+def _model_progress_label(user_prompt: str, round_num: int) -> str:
+    """Describe what the model is doing before each LLM call."""
+    if round_num == 1:
+        return _initial_progress_label(user_prompt)
+    return "Reviewing the latest results and deciding the next step..."
 
 
 def _path_looks_like_pdf(path: Any) -> bool:
@@ -246,8 +276,6 @@ def _role_anchor_message(role_anchor: str) -> dict[str, str]:
             "available and do not switch responsibilities."
         ),
     }
-
-
 def _print_model_step(content: str, *, already_streamed: bool) -> None:
     """Show non-tool text from a model round before executing tools."""
     display = strip_tool_markup(content).strip()
@@ -330,6 +358,7 @@ def run_agent(
     config: AgentConfig | None = None,
     messages: list[dict[str, Any]] | None = None,
     on_round: Callable[[int, str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
     cfg = config or AgentConfig(cwd=".")
     cfg.token_usage.reset_turn()
@@ -437,7 +466,10 @@ def run_agent(
             # Avoid leaking provisional model prose before tool execution.
             # When tools are available, parse first and only render final text.
             stream_this_round = cfg.stream and not bool(tools)
-            _status("Thinking...")
+            _emit_progress(
+                _model_progress_label(user_prompt, round_num),
+                on_progress,
+            )
             streamed_this_round = stream_this_round
             try:
                 llm_response = call_llm(
@@ -554,7 +586,7 @@ def run_agent(
                     )
                     maybe_save_session(cfg, history, selection)
                     continue
-                _status("Finalizing the answer...")
+                _emit_progress("Finalizing the answer...", on_progress)
                 if final_text and streamed_this_round:
                     console.print()
                 elif final_text:
@@ -598,7 +630,7 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
-            _status(_tool_progress_label(calls))
+            _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)

@@ -194,6 +194,12 @@ def run_subagent(
     system_prompt = build_subagent_system_prompt(role, selection, subagent_config)
     messages = [{"role": "system", "content": system_prompt}]
 
+    def show_progress(label: str) -> None:
+        # `console.capture()` intentionally hides verbose subagent output. A
+        # plain flushed line bypasses that Rich capture so the interactive chat
+        # still receives concise live activity updates.
+        print(f"[multi-agent:{role.value}] {label}", flush=True)
+
     if capture_output:
         with console.capture():
             output = run_agent(
@@ -201,6 +207,7 @@ def run_subagent(
                 selection,
                 config=subagent_config,
                 messages=messages,
+                on_progress=show_progress,
             )
     else:
         output = run_agent(
@@ -208,6 +215,7 @@ def run_subagent(
             selection,
             config=subagent_config,
             messages=messages,
+            on_progress=show_progress,
         )
 
     trace_data = _load_subagent_run_artifacts(subagent_config.last_run_dir)
