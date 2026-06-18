@@ -65,12 +65,21 @@ class MultiAgentRun:
     final_answer: str | None = None
     failed_phase: str | None = None
     error: str | None = None
-    # Pre-orchestration intent routing (set by classify_multiagent_intent).
+    # Pre-orchestration intent routing (legacy backbone, set by
+    # classify_multiagent_intent).
     intent: str | None = None
     requires_write: bool | None = None
     planned_phases: list[str] = field(default_factory=list)
     intent_reason: str | None = None
     intent_confidence: str | None = None
+    # Rich orchestration decision (advisory, set by
+    # classify_orchestration_decision). These never grant permission; the
+    # execution gate remains the source of truth.
+    task_type: str | None = None
+    required_capabilities: list[str] = field(default_factory=list)
+    risk_level: str | None = None
+    needs_confirmation: bool | None = None
+    decision_reasons: list[str] = field(default_factory=list)
 
     def add_result(self, result: SubAgentResult) -> None:
         """Append a subagent result to the run's ordered result list."""
