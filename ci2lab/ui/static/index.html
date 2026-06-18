@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,24 +17,24 @@
           </div>
         </div>
 
-        <nav class="side-nav" aria-label="Navegación principal">
+        <nav class="side-nav" aria-label="Main navigation">
           <button class="nav-button active" type="button" data-view="homeView">
-            <span>⌂</span> Inicio
+            <span>⌂</span> Home
           </button>
           <button id="openChat" class="nav-button" type="button" data-view="chatView">
             <span>+</span> Chat
           </button>
           <button class="nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
-            <span>▦</span> Modelos locales
+            <span>▦</span> Local models
           </button>
           <button class="nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
-            <span>◷</span> Sesiones
+            <span>◷</span> Sessions
           </button>
         </nav>
 
         <div class="status-card">
-          <p class="label">Estado local</p>
-          <strong id="ollamaStatus">Comprobando...</strong>
+          <p class="label">Local status</p>
+          <strong id="ollamaStatus">Checking...</strong>
           <small id="workspaceLabel"></small>
         </div>
       </aside>
@@ -42,8 +42,8 @@
       <main class="main">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Agente local multi-modelo</p>
-            <h2>Interactúa con Florentino sin abrir la terminal</h2>
+            <p class="eyebrow">Local multi-model agent</p>
+            <h2>Interact with Florentino without opening the terminal</h2>
           </div>
           <div class="top-actions">
             <div class="control-with-help">
@@ -52,21 +52,21 @@
                   id="refreshButton"
                   class="ghost-button"
                   type="button"
-                  title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+                  title="Refresh Ollama status, hardware, models and sessions"
                 >
-                  Actualizar datos
+                  Refresh data
                 </button>
                 <button
                   class="help-toggle"
                   type="button"
                   data-help-toggle="homeRefreshHelp"
                   aria-expanded="false"
-                  aria-label="Explicar actualizar datos"
-                  title="Ver explicación"
+                  aria-label="Explain refresh data"
+                  title="View explanation"
                 ></button>
               </div>
               <p id="homeRefreshHelp" class="control-help-text" hidden>
-                Recarga modelos, sesiones, hardware y estado local de Ollama.
+                Reloads models, sessions, hardware and Ollama's local status.
               </p>
             </div>
           </div>
@@ -76,44 +76,44 @@
           <section id="systemPanel" class="panel system-panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Tu equipo</p>
-                <h3>Capacidad local y modelos recomendados</h3>
+                <p class="eyebrow">Your machine</p>
+                <h3>Local capacity and recommended models</h3>
               </div>
-              <p id="systemSummary" class="panel-note">Escaneando hardware...</p>
+              <p id="systemSummary" class="panel-note">Scanning hardware...</p>
             </div>
 
             <section class="system-section hardware-section">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">Comprobación del ordenador</p>
-                  <h4>Memoria, disco y modo local</h4>
+                  <p class="eyebrow">Computer check</p>
+                  <h4>Memory, disk and local mode</h4>
                 </div>
               </div>
 
               <div class="system-grid">
                 <article class="metric-card">
-                  <span>RAM disponible</span>
+                  <span>Available RAM</span>
                   <strong id="ramValue">--</strong>
                   <div class="meter"><i id="ramBar"></i></div>
                   <small id="ramMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Disco libre</span>
+                  <span>Free disk</span>
                   <strong id="diskValue">--</strong>
                   <div class="meter"><i id="diskBar"></i></div>
                   <small id="diskMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Presupuesto IA</span>
+                  <span>AI budget</span>
                   <strong id="budgetValue">--</strong>
                   <div class="meter"><i id="budgetBar"></i></div>
                   <small id="budgetMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Modo de inferencia</span>
+                  <span>Inference mode</span>
                   <strong id="modeValue">--</strong>
                   <small id="modeMeta">--</small>
                 </article>
@@ -123,8 +123,8 @@
             <section class="system-section recommendation-section">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">Modelos recomendados</p>
-                  <h4>Opciones que encajan mejor en este equipo</h4>
+                  <p class="eyebrow">Recommended models</p>
+                  <h4>Options that fit this machine best</h4>
                 </div>
               </div>
               <div id="recommendationsStrip" class="recommendation-strip"></div>
@@ -135,10 +135,10 @@
             <article id="modelsPanel" class="panel models-panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Ollama + catálogo</p>
-                  <h3>Modelos</h3>
+                  <p class="eyebrow">Ollama + catalog</p>
+                  <h3>Models</h3>
                 </div>
-                <input id="modelSearch" type="search" placeholder="Filtrar modelo..." />
+                <input id="modelSearch" type="search" placeholder="Filter model..." />
               </div>
               <div id="modelsList" class="model-list"></div>
             </article>
@@ -146,8 +146,8 @@
             <article id="sessionsPanel" class="panel sessions-panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Historial local</p>
-                  <h3>Sesiones</h3>
+                  <p class="eyebrow">Local history</p>
+                  <h3>Sessions</h3>
                 </div>
               </div>
               <div id="sessionsList" class="sessions-list"></div>
@@ -170,12 +170,12 @@
         <section id="chatView" class="view" hidden>
           <section class="panel chat-tools">
             <div class="chat-tools-heading">
-              <p class="eyebrow">Chat local</p>
-              <h3>Selecciona un modelo y conversa con Florentino</h3>
+              <p class="eyebrow">Local chat</p>
+              <h3>Pick a model and chat with Florentino</h3>
             </div>
             <div class="chat-controls">
               <div class="model-picker">
-                <label for="modelSelect">Modelo</label>
+                <label for="modelSelect">Model</label>
                 <select id="modelSelect"></select>
               </div>
               <div class="control-with-help">
@@ -199,18 +199,18 @@
               </div>
               <div class="control-with-help">
                 <div class="control-main-row">
-                  <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
+                  <button id="newChat" class="ghost-button" type="button">New chat</button>
                   <button
                     class="help-toggle"
                     type="button"
                     data-help-toggle="newChatHelp"
                     aria-expanded="false"
-                    aria-label="Explicar nuevo chat"
-                    title="Ver explicación"
+                    aria-label="Explain new chat"
+                    title="View explanation"
                   ></button>
                 </div>
                 <p id="newChatHelp" class="control-help-text" hidden>
-                  Empieza una conversación limpia sin mezclarla con la sesión actual.
+                  Starts a clean conversation without mixing it with the current session.
                 </p>
               </div>
               <div class="control-with-help">
@@ -219,21 +219,21 @@
                     id="chatRefreshButton"
                     class="ghost-button"
                     type="button"
-                    title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+                    title="Refresh Ollama status, hardware, models and sessions"
                   >
-                    Actualizar datos
+                    Refresh data
                   </button>
                   <button
                     class="help-toggle"
                     type="button"
                     data-help-toggle="refreshHelp"
                     aria-expanded="false"
-                    aria-label="Explicar actualizar datos"
-                    title="Ver explicación"
+                    aria-label="Explain refresh data"
+                    title="View explanation"
                   ></button>
                 </div>
                 <p id="refreshHelp" class="control-help-text" hidden>
-                  Recarga modelos, sesiones, hardware y estado local de Ollama.
+                  Reloads models, sessions, hardware and Ollama's local status.
                 </p>
               </div>
             </div>
@@ -241,11 +241,11 @@
               id="tokenCounter"
               class="token-counter"
               type="button"
-              title="Ver como se calculan los tokens"
+              title="See how tokens are counted"
             >
               <span class="token-counter-label">Tokens</span>
-              <strong id="tokenTurnValue">Turno 0</strong>
-              <span id="tokenSessionValue">Conversacion 0</span>
+              <strong id="tokenTurnValue">Turn 0</strong>
+              <span id="tokenSessionValue">Conversation 0</span>
               <span class="token-arrow" aria-hidden="true">›</span>
             </button>
           </section>
@@ -253,7 +253,7 @@
           <section class="chat-panel">
             <div id="messages" class="messages" aria-live="polite"></div>
             <div class="attachment-bar">
-              <label class="file-button" for="fileInput">+ Adjuntar archivo</label>
+              <label class="file-button" for="fileInput">+ Attach file</label>
               <input
                 id="fileInput"
                 class="sr-only"
@@ -264,67 +264,67 @@
               <div id="attachmentsList" class="attachments-list" aria-live="polite"></div>
             </div>
             <form id="chatForm" class="composer">
-              <textarea id="messageInput" rows="2" placeholder="Escribe una petición para el agente local..."></textarea>
-              <button id="sendButton" type="submit">Enviar</button>
+              <textarea id="messageInput" rows="2" placeholder="Type a request for the local agent..."></textarea>
+              <button id="sendButton" type="submit">Send</button>
             </form>
           </section>
 
-          <pre id="commandPreview" class="sr-only">ci2lab --model &lt;modelo&gt; chat</pre>
+          <pre id="commandPreview" class="sr-only">ci2lab --model &lt;model&gt; chat</pre>
         </section>
 
         <section id="tokenInfoView" class="view" hidden>
           <section class="panel token-info-panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Uso de tokens</p>
-                <h3 id="tokenInfoTitle">Contador de la conversacion</h3>
+                <p class="eyebrow">Token usage</p>
+                <h3 id="tokenInfoTitle">Conversation counter</h3>
               </div>
-              <button id="backToChatFromTokens" class="ghost-button" type="button">Volver al chat</button>
+              <button id="backToChatFromTokens" class="ghost-button" type="button">Back to chat</button>
             </div>
             <div class="token-info-grid">
               <article class="metric-card">
-                <span>Entrada ultimo turno</span>
+                <span>Last turn input</span>
                 <strong id="tokenInfoInput">0</strong>
-                <small>Prompt, historial y contexto enviado al modelo.</small>
+                <small>Prompt, history and context sent to the model.</small>
               </article>
               <article class="metric-card">
-                <span>Salida ultimo turno</span>
+                <span>Last turn output</span>
                 <strong id="tokenInfoOutput">0</strong>
-                <small>Texto generado por el modelo.</small>
+                <small>Text generated by the model.</small>
               </article>
               <article class="metric-card">
-                <span>Total ultimo turno</span>
+                <span>Last turn total</span>
                 <strong id="tokenInfoTurn">0</strong>
-                <small>Entrada + salida.</small>
+                <small>Input + output.</small>
               </article>
               <article class="metric-card">
-                <span>Total conversacion</span>
+                <span>Conversation total</span>
                 <strong id="tokenInfoSession">0</strong>
-                <small>Suma acumulada de llamadas del chat actual.</small>
+                <small>Cumulative sum of calls in the current chat.</small>
               </article>
             </div>
             <section class="token-info-section">
-              <h4>Calculo</h4>
+              <h4>Calculation</h4>
               <p id="tokenInfoFormula">
-                Total = tokens de entrada + tokens de salida. Los valores vienen del proveedor local cuando Ollama los devuelve.
+                Total = input tokens + output tokens. The values come from the local provider when Ollama returns them.
               </p>
               <dl class="token-model-facts">
-                <div><dt>Modelo</dt><dd id="tokenInfoModel">--</dd></div>
-                <div><dt>Familia</dt><dd id="tokenInfoFamily">--</dd></div>
-                <div><dt>Contexto maximo</dt><dd id="tokenInfoContext">--</dd></div>
-                <div><dt>Modo de herramientas</dt><dd id="tokenInfoToolMode">--</dd></div>
+                <div><dt>Model</dt><dd id="tokenInfoModel">--</dd></div>
+                <div><dt>Family</dt><dd id="tokenInfoFamily">--</dd></div>
+                <div><dt>Max context</dt><dd id="tokenInfoContext">--</dd></div>
+                <div><dt>Tool mode</dt><dd id="tokenInfoToolMode">--</dd></div>
               </dl>
             </section>
             <section class="token-info-section">
-              <h4>Buenas practicas</h4>
+              <h4>Best practices</h4>
               <ul class="token-tips">
-                <li>Empieza un chat nuevo cuando el historial anterior ya no aporte contexto.</li>
-                <li>Resume documentos largos antes de pedir varias tareas sobre ellos.</li>
-                <li>Adjunta solo los archivos y fragmentos necesarios para la pregunta.</li>
-                <li>Evita pegar el mismo contenido varias veces en la conversacion.</li>
+                <li>Start a new chat when the previous history no longer adds context.</li>
+                <li>Summarize long documents before requesting several tasks on them.</li>
+                <li>Attach only the files and fragments needed for the question.</li>
+                <li>Avoid pasting the same content multiple times in the conversation.</li>
               </ul>
               <p class="meta">
-                Mas informacion:
+                More information:
                 <a href="https://docs.ollama.com/api/openai-compatibility" target="_blank" rel="noreferrer">Ollama OpenAI compatibility</a>
                 y
                 <a href="https://github.com/ollama/ollama/blob/main/docs/api.md" target="_blank" rel="noreferrer">Ollama API stats</a>.

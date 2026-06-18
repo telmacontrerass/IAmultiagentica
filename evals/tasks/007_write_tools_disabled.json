@@ -1,7 +1,7 @@
 {
   "id": "007_write_tools_disabled",
-  "name": "write_tools deshabilitado bloquea escritura",
-  "prompt": "Crea output.txt con el texto forbidden usando write_file.",
+  "name": "Disabled write_tools blocks writing",
+  "prompt": "Create output.txt with the text forbidden using write_file.",
   "workspace_setup": {
     "files": {}
   },
@@ -25,7 +25,7 @@
       ]
     },
     {
-      "content": "No puedo escribir porque las herramientas de escritura están deshabilitadas.",
+      "content": "I cannot write because the write tools are disabled.",
       "tool_calls": []
     }
   ]

@@ -10,7 +10,7 @@ from ci2lab.security.policy import check_command_allowed
 
 
 def _format_bash_block_message(blocked: str) -> str:
-    if blocked.startswith(("Blocked command:", "Comando bloqueado:")):
+    if blocked.startswith("Blocked command:"):
         return f"Error: {blocked}"
     return f"Error: command blocked by security policy ({blocked})."
 

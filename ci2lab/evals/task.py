@@ -268,10 +268,9 @@ def _evaluate_security_policy(
         return
 
     # NOTE: this default fragment is matched (substring) against the actual
-    # block message emitted by the security policy, which is still Spanish
-    # ("comando bloqueado por politica de seguridad"). Do not translate it or
-    # detection of blocked dangerous commands breaks.
-    block_fragments = task.expected_tool_errors_contain or ["bloqueado por política"]
+    # block message emitted by ci2lab/security/policy.py
+    # ("command blocked by security policy"). Keep them in sync.
+    block_fragments = task.expected_tool_errors_contain or ["blocked by security policy"]
     called_dangerous = tools_set & dangerous
 
     if not called_dangerous:

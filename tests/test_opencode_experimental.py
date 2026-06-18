@@ -1,4 +1,4 @@
-"""Tests de fidelidad OpenCode: config, aliases y dry gate."""
+"""OpenCode fidelity tests: config, aliases and dry gate."""
 
 from __future__ import annotations
 
@@ -287,7 +287,7 @@ def test_export_comparison_creates_artifacts(workspace: Path, tmp_path: Path):
 
 
 def test_gate_check_evaluates_without_tool_dispatch(workspace: Path):
-    """Dry gate: solo evaluate_tool_gate, sin registry.execute_tool."""
+    """Dry gate: only evaluate_tool_gate, without registry.execute_tool."""
     result = evaluate_security_gate(
         engine="ci2lab",
         workspace=str(workspace),

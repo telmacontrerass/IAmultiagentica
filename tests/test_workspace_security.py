@@ -1,4 +1,4 @@
-"""Tests de confinamiento al workspace y anti-bypass."""
+"""Tests for workspace confinement and anti-bypass."""
 
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
         ],
     )
     final = LLMResponse(
-        content="No puedo leer archivos fuera del workspace.",
+        content="I cannot read files outside the workspace.",
         tool_calls=[],
     )
 
@@ -192,7 +192,7 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
         with patch(
             "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
         ) as execute_mock:
-            result = run_agent("lee el secreto externo", selection, config=config)
+            result = run_agent("read the external secret", selection, config=config)
 
     assert execute_mock.call_count == 1
     assert "workspace" in result.lower()

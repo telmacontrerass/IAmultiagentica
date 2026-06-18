@@ -24,7 +24,7 @@ def default_confirm(tool_name: str, summary: str) -> bool:
         answer = input(prompt).strip().lower()  # noqa: T201
     except EOFError:
         return False
-    return answer in {"s", "si", "sí", "y", "yes"}
+    return answer in {"y", "yes"}
 
 
 def check_permission(

@@ -103,15 +103,13 @@ def session_title(messages: list[dict[str, Any]]) -> str:
     if not text:
         return "Conversation"
 
-    words = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+", text)
+    words = re.findall(r"[A-Za-z0-9]+", text)
     if not words:
         return "Conversation"
 
     stopwords = {
-        "a", "al", "and", "are", "can", "como", "con", "de", "del", "do", "el",
-        "en", "es", "este", "for", "haz", "how", "i", "is", "it", "la", "las",
-        "le", "lo", "los", "me", "mi", "of", "para", "please", "por", "puedes",
-        "que", "read", "se", "sobre", "the", "this", "to", "un", "una", "what",
+        "a", "an", "and", "are", "can", "do", "for", "how", "i", "is", "it",
+        "me", "my", "of", "please", "read", "the", "this", "to", "what",
         "where", "you",
     }
     keywords = [word for word in words if word.lower() not in stopwords]

@@ -1,6 +1,6 @@
 """
-Herramienta fill_docx_template: genera un DOCX a partir de una plantilla
-y un diccionario de campos {{marcador}} → valor.
+fill_docx_template tool: generates a DOCX from a template
+and a dictionary of {{placeholder}} → value fields.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             path=output,
             is_new_file=True,
             diff="",
-            validation_error=f"Error: plantilla no encontrada: {template}",
+            validation_error=f"Error: template not found: {template}",
         )
     if template_path.suffix.lower() != ".docx":
         return WritePreview(
@@ -68,8 +68,8 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: la plantilla debe ser un .docx, "
-                f"no '{template_path.suffix}'"
+                f"Error: the template must be a .docx, "
+                f"not '{template_path.suffix}'"
             ),
         )
 
@@ -89,7 +89,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             path=output,
             is_new_file=True,
             diff="",
-            validation_error="Error: output no puede ser la misma ruta que la plantilla",
+            validation_error="Error: output cannot be the same path as the template",
         )
 
     if output_path.suffix.lower() != ".docx":
@@ -99,7 +99,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             diff="",
             validation_error=(
                 f"Error: the output must have a .docx extension, "
-                f"no '{output_path.suffix}'"
+                f"not '{output_path.suffix}'"
             ),
         )
 
@@ -184,8 +184,8 @@ def fill_docx_template(
         from docx import Document
     except ImportError:
         return (
-            "Error: falta la dependencia python-docx. "
-            "Ejecuta: pip install -e '.'"
+            "Error: missing python-docx dependency. "
+            "Run: pip install -e '.'"
         )
 
     # Resolve paths (already validated in preview, but re-validated for safety)
@@ -196,15 +196,15 @@ def fill_docx_template(
         return f"Error: {exc}"
 
     if not template_path.is_file():
-        return f"Error: plantilla no encontrada: {template}"
+        return f"Error: template not found: {template}"
     if template_path == output_path:
-        return "Error: output no puede ser la misma ruta que la plantilla"
+        return "Error: output cannot be the same path as the template"
 
     # Open the template
     try:
         doc = Document(str(template_path))
     except Exception as exc:  # noqa: BLE001
-        return f"Error: no se pudo abrir la plantilla {template}: {exc}"
+        return f"Error: could not open the template {template}: {exc}"
 
     # Create output directory if it does not exist
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,7 +221,7 @@ def fill_docx_template(
                 for paragraph in cell.paragraphs:
                     total += _replace_in_paragraph(paragraph, fields)
 
-    # Guardar
+    # Save
     try:
         doc.save(str(output_path))
     except Exception as exc:  # noqa: BLE001

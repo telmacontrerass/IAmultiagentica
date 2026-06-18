@@ -69,28 +69,25 @@ _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
 _STOP_TOOLS_RE = re.compile(
     r"(answer with what you (already )?(know|have)|"
     r"reply with what you (already )?have|"
-    r"stop searching|don'?t keep searching|just answer|"
-    r"responde con lo que sabes|contesta con lo que tengas|"
-    r"deja de buscar|no sigas buscando)",
+    r"stop searching|don'?t keep searching|just answer)",
     re.IGNORECASE,
 )
 # A model claiming it has no internet access, so we can remind it about web tools.
 _NO_INTERNET_RE = re.compile(
     r"(i (do not|don'?t) have (access to )?(the )?internet|"
-    r"i can'?t (search|access) the web|"
-    r"no tengo acceso a internet|"
-    r"no puedo buscar en tiempo real|"
-    r"no tengo capacidad de acceder a la web)",
+    r"i can'?t (search|access) the web)",
     re.IGNORECASE,
 )
 
 _LOOP_BREAK_NUDGE = (
-    "You keep calling the same tool with the same arguments without making "
-    "progress. Stop repeating it. If a tool is blocked by the skill, use an "
-    "allowed equivalent (`ls`, `grep`, `glob`, `read_file`). If the goal cannot "
-    "be reached, say so plainly instead of retrying. Do not explain that you are "
-    "changing strategy. Answer the user's original request now, using the tool "
-    "results already available.\n\nOriginal request: {user_prompt}"
+    "You keep calling the same tool with the same arguments. Its result is "
+    "already in the conversation above, so repeating it does not help. Do not "
+    "call it again. If the task still has remaining steps, do the NEXT step now "
+    "(for example: write the file, edit the code, or run the check). If a tool "
+    "is blocked by the skill, use an allowed equivalent (`ls`, `grep`, `glob`, "
+    "`read_file`). Only give a final answer once every step of the request is "
+    "complete; if it cannot be completed, say so plainly.\n\n"
+    "Original request: {user_prompt}"
 )
 _LOOP_GIVE_UP = (
     "I could not complete the task: the same tool repeated without making "
@@ -130,6 +127,53 @@ _UNPARSED_NATIVE_HINT = (
     "Your previous tool call was not executed. Invoke the tool through function "
     "calling, or use a ```write_file fenced block with JSON arguments."
 )
+_ALREADY_RETRIEVED_MESSAGE = (
+    "Already retrieved earlier in this turn — its result is in the conversation "
+    "above. Not running it again. Use that result and continue with the next "
+    "step of the task; if every step is already done, give the final answer."
+)
+_DESCRIBED_NOT_WRITTEN_NUDGE = (
+    "You described the change in prose but did not apply it — nothing was written "
+    "to disk. The request needs a file created or edited, so call `write_file` "
+    "(or `edit_file`) now with the full content. Do not just show the code as "
+    "text; actually write it."
+)
+
+# Read-only tools whose result for a given argument set does not change within a
+# turn unless a mutating tool runs. Re-calling them is pure waste and only bloats
+# the context, so the loop serves a cached note instead of re-executing.
+_READ_ONLY_TOOLS = frozenset({
+    "read_document",
+    "read_file",
+    "ls",
+    "tree",
+    "glob",
+    "grep",
+    "file_info",
+    "inspect_file",
+})
+# Tools that can change the workspace; running any of them invalidates the
+# read-only cache so a later re-read reflects the new state.
+_MUTATING_TOOLS = frozenset({
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "notebook_edit",
+    "bash",
+    "write_docx",
+    "docx_to_pdf",
+    "pdf_to_docx",
+})
+# The user's current prompt explicitly asks to create or change something. Used
+# only to nudge once when the model narrates a change without ever applying it.
+_WRITE_INTENT_RE = re.compile(
+    r"\b(write|create|implement|add|edit|modify|fix)\w*",
+    re.IGNORECASE,
+)
+
+
+def _read_signature(call: ToolCall) -> str:
+    return f"{call.name}:{hashlib.md5(str(call.arguments).encode()).hexdigest()[:8]}"
 
 
 def _status(label: str) -> None:
@@ -139,11 +183,11 @@ def _status(label: str) -> None:
 def _initial_progress_label(user_prompt: str) -> str:
     """Describe the first model round in user-friendly terms."""
     text = user_prompt.lower()
-    if any(word in text for word in ("pdf", "docx", "document", "documento", "archivo")):
+    if any(word in text for word in ("pdf", "docx", "document", "file")):
         return "Preparing to read the document..."
-    if any(word in text for word in ("web", "internet", "latest", "current", "hoy", "actual")):
+    if any(word in text for word in ("web", "internet", "latest", "current")):
         return "Checking what information is needed..."
-    if re.search(r"\b(code|codigo|código|test|bug|fix|implement)\b", text):
+    if re.search(r"\b(code|test|bug|fix|implement)\b", text):
         return "Planning the code change..."
     return "Deciding the next step..."
 
@@ -335,6 +379,15 @@ def run_agent(
     web_search_used = False  # becomes True once web_search runs in this turn
     web_capability_nudge_sent = False
     stop_tools_nudge_sent = False
+    described_not_written_nudge_sent = False
+    # Per-turn cache of successful read-only calls (signature -> True). A
+    # mutating tool clears it so later re-reads reflect the new workspace state.
+    satisfied_reads: set[str] = set()
+    # Any mutating tool was *attempted* this turn (even if blocked/denied). Used
+    # only to suppress the "describe but don't write" nudge — if the model
+    # already tried to write, re-nudging it is pointless.
+    attempted_write_this_turn = False
+    write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -479,6 +532,28 @@ def run_agent(
                     history.append({"role": "user", "content": _WEB_CAPABILITY_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
+                # The user asked to create/change something, the model is about to
+                # finalize with only prose, and nothing was ever written this turn.
+                # Nudge once to actually apply the change instead of describing it.
+                if (
+                    final_text
+                    and write_intent
+                    and not attempted_write_this_turn
+                    and not described_not_written_nudge_sent
+                    and selection.supports_tools
+                    and not stop_tools_requested
+                ):
+                    described_not_written_nudge_sent = True
+                    console.print(
+                        "[yellow]Change described but never written; asking the "
+                        "model to apply it.[/yellow]"
+                    )
+                    append_assistant_turn(history, final_text or content)
+                    history.append(
+                        {"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE}
+                    )
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 _status("Finalizing the answer...")
                 if final_text and streamed_this_round:
                     console.print()
@@ -538,7 +613,24 @@ def run_agent(
                     },
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
-                if psig in policy_blocked_sigs:
+                rsig = _read_signature(call)
+                if (
+                    call.name in _READ_ONLY_TOOLS
+                    and rsig in satisfied_reads
+                    and psig not in policy_blocked_sigs
+                ):
+                    # Identical read-only call already succeeded this turn and
+                    # nothing has mutated the workspace since. Re-running only
+                    # re-injects the same content and stalls progress, so serve a
+                    # short note pointing the model to the next step instead.
+                    result = ToolResult(
+                        tool_name=call.name,
+                        content=_ALREADY_RETRIEVED_MESSAGE,
+                        is_error=False,
+                        call_id=call.call_id,
+                        outcome="already_satisfied",
+                    )
+                elif psig in policy_blocked_sigs:
                     result = ToolResult(
                         tool_name=call.name,
                         content=POLICY_REPEAT_MESSAGE,
@@ -574,6 +666,14 @@ def run_agent(
                     },
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
+                # Maintain the read-only cache: a successful mutation invalidates
+                # it; a successful read populates it.
+                if call.name in _MUTATING_TOOLS:
+                    attempted_write_this_turn = True
+                    if not result.is_error:
+                        satisfied_reads.clear()
+                if not result.is_error and call.name in _READ_ONLY_TOOLS:
+                    satisfied_reads.add(rsig)
                 if result.is_error and result.outcome != "blocked_by_policy":
                     failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
                     eclass = error_class_key(call, result)

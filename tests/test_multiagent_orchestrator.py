@@ -46,7 +46,7 @@ def test_should_skip_implementation_for_read_only_pdf_task():
     research = _result(AgentRole.RESEARCHER, "Relevant document: paper.pdf")
 
     assert should_skip_implementation(
-        "accede al contenido del pdf y resumelo",
+        "read the contents of the pdf and summarize it",
         plan,
         research,
     )
@@ -57,7 +57,7 @@ def test_should_not_skip_implementation_for_document_edit_task():
     research = _result(AgentRole.RESEARCHER, "Relevant document: README.md")
 
     assert not should_skip_implementation(
-        "actualiza el README con un ejemplo nuevo",
+        "update the README with a new example",
         plan,
         research,
     )
@@ -72,7 +72,7 @@ def test_validation_failed_detects_failure_and_pass():
 def test_subagent_blocked_detects_explicit_and_round_limit_blocks():
     assert subagent_blocked(_result(AgentRole.RESEARCHER, "BLOCKED: missing file"))
     assert subagent_blocked(
-        _result(AgentRole.RESEARCHER, "Se alcanzó el límite de rondas sin respuesta final.")
+        _result(AgentRole.RESEARCHER, "Reached the max rounds limit without a final answer.")
     )
     assert not subagent_blocked(_result(AgentRole.RESEARCHER, "Found the context."))
 
@@ -190,7 +190,7 @@ def test_run_multi_agent_skips_coder_for_read_only_pdf_task(monkeypatch):
     )
 
     result = run_multi_agent(
-        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        "access the contents of the pdf test.pdf and tell me what it is about",
         default_selection("test:1b"),
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
@@ -212,7 +212,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
         if role == AgentRole.PLANNER:
             return _result(role, "Plan: inspect the requested PDF.")
         if role == AgentRole.RESEARCHER:
-            return _result(role, "BLOCKED: prueba.pdf was not found.")
+            return _result(role, "BLOCKED: test.pdf was not found.")
         raise AssertionError(f"Unexpected role after blocked researcher: {role}")
 
     monkeypatch.setattr(
@@ -221,7 +221,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     )
 
     result = run_multi_agent(
-        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        "access the contents of the pdf test.pdf and tell me what it is about",
         default_selection("test:1b"),
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
@@ -229,7 +229,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     assert calls == [AgentRole.PLANNER, AgentRole.RESEARCHER]
     assert "status: blocked" in result
     assert "Blocked role: researcher" in result
-    assert "prueba.pdf was not found" in result
+    assert "test.pdf was not found" in result
 
 
 def test_run_multi_agent_prints_subagent_progress(monkeypatch):

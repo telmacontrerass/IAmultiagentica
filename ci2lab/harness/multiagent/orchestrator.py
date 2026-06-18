@@ -27,9 +27,6 @@ _VALIDATION_FAILURE_MARKERS = (
     "error",
     "traceback",
     "exception",
-    "no pasa",
-    "fallo",
-    "falla",
     "failed validation",
 )
 
@@ -40,8 +37,6 @@ _VALIDATION_SUCCESS_MARKERS = (
     "successful",
     "ok",
     "no errors",
-    "sin errores",
-    "todo pasa",
 )
 
 _SECURITY_REVIEW_MARKERS = (
@@ -76,31 +71,13 @@ _READ_ONLY_TASK_MARKERS = (
     "review",
     "access",
     "open",
-    "lee",
-    "leer",
-    "resume",
-    "resumir",
-    "resumelo",
-    "resúmelo",
-    "resumen",
-    "extrae",
-    "extraer",
-    "explica",
-    "analiza",
-    "revisa",
-    "accede",
-    "acceder",
-    "abre",
-    "abrir",
 )
 
 _DOCUMENT_TASK_MARKERS = (
     "pdf",
     "docx",
     "document",
-    "documento",
     "file",
-    "archivo",
 )
 
 _IMPLEMENTATION_TASK_MARKERS = (
@@ -115,23 +92,6 @@ _IMPLEMENTATION_TASK_MARKERS = (
     "change",
     "convert",
     "generate code",
-    "añade",
-    "agrega",
-    "crea",
-    "crear",
-    "escribe",
-    "editar",
-    "edita",
-    "modifica",
-    "actualiza",
-    "implementa",
-    "arregla",
-    "corrige",
-    "cambia",
-    "convierte",
-    "convertir",
-    "genera codigo",
-    "genera código",
 )
 
 
@@ -174,7 +134,6 @@ def subagent_blocked(result: SubAgentResult) -> bool:
     return (
         result.status == "blocked"
         or text.startswith("blocked:")
-        or "se alcanzó el límite de rondas" in text
         or "max rounds" in text
     )
 

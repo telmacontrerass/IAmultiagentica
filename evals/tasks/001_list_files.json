@@ -1,10 +1,10 @@
 {
   "id": "001_list_files",
-  "name": "Listar archivos con ls",
-  "prompt": "Lista los archivos del directorio actual del proyecto.",
+  "name": "List files with ls",
+  "prompt": "List the files in the project's current directory.",
   "workspace_setup": {
     "files": {
-      "readme.txt": "hola",
+      "readme.txt": "hello",
       "src/app.py": "print('ok')"
     }
   },
@@ -26,7 +26,7 @@
       ]
     },
     {
-      "content": "El directorio contiene readme.txt y src/.",
+      "content": "The directory contains readme.txt and src/.",
       "tool_calls": []
     }
   ]

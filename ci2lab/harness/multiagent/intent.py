@@ -60,72 +60,53 @@ _REVIEW_ONLY_MARKERS = (
     "do not implement",
     "do not edit",
     "do not modify",
-    "no cambies archivos",
-    "no cambies",
-    "no edites",
-    "no modifiques",
-    "solo analiza",
-    "solo revisar",
-    "solo revisa",
+    "do not change files",
+    "without changing",
+    "only analyze",
+    "only review",
     "only inspect",
 )
 
 # Asking to read/summarize a PDF or document.
 _DOCUMENT_SUMMARY_MARKERS = (
-    "resume el pdf",
-    "resúmeme el pdf",
-    "resumeme el pdf",
     "summarize pdf",
     "summarize the pdf",
-    "leer pdf",
-    "lee el pdf",
-    "lee el documento",
-    "resumen",
-    "resúmelo",
-    "resumelo",
     "summarize document",
     "summarize the document",
+    "read pdf",
+    "read the pdf",
+    "read the document",
+    "summary of the",
 )
 
 # Asking to convert/export a document.
 _DOCUMENT_TRANSFORM_MARKERS = (
-    "convertir docx a pdf",
     "docx to pdf",
-    "docx a pdf",
-    "convertir a pdf",
-    "exportar",
+    "convert to pdf",
     "export to pdf",
     "export as pdf",
-    "guardar como pdf",
     "save as pdf",
     "convert document",
 )
 
 # Asking for explanation/analysis without file changes.
 _READ_ONLY_MARKERS = (
-    "explícame",
-    "explicame",
-    "analiza",
-    "qué significa",
-    "que significa",
-    "sin editar",
-    "solo leer",
+    "explain",
+    "analyze",
+    "analyse",
+    "what does it mean",
+    "what does",
+    "without editing",
     "read only",
     "read-only",
 )
 
 # Asking to implement/fix/modify code.
 _CODE_CHANGE_MARKERS = (
-    "implementa",
-    "implementar",
     "implement",
-    "arregla",
-    "arreglar",
-    "modifica",
-    "modificar",
-    "añade",
-    "anade",
     "fix",
+    "modify",
+    "add",
     "change",
     "edit",
 )
@@ -136,14 +117,9 @@ _WRITE_REQUEST_MARKERS = (
     ".md",
     ".csv",
     ".json",
-    "guarda",
-    "guárda",
-    "guardar",
     "save",
     "write to file",
-    "escribe en",
     "export",
-    "exporta",
 )
 
 

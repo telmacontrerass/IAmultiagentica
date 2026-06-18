@@ -1,4 +1,4 @@
-"""Tests de ayuda global del CLI."""
+"""Global CLI help tests."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def test_is_global_help_request():
     assert _is_global_help_request([])
     assert _is_global_help_request(["--help"])
     assert _is_global_help_request(["-h"])
-    assert not _is_global_help_request(["hola"])
+    assert not _is_global_help_request(["hello"])
     assert not _is_global_help_request(["doctor", "--help"])
     assert not _is_global_help_request(["agent", "--help"])
 
@@ -71,9 +71,9 @@ def test_global_help_via_module_invocation():
 
 def test_agent_shortcut_without_subcommand():
     with patch("ci2lab.cli.main._run_turn", return_value=0) as run_turn:
-        assert main(["hola"]) == 0
+        assert main(["hello"]) == 0
     run_turn.assert_called_once()
-    assert run_turn.call_args.args[0] == "hola"
+    assert run_turn.call_args.args[0] == "hello"
 
 
 def test_menu_command_opens_launcher():
@@ -104,9 +104,9 @@ def test_tools_shortcut_command_first_expands_to_friendly_chat():
 
 
 def test_tools_shortcut_with_prompt_runs_one_turn():
-    assert _expand_tools_shortcut(["qwen:1.8b", "tools", "resume", "prueba.pdf"]) == [
+    assert _expand_tools_shortcut(["qwen:1.8b", "tools", "resume", "test.pdf"]) == [
         "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream",
-        "agent", "resume prueba.pdf",
+        "agent", "resume test.pdf",
     ]
 
 

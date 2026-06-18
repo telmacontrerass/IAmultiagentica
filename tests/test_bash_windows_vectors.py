@@ -1,4 +1,4 @@
-"""Tests de vectores bash adicionales en Windows."""
+"""Additional bash vector tests on Windows."""
 
 from __future__ import annotations
 
@@ -82,8 +82,8 @@ def test_bash_blocks_iex_even_inside_workspace(workspace: Path):
 
 
 @pytest.mark.skip(
-    reason="Start-Process sin ruta externa explicita no se bloquea; "
-    "solo se valida acceso fuera del workspace cuando hay path."
+    reason="Start-Process without an explicit external path is not blocked; "
+    "access outside the workspace is only validated when there is a path."
 )
 def test_start_process_without_path_not_blocked(workspace: Path):
     assert check_bash_blocked("Start-Process notepad", cwd=str(workspace)) is None

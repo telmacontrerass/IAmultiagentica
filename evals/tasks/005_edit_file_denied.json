@@ -1,7 +1,7 @@
 {
   "id": "005_edit_file_denied",
-  "name": "edit_file denegado no modifica",
-  "prompt": "Cambia el contenido de target.txt de alpha a beta usando edit_file.",
+  "name": "Denied edit_file does not modify",
+  "prompt": "Change the contents of target.txt from alpha to beta using edit_file.",
   "workspace_setup": {
     "files": {
       "target.txt": "alpha"
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "content": "El usuario denegó la edición.",
+      "content": "The user denied the edit.",
       "tool_calls": []
     }
   ]

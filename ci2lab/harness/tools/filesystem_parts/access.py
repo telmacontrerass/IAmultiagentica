@@ -31,7 +31,7 @@ def resolve_for_access(
             candidate = Path(cwd) / candidate
         return candidate.resolve(), None
     except OSError as exc:
-        return None, f"Error: ruta invalida: {exc}"
+        return None, f"Error: invalid path: {exc}"
 
 
 def check_sensitive(

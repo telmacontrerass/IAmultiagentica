@@ -134,7 +134,7 @@ def process_edit_round(
             continue
 
         content = result.content
-        if _has(content, "does not exist", "no existe el archivo"):
+        if _has(content, "does not exist"):
             hint = (
                 "The file path was wrong. Do not invent example paths like "
                 "src/main.py. Call read_file first with the exact path the user "
@@ -145,14 +145,14 @@ def process_edit_round(
             hints.append(hint)
             continue
 
-        if _has(content, "are identical", "old_string y new_string son iguales"):
+        if _has(content, "are identical"):
             hints.append(
                 "old_string and new_string must be different. "
                 "Read the file with read_file and change only the requested line."
             )
             continue
 
-        if _has(content, "old_string not found", "old_string no encontrado"):
+        if _has(content, "old_string not found"):
             if sig and (
                 sig in completed_edits
                 or edit_already_applied(cwd, sig[0], sig[1], sig[2])
@@ -170,7 +170,7 @@ def process_edit_round(
                 )
             continue
 
-        if _has(content, "patch context not found", "no se encontró contexto del parche"):
+        if _has(content, "patch context not found"):
             hints.append(
                 "The patch does not apply. Call read_file, copy the real lines, "
                 "and build apply_patch with those lines in the hunk."

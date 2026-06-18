@@ -13,10 +13,10 @@ from ci2lab.harness.types import ToolCall, ToolResult
 
 
 def test_initial_progress_label_describes_user_visible_work():
-    assert _initial_progress_label("resume prueba.pdf") == "Preparing to read the document..."
+    assert _initial_progress_label("summarize test.pdf") == "Preparing to read the document..."
     assert _initial_progress_label("fix this test") == "Planning the code change..."
     assert _initial_progress_label("what is the latest price?") == "Checking what information is needed..."
-    assert _initial_progress_label("hola") == "Deciding the next step..."
+    assert _initial_progress_label("hello") == "Deciding the next step..."
 
 
 def test_tool_progress_label_uses_real_tool_work():
@@ -35,13 +35,13 @@ def test_run_agent_single_turn_no_tools():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
-    mock_response = LLMResponse(content="Listo, aquí está el resumen.", tool_calls=[])
+    mock_response = LLMResponse(content="Done, here is the summary.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
-        result = run_agent("resume el proyecto", selection, config=config)
+        result = run_agent("summarize the project", selection, config=config)
 
-    assert "resumen" in result.lower()
+    assert "summary" in result.lower()
 
 
 def test_run_agent_accumulates_token_usage_across_rounds():
@@ -62,7 +62,7 @@ def test_run_agent_accumulates_token_usage_across_rounds():
         ),
     )
     final = LLMResponse(
-        content="Hay varios archivos.",
+        content="There are several files.",
         tool_calls=[],
         usage=TokenUsage(
             prompt_tokens=20,
@@ -75,7 +75,7 @@ def test_run_agent_accumulates_token_usage_across_rounds():
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
-        run_agent("lista archivos", selection, config=config)
+        run_agent("list files", selection, config=config)
 
     assert config.token_usage.turn.prompt_tokens == 30
     assert config.token_usage.turn.completion_tokens == 7
@@ -94,14 +94,14 @@ def test_run_agent_executes_tool_then_answers():
             "function": {"name": "ls", "arguments": '{"path": "."}'},
         }],
     )
-    final = LLMResponse(content="Hay varios archivos.", tool_calls=[])
+    final = LLMResponse(content="There are several files.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
-        result = run_agent("lista archivos", selection, config=config)
+        result = run_agent("list files", selection, config=config)
 
-    assert "archivos" in result.lower()
+    assert "files" in result.lower()
     assert client.chat.call_count == 2
 
 
@@ -110,17 +110,17 @@ def test_run_agent_stream_true_prints_final_text_when_not_streamed():
     selection.supports_tools = True
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
-    final = LLMResponse(content="hola mundo", tool_calls=[])
+    final = LLMResponse(content="hello world", tool_calls=[])
 
     with (
         patch("ci2lab.harness.query.loop.call_llm", return_value=final),
         patch("ci2lab.harness.query.loop.console.print") as mock_print,
     ):
-        result = run_agent("Responde exactamente: hola mundo", selection, config=config)
+        result = run_agent("Reply exactly: hello world", selection, config=config)
 
-    assert result == "hola mundo"
+    assert result == "hello world"
     printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
-    assert any("hola mundo" in text for text in printed_texts)
+    assert any("hello world" in text for text in printed_texts)
 
 
 def test_run_agent_prints_model_text_before_tool_execution():
@@ -134,7 +134,7 @@ def test_run_agent_prints_model_text_before_tool_execution():
             "function": {"name": "ls", "arguments": '{"path": "."}'},
         }],
     )
-    final = LLMResponse(content="Hay varios archivos.", tool_calls=[])
+    final = LLMResponse(content="There are several files.", tool_calls=[])
 
     with (
         patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
@@ -142,7 +142,7 @@ def test_run_agent_prints_model_text_before_tool_execution():
     ):
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
-        run_agent("lista archivos", selection, config=config)
+        run_agent("list files", selection, config=config)
 
     printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
     assert any("Model:" in text and "inspect the workspace" in text for text in printed_texts)
@@ -152,17 +152,17 @@ def test_run_agent_nudges_web_search_once_after_no_internet_reply():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     first = LLMResponse(
-        content="No tengo acceso a internet en tiempo real ahora mismo.",
+        content="I do not have access to the internet right now.",
         tool_calls=[],
     )
-    second = LLMResponse(content="Perfecto, usaré web_search.", tool_calls=[])
+    second = LLMResponse(content="Got it, I will use web_search.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [first, second]
-        result = run_agent("dime un resultado live", selection, config=config)
+        result = run_agent("give me a live result", selection, config=config)
 
-    assert "usaré web_search" in result.lower() or "usare web_search" in result.lower()
+    assert "i will use web_search" in result.lower()
     assert client.chat.call_count == 2
     second_turn_messages = client.chat.call_args_list[1].args[0]
     nudge_messages = [
@@ -181,24 +181,24 @@ def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
 
     with_tool = LLMResponse(
-        content="Result: Command executed successfully. Removed archivo.txt.",
+        content="Result: Command executed successfully. Removed file.txt.",
         tool_calls=[{
             "id": "c1",
-            "function": {"name": "bash", "arguments": '{"command": "rm archivo.txt"}'},
+            "function": {"name": "bash", "arguments": '{"command": "rm file.txt"}'},
         }],
     )
-    final = LLMResponse(content="La acción fue bloqueada por política de seguridad.", tool_calls=[])
+    final = LLMResponse(content="The action was blocked by the security policy.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
-        result = run_agent("borra archivo.txt", selection, config=config)
+        result = run_agent("delete file.txt", selection, config=config)
 
-    assert "bloquead" in result.lower()
+    assert "blocked" in result.lower()
     second_turn_messages = client.chat.call_args_list[1].args[0]
     assert not any(
         "executed successfully" in str(m.get("content", "")).lower()
-        or "removed archivo.txt" in str(m.get("content", "")).lower()
+        or "removed file.txt" in str(m.get("content", "")).lower()
         for m in second_turn_messages
         if isinstance(m, dict)
     )
@@ -215,7 +215,7 @@ def test_run_agent_loop_break_nudge_restates_original_prompt():
             "function": {"name": "ls", "arguments": '{"path": "."}'},
         }],
     )
-    final = LLMResponse(content="No hay marcador en los resultados disponibles.", tool_calls=[])
+    final = LLMResponse(content="There is no score in the available results.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
@@ -236,7 +236,7 @@ def test_prepend_missing_reads_before_edit():
         ToolCall(
             name="edit_file",
             arguments={
-                "path": "Pruebas.py",
+                "path": "Tests.py",
                 "old_string": "a",
                 "new_string": "b",
             },
@@ -244,11 +244,11 @@ def test_prepend_missing_reads_before_edit():
     ]
     result = _prepend_missing_reads(
         calls,
-        "First read Pruebas.py, then change line 3",
+        "First read Tests.py, then change line 3",
     )
     assert len(result) == 2
     assert result[0].name == "read_file"
-    assert result[0].arguments["path"] == "Pruebas.py"
+    assert result[0].arguments["path"] == "Tests.py"
     assert result[1].name == "edit_file"
 
 
@@ -279,8 +279,8 @@ def test_local_repo_question_uses_tree_or_ls_not_empty_bash():
     )
     final = LLMResponse(
         content=(
-            "Archivos principales: README.md, pyproject.toml, ci2lab/, tests/. "
-            "El loop del agente parece estar en ci2lab/harness/query/loop.py."
+            "Main files: README.md, pyproject.toml, ci2lab/, tests/. "
+            "The agent loop seems to be in ci2lab/harness/query/loop.py."
         ),
         tool_calls=[],
     )
@@ -302,7 +302,7 @@ def test_local_repo_question_uses_tree_or_ls_not_empty_bash():
         client = MockClient.return_value
         client.chat.side_effect = [first, final]
         result = run_agent(
-            "Lista los archivos principales del repositorio y dime en qué carpeta parece estar el loop del agente.",
+            "List the main files of the repository and tell me in which folder the agent loop seems to be.",
             selection,
             config=config,
         )
@@ -318,8 +318,8 @@ def test_final_answer_after_tree_stays_anchored_to_latest_user_prompt():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     prompt = (
-        "Lista los archivos principales del repositorio y dime en qué carpeta "
-        "parece estar el loop del agente."
+        "List the main files of the repository and tell me in which folder "
+        "the agent loop seems to be."
     )
     with_tool = LLMResponse(
         content="",
@@ -328,7 +328,7 @@ def test_final_answer_after_tree_stays_anchored_to_latest_user_prompt():
             "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
         }],
     )
-    final = LLMResponse(content="El loop parece estar en ci2lab/harness/query/loop.py.", tool_calls=[])
+    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
 
     with (
         patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
@@ -454,13 +454,13 @@ def test_context_summary_does_not_override_current_user_request():
     selection.context_length = 8192
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     prompt = (
-        "Lista los archivos principales del repositorio y dime en qué carpeta "
-        "parece estar el loop del agente."
+        "List the main files of the repository and tell me in which folder "
+        "the agent loop seems to be."
     )
     old_messages = [
         {"role": "system", "content": "old system"},
-        {"role": "user", "content": "Tarea antigua: crea docs/resumen.md"},
-        {"role": "assistant", "content": "Voy a crear docs/resumen.md"},
+        {"role": "user", "content": "Old task: create docs/summary.md"},
+        {"role": "assistant", "content": "I'll create docs/summary.md"},
     ]
     with_tool = LLMResponse(
         content="",
@@ -469,7 +469,7 @@ def test_context_summary_does_not_override_current_user_request():
             "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
         }],
     )
-    final = LLMResponse(content="El loop parece estar en ci2lab/harness/query/loop.py.", tool_calls=[])
+    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
     manage_calls = {"count": 0}
 
     def fake_manage_context(history, client, context_length, summary_failures=0):
@@ -480,10 +480,10 @@ def test_context_summary_does_not_override_current_user_request():
                 1,
                 {
                     "role": "user",
-                    "content": "[Summary of earlier conversation]\n\nLa tarea era crear docs/resumen.md",
+                    "content": "[Summary of earlier conversation]\n\nThe task was to create docs/summary.md",
                 },
             )
-            return injected, summary_failures, ["Contexto: historial resumido (~1000 → ~500 tokens estimados)."]
+            return injected, summary_failures, ["Context: summarized history (~1000 → ~500 estimated tokens)."]
         return history, summary_failures, []
 
     with (
@@ -517,6 +517,147 @@ def test_context_summary_does_not_override_current_user_request():
     )
 
 
+def test_repeated_read_only_call_is_served_from_cache():
+    # A weak model re-issuing the identical successful read must NOT re-execute
+    # the tool; it should get a short "already retrieved, move on" note so the
+    # huge document text is not re-injected and progress continues.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    read = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
+        }],
+    )
+    read_again = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c2",
+            "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
+        }],
+    )
+    final = LLMResponse(content="Done following the document.", tool_calls=[])
+    exec_mock = MagicMock(
+        return_value=ToolResult(
+            tool_name="read_document",
+            content="FULL DOCUMENT TEXT",
+            is_error=False,
+            call_id="c1",
+        )
+    )
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", exec_mock),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [read, read_again, final]
+        run_agent("read doc.pdf and follow the steps inside", selection, config=config)
+
+    # The tool actually ran only once; the second identical read was cached.
+    assert exec_mock.call_count == 1
+    third_turn_messages = client.chat.call_args_list[2].args[0]
+    assert any(
+        "Already retrieved earlier in this turn" in str(m.get("content", ""))
+        for m in third_turn_messages
+        if isinstance(m, dict)
+    )
+
+
+def test_read_cache_invalidated_after_mutation():
+    # If a file is read, then written, a later read of the same path must run
+    # again (the workspace changed), not be served from the stale cache.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    read = LLMResponse(
+        content="",
+        tool_calls=[{"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}],
+    )
+    write = LLMResponse(
+        content="",
+        tool_calls=[{"id": "c2", "function": {"name": "write_file", "arguments": '{"path": "main.py", "content": "x=1"}'}}],
+    )
+    read_again = LLMResponse(
+        content="",
+        tool_calls=[{"id": "c3", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}],
+    )
+    final = LLMResponse(content="Done.", tool_calls=[])
+
+    def fake_execute(call, cfg):
+        return ToolResult(
+            tool_name=call.name,
+            content="ok",
+            is_error=False,
+            call_id=call.call_id,
+        )
+
+    exec_mock = MagicMock(side_effect=fake_execute)
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", exec_mock),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [read, write, read_again, final]
+        run_agent("edit main.py", selection, config=config)
+
+    # read, write, AND the post-write read all executed: 3 real tool calls.
+    assert exec_mock.call_count == 3
+
+
+def test_described_change_without_write_triggers_one_nudge():
+    # The user asked to write code; the model only narrates it and never calls a
+    # write tool. The loop nudges once to actually apply it, then accepts a real
+    # write on the retry.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    prose = LLMResponse(content="Here is the code:\n\nprint('hi')", tool_calls=[])
+    write = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {"name": "write_file", "arguments": '{"path": "main.py", "content": "print(1)"}'},
+        }],
+    )
+    final = LLMResponse(content="Wrote main.py.", tool_calls=[])
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="write_file",
+                content="Wrote main.py",
+                is_error=False,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [prose, write, final]
+        result = run_agent("write the python code into main.py", selection, config=config)
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user" and "did not apply it" in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+    assert "main.py" in result
+
+
+def test_no_write_nudge_for_read_only_request():
+    # A pure read/explain request must never get the "you didn't write" nudge.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    answer = LLMResponse(content="The loop lives in loop.py.", tool_calls=[])
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.return_value = answer
+        run_agent("explain where the agent loop is", selection, config=config)
+
+    # Only one model round happened (no nudge-driven extra round).
+    assert client.chat.call_count == 1
+
+
 def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
     from ci2lab.harness.session import save_session
 
@@ -524,7 +665,7 @@ def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
     sid = "abc123"
     save_session(
         sid,
-        messages=[{"role": "user", "content": "hola"}],
+        messages=[{"role": "user", "content": "hello"}],
         model_tag="test:1b",
         cwd=str(tmp_path),
     )
@@ -540,7 +681,7 @@ def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         result = run_agent(
-            "elimina lo que acabas de guardar",
+            "delete what you just saved",
             selection,
             config=config,
         )
@@ -552,8 +693,8 @@ def test_run_agent_deletes_session_without_model_round(tmp_path, monkeypatch):
 
 def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
     selection = default_selection("test:1b")
-    target = tmp_path / "Pruebas.py"
-    target.write_text("linea tres\n", encoding="utf-8")
+    target = tmp_path / "Tests.py"
+    target.write_text("line three\n", encoding="utf-8")
     config = AgentConfig(
         cwd=str(tmp_path),
         stream=False,
@@ -569,14 +710,14 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
             "function": {
                 "name": "edit_file",
                 "arguments": (
-                    '{"path": "Pruebas.py", "old_string": "linea tres", '
-                    '"new_string": "Decimocuarto intento"}'
+                    '{"path": "Tests.py", "old_string": "line three", '
+                    '"new_string": "Fourteenth attempt"}'
                 ),
             },
         }],
     )
     final = LLMResponse(
-        content="Listo: la línea 3 de Pruebas.py ahora dice Decimocuarto intento.",
+        content="Done: line 3 of Tests.py now reads Fourteenth attempt.",
         tool_calls=[],
     )
 
@@ -584,19 +725,19 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
         client = MockClient.return_value
         client.chat.side_effect = [edit_call, final]
         result = run_agent(
-            'change the third line of Pruebas.py to "Decimocuarto intento"',
+            'change the third line of Tests.py to "Fourteenth attempt"',
             selection,
             config=config,
         )
 
-    assert "Decimocuarto intento" in result
+    assert "Fourteenth attempt" in result
     assert client.chat.call_count == 2
     second_turn_messages = client.chat.call_args_list[1].args[0]
     assert any(
         m.get("role") == "user" and "applied successfully" in str(m.get("content", ""))
         for m in second_turn_messages
     )
-    assert target.read_text(encoding="utf-8") == "Decimocuarto intento\n"
+    assert target.read_text(encoding="utf-8") == "Fourteenth attempt\n"
 
 
 def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
@@ -611,7 +752,7 @@ def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
         }],
     )
     final = LLMResponse(
-        content="Con lo disponible, no puedo verificar la fuente completa. Advertencia: datos parciales.",
+        content="With what I have, I can't verify the full source. Warning: partial data.",
         tool_calls=[],
     )
 
@@ -622,12 +763,12 @@ def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
         client = MockClient.return_value
         client.chat.side_effect = [model_trying_tools, final]
         result = run_agent(
-            "precio bitcoin ahora, responde con lo que sabes y no sigas buscando",
+            "bitcoin price now, answer with what you know and stop searching",
             selection,
             config=config,
         )
 
-    assert "advertencia" in result.lower()
+    assert "warning" in result.lower()
     assert mock_execute_tool.call_count == 0
 
 
@@ -643,11 +784,11 @@ def test_run_agent_disables_streaming_when_tools_are_available():
             "function": {"name": "web_search", "arguments": '{"query": "btc price", "max_results": 5}'},
         }],
     )
-    final = LLMResponse(content="Respuesta final con resultados.", tool_calls=[])
+    final = LLMResponse(content="Final answer with results.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.call_llm") as mock_call_llm:
         mock_call_llm.side_effect = [with_tool, final]
-        run_agent("dime el precio del bitcoin actual", selection, config=config)
+        run_agent("tell me the current bitcoin price", selection, config=config)
 
     first_call = mock_call_llm.call_args_list[0]
     assert first_call.kwargs["stream"] is False

@@ -37,17 +37,17 @@ def _make_docx(path: Path, markdown: str) -> None:
 
 def test_extract_docx_markdown(pandoc_skip, tmp_path: Path) -> None:
     docx = tmp_path / "sample.docx"
-    _make_docx(docx, "# Hola\n\nPárrafo de prueba.\n")
+    _make_docx(docx, "# Hello\n\nTest paragraph.\n")
     text = extract_docx_markdown(docx)
-    assert "Hola" in text
-    assert "Párrafo" in text
+    assert "Hello" in text
+    assert "paragraph" in text
 
 
 def test_read_file_handles_docx(pandoc_skip, tmp_path: Path) -> None:
     docx = tmp_path / "readme.docx"
-    _make_docx(docx, "# Título\n\nContenido.\n")
+    _make_docx(docx, "# Title\n\nContent.\n")
     output = read_file(str(tmp_path), "readme.docx")
-    assert "Título" in output
+    assert "Title" in output
     assert "|" in output  # numbered lines
 
 
@@ -55,7 +55,7 @@ def test_write_docx_creates_file(pandoc_skip, tmp_path: Path) -> None:
     result = write_docx(
         str(tmp_path),
         "out.docx",
-        "# Nuevo\n\nDocumento creado.\n",
+        "# New\n\nDocument created.\n",
     )
     assert result.startswith("Created")
     assert (tmp_path / "out.docx").is_file()

@@ -11,7 +11,7 @@ def test_repl_multi_agent_routes_each_prompt_to_orchestrator(tmp_path, monkeypat
 
     with (
         patch("ci2lab.harness.repl.read_prompt_line", side_effect=[
-            "implementa una tarea",
+            "implement a task",
             "/exit",
         ]),
         patch("ci2lab.harness.repl.run_multi_agent", return_value="final multi") as run_multi_agent,
@@ -21,7 +21,7 @@ def test_repl_multi_agent_routes_each_prompt_to_orchestrator(tmp_path, monkeypat
         run_repl(selection, cfg, session_id="test-session", multi_agent=True)
 
     run_multi_agent.assert_called_once_with(
-        "implementa una tarea",
+        "implement a task",
         selection,
         config=cfg,
     )
@@ -35,7 +35,7 @@ def test_repl_classic_mode_still_uses_run_agent(tmp_path, monkeypatch):
 
     with (
         patch("ci2lab.harness.repl.read_prompt_line", side_effect=[
-            "implementa una tarea",
+            "implement a task",
             "/exit",
         ]),
         patch("ci2lab.harness.repl.run_multi_agent") as run_multi_agent,

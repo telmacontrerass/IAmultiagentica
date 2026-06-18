@@ -62,19 +62,15 @@ def delete_session(session_id: str) -> bool:
 
 def is_delete_session_request(text: str) -> bool:
     normalized = text.strip().lower()
-    if normalized in {"/delete", "/delete-session", "/forget", "/borrar", "/eliminar"}:
+    if normalized in {"/delete", "/delete-session", "/forget"}:
         return True
-    delete_words = ("elimina", "eliminar", "borra", "borrar")
+    delete_words = ("delete", "remove", "erase", "forget")
     saved_words = (
-        "guardado",
-        "guardada",
-        "guardar",
-        "guardé",
-        "guarde",
-        "sesion",
-        "sesión",
-        "conversacion",
-        "conversación",
+        "saved",
+        "save",
+        "session",
+        "conversation",
+        "history",
     )
     return any(word in normalized for word in delete_words) and any(
         word in normalized for word in saved_words

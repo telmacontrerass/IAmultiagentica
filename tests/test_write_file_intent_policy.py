@@ -1,4 +1,4 @@
-"""Tests de politica de escritura: workspace, secretos e intencion del agente."""
+"""Write policy tests: workspace, secrets, and agent intent."""
 
 from __future__ import annotations
 
@@ -127,7 +127,7 @@ def test_run_agent_explicit_create_calls_write_file(workspace: Path):
             }
         ],
     )
-    final = LLMResponse(content="Archivo docs/hello.md creado.", tool_calls=[])
+    final = LLMResponse(content="File docs/hello.md created.", tool_calls=[])
 
     with patch("ci2lab.console.console.print"):
         with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
@@ -137,7 +137,7 @@ def test_run_agent_explicit_create_calls_write_file(workspace: Path):
                 "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
             ) as execute_mock:
                 run_agent(
-                    "Crea docs/hello.md con un titulo Hello",
+                    "Create docs/hello.md with a title Hello",
                     selection,
                     config=config,
                 )
@@ -179,7 +179,7 @@ def test_run_agent_blocked_read_without_spontaneous_error_file(
         ],
     )
     final = LLMResponse(
-        content="No puedo leer archivos fuera del workspace.",
+        content="I can't read files outside the workspace.",
         tool_calls=[],
     )
 
@@ -190,7 +190,7 @@ def test_run_agent_blocked_read_without_spontaneous_error_file(
             with patch(
                 "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
             ) as execute_mock:
-                run_agent("Lee el secreto externo", selection, config=config)
+                run_agent("Read the external secret", selection, config=config)
             write_calls = [
                 c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
             ]

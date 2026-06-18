@@ -1,4 +1,4 @@
-"""Tests de auditoría JSONL y comparador de motores de seguridad."""
+"""Tests for the JSONL audit log and the security-engine comparator."""
 
 from __future__ import annotations
 
