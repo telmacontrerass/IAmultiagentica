@@ -1,4 +1,4 @@
-"""Tests para ci2lab/settings.py."""
+"""Tests for ci2lab/settings.py."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class TestSubjectForTool:
 
 
 # ---------------------------------------------------------------------------
-# check_tool_allowed — semántica básica
+# check_tool_allowed — basic semantics
 # ---------------------------------------------------------------------------
 
 class TestCheckToolAllowed:
@@ -72,7 +72,7 @@ class TestCheckToolAllowed:
     def test_allow_list_blocks_unmatched_path(self):
         s = ToolSettings(allow={"read_document": ["**/*.pdf", "**/*.docx"]})
         allowed, reason = check_tool_allowed(
-            s, "read_document", {"path": "secreto.env"}
+            s, "read_document", {"path": "secret.env"}
         )
         assert allowed is False
         assert "allow" in reason
@@ -80,54 +80,54 @@ class TestCheckToolAllowed:
     def test_allow_list_permits_matched_path_with_dir(self):
         s = ToolSettings(allow={"read_document": ["**/*.pdf"]})
         allowed, _ = check_tool_allowed(
-            s, "read_document", {"path": "docs/informe.pdf"}
+            s, "read_document", {"path": "docs/report.pdf"}
         )
         assert allowed is True
 
     def test_allow_list_permits_matched_path_bare_filename(self):
-        """** debe cubrir también archivos sin directorio (cero segmentos)."""
+        """** must also cover files with no directory (zero segments)."""
         s = ToolSettings(allow={"read_document": ["**/*.pdf"]})
         allowed, _ = check_tool_allowed(
-            s, "read_document", {"path": "informe.pdf"}
+            s, "read_document", {"path": "report.pdf"}
         )
         assert allowed is True
 
     def test_allow_prefixed_pattern_does_not_match_outside_prefix(self):
-        """Un patrón con prefijo concreto NO debe permitir rutas fuera de ese prefijo.
+        """A pattern with a concrete prefix must NOT allow paths outside that prefix.
 
-        Regresión: el fallback de bare-filename se aplicaba también a patrones
-        con prefijo (ej: '.ci2lab/output/**/*.docx'), permitiendo cualquier .docx
-        independientemente de su directorio.
+        Regression: the bare-filename fallback was also applied to patterns
+        with a prefix (e.g. '.ci2lab/output/**/*.docx'), allowing any .docx
+        regardless of its directory.
         """
         s = ToolSettings(
             allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]}
         )
-        # Ruta fuera del prefijo -> debe bloquearse
+        # Path outside the prefix -> must be blocked
         allowed, reason = check_tool_allowed(
-            s, "fill_docx_template", {"output": "cualquier_sitio/malicioso.docx"}
+            s, "fill_docx_template", {"output": "anywhere/malicious.docx"}
         )
-        assert allowed is False, f"Debería estar bloqueado, pero se permitió: {reason}"
+        assert allowed is False, f"Should be blocked, but it was allowed: {reason}"
 
     def test_allow_prefixed_pattern_permits_inside_prefix(self):
-        """Un patrón con prefijo concreto SÍ debe permitir rutas dentro de ese prefijo."""
+        """A pattern with a concrete prefix MUST allow paths inside that prefix."""
         s = ToolSettings(
             allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]}
         )
         allowed, _ = check_tool_allowed(
             s,
             "fill_docx_template",
-            {"output": ".ci2lab/documents/output/informe.docx"},
+            {"output": ".ci2lab/documents/output/report.docx"},
         )
         assert allowed is True
 
     def test_tool_not_in_allow_is_permitted_by_default(self):
         s = ToolSettings(allow={"read_document": ["**/*.pdf"]})
-        # bash no aparece en allow → permitido por defecto
+        # bash does not appear in allow → permitted by default
         allowed, _ = check_tool_allowed(s, "bash", {"command": "ls"})
         assert allowed is True
 
     def test_deny_wins_over_allow(self):
-        """Deny es jerárquicamente superior: si está en deny, no importa allow."""
+        """Deny is hierarchically superior: if it is in deny, allow does not matter."""
         s = ToolSettings(
             allow={"bash": ["*"]},
             deny={"bash": ["rm *"]},
@@ -138,7 +138,7 @@ class TestCheckToolAllowed:
 
     def test_allow_star_permits_all(self):
         s = ToolSettings(allow={"bash": ["*"]})
-        allowed, _ = check_tool_allowed(s, "bash", {"command": "cualquier cosa"})
+        allowed, _ = check_tool_allowed(s, "bash", {"command": "anything"})
         assert allowed is True
 
     def test_deny_extension_pattern(self):
@@ -155,7 +155,7 @@ class TestCheckToolAllowed:
 
 
 # ---------------------------------------------------------------------------
-# Fusión de capas (_merge)
+# Layer merging (_merge)
 # ---------------------------------------------------------------------------
 
 class TestMerge:
@@ -168,7 +168,7 @@ class TestMerge:
 
     def test_deny_global_cannot_be_removed_by_project(self):
         g = ToolSettings(deny={"bash": ["rm *"]})
-        p = ToolSettings(deny={})   # proyecto no define bash deny
+        p = ToolSettings(deny={})   # project does not define bash deny
         merged = _merge(g, p)
         assert "rm *" in merged.deny["bash"]
 
@@ -193,12 +193,12 @@ class TestMerge:
 
 
 # ---------------------------------------------------------------------------
-# load_settings — lectura desde disco
+# load_settings — reading from disk
 # ---------------------------------------------------------------------------
 
 class TestLoadSettings:
     def test_empty_when_no_files(self, tmp_path, monkeypatch):
-        # Aislar home: sin ~/.ci2lab/settings.json real
+        # Isolate home: no real ~/.ci2lab/settings.json
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
@@ -218,7 +218,7 @@ class TestLoadSettings:
         assert "rm *" in s.deny.get("bash", [])
 
     def test_invalid_json_ignored(self, tmp_path, monkeypatch):
-        # El JSON del proyecto es inválido; el global tampoco existe (home aislado)
+        # The project JSON is invalid; the global one does not exist either (isolated home)
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
@@ -253,7 +253,7 @@ class TestLoadSettings:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
         _write_settings(
             tmp_path / ".ci2lab" / "settings.json",
-            {"deny": {"bash": "rm *"}},   # string en lugar de lista
+            {"deny": {"bash": "rm *"}},   # string instead of list
         )
         s = load_settings(str(tmp_path))
         assert s.deny["bash"] == ["rm *"]

@@ -131,9 +131,9 @@ def path_escapes_workspace(raw_path: str, workspace: Path) -> bool:
 
 def check_bash_workspace_blocked(command: str, cwd: str) -> str | None:
     """
-    Devuelve mensaje de bloqueo si el comando referencia rutas fuera del workspace.
+    Return a block message if the command references paths outside the workspace.
 
-    Se aplica antes de la confirmacion del usuario.
+    Applied before asking the user for confirmation.
     """
     if not command or not command.strip():
         return None

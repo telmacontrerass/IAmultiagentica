@@ -54,7 +54,7 @@ class Ci2LabConfig:
 
 
 def _parse_bool(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "y", "on", "si", "sí"}
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _coerce_value(key: str, raw: str) -> Any:

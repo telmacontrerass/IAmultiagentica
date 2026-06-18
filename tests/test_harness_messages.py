@@ -8,7 +8,7 @@ def test_append_assistant_turn_uses_empty_string_for_tool_only_turns():
     append_assistant_turn(
         messages,
         "",
-        [ToolCall(name="read_document", arguments={"path": "prueba.pdf"})],
+        [ToolCall(name="read_document", arguments={"path": "test.pdf"})],
     )
 
     assert messages[0]["content"] == ""

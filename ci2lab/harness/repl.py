@@ -23,6 +23,29 @@ from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
 
 
+class _TransientProgress:
+    """Render one replaceable status line and remove it when work finishes."""
+
+    def __init__(self) -> None:
+        self._status = None
+
+    def update(self, label: str) -> None:
+        if not label:
+            self.clear()
+            return
+        rendered = f"[dim italic cyan]{label}[/dim italic cyan]"
+        if self._status is None:
+            self._status = console.status(rendered, spinner="dots")
+            self._status.start()
+        else:
+            self._status.update(rendered)
+
+    def clear(self) -> None:
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+
+
 def run_repl(
     selection: ModelSelection,
     config: AgentConfig,
@@ -171,6 +194,7 @@ def run_repl(
                         f"{body}\n\n---\nUser request: "
                         f"{user_request or '(use skill instructions above)'}"
                     )
+                    progress = _TransientProgress()
                     try:
                         last_user_prompt = line
                         if multi_agent:
@@ -178,6 +202,7 @@ def run_repl(
                                 prompt,
                                 selection,
                                 config=config,
+                                on_progress=progress.update,
                             )
                             if final_text:
                                 console.print(final_text)
@@ -193,22 +218,36 @@ def run_repl(
                                     token_usage=config.token_usage.to_dict(),
                                 )
                         else:
-                            run_agent(prompt, selection, config=config, messages=history)
+                            run_agent(
+                                prompt,
+                                selection,
+                                config=config,
+                                messages=history,
+                                on_progress=progress.update,
+                            )
                         last_error_message = None
                     except LLMError as exc:
                         console.print(f"[red]{exc.user_message}[/red]")
                         last_error_message = exc.user_message
                         continue
+                    finally:
+                        progress.clear()
                     data = load_session(sid)
                     if data:
                         history = data.get("messages")
                     continue
 
+        progress = _TransientProgress()
         try:
             config.skill_allowed_tools = None
             last_user_prompt = line
             if multi_agent:
-                final_text = run_multi_agent(line, selection, config=config)
+                final_text = run_multi_agent(
+                    line,
+                    selection,
+                    config=config,
+                    on_progress=progress.update,
+                )
                 if final_text:
                     console.print(final_text)
                     history = (history or []) + [
@@ -223,14 +262,27 @@ def run_repl(
                         token_usage=config.token_usage.to_dict(),
                     )
             elif history is None:
-                run_agent(line, selection, config=config)
+                run_agent(
+                    line,
+                    selection,
+                    config=config,
+                    on_progress=progress.update,
+                )
             else:
-                run_agent(line, selection, config=config, messages=history)
+                run_agent(
+                    line,
+                    selection,
+                    config=config,
+                    messages=history,
+                    on_progress=progress.update,
+                )
             last_error_message = None
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
             last_error_message = exc.user_message
             continue
+        finally:
+            progress.clear()
 
         data = load_session(sid)
         if data:

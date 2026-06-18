@@ -12,7 +12,7 @@ from ci2lab.harness.parsing import (
 
 
 def test_parse_fenced_bash():
-    text = 'Voy a listar.\n```bash\nls -la\n```'
+    text = 'I am going to list.\n```bash\nls -la\n```'
     calls = parse_fenced_blocks(text)
     assert len(calls) == 1
     assert calls[0].name == "bash"
@@ -39,20 +39,20 @@ def test_parse_fenced_web_search_plain_query():
 
 def test_parse_fenced_docx_to_pdf_json_args():
     calls = parse_fenced_blocks(
-        '```docx_to_pdf\n{"source": "Prueba/informe.docx", "output": "Prueba/informe.pdf"}\n```'
+        '```docx_to_pdf\n{"source": "Test/report.docx", "output": "Test/report.pdf"}\n```'
     )
     assert calls[0].name == "docx_to_pdf"
-    assert calls[0].arguments["source"] == "Prueba/informe.docx"
-    assert calls[0].arguments["output"] == "Prueba/informe.pdf"
+    assert calls[0].arguments["source"] == "Test/report.docx"
+    assert calls[0].arguments["output"] == "Test/report.pdf"
 
 
 def test_parse_fenced_pdf_to_docx_json_args():
     calls = parse_fenced_blocks(
-        '```pdf_to_docx\n{"source": "Prueba/informe.pdf", "output": "Prueba/informe.docx"}\n```'
+        '```pdf_to_docx\n{"source": "Test/report.pdf", "output": "Test/report.docx"}\n```'
     )
     assert calls[0].name == "pdf_to_docx"
-    assert calls[0].arguments["source"] == "Prueba/informe.pdf"
-    assert calls[0].arguments["output"] == "Prueba/informe.docx"
+    assert calls[0].arguments["source"] == "Test/report.pdf"
+    assert calls[0].arguments["output"] == "Test/report.docx"
 
 
 def test_parse_xml_invoke():
@@ -83,11 +83,11 @@ def test_native_strips_null_optional_args():
 
 
 def test_strip_markup():
-    text = "Hola\n```bash\necho hi\n```\n<invoke name=\"ls\"><parameter name=\"path\">.</parameter></invoke>"
+    text = "Hello\n```bash\necho hi\n```\n<invoke name=\"ls\"><parameter name=\"path\">.</parameter></invoke>"
     cleaned = strip_tool_markup(text)
     assert "bash" not in cleaned
     assert "invoke" not in cleaned
-    assert "Hola" in cleaned
+    assert "Hello" in cleaned
 
 
 def test_native_empty_falls_back_to_fenced():
@@ -98,7 +98,7 @@ def test_native_empty_falls_back_to_fenced():
 
 
 def test_no_tools_returns_empty():
-    calls = resolve_tool_calls("solo texto sin herramientas", [], tool_mode="native")
+    calls = resolve_tool_calls("just text without tools", [], tool_mode="native")
     assert calls == []
 
 
@@ -106,16 +106,16 @@ def test_parse_json_fenced_bare_edit_file_args():
     text = (
         '```json\n'
         '{\n'
-        '  "path": "Pruebas.py",\n'
-        '  "old_string": "linea tres",\n'
-        '  "new_string": "No se cuantos intentos"\n'
+        '  "path": "Tests.py",\n'
+        '  "old_string": "line three",\n'
+        '  "new_string": "I don\'t know how many attempts"\n'
         '}\n'
         '```'
     )
     calls = resolve_tool_calls(text, [], tool_mode="fenced")
     assert len(calls) == 1
     assert calls[0].name == "edit_file"
-    assert calls[0].arguments["new_string"] == "No se cuantos intentos"
+    assert calls[0].arguments["new_string"] == "I don't know how many attempts"
 
 
 def test_parse_json_fenced_command_args_edit_file():
@@ -124,9 +124,9 @@ def test_parse_json_fenced_command_args_edit_file():
         '{\n'
         '  "command": "edit_file",\n'
         '  "args": {\n'
-        '    "path": "Pruebas.py",\n'
-        '    "old_string": "linea tres",\n'
-        '    "new_string": "No se cuantos intentos"\n'
+        '    "path": "Tests.py",\n'
+        '    "old_string": "line three",\n'
+        '    "new_string": "I don\'t know how many attempts"\n'
         '  }\n'
         '}\n'
         '```'
@@ -134,8 +134,8 @@ def test_parse_json_fenced_command_args_edit_file():
     calls = resolve_tool_calls(text, [], tool_mode="fenced")
     assert len(calls) == 1
     assert calls[0].name == "edit_file"
-    assert calls[0].arguments["path"] == "Pruebas.py"
-    assert calls[0].arguments["old_string"] == "linea tres"
+    assert calls[0].arguments["path"] == "Tests.py"
+    assert calls[0].arguments["old_string"] == "line three"
 
 
 def test_parse_json_fenced_write_file():
@@ -216,7 +216,7 @@ def test_v01_json_fence_explicit_bash_is_structured_not_fallback():
 
 
 def test_v01_plain_json_parsed_but_not_bash_fallback():
-    """JSON inline se parsea por diseno; V-01 es fences desconocidos -> bash."""
+    """Inline JSON is parsed by design; V-01 is unknown fences -> bash."""
     text = '{"name":"read_file","arguments":{"path":"../secret.txt"}}'
     calls = resolve_tool_calls(text, [], tool_mode="native")
     assert len(calls) == 1

@@ -746,7 +746,7 @@ def _ensure_model_installed(choice: ModelChoice) -> bool:
             "[yellow]This model may be too large for the current inference budget.[/yellow]"
         )
     answer = _prompt_text("Download it now with `ollama pull`? [y/N] ").strip().lower()
-    if answer not in {"y", "yes", "s", "si", "sí"}:
+    if answer not in {"y", "yes"}:
         return False
     return _pull_model(choice.ollama_tag) == 0
 
@@ -756,7 +756,7 @@ def _pull_model(ollama_tag: str) -> int:
     try:
         completed = subprocess.run(["ollama", "pull", ollama_tag], check=False)
     except FileNotFoundError:
-        console.print("[red]No encuentro el comando `ollama`.[/red]")
+        console.print("[red]Could not find the `ollama` command.[/red]")
         return 1
     finally:
         _print_divider()
@@ -768,7 +768,7 @@ def _run_direct_ollama(ollama_tag: str) -> int:
     try:
         completed = subprocess.run(["ollama", "run", ollama_tag], check=False)
     except FileNotFoundError:
-        console.print("[red]No encuentro el comando `ollama`.[/red]")
+        console.print("[red]Could not find the `ollama` command.[/red]")
         return 1
     finally:
         _print_divider()
@@ -841,7 +841,7 @@ def _open_ollama_download_page() -> int:
 
 
 def _confirm(message: str) -> bool:
-    return _prompt_text(message).strip().lower() in {"y", "yes", "s", "si", "sí"}
+    return _prompt_text(message).strip().lower() in {"y", "yes"}
 
 
 def _print_divider() -> None:

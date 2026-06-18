@@ -1,10 +1,10 @@
-"""Robustez del arnés: traducción de comandos de shell, allow-lists de skills,
-y fallback de grep ante regex inválidas.
+"""Harness robustness: shell command translation, skill allow-lists, and grep
+fallback for invalid regexes.
 
-Cubre las regresiones vistas con modelos locales (qwen) en modo restringido:
-el modelo insiste en `bash ls`/`bash grep`/`ls` aunque el skill solo permita
-`list_files`/`grep`, y entra en bucle. Ahora esos comandos se traducen al tool
-permitido en vez de bloquearse.
+Covers the regressions seen with local models (qwen) in restricted mode: the
+model insists on `bash ls`/`bash grep`/`ls` even though the skill only allows
+`list_files`/`grep`, and gets stuck in a loop. Those commands are now translated
+to the allowed tool instead of being blocked.
 """
 
 from __future__ import annotations
@@ -18,28 +18,28 @@ from ci2lab.harness.types import AgentConfig, ToolCall
 
 
 # ---------------------------------------------------------------------------
-# shell_command_to_tool: traducción de comandos POSIX a tools
+# shell_command_to_tool: translation of POSIX commands to tools
 # ---------------------------------------------------------------------------
 
 def test_ls_dir_translates_to_ls_tool():
-    call = shell_command_to_tool("ls Prueba/")
+    call = shell_command_to_tool("ls Test/")
     assert call is not None
     assert call.name == "ls"
-    assert call.arguments["path"] == "Prueba/"
+    assert call.arguments["path"] == "Test/"
 
 
 def test_ls_with_glob_translates_to_glob_tool():
-    call = shell_command_to_tool("ls Prueba/*.docx")
+    call = shell_command_to_tool("ls Test/*.docx")
     assert call is not None
     assert call.name == "glob"
-    assert call.arguments["pattern"] == "Prueba/*.docx"
+    assert call.arguments["pattern"] == "Test/*.docx"
 
 
 def test_grep_translates_to_grep_tool():
-    call = shell_command_to_tool('grep -i "Prueba"')
+    call = shell_command_to_tool('grep -i "Test"')
     assert call is not None
     assert call.name == "grep"
-    assert call.arguments["pattern"] == "Prueba"
+    assert call.arguments["pattern"] == "Test"
     assert call.arguments.get("ignore_case") is True
 
 
@@ -51,14 +51,14 @@ def test_find_name_translates_to_glob():
 
 
 def test_cat_translates_to_read_file():
-    call = shell_command_to_tool("cat informe.txt")
+    call = shell_command_to_tool("cat report.txt")
     assert call is not None
     assert call.name == "read_file"
-    assert call.arguments["path"] == "informe.txt"
+    assert call.arguments["path"] == "report.txt"
 
 
 def test_bare_glob_command_translates_to_glob_tool():
-    # El modelo escribió `bash glob **/x` y obtuvo "glob: not found".
+    # The model wrote `bash glob **/x` and got "glob: not found".
     call = shell_command_to_tool("glob **/*.docx")
     assert call is not None
     assert call.name == "glob"
@@ -66,7 +66,7 @@ def test_bare_glob_command_translates_to_glob_tool():
 
 
 def test_pipeline_uses_first_segment():
-    call = shell_command_to_tool('ls | grep "Prueba"')
+    call = shell_command_to_tool('ls | grep "Test"')
     assert call is not None
     assert call.name == "ls"
 
@@ -78,29 +78,29 @@ def test_complex_shell_not_translated():
 
 
 # ---------------------------------------------------------------------------
-# Allow-list de skill: sinónimos y traducción de bash bloqueado
+# Skill allow-list: synonyms and translation of blocked bash
 # ---------------------------------------------------------------------------
 
 _RESEARCHER_TOOLS = frozenset({"grep", "list_files", "read_document", "read_file"})
 
 
 def test_ls_allowed_when_skill_lists_list_files(tmp_path: Path):
-    (tmp_path / "Prueba").mkdir()
-    (tmp_path / "Prueba" / "doc.docx").write_bytes(b"x")
+    (tmp_path / "Test").mkdir()
+    (tmp_path / "Test" / "doc.docx").write_bytes(b"x")
     cfg = AgentConfig(cwd=str(tmp_path), skill_allowed_tools=_RESEARCHER_TOOLS)
-    # El skill permite `list_files`, el modelo llama `ls`: debe permitirse.
-    result = execute_tool(ToolCall(name="ls", arguments={"path": "Prueba"}), cfg)
+    # The skill allows `list_files`, the model calls `ls`: it must be allowed.
+    result = execute_tool(ToolCall(name="ls", arguments={"path": "Test"}), cfg)
     assert not result.is_error
     assert "doc.docx" in result.content
 
 
 def test_bash_ls_redirected_under_restricted_skill(tmp_path: Path):
-    (tmp_path / "Prueba").mkdir()
-    (tmp_path / "Prueba" / "doc.docx").write_bytes(b"x")
+    (tmp_path / "Test").mkdir()
+    (tmp_path / "Test" / "doc.docx").write_bytes(b"x")
     cfg = AgentConfig(cwd=str(tmp_path), skill_allowed_tools=_RESEARCHER_TOOLS)
-    # `bash` no está permitido, pero `bash ls Prueba` debe traducirse a `ls`.
+    # `bash` is not allowed, but `bash ls Test` must be translated to `ls`.
     result = execute_tool(
-        ToolCall(name="bash", arguments={"command": "ls Prueba"}), cfg
+        ToolCall(name="bash", arguments={"command": "ls Test"}), cfg
     )
     assert not result.is_error
     assert "doc.docx" in result.content
@@ -108,7 +108,7 @@ def test_bash_ls_redirected_under_restricted_skill(tmp_path: Path):
 
 def test_blocked_tool_message_suggests_alternative(tmp_path: Path):
     cfg = AgentConfig(cwd=str(tmp_path), skill_allowed_tools=_RESEARCHER_TOOLS)
-    # write_file no está permitido ni tiene equivalente: mensaje claro, no bucle.
+    # write_file is not allowed and has no equivalent: clear message, no loop.
     result = execute_tool(
         ToolCall(name="write_file", arguments={"path": "x.txt", "content": "y"}),
         cfg,
@@ -118,13 +118,13 @@ def test_blocked_tool_message_suggests_alternative(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# grep: fallback ante patrones que no son regex válidas (estilo glob)
+# grep: fallback for patterns that are not valid regexes (glob style)
 # ---------------------------------------------------------------------------
 
 def test_grep_invalid_regex_falls_back_to_literal(tmp_path: Path):
-    (tmp_path / "a.txt").write_text("contiene **/*.docx aqui", encoding="utf-8")
-    # `**/*.docx` no es regex válida ("multiple repeat"): antes daba Error.
+    (tmp_path / "a.txt").write_text("contains **/*.docx here", encoding="utf-8")
+    # `**/*.docx` is not a valid regex ("multiple repeat"): it used to raise Error.
     result = grep_search(str(tmp_path), "**/*.docx")
     assert not result.startswith("Error:")
     assert "a.txt" in result
-    assert "glob" in result  # nota que sugiere usar la herramienta glob
+    assert "glob" in result  # note suggesting to use the glob tool

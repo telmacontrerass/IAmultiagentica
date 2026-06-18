@@ -11,14 +11,14 @@ from ci2lab.harness.types import ToolCall
 
 def test_edit_file_rejects_identical_old_and_new_strings(tmp_path):
     target = tmp_path / "a.txt"
-    target.write_text("hola\n", encoding="utf-8")
-    preview = preview_edit_file(str(tmp_path), "a.txt", "hola", "hola")
+    target.write_text("hello\n", encoding="utf-8")
+    preview = preview_edit_file(str(tmp_path), "a.txt", "hello", "hello")
     assert not preview.is_valid
     assert "are identical" in (preview.validation_error or "")
 
 
 def test_edit_file_missing_path_lists_root_py_files(tmp_path):
-    (tmp_path / "Pruebas.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "Tests.py").write_text("x\n", encoding="utf-8")
     preview = preview_edit_file(
         str(tmp_path),
         "src/main.py",
@@ -26,7 +26,7 @@ def test_edit_file_missing_path_lists_root_py_files(tmp_path):
         "b",
     )
     assert not preview.is_valid
-    assert "Pruebas.py" in (preview.validation_error or "")
+    assert "Tests.py" in (preview.validation_error or "")
 
 
 def test_edit_file_generates_diff(tmp_path):
@@ -49,10 +49,10 @@ def test_write_file_existing_generates_diff(tmp_path):
 
 
 def test_write_file_new_shows_preview(tmp_path):
-    preview = preview_write_file(str(tmp_path), "new.txt", "contenido nuevo")
+    preview = preview_write_file(str(tmp_path), "new.txt", "new content")
     assert preview.is_valid
     assert preview.is_new_file
-    assert "contenido nuevo" in preview.format_for_display()
+    assert "new content" in preview.format_for_display()
     assert "create new file" in preview.format_for_display().lower()
 
 
@@ -60,7 +60,7 @@ def test_write_tools_disabled(tmp_path):
     config = AgentConfig(cwd=str(tmp_path), write_tools_enabled=False)
     call = ToolCall(
         name="write_file",
-        arguments={"path": "x.txt", "content": "hola"},
+        arguments={"path": "x.txt", "content": "hello"},
         call_id="w1",
     )
     result = execute_tool(call, config)
@@ -164,12 +164,12 @@ def test_logging_records_write_outcome(tmp_path):
             },
         }],
     )
-    final = LLMResponse(content="Hecho.", tool_calls=[])
+    final = LLMResponse(content="Done.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.side_effect = [with_tool, final]
         with patch("ci2lab.console.console.print"):
-            run_agent("edita a.txt", selection, config=config)
+            run_agent("edit a.txt", selection, config=config)
 
     run_dir = next(runs.iterdir())
     line = (run_dir / "tool_calls.jsonl").read_text(encoding="utf-8").strip()

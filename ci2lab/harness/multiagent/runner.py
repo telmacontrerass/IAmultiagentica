@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -187,12 +188,26 @@ def run_subagent(
     *,
     attempt: int = 1,
     capture_output: bool = True,
+    on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
     """Execute one role-specific subagent with its own message context."""
     subagent_config = build_subagent_config(role, config)
     spec = ROLE_SPECS[role]
     system_prompt = build_subagent_system_prompt(role, selection, subagent_config)
     messages = [{"role": "system", "content": system_prompt}]
+
+    def show_progress(label: str) -> None:
+        if on_progress:
+            # A subagent finishing is not the end of the overall multi-agent
+            # turn. Keep the transient indicator alive until the orchestrator
+            # has produced the final combined answer.
+            if label:
+                on_progress(f"{role.value}: {label}")
+            return
+        # `console.capture()` intentionally hides verbose subagent output. A
+        # plain flushed line bypasses that Rich capture so the interactive chat
+        # still receives concise live activity updates.
+        print(f"[multi-agent:{role.value}] {label}", flush=True)
 
     if capture_output:
         with console.capture():
@@ -201,6 +216,7 @@ def run_subagent(
                 selection,
                 config=subagent_config,
                 messages=messages,
+                on_progress=show_progress,
             )
     else:
         output = run_agent(
@@ -208,6 +224,7 @@ def run_subagent(
             selection,
             config=subagent_config,
             messages=messages,
+            on_progress=show_progress,
         )
 
     trace_data = _load_subagent_run_artifacts(subagent_config.last_run_dir)

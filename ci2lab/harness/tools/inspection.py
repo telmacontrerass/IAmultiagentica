@@ -162,10 +162,10 @@ def tree(
 
     walk(resolved, "  ", 1)
     if truncated:
-        lines.append(f"... (salida truncada; max_entries={max_entries})")
+        lines.append(f"... (output truncated; max_entries={max_entries})")
     if skipped_sensitive:
         lines.append(
-            f"(politica: {skipped_sensitive} entrada(s) sensible(s) omitida(s) sin contenido)"
+            f"(policy: {skipped_sensitive} sensitive entry(ies) omitted without content)"
         )
     return "\n".join(lines)
 
@@ -184,19 +184,19 @@ def inspect_file(
     if not resolved.exists():
         return f"Error: file does not exist: {resolved}"
     if not resolved.is_file():
-        return f"Error: no es un archivo {resolved}"
+        return f"Error: not a file {resolved}"
     if is_sensitive_path(resolved, workspace=cwd):
         return secret_file_block_message()
     if _looks_binary(resolved):
         return (
-            "Error: el archivo parece binario; inspect_file solo admite texto. "
-            "Usa file_info para metadatos."
+            "Error: the file looks binary; inspect_file only supports text. "
+            "Use file_info for metadata."
         )
 
     cap = max(1, min(max_lines, MAX_INSPECT_LINES))
     line_start = max(1, start)
     if end is not None and end < line_start:
-        return "Error: end debe ser >= start"
+        return "Error: end must be >= start"
     if end is None:
         limit = cap
     else:
@@ -206,7 +206,7 @@ def inspect_file(
     total = len(text.splitlines())
     body = _numbered_lines(text, offset=line_start, limit=limit)
     if end is not None and end < total:
-        body += f"\n... ({total - end} lineas mas; total {total})"
+        body += f"\n... ({total - end} more lines; total {total})"
     elif line_start + limit - 1 < total:
-        body += f"\n... ({total - (line_start + limit - 1)} lineas mas; total {total})"
+        body += f"\n... ({total - (line_start + limit - 1)} more lines; total {total})"
     return body

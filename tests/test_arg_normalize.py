@@ -29,3 +29,23 @@ def test_web_search_maps_raw_to_query():
     assert args["query"] == "yesterday's soccer match Spain score"
     assert args["max_results"] == 3
     assert "raw" not in args
+
+
+def test_strips_surrounding_quotes_from_path():
+    # Single quotes (the exact bug: a leading quote made the abs path look relative).
+    args = normalize_args_for_tool("read_document", {"path": "'/abs/My File.pdf'"})
+    assert args["path"] == "/abs/My File.pdf"
+    # Double quotes on a relative path.
+    args = normalize_args_for_tool("read_file", {"path": '"./rel.py"'})
+    assert args["path"] == "./rel.py"
+    # Backticks on a url.
+    args = normalize_args_for_tool("web_fetch", {"url": "`http://example.com`"})
+    assert args["url"] == "http://example.com"
+    # An aliased key is stripped and still mapped to path.
+    args = normalize_args_for_tool("read_file", {"filename": "'data.csv'"})
+    assert args["path"] == "data.csv"
+
+
+def test_unquoted_path_is_left_untouched():
+    args = normalize_args_for_tool("read_document", {"path": "/abs/My File.pdf"})
+    assert args["path"] == "/abs/My File.pdf"

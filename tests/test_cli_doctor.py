@@ -1,4 +1,4 @@
-"""Tests de salida ASCII de `ci2lab doctor` (compatible Windows/cp1252)."""
+"""ASCII output tests for `ci2lab doctor` (Windows/cp1252 compatible)."""
 
 from __future__ import annotations
 

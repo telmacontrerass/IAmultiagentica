@@ -17,6 +17,7 @@ which apply to any task.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import uuid
 from collections import deque
@@ -58,6 +59,7 @@ from ci2lab.harness.security.policy import (
     tool_call_signature,
 )
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
+from ci2lab.harness.tools.todo import todo_read
 from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
@@ -69,28 +71,25 @@ _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
 _STOP_TOOLS_RE = re.compile(
     r"(answer with what you (already )?(know|have)|"
     r"reply with what you (already )?have|"
-    r"stop searching|don'?t keep searching|just answer|"
-    r"responde con lo que sabes|contesta con lo que tengas|"
-    r"deja de buscar|no sigas buscando)",
+    r"stop searching|don'?t keep searching|just answer)",
     re.IGNORECASE,
 )
 # A model claiming it has no internet access, so we can remind it about web tools.
 _NO_INTERNET_RE = re.compile(
     r"(i (do not|don'?t) have (access to )?(the )?internet|"
-    r"i can'?t (search|access) the web|"
-    r"no tengo acceso a internet|"
-    r"no puedo buscar en tiempo real|"
-    r"no tengo capacidad de acceder a la web)",
+    r"i can'?t (search|access) the web)",
     re.IGNORECASE,
 )
 
 _LOOP_BREAK_NUDGE = (
-    "You keep calling the same tool with the same arguments without making "
-    "progress. Stop repeating it. If a tool is blocked by the skill, use an "
-    "allowed equivalent (`ls`, `grep`, `glob`, `read_file`). If the goal cannot "
-    "be reached, say so plainly instead of retrying. Do not explain that you are "
-    "changing strategy. Answer the user's original request now, using the tool "
-    "results already available.\n\nOriginal request: {user_prompt}"
+    "You keep calling the same tool with the same arguments. Its result is "
+    "already in the conversation above, so repeating it does not help. Do not "
+    "call it again. If the task still has remaining steps, do the NEXT step now "
+    "(for example: write the file, edit the code, or run the check). If a tool "
+    "is blocked by the skill, use an allowed equivalent (`ls`, `grep`, `glob`, "
+    "`read_file`). Only give a final answer once every step of the request is "
+    "complete; if it cannot be completed, say so plainly.\n\n"
+    "Original request: {user_prompt}"
 )
 _LOOP_GIVE_UP = (
     "I could not complete the task: the same tool repeated without making "
@@ -130,22 +129,101 @@ _UNPARSED_NATIVE_HINT = (
     "Your previous tool call was not executed. Invoke the tool through function "
     "calling, or use a ```write_file fenced block with JSON arguments."
 )
+_ALREADY_RETRIEVED_MESSAGE = (
+    "Already retrieved earlier in this turn — its result is in the conversation "
+    "above. Not running it again. Use that result and continue with the next "
+    "step of the task; if every step is already done, give the final answer."
+)
+_DESCRIBED_NOT_WRITTEN_NUDGE = (
+    "You described the change in prose but did not apply it — nothing was written "
+    "to disk. The request needs a file created or edited, so call `write_file` "
+    "(or `edit_file`) now with the full content. Do not just show the code as "
+    "text; actually write it."
+)
+
+# Read-only tools whose result for a given argument set does not change within a
+# turn unless a mutating tool runs. Re-calling them is pure waste and only bloats
+# the context, so the loop serves a cached note instead of re-executing.
+_READ_ONLY_TOOLS = frozenset({
+    "read_document",
+    "read_file",
+    "ls",
+    "tree",
+    "glob",
+    "grep",
+    "file_info",
+    "inspect_file",
+})
+# Tools that can change the workspace; running any of them invalidates the
+# read-only cache so a later re-read reflects the new state.
+_MUTATING_TOOLS = frozenset({
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "notebook_edit",
+    "bash",
+    "write_docx",
+    "docx_to_pdf",
+    "pdf_to_docx",
+})
+# The user's current prompt explicitly asks to create or change something. Used
+# only to nudge once when the model narrates a change without ever applying it.
+_WRITE_INTENT_RE = re.compile(
+    r"\b(write|create|implement|add|edit|modify|fix)\w*",
+    re.IGNORECASE,
+)
+
+
+def _read_signature(call: ToolCall) -> str:
+    return f"{call.name}:{hashlib.md5(str(call.arguments).encode()).hexdigest()[:8]}"
 
 
 def _status(label: str) -> None:
-    console.print(f"[dim cyan]{label}[/dim cyan]")
+    console.print(f"[dim italic cyan]{label}[/dim italic cyan]")
+
+
+def _emit_progress(
+    label: str,
+    on_progress: Callable[[str], None] | None,
+) -> None:
+    if on_progress:
+        on_progress(label)
+        return
+    if not label:
+        return
+    _status(label)
 
 
 def _initial_progress_label(user_prompt: str) -> str:
     """Describe the first model round in user-friendly terms."""
     text = user_prompt.lower()
-    if any(word in text for word in ("pdf", "docx", "document", "documento", "archivo")):
+    if any(word in text for word in ("pdf", "docx", "document", "documento")):
         return "Preparing to read the document..."
-    if any(word in text for word in ("web", "internet", "latest", "current", "hoy", "actual")):
+    if any(
+        word in text
+        for word in ("web", "internet", "latest", "current", "hoy", "actual")
+    ):
         return "Checking what information is needed..."
-    if re.search(r"\b(code|codigo|código|test|bug|fix|implement)\b", text):
+    if re.search(
+        r"\b(code|codigo|código|test|prueba|bug|fix|implement|implementa|"
+        r"arregla|corrige|modifica|cambia)\b",
+        text,
+    ):
         return "Planning the code change..."
+    if re.search(
+        r"\b(repo|repository|repositorio|project|proyecto|file|files|"
+        r"archivo|archivos|carpeta|directorio)\b",
+        text,
+    ):
+        return "Inspecting the relevant project context..."
     return "Deciding the next step..."
+
+
+def _model_progress_label(user_prompt: str, round_num: int) -> str:
+    """Describe what the model is doing before each LLM call."""
+    if round_num == 1:
+        return _initial_progress_label(user_prompt)
+    return "Reviewing the latest results and deciding the next step..."
 
 
 def _path_looks_like_pdf(path: Any) -> bool:
@@ -180,28 +258,67 @@ def _tool_progress_label(calls: list[ToolCall]) -> str:
     return "Running the next step..."
 
 
-def _current_request_anchor(user_prompt: str) -> dict[str, str]:
+def _todo_plan_snippet(cwd: str) -> str:
+    """A compact, current view of the workspace task plan, or "" if none.
+
+    Re-surfacing the plan keeps a long multi-step task oriented for far fewer
+    tokens than restating the whole prompt, and it survives compaction because
+    `todo_write`/`todo_read` results are not compactable.
+    """
+    raw = todo_read(cwd)
+    try:
+        items = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(items, list) or not items:
+        return ""
+    lines = [
+        f"  [{item.get('status', 'pending')}] {item.get('content', '')}".rstrip()
+        for item in items
+        if isinstance(item, dict)
+    ]
+    if not lines:
+        return ""
+    return "Current task plan (keep it updated with `todo_write`):\n" + "\n".join(lines)
+
+
+def _current_request_anchor(user_prompt: str, cwd: str) -> dict[str, Any]:
+    plan = _todo_plan_snippet(cwd)
+    plan_block = f"\n\n{plan}" if plan else ""
     return {
         "role": "user",
+        "_anchor": True,
         "content": (
             "The user's current request is:\n"
             f"{user_prompt}\n\n"
             "Finish this request fully, including any file/tool-output "
             "instructions it depends on. Do not resume an unrelated earlier task."
+            f"{plan_block}"
         ),
     }
 
 
-def _role_anchor_message(role_anchor: str) -> dict[str, str]:
+def _role_anchor_message(role_anchor: str) -> dict[str, Any]:
     """Wrap a subagent role anchor as a user message for reinjection."""
     return {
         "role": "user",
+        "_anchor": True,
         "content": (
             f"{role_anchor}\n\n"
             "Continue within this subagent role. Use the tool results already "
             "available and do not switch responsibilities."
         ),
     }
+def _strip_anchors(history: list[dict[str, Any]]) -> None:
+    """Remove every anchor message from history, in place.
+
+    Anchors are re-appended fresh each round; clearing the prior round's first
+    means history holds at most one anchor pair instead of accumulating one full
+    copy of the prompt (+ role boilerplate) per round — the dominant context
+    leak on long multi-step tasks. Anchors are synthetic user messages appended
+    after tool results, so dropping them never breaks tool_call/result pairing.
+    """
+    history[:] = [m for m in history if not m.get("_anchor")]
 
 
 def _print_model_step(content: str, *, already_streamed: bool) -> None:
@@ -286,6 +403,7 @@ def run_agent(
     config: AgentConfig | None = None,
     messages: list[dict[str, Any]] | None = None,
     on_round: Callable[[int, str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
     cfg = config or AgentConfig(cwd=".")
     cfg.token_usage.reset_turn()
@@ -335,6 +453,15 @@ def run_agent(
     web_search_used = False  # becomes True once web_search runs in this turn
     web_capability_nudge_sent = False
     stop_tools_nudge_sent = False
+    described_not_written_nudge_sent = False
+    # Per-turn cache of successful read-only calls (signature -> True). A
+    # mutating tool clears it so later re-reads reflect the new workspace state.
+    satisfied_reads: set[str] = set()
+    # Any mutating tool was *attempted* this turn (even if blocked/denied). Used
+    # only to suppress the "describe but don't write" nudge — if the model
+    # already tried to write, re-nudging it is pointless.
+    attempted_write_this_turn = False
+    write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -384,7 +511,10 @@ def run_agent(
             # Avoid leaking provisional model prose before tool execution.
             # When tools are available, parse first and only render final text.
             stream_this_round = cfg.stream and not bool(tools)
-            _status("Thinking...")
+            _emit_progress(
+                _model_progress_label(user_prompt, round_num),
+                on_progress,
+            )
             streamed_this_round = stream_this_round
             try:
                 llm_response = call_llm(
@@ -479,7 +609,30 @@ def run_agent(
                     history.append({"role": "user", "content": _WEB_CAPABILITY_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
-                _status("Finalizing the answer...")
+                # The user asked to create/change something, the model is about to
+                # finalize with only prose, and nothing was ever written this turn.
+                # Nudge once to actually apply the change instead of describing it.
+                if (
+                    final_text
+                    and write_intent
+                    and not attempted_write_this_turn
+                    and not described_not_written_nudge_sent
+                    and selection.supports_tools
+                    and not stop_tools_requested
+                ):
+                    described_not_written_nudge_sent = True
+                    console.print(
+                        "[yellow]Change described but never written; asking the "
+                        "model to apply it.[/yellow]"
+                    )
+                    append_assistant_turn(history, final_text or content)
+                    history.append(
+                        {"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE}
+                    )
+                    maybe_save_session(cfg, history, selection)
+                    continue
+                _emit_progress("Finalizing the answer...", on_progress)
+                _emit_progress("", on_progress)
                 if final_text and streamed_this_round:
                     console.print()
                 elif final_text:
@@ -523,7 +676,7 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
-            _status(_tool_progress_label(calls))
+            _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
@@ -538,7 +691,24 @@ def run_agent(
                     },
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
-                if psig in policy_blocked_sigs:
+                rsig = _read_signature(call)
+                if (
+                    call.name in _READ_ONLY_TOOLS
+                    and rsig in satisfied_reads
+                    and psig not in policy_blocked_sigs
+                ):
+                    # Identical read-only call already succeeded this turn and
+                    # nothing has mutated the workspace since. Re-running only
+                    # re-injects the same content and stalls progress, so serve a
+                    # short note pointing the model to the next step instead.
+                    result = ToolResult(
+                        tool_name=call.name,
+                        content=_ALREADY_RETRIEVED_MESSAGE,
+                        is_error=False,
+                        call_id=call.call_id,
+                        outcome="already_satisfied",
+                    )
+                elif psig in policy_blocked_sigs:
                     result = ToolResult(
                         tool_name=call.name,
                         content=POLICY_REPEAT_MESSAGE,
@@ -574,6 +744,14 @@ def run_agent(
                     },
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
+                # Maintain the read-only cache: a successful mutation invalidates
+                # it; a successful read populates it.
+                if call.name in _MUTATING_TOOLS:
+                    attempted_write_this_turn = True
+                    if not result.is_error:
+                        satisfied_reads.clear()
+                if not result.is_error and call.name in _READ_ONLY_TOOLS:
+                    satisfied_reads.add(rsig)
                 if result.is_error and result.outcome != "blocked_by_policy":
                     failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
                     eclass = error_class_key(call, result)
@@ -596,9 +774,12 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            # Keep only the freshest anchors: drop the previous round's before
+            # re-appending, so the prompt is restated once, not once per round.
+            _strip_anchors(history)
             if cfg.role_anchor:
                 history.append(_role_anchor_message(cfg.role_anchor))
-            history.append(_current_request_anchor(user_prompt))
+            history.append(_current_request_anchor(user_prompt, cfg.cwd))
 
             # Error-streak cutoff: even when arguments change each round (so the
             # signature detector does not see a loop), if every tool fails for

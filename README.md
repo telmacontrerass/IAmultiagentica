@@ -116,8 +116,8 @@ ci2lab --model qwen2.5-coder:7b chat
 ci2lab doctor
 ci2lab hardware
 ci2lab models recommend
-ci2lab                                                 # menu interactivo inicial
-ci2lab menu                                            # abrir el selector manualmente
+ci2lab                                                 # initial interactive menu
+ci2lab menu                                            # open the selector manually
 ci2lab ui                                              # http://127.0.0.1:8765
 ci2lab --model qwen2.5-coder:7b chat                   # REPL (loads sessions)
 ci2lab --model llama3.1:8b "list the Python files"     # one turn

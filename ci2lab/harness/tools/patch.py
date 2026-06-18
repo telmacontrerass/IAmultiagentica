@@ -1,4 +1,4 @@
-"""Aplicar parches en formato unified diff (estilo git diff)."""
+"""Apply patches in unified diff format (git diff style)."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def _parse_hunk(lines: list[str], index: int) -> tuple[Hunk, int]:
     header = lines[index]
     match = _HUNK_HEADER.match(header)
     if not match:
-        raise ValueError(f"cabecera de hunk invalida: {header}")
+        raise ValueError(f"invalid hunk header: {header}")
     old_start = int(match.group(1))
     old_count = int(match.group(2) or "1")
     new_start = int(match.group(3))
@@ -127,7 +127,7 @@ def _parse_hunk(lines: list[str], index: int) -> tuple[Hunk, int]:
 def parse_unified_patch(patch_text: str) -> list[FilePatch]:
     text = _normalize_patch_text(patch_text)
     if not text.strip():
-        raise ValueError("parche vacio")
+        raise ValueError("empty patch")
 
     lines = text.splitlines()
     patches: list[FilePatch] = []
@@ -139,7 +139,7 @@ def parse_unified_patch(patch_text: str) -> list[FilePatch]:
         old_path = _parse_path_header(lines[index][4:])
         index += 1
         if index >= len(lines) or not lines[index].startswith("+++ "):
-            raise ValueError("falta la linea +++ despues de ---")
+            raise ValueError("missing +++ line after ---")
         new_path = _parse_path_header(lines[index][4:])
         path, is_new_file, is_delete = _pick_file_path(old_path, new_path)
         index += 1
@@ -151,7 +151,7 @@ def parse_unified_patch(patch_text: str) -> list[FilePatch]:
             else:
                 index += 1
         if not hunks and not is_delete:
-            raise ValueError(f"el parche para `{path}` no tiene hunks")
+            raise ValueError(f"the patch for `{path}` has no hunks")
         patches.append(
             FilePatch(
                 path=path,
@@ -161,7 +161,7 @@ def parse_unified_patch(patch_text: str) -> list[FilePatch]:
             )
         )
     if not patches:
-        raise ValueError("no se encontraron archivos en el parche")
+        raise ValueError("no files found in the patch")
     return patches
 
 
@@ -217,19 +217,19 @@ def _apply_hunk_at(
         text = raw_line[1:]
         if tag == " ":
             if src_index >= len(lines) or lines[src_index] != text:
-                expected = lines[src_index] if src_index < len(lines) else "<fuera de rango>"
+                expected = lines[src_index] if src_index < len(lines) else "<out of range>"
                 raise ValueError(
-                    f"contexto no coincide en `{path}` linea {src_index + 1}: "
-                    f"esperado `{text}`, encontrado `{expected}`"
+                    f"context does not match in `{path}` line {src_index + 1}: "
+                    f"expected `{text}`, found `{expected}`"
                 )
             result.append(text)
             src_index += 1
         elif tag == "-":
             if src_index >= len(lines) or lines[src_index] != text:
-                expected = lines[src_index] if src_index < len(lines) else "<fuera de rango>"
+                expected = lines[src_index] if src_index < len(lines) else "<out of range>"
                 raise ValueError(
-                    f"no se pudo eliminar en `{path}` linea {src_index + 1}: "
-                    f"esperado `{text}`, encontrado `{expected}`"
+                    f"could not delete in `{path}` line {src_index + 1}: "
+                    f"expected `{text}`, found `{expected}`"
                 )
             src_index += 1
         elif tag == "+":
@@ -332,6 +332,6 @@ def apply_patch(cwd: str, patch_text: str) -> str:
         resolved.write_text(content, encoding="utf-8")
 
     if len(plan.touched_paths) == 1:
-        return f"Parche aplicado en {plan.touched_paths[0]}"
+        return f"Patch applied to {plan.touched_paths[0]}"
     joined = ", ".join(plan.touched_paths)
-    return f"Parche aplicado en {len(plan.touched_paths)} archivos: {joined}"
+    return f"Patch applied to {len(plan.touched_paths)} files: {joined}"

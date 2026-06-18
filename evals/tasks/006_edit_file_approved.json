@@ -1,7 +1,7 @@
 {
   "id": "006_edit_file_approved",
-  "name": "edit_file aprobado modifica archivo",
-  "prompt": "Edita target.txt reemplazando alpha por beta.",
+  "name": "Approved edit_file modifies the file",
+  "prompt": "Edit target.txt replacing alpha with beta.",
   "workspace_setup": {
     "files": {
       "target.txt": "alpha"
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "content": "Archivo actualizado a beta.",
+      "content": "File updated to beta.",
       "tool_calls": []
     }
   ]

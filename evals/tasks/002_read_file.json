@@ -1,7 +1,7 @@
 {
   "id": "002_read_file",
-  "name": "Leer archivo con read_file",
-  "prompt": "Lee el archivo config.txt y dime qué contiene.",
+  "name": "Read a file with read_file",
+  "prompt": "Read the file config.txt and tell me what it contains.",
   "workspace_setup": {
     "files": {
       "config.txt": "version=1.0\nmode=test"
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "content": "config.txt contiene version=1.0 y mode=test.",
+      "content": "config.txt contains version=1.0 and mode=test.",
       "tool_calls": []
     }
   ]

@@ -5,8 +5,29 @@ from __future__ import annotations
 from typing import Any
 
 
+_QUOTED_STRING_KEYS = ("path", "url", "directory", "file", "filename", "filepath")
+
+
+def _strip_surrounding_quotes(value: Any) -> Any:
+    """Drop matching surrounding quotes/backticks a model wrapped a path in.
+
+    Models often emit a path as `'/abs/file.pdf'` (quotes included). Without
+    stripping, the leading quote makes the path look relative and it gets joined
+    to the workspace, producing a bogus `cwd/'/abs/file.pdf'` that never exists.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    while len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "'\"`":
+        stripped = stripped[1:-1].strip()
+    return stripped
+
+
 def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     cleaned = {k: v for k, v in args.items() if v is not None}
+    for key in _QUOTED_STRING_KEYS:
+        if key in cleaned:
+            cleaned[key] = _strip_surrounding_quotes(cleaned[key])
 
     if name in ("write_file", "write_docx"):
         if "content" not in cleaned:

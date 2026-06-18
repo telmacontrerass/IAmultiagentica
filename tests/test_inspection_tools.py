@@ -1,4 +1,4 @@
-"""Tests de herramientas de inspeccion: file_info, tree, inspect_file."""
+"""Tests for inspection tools: file_info, tree, inspect_file."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def test_tree_truncates_max_entries(workspace: Path):
     for i in range(10):
         (workspace / f"file_{i}.txt").write_text("x", encoding="utf-8")
     out = tree(str(workspace), ".", depth=1, max_entries=3)
-    assert "truncada" in out.lower()
+    assert "truncated" in out.lower()
 
 
 def test_tree_outside_blocked(workspace: Path, outside: Path):
@@ -110,7 +110,7 @@ def test_inspect_file_truncated_by_max_lines(workspace: Path):
     out = inspect_file(str(workspace), "big.txt", start=1, max_lines=10)
     assert "    10|line10" in out
     assert "line11" not in out
-    assert "lineas mas" in out
+    assert "more lines" in out
 
 
 def test_inspect_file_sensitive_blocked(workspace: Path):
@@ -132,7 +132,7 @@ def test_inspect_file_missing(workspace: Path):
 def test_inspect_file_binary(workspace: Path):
     (workspace / "data.bin").write_bytes(b"\x00\x01\x02")
     out = inspect_file(str(workspace), "data.bin")
-    assert "binario" in out.lower()
+    assert "binary" in out.lower()
 
 
 def test_execute_tool_inspect_file_secret_outcome(workspace: Path):

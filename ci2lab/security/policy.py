@@ -54,15 +54,13 @@ def check_command_allowed(
 
     blocked = check_bash_blocked(command, cwd=workspace)
     if blocked:
-        # "Comando bloqueado:" is a legacy prefix some bash producers may emit;
-        # keep matching it so such messages pass through verbatim.
-        if blocked.startswith("Comando bloqueado:"):
+        if blocked.startswith("Blocked command:"):
             message = f"Error: {blocked}"
         else:
-            # NOTE: kept in Spanish on purpose. The eval matcher in
-            # ci2lab/evals/task.py detects blocked dangerous commands by the
-            # substring "bloqueado por política"; translating this would break it.
-            message = f"Error: comando bloqueado por politica de seguridad ({blocked})."
+            # The eval matcher in ci2lab/evals/task.py and the task fixture
+            # evals/tasks/004_block_dangerous_bash.json detect blocked dangerous
+            # commands by the substring "blocked by security policy".
+            message = f"Error: command blocked by security policy ({blocked})."
         return SecurityDecision(
             action=DecisionAction.DENY,
             reason=blocked,

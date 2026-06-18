@@ -164,9 +164,9 @@ def is_upload_path(path: str) -> bool:
 
 def safe_upload_name(name: str) -> str:
     raw = Path(name).name.strip().replace("\x00", "")
-    stem = Path(raw).stem[:90] or "archivo"
+    stem = Path(raw).stem[:90] or "file"
     suffix = Path(raw).suffix[:16]
-    safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(" ._-") or "archivo"
+    safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(" ._-") or "file"
     safe_suffix = re.sub(r"[^A-Za-z0-9.]+", "", suffix)
     return f"{safe_stem}{safe_suffix}".lower()
 
@@ -176,7 +176,7 @@ def unique_upload_path(upload_dir: Path, safe_name: str) -> Path:
     if not candidate.exists():
         return candidate
     path = Path(safe_name)
-    stem = path.stem or "archivo"
+    stem = path.stem or "file"
     suffix = path.suffix
     for index in range(2, 1000):
         candidate = upload_dir / f"{stem}-{index}{suffix}"

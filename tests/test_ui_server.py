@@ -126,7 +126,7 @@ def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
 
-    payload = _chat(state, {"message": "hola", "model": "missing:1b"})
+    payload = _chat(state, {"message": "hello", "model": "missing:1b"})
 
     assert payload["ok"] is False
     assert "missing:1b" in payload["error"]
@@ -143,16 +143,16 @@ def test_chat_saves_pending_session_when_model_setup_fails(tmp_path, monkeypatch
     )
 
     def fail_prepare_session(*args, **kwargs):
-        raise RuntimeError("modelo roto")
+        raise RuntimeError("broken model")
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fail_prepare_session)
 
-    payload = _chat(state, {"message": "hola", "model": "missing:1b"})
+    payload = _chat(state, {"message": "hello", "model": "missing:1b"})
 
     assert payload["ok"] is False
     data = load_session(payload["session_id"])
     assert data is not None
-    assert data["messages"][-1]["content"] == "hola"
+    assert data["messages"][-1]["content"] == "hello"
 
 
 def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
@@ -164,7 +164,7 @@ def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
         lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
     )
 
-    payload = _chat(state, {"message": "hola", "model": ""})
+    payload = _chat(state, {"message": "hello", "model": ""})
 
     assert payload["ok"] is False
     assert "Select an installed model" in payload["error"]
@@ -173,33 +173,33 @@ def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
 
 def test_upload_file_saves_supported_file_inside_workspace(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido local").decode("ascii")
+    content = base64.b64encode(b"local content").decode("ascii")
 
     payload = _upload_file(
         state,
-        {"name": "../Mi Documento.PDF", "content_base64": content},
+        {"name": "../My Document.PDF", "content_base64": content},
     )
 
     assert payload["ok"] is True
-    assert payload["file"]["path"] == "ci2lab_uploads/mi documento.pdf"
-    assert (tmp_path / payload["file"]["path"]).read_bytes() == b"contenido local"
+    assert payload["file"]["path"] == "ci2lab_uploads/my document.pdf"
+    assert (tmp_path / payload["file"]["path"]).read_bytes() == b"local content"
 
 
 def test_upload_file_accepts_office_document_formats(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
     content = base64.b64encode(b"fake docx bytes").decode("ascii")
 
-    payload = _upload_file(state, {"name": "Tema 1.DOCX", "content_base64": content})
+    payload = _upload_file(state, {"name": "Topic 1.DOCX", "content_base64": content})
 
     assert payload["ok"] is True
-    assert payload["file"]["path"] == "ci2lab_uploads/tema 1.docx"
+    assert payload["file"]["path"] == "ci2lab_uploads/topic 1.docx"
 
 
 def test_upload_file_rejects_unsupported_suffix(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido").decode("ascii")
+    content = base64.b64encode(b"content").decode("ascii")
 
-    payload = _upload_file(state, {"name": "documento.exe", "content_base64": content})
+    payload = _upload_file(state, {"name": "document.exe", "content_base64": content})
 
     assert payload["ok"] is False
     assert "Unsupported format" in payload["error"]
@@ -207,7 +207,7 @@ def test_upload_file_rejects_unsupported_suffix(tmp_path):
 
 def test_upload_file_rejects_sensitive_names(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido").decode("ascii")
+    content = base64.b64encode(b"content").decode("ascii")
 
     payload = _upload_file(state, {"name": "token.pdf", "content_base64": content})
 
@@ -218,15 +218,15 @@ def test_upload_file_rejects_sensitive_names(tmp_path):
 def test_prompt_with_uploaded_files_reads_attachment_content(tmp_path):
     upload_dir = tmp_path / "ci2lab_uploads"
     upload_dir.mkdir()
-    (upload_dir / "doc.txt").write_text("contenido importante", encoding="utf-8")
+    (upload_dir / "doc.txt").write_text("important content", encoding="utf-8")
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
     )
 
-    assert "contenido importante" in prompt
+    assert "important content" in prompt
     assert "Answer using the following content" in prompt
     assert "read_document" in prompt
 
@@ -237,38 +237,37 @@ def test_prompt_with_uploaded_files_reports_read_errors(tmp_path, monkeypatch):
     (upload_dir / "doc.pdf").write_bytes(b"%PDF simulated")
     monkeypatch.setattr(
         "ci2lab.ui.server.read_document",
-        lambda *_args, **_kwargs: "Error: no se puede leer PDF porque falta pypdf",
+        lambda *_args, **_kwargs: "Error: cannot read PDF because pypdf is missing",
     )
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.pdf", "path": "ci2lab_uploads/doc.pdf"}],
     )
 
     assert "Could not read the attached file" in prompt
-    assert "Contenido leído" not in prompt
-    assert "Contenido leido" not in prompt
+    assert "Content read with read_document" not in prompt
 
 
 def test_prompt_with_uploaded_files_rejects_non_upload_paths(tmp_path):
-    (tmp_path / "doc.txt").write_text("contenido privado", encoding="utf-8")
+    (tmp_path / "doc.txt").write_text("private content", encoding="utf-8")
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.txt", "path": "doc.txt"}],
     )
 
     assert "rejected" in prompt
-    assert "contenido privado" not in prompt
+    assert "private content" not in prompt
 
 
 def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
     upload_dir = tmp_path / "ci2lab_uploads"
     upload_dir.mkdir()
-    (upload_dir / "doc.txt").write_text("contenido del pdf simulado", encoding="utf-8")
+    (upload_dir / "doc.txt").write_text("simulated pdf content", encoding="utf-8")
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
     monkeypatch.setattr(
         state,
@@ -286,7 +285,7 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
 
     def fake_run_agent(prompt, *args, **kwargs):
         captured["prompt"] = prompt
-        return "resumen"
+        return "summary"
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
@@ -294,15 +293,15 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     payload = _chat(
         state,
         {
-            "message": "usa este adjunto para contestar con detalle tecnico",
+            "message": "use this attachment to answer with technical detail",
             "model": "qwen2.5-coder:1.5b",
             "attachments": [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
         },
     )
 
     assert payload["ok"] is True
-    assert captured["prompt"].startswith("usa este adjunto")
-    assert "contenido del pdf simulado" in captured["prompt"]
+    assert captured["prompt"].startswith("use this attachment")
+    assert "simulated pdf content" in captured["prompt"]
 
 
 def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
@@ -331,14 +330,14 @@ def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
                 model="qwen2.5-coder:1.5b",
             )
         )
-        return "respuesta"
+        return "response"
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
 
     payload = _chat(
         state,
-        {"message": "hola", "model": "qwen2.5-coder:1.5b"},
+        {"message": "hello", "model": "qwen2.5-coder:1.5b"},
     )
 
     assert payload["ok"] is True
@@ -424,8 +423,8 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
         "abc123",
         messages=[
             {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": "hola"},
-            {"role": "assistant", "content": "respuesta"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "response"},
         ],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
@@ -437,7 +436,7 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["session"]["model"] == "qwen2.5-coder:1.5b"
     assert payload["session"]["internal_tag"] == "abc123"
-    assert payload["session"]["title"] == "Hola"
+    assert payload["session"]["title"] == "Hello"
     assert [item["role"] for item in payload["session"]["messages"]] == [
         "system",
         "user",
@@ -449,7 +448,7 @@ def test_delete_session_payload_removes_saved_session_file(tmp_path, monkeypatch
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     save_session(
         "abc123",
-        messages=[{"role": "user", "content": "hola"}],
+        messages=[{"role": "user", "content": "hello"}],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
     )
@@ -470,7 +469,7 @@ def test_sessions_payload_includes_short_title_and_internal_tag(tmp_path, monkey
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     save_session(
         "abc123",
-        messages=[{"role": "user", "content": "puedes resumir este documento pdf importante"}],
+        messages=[{"role": "user", "content": "can you summarize this important pdf document"}],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
     )
@@ -478,7 +477,7 @@ def test_sessions_payload_includes_short_title_and_internal_tag(tmp_path, monkey
     sessions = _sessions_payload()
 
     assert sessions[0]["internal_tag"] == "abc123"
-    assert sessions[0]["title"] == "Resumir documento pdf importante"
+    assert sessions[0]["title"] == "Summarize important pdf document"
 
 
 def test_system_payload_includes_hardware_disk_and_recommendations(monkeypatch):
@@ -512,7 +511,7 @@ def test_pull_task_progress_is_computed_from_ollama_events():
     state.pull_tasks["task1"] = {
         "id": "task1",
         "tag": "model:1b",
-        "status": "Preparando descarga",
+        "status": "Preparing download",
         "completed": 0,
         "total": 0,
         "percent": 0.0,
@@ -547,7 +546,7 @@ def test_delete_task_payload_reports_progress_and_completion():
     state.delete_tasks["delete1"] = {
         "id": "delete1",
         "tag": "model:1b",
-        "status": "Eliminando modelo local",
+        "status": "Removing local model",
         "percent": 65.0,
         "done": False,
         "ok": None,
@@ -560,7 +559,7 @@ def test_delete_task_payload_reports_progress_and_completion():
     assert payload["task"]["percent"] == 65.0
     assert payload["task"]["done"] is False
 
-    _finish_delete_task(state, "delete1", ok=True, status="Modelo desinstalado")
+    _finish_delete_task(state, "delete1", ok=True, status="Model uninstalled")
     payload, _ = _delete_task_payload(state, "delete1")
 
     assert payload["task"]["done"] is True

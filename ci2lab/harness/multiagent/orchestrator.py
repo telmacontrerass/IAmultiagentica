@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from typing import Callable
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -27,9 +28,6 @@ _VALIDATION_FAILURE_MARKERS = (
     "error",
     "traceback",
     "exception",
-    "no pasa",
-    "fallo",
-    "falla",
     "failed validation",
 )
 
@@ -40,8 +38,6 @@ _VALIDATION_SUCCESS_MARKERS = (
     "successful",
     "ok",
     "no errors",
-    "sin errores",
-    "todo pasa",
 )
 
 _SECURITY_REVIEW_MARKERS = (
@@ -76,31 +72,13 @@ _READ_ONLY_TASK_MARKERS = (
     "review",
     "access",
     "open",
-    "lee",
-    "leer",
-    "resume",
-    "resumir",
-    "resumelo",
-    "resúmelo",
-    "resumen",
-    "extrae",
-    "extraer",
-    "explica",
-    "analiza",
-    "revisa",
-    "accede",
-    "acceder",
-    "abre",
-    "abrir",
 )
 
 _DOCUMENT_TASK_MARKERS = (
     "pdf",
     "docx",
     "document",
-    "documento",
     "file",
-    "archivo",
 )
 
 _IMPLEMENTATION_TASK_MARKERS = (
@@ -115,23 +93,6 @@ _IMPLEMENTATION_TASK_MARKERS = (
     "change",
     "convert",
     "generate code",
-    "añade",
-    "agrega",
-    "crea",
-    "crear",
-    "escribe",
-    "editar",
-    "edita",
-    "modifica",
-    "actualiza",
-    "implementa",
-    "arregla",
-    "corrige",
-    "cambia",
-    "convierte",
-    "convertir",
-    "genera codigo",
-    "genera código",
 )
 
 
@@ -174,7 +135,6 @@ def subagent_blocked(result: SubAgentResult) -> bool:
     return (
         result.status == "blocked"
         or text.startswith("blocked:")
-        or "se alcanzó el límite de rondas" in text
         or "max rounds" in text
     )
 
@@ -364,21 +324,27 @@ def _run_subagent_stage(
     config: AgentConfig,
     *,
     attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
     label = _role_label(role, attempt)
-    console.print(f"[cyan][multi-agent][/cyan] {_role_progress_label(role, attempt)}...")
+    progress_label = _role_progress_label(role, attempt)
+    if on_progress:
+        on_progress(progress_label)
+    else:
+        console.print(f"[cyan][multi-agent][/cyan] {progress_label}...")
     try:
-        result = run_subagent(
-            role,
-            task_prompt,
-            selection,
-            config,
-            attempt=attempt,
-        )
+        kwargs = {"attempt": attempt}
+        if on_progress:
+            kwargs["on_progress"] = on_progress
+        result = run_subagent(role, task_prompt, selection, config, **kwargs)
     except Exception:
-        console.print(f"[red][multi-agent][/red] failed {label}")
+        if on_progress:
+            on_progress("")
+        else:
+            console.print(f"[red][multi-agent][/red] failed {label}")
         raise
-    console.print(f"[green][multi-agent][/green] completed {label}")
+    if not on_progress:
+        console.print(f"[green][multi-agent][/green] completed {label}")
     return result
 
 
@@ -390,6 +356,7 @@ def _execute_phase(
     config: AgentConfig,
     *,
     attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
     try:
         result = _run_subagent_stage(
@@ -398,6 +365,7 @@ def _execute_phase(
             selection,
             config,
             attempt=attempt,
+            on_progress=on_progress,
         )
     except Exception as exc:
         state.failed_phase = role.value
@@ -657,6 +625,7 @@ def run_multi_agent(
     *,
     config: AgentConfig | None = None,
     max_repair_attempts: int = 2,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
     """Run the first sequential multi-agent flow."""
     cfg = config or AgentConfig(cwd=".")
@@ -671,10 +640,13 @@ def run_multi_agent(
     state.intent_reason = decision.reason
     state.intent_confidence = decision.confidence
     state.planned_phases = planned_phases
-    console.print(
-        f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
-        f"requires_write={decision.requires_write} phases={planned_phases}"
-    )
+    if on_progress:
+        on_progress("Preparing the multi-agent workflow...")
+    else:
+        console.print(
+            f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
+            f"requires_write={decision.requires_write} phases={planned_phases}"
+        )
 
     started_at = datetime.now(timezone.utc)
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
@@ -692,6 +664,7 @@ def run_multi_agent(
                 plan_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(plan):
                 state.final_answer = synthesize_final_answer(state)
@@ -706,6 +679,7 @@ def run_multi_agent(
                 research_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(research):
                 state.final_answer = synthesize_final_answer(state)
@@ -723,6 +697,7 @@ def run_multi_agent(
                 implementation_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(implementation):
                 state.final_answer = synthesize_final_answer(state)
@@ -738,6 +713,7 @@ def run_multi_agent(
                     validation_prompt,
                     selection,
                     cfg,
+                    on_progress=on_progress,
                 )
                 if subagent_blocked(validation):
                     state.final_answer = synthesize_final_answer(state)
@@ -760,6 +736,7 @@ def run_multi_agent(
                         selection,
                         cfg,
                         attempt=repair_attempt + 1,
+                        on_progress=on_progress,
                     )
                     if subagent_blocked(implementation):
                         state.final_answer = synthesize_final_answer(state)
@@ -778,6 +755,7 @@ def run_multi_agent(
                         selection,
                         cfg,
                         attempt=repair_attempt + 1,
+                        on_progress=on_progress,
                     )
                     if subagent_blocked(validation):
                         state.final_answer = synthesize_final_answer(state)
@@ -791,6 +769,7 @@ def run_multi_agent(
                 review_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(review):
                 state.final_answer = synthesize_final_answer(state)
@@ -804,6 +783,7 @@ def run_multi_agent(
                     security_prompt,
                     selection,
                     cfg,
+                    on_progress=on_progress,
                 )
                 if subagent_blocked(security_review):
                     state.final_answer = synthesize_final_answer(state)
@@ -827,6 +807,8 @@ def run_multi_agent(
             state.failed_phase = state.results[-1].role.value if state.results else None
         raise
     finally:
+        if on_progress:
+            on_progress("")
         ended_at = datetime.now(timezone.utc)
         if run_log and run_log.run_dir is not None:
             run_log.write_json_artifact(
