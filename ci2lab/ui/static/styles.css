@@ -768,6 +768,12 @@ textarea:focus {
   gap: 1px;
 }
 
+.thinking-status {
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
 .thinking-time,
 .message-meta {
   display: block;

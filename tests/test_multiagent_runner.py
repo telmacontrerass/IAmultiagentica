@@ -211,3 +211,28 @@ def test_run_subagent_forwards_concise_progress_while_output_is_captured(capsys)
     output = capsys.readouterr().out
     assert "[multi-agent:researcher] Searching the project files..." in output
     assert "[multi-agent:researcher] Reviewing the latest results..." in output
+
+
+def test_subagent_does_not_clear_parent_progress_before_final_answer():
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)
+    progress: list[str] = []
+
+    def progressing_run_agent(*args, **kwargs):
+        kwargs["on_progress"]("Searching the project files...")
+        kwargs["on_progress"]("")
+        return "done"
+
+    with patch(
+        "ci2lab.harness.multiagent.runner.run_agent",
+        side_effect=progressing_run_agent,
+    ):
+        run_subagent(
+            AgentRole.RESEARCHER,
+            "Research this",
+            selection,
+            config,
+            on_progress=progress.append,
+        )
+
+    assert progress == ["researcher: Searching the project files..."]

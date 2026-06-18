@@ -93,6 +93,7 @@ def test_run_agent_can_forward_progress_to_chat_callback():
         "Planning the code change...",
         "Reviewing the latest results and deciding the next step...",
         "Finalizing the answer...",
+        "",
     ]
 
 

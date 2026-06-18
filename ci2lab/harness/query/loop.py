@@ -177,7 +177,7 @@ def _read_signature(call: ToolCall) -> str:
 
 
 def _status(label: str) -> None:
-    console.print(f"[dim cyan]{label}[/dim cyan]")
+    console.print(f"[dim italic cyan]{label}[/dim italic cyan]")
 
 
 def _emit_progress(
@@ -186,6 +186,8 @@ def _emit_progress(
 ) -> None:
     if on_progress:
         on_progress(label)
+        return
+    if not label:
         return
     _status(label)
 
@@ -587,6 +589,7 @@ def run_agent(
                     maybe_save_session(cfg, history, selection)
                     continue
                 _emit_progress("Finalizing the answer...", on_progress)
+                _emit_progress("", on_progress)
                 if final_text and streamed_this_round:
                     console.print()
                 elif final_text:
