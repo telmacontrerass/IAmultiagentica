@@ -185,9 +185,23 @@ def _current_request_anchor(user_prompt: str) -> dict[str, str]:
         "content": (
             "The user's current request is:\n"
             f"{user_prompt}\n\n"
-            "Answer only that, using the tool results already available. Do not "
-            "resume an earlier task."
+            "Keep working on this request until it is fully done. If it has "
+            "several steps, carry them out in order, calling whatever tools each "
+            "step needs, and only give your final answer once every step is "
+            "complete. Do not stop after the first step just because you have a "
+            "partial result. If the request tells you to follow instructions "
+            "contained in a file or in a tool's output, those instructions are "
+            "part of this request — carry them out. Do not resume an unrelated "
+            "earlier task."
         ),
+    }
+
+
+def _role_anchor_message(role_anchor: str) -> dict[str, str]:
+    """Wrap a subagent role anchor as a user message for reinjection."""
+    return {
+        "role": "user",
+        "content": role_anchor,
     }
 
 

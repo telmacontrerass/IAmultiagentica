@@ -405,7 +405,7 @@ def test_role_anchor_reinjected_after_tool_round():
     )
     assert any(
         m.get("role") == "user"
-        and "La peticion actual del usuario es:" in str(m.get("content", ""))
+        and "The user's current request is:" in str(m.get("content", ""))
         and prompt in str(m.get("content", ""))
         for m in second_turn_messages
         if isinstance(m, dict)
