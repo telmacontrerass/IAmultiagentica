@@ -69,6 +69,12 @@ _VALIDATION_FAILURE_MARKERS = (
     "error",
     "traceback",
     "exception",
+    "no pasa",
+    "fallo",
+    "falla",
+    "falló",
+    "fallida",
+    "fallido",
     "failed validation",
 )
 
@@ -79,6 +85,22 @@ _VALIDATION_SUCCESS_MARKERS = (
     "successful",
     "ok",
     "no errors",
+)
+
+# A validator that cannot find real tool evidence must always be treated as a
+# failure, even if it happens to echo a success token (e.g. the literal content
+# `MULTIAGENTE_OK`, whose `ok` substring used to be mis-read as a pass). These
+# markers dominate the success/failure markers below.
+_INSUFFICIENT_EVIDENCE_MARKERS = (
+    "insufficient evidence",
+    "insufficient tool evidence",
+    "missing evidence",
+    "no evidence",
+    "evidencia insuficiente",
+    "insuficiente evidencia",
+    "falta de evidencia",
+    "sin evidencia",
+    "no hay evidencia",
 )
 
 _SECURITY_REVIEW_MARKERS = (
@@ -152,6 +174,34 @@ _LOAD_BEARING_ROLES = frozenset(
     {AgentRole.RESEARCHER} | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
 )
 
+_WRITE_EVIDENCE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "write_docx",
+        "docx_to_pdf",
+        "pdf_to_docx",
+        "notebook_edit",
+    }
+)
+
+_READBACK_EVIDENCE_TOOLS = frozenset(
+    {
+        "read_file",
+        "read_document",
+        "grep",
+        "inspect_file",
+    }
+)
+
+_CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset(
+    {
+        "git_status",
+        "git_diff",
+    }
+)
+
 # A request is test-centric or docs-centric only when the USER asks for tests or
 # docs as the deliverable — matched against the user's own prompt, never against
 # planner/researcher evidence. An "implement/complete/solve" task that merely
@@ -178,6 +228,114 @@ def _combined_output(*results: SubAgentResult | None) -> str:
 def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
     """True if any marker appears in ``text`` as a whole word (word-boundary match)."""
     return any(re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) for marker in markers)
+
+
+def _tool_name(entry: dict[str, object]) -> str:
+    return str(entry.get("tool") or "")
+
+
+def _tool_ok(entry: dict[str, object]) -> bool:
+    return bool(entry.get("ok"))
+
+
+def _tool_args(entry: dict[str, object]) -> dict[str, object]:
+    args = entry.get("arguments")
+    return args if isinstance(args, dict) else {}
+
+
+def _tool_target(entry: dict[str, object]) -> str:
+    args = _tool_args(entry)
+    for key in ("path", "source", "output", "file", "target"):
+        value = args.get(key)
+        if value:
+            return str(value)
+    return "(target unknown)"
+
+
+def _tool_output_preview(entry: dict[str, object], *, limit: int = 180) -> str:
+    preview = str(entry.get("output_preview") or entry.get("output") or "")
+    preview = " ".join(preview.split())
+    if len(preview) > limit:
+        return preview[:limit] + "... (truncated)"
+    return preview
+
+
+def _evidence_entries(results: list[SubAgentResult]) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for result in results:
+        for entry in result.tool_calls:
+            enriched = dict(entry)
+            enriched["role"] = result.role.value
+            entries.append(enriched)
+    return entries
+
+
+def _is_change_scope_evidence(entry: dict[str, object]) -> bool:
+    name = _tool_name(entry)
+    if name in _CHANGE_SCOPE_EVIDENCE_TOOLS:
+        return True
+    if name != "bash":
+        return False
+    command = str(_tool_args(entry).get("command") or "").lower()
+    return "git status" in command or "git diff" in command
+
+
+def _format_evidence_list(entries: list[dict[str, object]]) -> str:
+    if not entries:
+        return "none"
+    lines = []
+    for entry in entries:
+        role = str(entry.get("role") or "unknown")
+        name = _tool_name(entry)
+        target = _tool_target(entry)
+        preview = _tool_output_preview(entry)
+        suffix = f"; output preview: {preview}" if preview else ""
+        lines.append(f"- {role}: {name}({target}){suffix}")
+    return "\n".join(lines)
+
+
+def _build_tool_evidence_report(
+    user_prompt: str,
+    results: list[SubAgentResult],
+    *,
+    selected_coder_role: AgentRole | None,
+) -> str:
+    entries = [entry for entry in _evidence_entries(results) if _tool_ok(entry)]
+    writes = [entry for entry in entries if _tool_name(entry) in _WRITE_EVIDENCE_TOOLS]
+    readbacks = [entry for entry in entries if _tool_name(entry) in _READBACK_EVIDENCE_TOOLS]
+    scope_checks = [entry for entry in entries if _is_change_scope_evidence(entry)]
+    implementer = selected_coder_role.value if selected_coder_role is not None else "none selected"
+    return (
+        "Real tool-call evidence available. Treat this section as the only "
+        "source of truth for filesystem effects; do not treat subagent narrative "
+        "text as proof.\n"
+        f"- User task: {user_prompt}\n"
+        f"- Selected implementer: {implementer}\n"
+        "- Filesystem write evidence:\n"
+        f"{_format_evidence_list(writes)}\n"
+        "- Readback/content evidence:\n"
+        f"{_format_evidence_list(readbacks)}\n"
+        "- Change-scope evidence (git status/diff or equivalent):\n"
+        f"{_format_evidence_list(scope_checks)}"
+    )
+
+
+def _evidence_rules() -> str:
+    return (
+        "Evidence rules:\n"
+        "- You may say a file was created or modified only when the evidence "
+        "section includes a successful real write tool result.\n"
+        "- You may say content is correct only when the evidence section includes "
+        "a successful readback/content tool result showing that content.\n"
+        "- You may say no other files changed only when the evidence section "
+        "includes git status/git diff or equivalent change-scope evidence.\n"
+        "- If evidence is missing, say `insufficient evidence` and name the "
+        "missing evidence instead of claiming success.\n"
+        "- Run evidence may contain unsupported subagent narrative. Do not "
+        "repeat those claims unless the real tool-call evidence supports them.\n"
+        "- Do not invent or mention non-existent verification helpers; use only "
+        "actual tool names present in evidence."
+    )
 
 
 def _role_label(role: AgentRole, attempt: int) -> str:
@@ -373,14 +531,14 @@ def _trace_payload(
         ),
         run.failed_phase,
     )
+    last_validation = run.latest_for(AgentRole.VALIDATOR)
     if failed_phase is None:
-        last_validation = run.latest_for(AgentRole.VALIDATOR)
         if last_validation and validation_failed(last_validation):
             failed_phase = AgentRole.VALIDATOR.value
-    trace_status = "failed" if run.error else "completed"
-    last_validation = run.latest_for(AgentRole.VALIDATOR)
-    if trace_status == "completed" and last_validation and validation_failed(last_validation):
-        trace_status = "validation_failed"
+        elif write_task_lacks_evidence(run) and run.selected_coder_role is not None:
+            # No write-tool evidence: the missing effect is the implementer's.
+            failed_phase = run.selected_coder_role.value
+    trace_status = "failed" if run.error else final_run_status(run)
     return {
         "timestamp": started_at.isoformat(),
         "started_at": started_at.isoformat(),
@@ -542,13 +700,87 @@ def should_skip_implementation(
 
 
 def validation_failed(validation: SubAgentResult) -> bool:
-    """Best-effort validation classifier for the first sequential version."""
+    """Best-effort validation classifier for the first sequential version.
+
+    Matching is word-boundary aware (via :func:`_contains_marker`) so a success
+    token can no longer be matched as a substring of unrelated text — the bug
+    where the literal content ``MULTIAGENTE_OK`` made ``ok`` look like a pass.
+
+    A validator that reports *insufficient evidence* always counts as a failure
+    and dominates any success token it may also echo, because a write task
+    cannot be confirmed without real tool-call evidence.
+    """
     output = validation.output.lower()
-    has_success = any(marker in output for marker in _VALIDATION_SUCCESS_MARKERS)
-    has_failure = any(marker in output for marker in _VALIDATION_FAILURE_MARKERS)
-    if has_success:
+    if _contains_marker(output, _INSUFFICIENT_EVIDENCE_MARKERS):
+        return True
+    has_success = _contains_marker(output, _VALIDATION_SUCCESS_MARKERS)
+    has_failure = _contains_marker(output, _VALIDATION_FAILURE_MARKERS)
+    if has_success and not has_failure:
         return False
     return has_failure
+
+
+def has_write_tool_evidence(results: list[SubAgentResult]) -> bool:
+    """True only when a successful real write/edit tool call was recorded.
+
+    This is the single source of truth for "a file was actually created or
+    modified". Subagent narrative text (including a returned Python script that
+    *describes* an ``open(..., "w")``) never counts — only a logged
+    ``ToolResult`` from a real write tool does.
+    """
+    return any(
+        _tool_ok(entry) and _tool_name(entry) in _WRITE_EVIDENCE_TOOLS
+        for entry in _evidence_entries(results)
+    )
+
+
+# Self-executing "solution" smells: a coder that returns code which performs the
+# filesystem effect itself (instead of calling a traceable write tool) bypasses
+# the evidence/permission channel entirely. These patterns flag that anti-pattern
+# so the orchestrator can name it instead of silently passing.
+_UNTRACEABLE_FS_MUTATION_RE = re.compile(
+    r"""
+      \bopen\s*\([^)]*['"][rbt]*[wax][rbt+]*['"]   # open(path, "w"/"a"/"x"/"wb"...)
+    | \.write_text\s*\(
+    | \.write_bytes\s*\(
+    | \bos\.remove\s*\(
+    | \bos\.unlink\s*\(
+    | \bshutil\.(?:rmtree|move|copy)\s*\(
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def looks_like_untraceable_fs_mutation(text: str) -> bool:
+    """Detect a returned code blob that mutates the filesystem outside tools."""
+    return bool(_UNTRACEABLE_FS_MUTATION_RE.search(text or ""))
+
+
+def write_task_lacks_evidence(run: MultiAgentRun) -> bool:
+    """A write task that produced no real write-tool evidence is not a success.
+
+    The deterministic guard behind requirement: the orchestrator must never
+    report a clean ``completed`` status for a write task whose effects were
+    never proven by a logged write ``ToolResult``.
+    """
+    if not run.requires_write or run.selected_coder_role is None:
+        return False
+    return not has_write_tool_evidence(run.results)
+
+
+def final_run_status(run: MultiAgentRun) -> str:
+    """Compute the authoritative run status from evidence, not narrative.
+
+    Priority: a failing/insufficient validator dominates; otherwise a write task
+    with no real write-tool evidence is downgraded to ``insufficient_evidence``;
+    only then is the run a clean ``completed``.
+    """
+    last_validation = run.latest_for(AgentRole.VALIDATOR)
+    if last_validation and validation_failed(last_validation):
+        return "validation_failed"
+    if write_task_lacks_evidence(run):
+        return "insufficient_evidence"
+    return "completed"
 
 
 def should_run_security_review(run: MultiAgentRun) -> bool:
@@ -634,6 +866,13 @@ def _build_implementation_prompt(
         "Only return `BLOCKED:` with the exact missing dependency if the source "
         "genuinely cannot be read or does not exist — not merely because the "
         "research summary was thin.\n\n"
+        "Apply every filesystem change through your real tools: use `write_file` "
+        "to create or overwrite a file and `edit_file`/`apply_patch` to modify "
+        "one. Do NOT answer with a Python (or shell) script that performs the "
+        "change itself — for example returning code that calls "
+        '`open(path, "w")`. Code returned as text is never executed, leaves no '
+        "tool evidence, and will be treated as no change at all. After writing, "
+        "read the file back with `read_file` so the content can be verified.\n\n"
         "Your deliverable is the actual file(s) the task requires, WRITTEN TO "
         "DISK with their real content — not a description and not empty code "
         "blocks. Create every file the task calls for (the program/solution it "
@@ -651,6 +890,11 @@ def _build_validation_prompt(
     implementation: SubAgentResult,
 ) -> str:
     """Build the validator subagent's task prompt from the plan, research, and implementation."""
+    evidence = _build_tool_evidence_report(
+        user_prompt,
+        [implementation],
+        selected_coder_role=implementation.role,
+    )
     return (
         "Follow the planner's validation expectations. Validate only the "
         "implemented work against the plan, research findings, and success "
@@ -659,6 +903,8 @@ def _build_validation_prompt(
         "details tied to the plan.\n\n"
         "If the implementation did not follow the plan, report validation as "
         "failed and explain the mismatch.\n\n"
+        f"{_evidence_rules()}\n\n"
+        f"{evidence}\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}\n\nImplementation:\n{implementation.output}"
     )
@@ -679,6 +925,11 @@ def _build_repair_prompt(
         "behavior unchanged.\n\n"
         "If the repair would require work outside your assigned role or files, "
         "return `BLOCKED:` with the reason instead of expanding scope.\n\n"
+        "If the validation failed for lack of evidence, the most likely cause is "
+        "that the previous attempt described or returned code instead of calling "
+        "a tool. Make the change with `write_file`/`edit_file`/`apply_patch` and "
+        "read it back with `read_file`; never return a script that calls "
+        '`open(path, "w")` as the solution.\n\n'
         f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}\n\nPrevious implementation:\n"
         f"{previous_implementation.output}\n\nValidation failure:\n"
@@ -691,12 +942,19 @@ def _build_review_prompt(run: MultiAgentRun) -> str:
     evidence = "\n\n".join(
         f"[{result.role.value} attempt {result.attempt}]\n{result.output}" for result in run.results
     )
+    tool_evidence = _build_tool_evidence_report(
+        run.user_prompt,
+        run.results,
+        selected_coder_role=run.selected_coder_role,
+    )
     return (
         "Review the completed multi-agent run against the planner's execution "
         "plan. Check whether each subagent stayed within its assigned task, "
         "respected dependencies, avoided overlapping responsibilities, and met "
         "the success criteria. Identify remaining risks, missing tests, "
         "regressions, or incomplete requirements. Do not modify files.\n\n"
+        f"{_evidence_rules()}\n\n"
+        f"{tool_evidence}\n\n"
         f"User task:\n{run.user_prompt}\n\nRun evidence:\n{evidence}"
     )
 
@@ -706,12 +964,22 @@ def _build_security_review_prompt(run: MultiAgentRun) -> str:
     evidence = "\n\n".join(
         f"[{result.role.value} attempt {result.attempt}]\n{result.output}" for result in run.results
     )
+    tool_evidence = _build_tool_evidence_report(
+        run.user_prompt,
+        run.results,
+        selected_coder_role=run.selected_coder_role,
+    )
     return (
         "Review the completed multi-agent run specifically for security and "
         "permission risks, using the planner's boundaries as the source of "
         "truth. Check command execution, filesystem writes, secret handling, "
         "approval behavior, path safety, and whether any role exceeded its "
         "assigned scope. Do not modify files.\n\n"
+        f"{_evidence_rules()}\n\n"
+        "If no implementer was selected, do not state that an implementer "
+        "created, modified, or wrote files. If there is no real write-tool "
+        "evidence, say there is insufficient evidence of filesystem writes.\n\n"
+        f"{tool_evidence}\n\n"
         f"User task:\n{run.user_prompt}\n\nRun evidence:\n{evidence}"
     )
 
@@ -741,12 +1009,25 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     last_validation = run.latest_for(AgentRole.VALIDATOR)
     reviewer = run.latest_for(AgentRole.REVIEWER)
     security_reviewer = run.latest_for(AgentRole.SECURITY_REVIEWER)
-    status = (
-        "validation_failed"
-        if last_validation and validation_failed(last_validation)
-        else "completed"
-    )
+    status = final_run_status(run)
     coder = run.selected_coder_role.value if run.selected_coder_role else "none (read-only task)"
+    evidence_note = ""
+    if status == "insufficient_evidence":
+        evidence_note = (
+            "\n\nEvidence gate: this was a write task but no successful "
+            "write_file/edit_file tool result was recorded, so the change "
+            "cannot be confirmed."
+        )
+        if any(
+            looks_like_untraceable_fs_mutation(result.output)
+            for result in run.results
+            if result.role == run.selected_coder_role
+        ):
+            evidence_note += (
+                " The implementer returned code that performs the file "
+                "operation itself instead of calling write_file/edit_file; "
+                "such code is not executed through the traceable tool channel."
+            )
     review_text = reviewer.output if reviewer else "No reviewer output was produced."
     security_text = f"\n\nSecurity review:\n{security_reviewer.output}" if security_reviewer else ""
     validation_text = (
@@ -767,6 +1048,7 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
         f"Validation:\n{validation_text}\n\n"
         f"Review:\n{review_text}"
         f"{security_text}"
+        f"{evidence_note}"
     )
 
 
