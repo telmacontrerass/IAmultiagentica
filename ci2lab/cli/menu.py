@@ -52,8 +52,8 @@ WELCOME_ART = r"""        ___       ___
 
 _ANSI_RESET = "\x1b[0m"
 _ANSI_DIM = "\x1b[90m"
-_ANSI_GREEN = "\x1b[32;1m"
-_ANSI_CYAN = "\x1b[36;1m"
+_ANSI_GOLD = "\x1b[33;1m"
+_ANSI_BLUE = "\x1b[34;1m"
 
 
 MAIN_OPTIONS: tuple[MenuOption, ...] = (
@@ -335,6 +335,7 @@ def build_model_choices(
                 fits=None,
             )
         )
+    choices.sort(key=lambda choice: (not choice.installed, choice.label.lower()))
     return choices, error
 
 
@@ -478,11 +479,11 @@ def _select_from_menu_app(
         app.exit()
 
     style = Style.from_dict({
-        "art.gear": "bold ansicyan",
-        "art.name": "bold ansigreen",
+        "art.gear": "bold ansiblue",
+        "art.name": "bold ansiyellow",
         "title": "bold",
         "muted": "ansibrightblack",
-        "selected": "bold ansigreen",
+        "selected": "bold ansiyellow",
     })
     app = Application(
         layout=Layout(Window(content=control, always_hide_cursor=True)),
@@ -586,7 +587,7 @@ def _render_raw_menu(
     for pos, option in enumerate(options[start:end], start=start):
         pointer = "> " if pos == index else "  "
         selected = pos == index
-        label_color = _ANSI_GREEN if selected else ""
+        label_color = _ANSI_GOLD if selected else ""
         reset = _ANSI_RESET if selected else ""
         if isinstance(option, MenuOption) and option.description:
             lines.append(
@@ -627,7 +628,7 @@ def _render_menu(
     label_width = _menu_label_width(options)
     for pos, option in enumerate(options):
         pointer = ">" if pos == index else " "
-        style = "bold green" if pos == index else ""
+        style = "bold yellow" if pos == index else ""
         label = f"{pointer} {option.label}"
         if isinstance(option, MenuOption) and option.description:
             console.print(
@@ -674,14 +675,14 @@ def _art_fragments() -> list[tuple[str, str]]:
 
 def _print_art() -> None:
     for line in WELCOME_ART.splitlines():
-        style = "bold green" if "C I 2 L A B" in line else "bold cyan"
+        style = "bold yellow" if "C I 2 L A B" in line else "bold blue"
         console.print(line, style=style)
 
 
 def _ansi_art() -> str:
     lines = []
     for line in WELCOME_ART.splitlines():
-        color = _ANSI_GREEN if "C I 2 L A B" in line else _ANSI_CYAN
+        color = _ANSI_GOLD if "C I 2 L A B" in line else _ANSI_BLUE
         lines.append(f"{color}{line}{_ANSI_RESET}")
     return "\n".join(lines)
 

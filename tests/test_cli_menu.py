@@ -19,20 +19,6 @@ from ci2lab.contracts import HardwareProfile, ModelSpec
 def test_build_model_choices_marks_installed_and_missing():
     models = [
         ModelSpec(
-            id="small",
-            display_name="Small Model",
-            family="test",
-            categories=["general"],
-            ollama_tag="small:1b",
-            vram_min_gb=1,
-            ram_inference_gb=2,
-            supports_tools=True,
-            context_length=4096,
-            tool_mode="native",
-            tier="edge",
-            benchmark_score={"general": 0.5},
-        ),
-        ModelSpec(
             id="large",
             display_name="Large Model",
             family="test",
@@ -45,6 +31,20 @@ def test_build_model_choices_marks_installed_and_missing():
             tool_mode="native",
             tier="enterprise",
             benchmark_score={"general": 0.8},
+        ),
+        ModelSpec(
+            id="small",
+            display_name="Small Model",
+            family="test",
+            categories=["general"],
+            ollama_tag="small:1b",
+            vram_min_gb=1,
+            ram_inference_gb=2,
+            supports_tools=True,
+            context_length=4096,
+            tool_mode="native",
+            tier="edge",
+            benchmark_score={"general": 0.5},
         ),
     ]
     profile = HardwareProfile(
@@ -72,6 +72,7 @@ def test_build_model_choices_marks_installed_and_missing():
 
     assert error is None
     assert choices[0].installed is True
+    assert choices[0].ollama_tag == "small:1b"
     assert "(installed" in choices[0].label
     assert choices[1].installed is False
     assert "(not installed" in choices[1].label
