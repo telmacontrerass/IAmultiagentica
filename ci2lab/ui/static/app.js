@@ -16,12 +16,12 @@ const state = {
 const STORAGE_KEY = "ci2lab.ui.state.v1";
 
 const MODEL_SEARCH_SYNONYMS = {
-  coding: ["codigo", "código", "programar", "programacion", "programación", "code", "coder", "python", "javascript", "desarrollo", "software", "debug", "debugging"],
-  reasoning: ["razonar", "razonamiento", "matematicas", "matemáticas", "logica", "lógica", "problemas", "pensar", "analisis", "análisis", "reasoning"],
-  general: ["general", "chat", "conversacion", "conversación", "preguntas", "texto", "resumen", "resumir", "documentos", "pdf", "estudio", "ayuda"],
-  edge: ["rapido", "rápido", "ligero", "pequeno", "pequeño", "poca ram", "local", "portatil", "portátil", "edge"],
-  workstation: ["potente", "trabajo", "workstation", "calidad", "medio"],
-  enterprise: ["grande", "maximo", "máximo", "empresa", "enterprise", "servidor"],
+  coding: ["code", "coder", "program", "programming", "python", "javascript", "development", "software", "debug", "debugging"],
+  reasoning: ["reason", "reasoning", "math", "mathematics", "logic", "problems", "think", "analysis", "analyze"],
+  general: ["general", "chat", "conversation", "questions", "text", "summary", "summarize", "documents", "pdf", "study", "help"],
+  edge: ["fast", "lightweight", "small", "low ram", "local", "laptop", "portable", "edge"],
+  workstation: ["powerful", "work", "workstation", "quality", "medium"],
+  enterprise: ["large", "maximum", "company", "enterprise", "server"],
 };
 
 const els = {
@@ -40,8 +40,14 @@ const els = {
   messageInput: document.querySelector("#messageInput"),
   sendButton: document.querySelector("#sendButton"),
   commandPreview: document.querySelector("#commandPreview"),
-  chatTools: document.querySelector(".chat-tools"),
+  chatTools: document.querySelector(".chat-topbar"),
+  toolsPanel: document.querySelector("#toolsPanel"),
+  toolsDrawerToggle: document.querySelector("#toolsDrawerToggle"),
+  toolsDrawerClose: document.querySelector("#toolsDrawerClose"),
+  toolsBackdrop: document.querySelector("#toolsBackdrop"),
+  promptActionsMenu: document.querySelector("#promptActionsMenu"),
   agentsMode: document.querySelector("#agentsMode"),
+  agentsModeButton: document.querySelector("#agentsModeButton"),
   agentsModeLabel: document.querySelector("#agentsModeLabel"),
   toolsSummary: document.querySelector("#toolsSummary"),
   quickActions: document.querySelector("#quickActions"),
@@ -99,7 +105,7 @@ function formatDate(value) {
   if (!value || value === "?") return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 19);
-  return new Intl.DateTimeFormat("es", {
+  return new Intl.DateTimeFormat("en", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -168,7 +174,7 @@ function formatTokenCompact(value) {
 }
 
 function formatTokenExact(value) {
-  return new Intl.NumberFormat("es").format(Number(value || 0));
+  return new Intl.NumberFormat("en").format(Number(value || 0));
 }
 
 function clampPercent(value) {
@@ -216,7 +222,20 @@ function restoreUiState() {
   }
 }
 
+function setToolsDrawer(open) {
+  if (!els.toolsPanel) return;
+  els.toolsPanel.classList.toggle("open", open);
+  els.toolsPanel.setAttribute("aria-hidden", String(!open));
+  if (els.toolsBackdrop) els.toolsBackdrop.hidden = !open;
+  els.toolsDrawerToggle?.setAttribute("aria-expanded", String(open));
+}
+
+function toggleToolsDrawer() {
+  setToolsDrawer(!els.toolsPanel?.classList.contains("open"));
+}
+
 function switchView(viewId, scrollTarget = null) {
+  if (viewId !== "chatView") setToolsDrawer(false);
   state.activeView = viewId;
   document.body.classList.toggle("chat-view-active", viewId === "chatView");
   document.body.classList.toggle("token-info-view-active", viewId === "tokenInfoView");
@@ -261,10 +280,10 @@ function updateTokenDisplay() {
   const turn = usage.last_turn;
   const session = usage.session_total;
   if (els.tokenTurnValue) {
-    setRollingText(els.tokenTurnValue, `Turno ${formatTokenCompact(turn.total_tokens)}`);
+    setRollingText(els.tokenTurnValue, `Turn ${formatTokenCompact(turn.total_tokens)}`);
   }
   if (els.tokenSessionValue) {
-    setRollingText(els.tokenSessionValue, `Conversacion ${formatTokenCompact(session.total_tokens)}`);
+    setRollingText(els.tokenSessionValue, `Conversation ${formatTokenCompact(session.total_tokens)}`);
   }
 }
 
@@ -282,15 +301,15 @@ function renderTokenInfo() {
   const turn = usage.last_turn;
   const session = usage.session_total;
   const model = currentModelInfo();
-  const modelName = model?.display_name || usage.session_total.model || els.modelSelect?.value || "Modelo local";
-  els.tokenInfoTitle.textContent = `Tokens de ${modelName}`;
+  const modelName = model?.display_name || usage.session_total.model || els.modelSelect?.value || "Local model";
+  els.tokenInfoTitle.textContent = `Tokens for ${modelName}`;
   els.tokenInfoInput.textContent = formatTokenExact(turn.prompt_tokens);
   els.tokenInfoOutput.textContent = formatTokenExact(turn.completion_tokens);
   els.tokenInfoTurn.textContent = formatTokenExact(turn.total_tokens);
   els.tokenInfoSession.textContent = formatTokenExact(session.total_tokens);
   els.tokenInfoFormula.textContent = turn.available
-    ? `Total del ultimo turno = ${formatTokenExact(turn.prompt_tokens)} entrada + ${formatTokenExact(turn.completion_tokens)} salida = ${formatTokenExact(turn.total_tokens)} tokens.`
-    : "Todavia no hay datos de tokens para este turno. Apareceran despues de la proxima respuesta del modelo si Ollama los devuelve.";
+    ? `Last turn total = ${formatTokenExact(turn.prompt_tokens)} input + ${formatTokenExact(turn.completion_tokens)} output = ${formatTokenExact(turn.total_tokens)} tokens.`
+    : "No token data for this turn yet. It will appear after the model's next response if Ollama returns it.";
   els.tokenInfoModel.textContent = model
     ? `${model.display_name} (${model.ollama_tag})`
     : (usage.session_total.model || els.modelSelect?.value || "--");
@@ -328,7 +347,7 @@ function appendMessageNode(role, text, extraClass = "", meta = {}) {
   if (meta.duration_ms) {
     const detail = document.createElement("small");
     detail.className = "message-meta";
-    detail.textContent = `Respondido en ${formatElapsed(meta.duration_ms)}`;
+    detail.textContent = `Answered in ${formatElapsed(meta.duration_ms)}`;
     node.appendChild(detail);
   }
   els.messages.appendChild(node);
@@ -350,14 +369,14 @@ function buildProgressMessages(prompt = "", files = []) {
   }
   if (/\bpdf\b|\.pdf\b/.test(text)) {
     messages.push("Extracting information from the PDF...");
-  } else if (/\bdocx?\b|\.docx?\b|document|documento|archivo/.test(text)) {
+  } else if (/\bdocx?\b|\.docx?\b|document|file/.test(text)) {
     messages.push("Reading the document...");
   }
-  if (/\b(code|codigo|código|test|bug|fix|implement|generate|generating|create|write)\b/.test(text)) {
+  if (/\b(code|test|bug|fix|implement|generate|generating|create|write)\b/.test(text)) {
     messages.push("Planning the code change...");
     messages.push("Generating code changes...");
   }
-  if (/web|internet|latest|current|today|hoy|actual|online/.test(text)) {
+  if (/web|internet|latest|current|today|online/.test(text)) {
     messages.push("Looking up current information...");
   }
   messages.push("Checking the result...");
@@ -417,8 +436,8 @@ function setEmptyChat() {
     <div class="empty-state">
       <div>
         <p class="eyebrow">Florentino local</p>
-        <h3>Empieza una conversación</h3>
-        <p>Prueba: "resume este proyecto" o "lista los archivos Python".</p>
+        <h3>Start a conversation</h3>
+        <p>Try: "summarize this project" or "list the Python files".</p>
       </div>
     </div>
   `;
@@ -426,18 +445,18 @@ function setEmptyChat() {
 
 function buildSessionInfoMessage(payload) {
   const warnings = Array.isArray(payload.warnings) && payload.warnings.length
-    ? `\nAviso: ${payload.warnings.join(" ")}`
+    ? `\nWarning: ${payload.warnings.join(" ")}`
     : "";
   return [
     "ci2lab UI",
-    `Modelo: ${payload.model || payload.display_name || "?"}`,
+    `Model: ${payload.model || payload.display_name || "?"}`,
     `Tool mode: ${payload.tool_mode || "?"}`,
     `CWD: ${payload.cwd || "?"}`,
-    `Sesion: ${payload.session_id || "?"}`,
-    `Modo: ${payload.multi_agent ? "agentes" : "chat clasico"}`,
-    `Seguridad: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
+    `Session: ${payload.session_id || "?"}`,
+    `Mode: ${payload.multi_agent ? "agents" : "classic chat"}`,
+    `Security: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
     "",
-    "Listo. Escribe tu peticion o adjunta archivos.",
+    "Ready. Type your request or attach files.",
   ].join("\n") + warnings;
 }
 
@@ -452,7 +471,7 @@ async function startChatSession({ forceNew = false } = {}) {
     }),
   });
   if (!result.ok) {
-    addMessage("assistant", result.error || "No se pudo iniciar el chat local.", "error");
+    addMessage("assistant", result.error || "Could not start the local chat.", "error");
     return;
   }
 
@@ -463,7 +482,7 @@ async function startChatSession({ forceNew = false } = {}) {
 }
 
 function updateCommandPreview() {
-  const model = els.modelSelect.value || "<modelo>";
+  const model = els.modelSelect.value || "<model>";
   if (els.commandPreview) {
     const agentsFlag = els.agentsMode?.checked ? " --multi-agent" : "";
     els.commandPreview.textContent = `ci2lab --model ${model}${agentsFlag} chat`;
@@ -473,24 +492,32 @@ function updateCommandPreview() {
 function updateAgentsModeState({ persist = true } = {}) {
   const active = Boolean(els.agentsMode?.checked);
   els.chatTools?.classList.toggle("agents-active", active);
+  els.agentsModeButton?.classList.toggle("active", active);
+  els.agentsModeButton?.setAttribute("aria-pressed", String(active));
   if (els.agentsModeLabel) {
-    els.agentsModeLabel.textContent = active ? "Modo agentes activo" : "Modo agentes";
+    els.agentsModeLabel.textContent = active ? "Agents on" : "Agents";
   }
   updateCommandPreview();
   if (persist) persistUiState();
 }
 
+function toggleAgentsMode() {
+  if (!els.agentsMode) return;
+  els.agentsMode.checked = !els.agentsMode.checked;
+  updateAgentsModeState();
+}
+
 function renderAttachments() {
   if (!els.attachmentsList) return;
   if (!state.uploadedFiles.length) {
-    els.attachmentsList.innerHTML = `<span class="attachment-empty">PDF o texto local</span>`;
+    els.attachmentsList.innerHTML = `<span class="attachment-empty">Local PDF or text</span>`;
     return;
   }
   els.attachmentsList.innerHTML = state.uploadedFiles.map((file) => `
     <span class="attachment-chip">
       <span>${escapeHtml(file.name)}</span>
       <small>${escapeHtml(file.size_label || "")}</small>
-      <button type="button" data-remove-attachment="${escapeHtml(file.path)}" title="Quitar archivo">×</button>
+      <button type="button" data-remove-attachment="${escapeHtml(file.path)}" title="Remove file">×</button>
     </span>
   `).join("");
 }
@@ -499,7 +526,7 @@ function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo."));
+    reader.onerror = () => reject(reader.error || new Error("Could not read the file."));
     reader.readAsDataURL(file);
   });
 }
@@ -524,10 +551,10 @@ async function uploadSelectedFiles(event) {
         renderAttachments();
         persistUiState();
       } else {
-        addMessage("assistant", result.error || `No se pudo subir ${file.name}`, "error");
+        addMessage("assistant", result.error || `Could not upload ${file.name}`, "error");
       }
     } catch (error) {
-      addMessage("assistant", error.message || `No se pudo subir ${file.name}`, "error");
+      addMessage("assistant", error.message || `Could not upload ${file.name}`, "error");
     }
   }
   els.fileInput.value = "";
@@ -541,10 +568,10 @@ function removeAttachment(path) {
 }
 
 function buildDisplayMessage(message, files) {
-  const base = message || "Lee y resume los archivos adjuntos.";
+  const base = message || "Read and summarize the attached files.";
   if (!files.length) return base;
   const list = files.map((file) => `- ${file.name}`).join("\n");
-  return `${base}\n\nAdjuntos:\n${list}`;
+  return `${base}\n\nAttachments:\n${list}`;
 }
 
 function normalizeSearchText(value) {
@@ -606,10 +633,10 @@ function renderTaskProgress(task, type) {
   if (!task) return "";
   const percent = clampPercent(task.percent || 0);
   const visiblePercent = task.done ? percent : Math.max(percent, task.total ? 3 : 8);
-  const status = task.error || task.status || (type === "delete" ? "Desinstalando" : "Descargando");
+  const status = task.error || task.status || (type === "delete" ? "Uninstalling" : "Downloading");
   const detail = type === "pull"
-    ? (task.total ? `${formatBytes(task.completed)} de ${formatBytes(task.total)}` : "Calculando tamaño...")
-    : (task.done ? "Ollama actualizado" : "Eliminando archivos locales...");
+    ? (task.total ? `${formatBytes(task.completed)} of ${formatBytes(task.total)}` : "Calculating size...")
+    : (task.done ? "Ollama updated" : "Removing local files...");
   const className = `${type} ${task.error ? "error" : task.done ? "done" : "active"}`;
   const busyLoader = !task.done && !task.error
     ? `<span class="tiny-loader" aria-hidden="true"></span>`
@@ -629,15 +656,15 @@ function renderTaskProgress(task, type) {
 
 function renderModelActions(model) {
   const buttons = [
-    `<button type="button" data-action="use" data-model="${escapeHtml(model.id)}">Usar</button>`,
+    `<button type="button" data-action="use" data-model="${escapeHtml(model.id)}">Use</button>`,
   ];
   if (model.installed) {
     buttons.push(
-      `<button class="danger-button" type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Eliminar</button>`,
+      `<button class="danger-button" type="button" data-action="delete" data-tag="${escapeHtml(model.ollama_tag)}">Delete</button>`,
     );
   } else {
     buttons.push(
-      `<button type="button" data-action="pull" data-tag="${escapeHtml(model.ollama_tag)}">Descargar</button>`,
+      `<button type="button" data-action="pull" data-tag="${escapeHtml(model.ollama_tag)}">Download</button>`,
     );
   }
   return `<div class="model-actions">${buttons.join("")}</div>`;
@@ -657,10 +684,10 @@ function renderModels() {
           <h4>${escapeHtml(model.display_name)}</h4>
           <div class="meta">${escapeHtml(model.id)} · ${escapeHtml(model.ollama_tag)}</div>
         </div>
-        <span class="badge ${model.installed ? "ok" : ""}">${model.installed ? "Instalado" : model.tier}</span>
+        <span class="badge ${model.installed ? "ok" : ""}">${model.installed ? "Installed" : model.tier}</span>
       </header>
       <div class="meta">
-        ${escapeHtml(model.categories.join(", "))} · RAM aprox. ${model.ram_inference_gb} GB
+        ${escapeHtml(model.categories.join(", "))} · RAM approx. ${model.ram_inference_gb} GB
         ${model.fit_label ? ` · ${escapeHtml(model.fit_label)}` : ""}
       </div>
       ${renderModelActions(model)}
@@ -673,7 +700,7 @@ function renderModelSelect() {
   const current = els.modelSelect.dataset.pendingValue || els.modelSelect.value;
   const models = orderedModels();
   els.modelSelect.innerHTML = models.map((model) => `
-    <option value="${escapeHtml(model.id)}">${escapeHtml(model.display_name)} ${model.installed ? "" : "(no instalado)"}</option>
+    <option value="${escapeHtml(model.id)}">${escapeHtml(model.display_name)} ${model.installed ? "" : "(not installed)"}</option>
   `).join("");
 
   const currentModel = models.find((model) => model.id === current || model.ollama_tag === current);
@@ -694,23 +721,23 @@ function renderModelSelect() {
 
 function renderSessions(sessions) {
   if (!sessions.length) {
-    els.sessionsList.innerHTML = `<p class="meta">Aún no hay sesiones guardadas.</p>`;
+    els.sessionsList.innerHTML = `<p class="meta">No saved sessions yet.</p>`;
     return;
   }
   els.sessionsList.innerHTML = sessions.map((session) => `
     <article class="session-card">
-      <h4>${escapeHtml(session.title || "Conversación")}</h4>
-      <div class="session-tag">Tag interno: <code>${escapeHtml(session.internal_tag || session.id)}</code></div>
+      <h4>${escapeHtml(session.title || "Conversation")}</h4>
+      <div class="session-tag">Internal tag: <code>${escapeHtml(session.internal_tag || session.id)}</code></div>
       <div class="meta">${escapeHtml(session.model)} · ${escapeHtml(formatDate(session.updated_at))}</div>
       <div class="meta">${escapeHtml(session.cwd)}</div>
       <div class="session-actions">
-        <button type="button" data-session="${escapeHtml(session.id)}">Reanudar</button>
+        <button type="button" data-session="${escapeHtml(session.id)}">Resume</button>
         <button
           class="danger-button"
           type="button"
           data-delete-session="${escapeHtml(session.id)}"
-          title="Eliminar conversacion guardada"
-        >Eliminar</button>
+          title="Delete saved conversation"
+        >Delete</button>
       </div>
     </article>
   `).join("");
@@ -718,7 +745,7 @@ function renderSessions(sessions) {
 
 function renderSystem(payload) {
   if (!payload || !payload.ok || !payload.hardware) {
-    els.systemSummary.textContent = payload?.error || "No se pudo leer el hardware.";
+    els.systemSummary.textContent = payload?.error || "Could not read the hardware.";
     els.recommendationsStrip.innerHTML = "";
     return;
   }
@@ -734,27 +761,27 @@ function renderSystem(payload) {
     : 0;
 
   els.systemSummary.textContent = hardware.memory_pressure
-    ? "Hay presión de memoria: cerrar apps puede permitir modelos más grandes."
-    : "Tu equipo está listo para modelos locales compatibles.";
+    ? "Memory is under pressure: closing apps may allow larger models."
+    : "Your machine is ready for compatible local models.";
 
-  els.ramValue.textContent = `${formatGb(hardware.ram_available_gb)} libres`;
-  els.ramMeta.textContent = `${formatGb(hardware.ram_total_gb)} totales`;
+  els.ramValue.textContent = `${formatGb(hardware.ram_available_gb)} free`;
+  els.ramMeta.textContent = `${formatGb(hardware.ram_total_gb)} total`;
   setMeter(els.ramBar, ramFreePercent);
 
-  els.diskValue.textContent = `${formatGb(disk.free_gb)} libres`;
-  els.diskMeta.textContent = `${formatGb(disk.total_gb)} totales en ${disk.path || "workspace"}`;
+  els.diskValue.textContent = `${formatGb(disk.free_gb)} free`;
+  els.diskMeta.textContent = `${formatGb(disk.total_gb)} total in ${disk.path || "workspace"}`;
   setMeter(els.diskBar, disk.free_percent || 0);
 
   els.budgetValue.textContent = formatGb(hardware.inference_budget_available_gb || hardware.inference_budget_gb);
-  els.budgetMeta.textContent = `Seguro ahora · techo ${formatGb(budgetBase)}`;
+  els.budgetMeta.textContent = `Safe now · ceiling ${formatGb(budgetBase)}`;
   setMeter(els.budgetBar, budgetPercent);
 
   els.modeValue.textContent = hardware.inference_mode === "gpu" ? "GPU" : "CPU";
-  els.modeMeta.textContent = `${hardware.gpu_name || "CPU only"} · ${hardware.cpu_cores} núcleos · ${hardware.hardware_tier}`;
+  els.modeMeta.textContent = `${hardware.gpu_name || "CPU only"} · ${hardware.cpu_cores} cores · ${hardware.hardware_tier}`;
 
   const recommendations = payload.recommendations || [];
   if (!recommendations.length) {
-    els.recommendationsStrip.innerHTML = `<p class="meta">No hay recomendaciones disponibles ahora mismo.</p>`;
+    els.recommendationsStrip.innerHTML = `<p class="meta">No recommendations available right now.</p>`;
     return;
   }
   els.recommendationsStrip.innerHTML = recommendations.map((item) => `
@@ -773,7 +800,7 @@ function renderSystem(payload) {
 
 function groupBy(items, key) {
   return items.reduce((groups, item) => {
-    const value = item[key] || "Otras";
+    const value = item[key] || "Other";
     if (!groups[value]) groups[value] = [];
     groups[value].push(item);
     return groups;
@@ -784,7 +811,7 @@ function renderTools(payload) {
   state.toolCatalog = payload;
   if (!els.toolsSummary || !els.quickActions || !els.toolsList) return;
   if (!payload || !payload.ok) {
-    els.toolsSummary.textContent = payload?.error || "No se pudieron cargar las herramientas.";
+    els.toolsSummary.textContent = payload?.error || "Could not load the tools.";
     els.quickActions.innerHTML = "";
     els.toolsList.innerHTML = "";
     return;
@@ -793,7 +820,7 @@ function renderTools(payload) {
   const tools = payload.tools || [];
   const skills = payload.skills || [];
   const mcpServers = payload.mcp_servers || [];
-  els.toolsSummary.textContent = `${tools.length} herramientas · ${skills.length} skills · ${mcpServers.length} MCP`;
+  els.toolsSummary.textContent = `${tools.length} tools · ${skills.length} skills · ${mcpServers.length} MCP`;
 
   const actions = payload.actions || [];
   els.quickActions.innerHTML = actions.map((action) => `
@@ -809,11 +836,14 @@ function renderTools(payload) {
   `).join("");
 
   const grouped = groupBy(tools, "group");
-  const groupNames = ["Explorar", "Editar", "Git", "Planificación", "Web", "Notebook", "Skills", "MCP", "Sistema", "Otras"]
+  const groupNames = ["Explore", "Edit", "Git", "Planning", "Web", "Notebook", "Skills", "MCP", "System", "Other"]
     .filter((name) => grouped[name]?.length);
   const toolGroups = groupNames.map((group) => `
-    <section class="tool-group">
-      <h4>${escapeHtml(group)}</h4>
+    <details class="tool-section">
+      <summary>
+        <span>${escapeHtml(group)}</span>
+        <small>${grouped[group].length} tools</small>
+      </summary>
       <div class="tool-grid">
         ${grouped[group].map((tool) => `
           <article class="tool-card">
@@ -825,12 +855,15 @@ function renderTools(payload) {
           </article>
         `).join("")}
       </div>
-    </section>
+    </details>
   `).join("");
 
   const skillsHtml = skills.length ? `
-    <section class="tool-group">
-      <h4>Skills cargadas</h4>
+    <details class="tool-section">
+      <summary>
+        <span>Loaded skills</span>
+        <small>${skills.length} available</small>
+      </summary>
       <div class="tool-grid">
         ${skills.map((skill) => `
           <article class="tool-card compact">
@@ -839,12 +872,15 @@ function renderTools(payload) {
           </article>
         `).join("")}
       </div>
-    </section>
+    </details>
   ` : "";
 
   const mcpHtml = mcpServers.length ? `
-    <section class="tool-group">
-      <h4>Servidores MCP configurados</h4>
+    <details class="tool-section">
+      <summary>
+        <span>Configured MCP servers</span>
+        <small>${mcpServers.length} integrations</small>
+      </summary>
       <div class="tool-grid">
         ${mcpServers.map((server) => `
           <article class="tool-card compact">
@@ -853,7 +889,7 @@ function renderTools(payload) {
           </article>
         `).join("")}
       </div>
-    </section>
+    </details>
   ` : "";
 
   els.toolsList.innerHTML = toolGroups + skillsHtml + mcpHtml;
@@ -862,6 +898,9 @@ function renderTools(payload) {
 function applyActionPrompt(prompt) {
   const current = els.messageInput.value.trim();
   els.messageInput.value = current ? `${current}\n\n${prompt}` : prompt;
+  if (els.promptActionsMenu) {
+    els.promptActionsMenu.open = false;
+  }
   switchView("chatView");
   window.setTimeout(() => {
     els.messageInput.focus();
@@ -871,19 +910,19 @@ function applyActionPrompt(prompt) {
 }
 
 function renderOllamaLocation(health) {
-  const api = health.ollama_base_url || "Ollama API no configurada";
-  const executable = health.ollama_executable || "Ejecutable no encontrado en PATH";
-  const modelsDir = health.ollama_models_dir || "Carpeta de modelos no detectada";
+  const api = health.ollama_base_url || "Ollama API not configured";
+  const executable = health.ollama_executable || "Executable not found in PATH";
+  const modelsDir = health.ollama_models_dir || "Models folder not detected";
   return `
     <span><b>API</b>${escapeHtml(api)}</span>
     <span><b>App</b>${escapeHtml(executable)}</span>
-    <span><b>Modelos</b>${escapeHtml(modelsDir)}</span>
+    <span><b>Models</b>${escapeHtml(modelsDir)}</span>
   `;
 }
 
 async function refreshAll() {
   const health = await api("/api/health");
-  els.ollamaStatus.textContent = health.ok ? `Ollama listo (${health.installed_count})` : "Ollama no disponible";
+  els.ollamaStatus.textContent = health.ok ? `Ollama ready (${health.installed_count})` : "Ollama unavailable";
   els.workspaceLabel.innerHTML = renderOllamaLocation(health);
 
   const systemPayload = await api("/api/system");
@@ -905,10 +944,10 @@ async function refreshAll() {
 
 async function runRefreshFromButton(button) {
   if (!button) return;
-  const label = button.dataset.defaultLabel || button.textContent.trim() || "Actualizar datos";
+  const label = button.dataset.defaultLabel || button.textContent.trim() || "Refresh data";
   button.dataset.defaultLabel = label;
   button.disabled = true;
-  button.innerHTML = `<span class="tiny-loader button-loader" aria-hidden="true"></span><span>Actualizando</span>`;
+  button.innerHTML = `<span class="tiny-loader button-loader" aria-hidden="true"></span><span>Refreshing</span>`;
   try {
     await refreshAll();
   } finally {
@@ -923,14 +962,14 @@ async function sendMessage(event) {
   const files = [...state.uploadedFiles];
   if (!message && !files.length) return;
   const model = els.modelSelect.value;
-  const prompt = message || "Lee y resume los archivos adjuntos.";
+  const prompt = message || "Read and summarize the attached files.";
   const sessionId = state.currentSession;
   addMessage("user", buildDisplayMessage(message, files));
   els.messageInput.value = "";
   state.uploadedFiles = [];
   renderAttachments();
   els.sendButton.disabled = true;
-  els.sendButton.textContent = "Working";
+  els.sendButton.textContent = "Working...";
   persistUiState();
   const thinkingNode = addThinkingMessage(prompt, files);
   const requestStartedAt = Date.now();
@@ -955,14 +994,14 @@ async function sendMessage(event) {
       applyTokenUsage(result.usage);
       addMessage(
         "assistant",
-        result.answer || "(sin respuesta)",
+        result.answer || "(no response)",
         "",
         { duration_ms: Date.now() - requestStartedAt },
       );
     } else {
       addMessage(
         "assistant",
-        result.error || "Error desconocido",
+        result.error || "Unknown error",
         "error",
         { duration_ms: Date.now() - requestStartedAt },
       );
@@ -972,13 +1011,13 @@ async function sendMessage(event) {
     removeThinkingMessage(thinkingNode);
     addMessage(
       "assistant",
-      error.message || "No se pudo contactar con Ci2Lab.",
+      error.message || "Could not reach Ci2Lab.",
       "error",
       { duration_ms: Date.now() - requestStartedAt },
     );
   } finally {
     els.sendButton.disabled = false;
-    els.sendButton.textContent = "Enviar";
+    els.sendButton.textContent = "Send";
     persistUiState();
   }
 }
@@ -986,7 +1025,7 @@ async function sendMessage(event) {
 async function loadSessionIntoChat(sessionId) {
   const result = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
   if (!result.ok) {
-    addMessage("assistant", result.error || "No se pudo abrir la sesión", "error");
+    addMessage("assistant", result.error || "Could not open the session", "error");
     return;
   }
 
@@ -1010,7 +1049,7 @@ async function loadSessionIntoChat(sessionId) {
   ));
   if (!visibleMessages.length) {
     setEmptyChat();
-    addMessage("assistant", `Sesión ${session.id} reanudada.`);
+    addMessage("assistant", `Session ${session.id} resumed.`);
     switchView("chatView");
     return;
   }
@@ -1021,19 +1060,19 @@ async function loadSessionIntoChat(sessionId) {
 }
 
 async function deleteSavedSession(sessionId, button) {
-  const confirmed = window.confirm("Eliminar esta conversacion guardada? Se borrara su archivo local.");
+  const confirmed = window.confirm("Delete this saved conversation? Its local file will be removed.");
   if (!confirmed) return;
 
   button.disabled = true;
-  button.textContent = "Eliminando...";
+  button.textContent = "Deleting...";
   const result = await api(`/api/sessions/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
   });
 
   if (!result.ok) {
     button.disabled = false;
-    button.textContent = "Eliminar";
-    addMessage("assistant", result.error || "No se pudo eliminar la sesion.", "error");
+    button.textContent = "Delete";
+    addMessage("assistant", result.error || "Could not delete the session.", "error");
     return;
   }
 
@@ -1061,13 +1100,13 @@ async function pollPullTask(taskId, tag) {
         state.pullTasks[tag] = {
           id: taskId,
           tag,
-          status: "No se pudo consultar la descarga",
+          status: "Could not query the download",
           percent: 0,
           completed: 0,
           total: 0,
           done: true,
           ok: false,
-          error: result.error || "Error desconocido",
+          error: result.error || "Unknown error",
         };
         renderModels();
         break;
@@ -1077,7 +1116,7 @@ async function pollPullTask(taskId, tag) {
       renderModels();
       if (result.task.done) {
         if (!result.task.ok) {
-          addMessage("assistant", result.task.error || "No se pudo descargar el modelo", "error");
+          addMessage("assistant", result.task.error || "Could not download the model", "error");
         }
         await refreshAll();
         break;
@@ -1099,11 +1138,11 @@ async function pollDeleteTask(taskId, tag) {
         state.deleteTasks[tag] = {
           id: taskId,
           tag,
-          status: "No se pudo consultar la desinstalación",
+          status: "Could not query the uninstall",
           percent: 0,
           done: true,
           ok: false,
-          error: result.error || "Error desconocido",
+          error: result.error || "Unknown error",
         };
         renderModels();
         break;
@@ -1113,7 +1152,7 @@ async function pollDeleteTask(taskId, tag) {
       renderModels();
       if (result.task.done) {
         if (!result.task.ok) {
-          addMessage("assistant", result.task.error || "No se pudo desinstalar el modelo", "error");
+          addMessage("assistant", result.task.error || "Could not uninstall the model", "error");
         }
         await refreshAll();
         break;
@@ -1139,14 +1178,14 @@ async function handleModelAction(event) {
     return;
   }
   button.disabled = true;
-  button.textContent = action === "pull" ? "Iniciando..." : "Eliminando...";
+  button.textContent = action === "pull" ? "Starting..." : "Deleting...";
   const endpoint = action === "pull" ? "/api/models/pull" : "/api/models/delete";
   const result = await api(endpoint, {
     method: "POST",
     body: JSON.stringify({ tag }),
   });
   if (!result.ok) {
-    addMessage("assistant", result.error || "No se pudo completar la acción", "error");
+    addMessage("assistant", result.error || "Could not complete the action", "error");
     await refreshAll();
     return;
   }
@@ -1190,7 +1229,15 @@ function bindEvents() {
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
   els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
-  els.agentsMode?.addEventListener("change", updateAgentsModeState);
+  els.agentsModeButton?.addEventListener("click", toggleAgentsMode);
+  els.toolsDrawerToggle?.addEventListener("click", toggleToolsDrawer);
+  els.toolsDrawerClose?.addEventListener("click", () => setToolsDrawer(false));
+  els.toolsBackdrop?.addEventListener("click", () => setToolsDrawer(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.toolsPanel?.classList.contains("open")) {
+      setToolsDrawer(false);
+    }
+  });
   els.quickActions?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action-prompt]");
     if (!button) return;
@@ -1254,6 +1301,6 @@ bindEvents();
 renderTokenInfo();
 switchView(state.activeView || "homeView");
 refreshAll().catch((error) => {
-  els.ollamaStatus.textContent = "Error de UI";
+  els.ollamaStatus.textContent = "UI error";
   addMessage("assistant", error.message, "error");
 });

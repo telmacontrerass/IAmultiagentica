@@ -148,32 +148,40 @@ button {
 
 .status-card {
   border: 1px solid rgba(255, 255, 255, 0.16);
-  padding: 14px;
+  padding: 10px 12px;
   background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+}
+
+.status-card .label {
+  margin-bottom: 4px;
+  font-size: 10px;
 }
 
 .status-card strong {
   display: block;
-  margin-bottom: 8px;
-  line-height: 1.25;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .status-card small {
   color: #cfc9bf;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .status-card small span {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .status-card small b {
   display: block;
   margin-bottom: 2px;
   color: var(--gold);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -272,26 +280,6 @@ button {
   accent-color: var(--gold);
 }
 
-.agents-toggle {
-  min-height: 52px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px 0 0 8px;
-  background: var(--white);
-  justify-content: center;
-}
-
-.chat-tools.agents-active {
-  border-top-color: var(--blue);
-}
-
-.chat-tools.agents-active .agents-toggle {
-  border-color: var(--blue-line);
-  background: var(--blue-soft);
-  color: var(--blue);
-  font-weight: 800;
-}
-
 .ghost-button {
   min-height: 40px;
   padding: 0 16px;
@@ -360,10 +348,6 @@ textarea {
   border-radius: 8px;
 }
 
-.chat-controls select {
-  min-height: 52px;
-}
-
 select:focus,
 input:focus,
 textarea:focus {
@@ -377,38 +361,124 @@ textarea:focus {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto;
   overflow: hidden;
+  border: 2px solid #cdbf9f;
+  background: #ffffff;
 }
 
-.chat-tools {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  align-items: start;
-  border-top: 5px solid var(--gold);
+.chat-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  border-top: 4px solid var(--ink);
+  box-shadow: var(--shadow);
 }
 
-.chat-tools h3 {
-  margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
-  font-weight: 500;
-  font-size: clamp(24px, 3vw, 34px);
-  line-height: 1.08;
+.chat-topbar.agents-active {
+  border-top-color: var(--gold-dark);
 }
 
-.chat-controls {
-  display: grid;
-  grid-template-columns: minmax(220px, 450px) max-content max-content;
+.chat-topbar-main {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  align-items: end;
-  justify-content: start;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.chat-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chat-topbar .model-picker {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 280px;
+}
+
+.chat-topbar select {
+  min-height: 38px;
+  padding: 0 32px 0 12px;
+  font-size: 14px;
+}
+
+.strip-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.strip-button:hover {
+  border-color: var(--gold-dark);
+  background: #fffaf0;
+}
+
+.chat-topbar-actions .strip-button:not(.strip-icon) {
+  border-color: rgba(245, 181, 27, 0.45);
+  box-shadow: 0 0 0 3px rgba(245, 181, 27, 0.12), 0 6px 18px rgba(245, 181, 27, 0.16);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.chat-topbar-actions .strip-button:not(.strip-icon):hover {
+  border-color: var(--gold-dark);
+  box-shadow: 0 0 0 4px rgba(245, 181, 27, 0.18), 0 8px 22px rgba(245, 181, 27, 0.2);
+}
+
+.strip-icon {
+  width: 40px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.strip-button[aria-expanded="true"] {
+  border-color: var(--gold-dark);
+  background: var(--gold);
+}
+
+#toolsDrawerToggle {
+  width: auto;
+  padding: 0 12px;
+  gap: 5px;
+}
+
+#toolsDrawerToggle::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--gold-dark);
+  transition: transform 0.18s ease;
+}
+
+#toolsDrawerToggle[aria-expanded="true"]::after {
+  border-top-color: var(--ink);
+  transform: rotate(180deg);
 }
 
 .token-counter {
   width: fit-content;
   max-width: 100%;
-  min-height: 52px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 10px;
   border: 1px solid var(--blue-line);
   border-left: 5px solid var(--blue);
   border-radius: 8px;
@@ -417,7 +487,7 @@ textarea:focus {
   cursor: pointer;
   display: inline-grid;
   grid-template-columns: auto auto auto auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   justify-self: start;
   text-align: left;
@@ -425,7 +495,7 @@ textarea:focus {
 
 .token-counter-label {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -439,7 +509,7 @@ textarea:focus {
 
 .token-counter > span:not(.token-counter-label):not(.token-arrow) {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .token-arrow {
@@ -475,11 +545,6 @@ textarea:focus {
   background: var(--blue-soft);
 }
 
-.chat-tools .model-picker {
-  align-self: end;
-  min-width: 0;
-}
-
 .control-with-help {
   position: relative;
   min-width: 0;
@@ -491,26 +556,26 @@ textarea:focus {
 .control-main-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: max-content 28px;
+  grid-template-columns: max-content 24px;
   gap: 0;
   align-items: stretch;
 }
 
 .control-main-row .ghost-button,
-.control-main-row .agents-toggle,
 .help-toggle {
-  min-height: 52px;
+  min-height: 40px;
 }
 
 .control-main-row .ghost-button {
   width: max-content;
   white-space: nowrap;
   border-radius: 8px 0 0 8px;
-  font-size: 16px;
+  padding: 0 12px;
+  font-size: 14px;
 }
 
 .help-toggle {
-  width: 28px;
+  width: 24px;
   padding: 0;
   border: 1px solid var(--line);
   border-left: 0;
@@ -538,11 +603,6 @@ textarea:focus {
 
 .control-main-row:has(.ghost-button) .help-toggle::before {
   border-top-color: var(--gold);
-}
-
-.chat-tools.agents-active .control-main-row:has(.agents-toggle) .help-toggle {
-  border-color: var(--blue-line);
-  background: var(--blue-soft);
 }
 
 .help-toggle[aria-expanded="true"]::before {
@@ -662,6 +722,9 @@ textarea:focus {
   flex-direction: column;
   gap: 7px;
   scrollbar-gutter: stable;
+  background:
+    linear-gradient(180deg, rgba(245, 181, 27, 0.05), rgba(245, 181, 27, 0.02)),
+    #fffdf8;
 }
 
 .empty-state {
@@ -712,14 +775,14 @@ textarea:focus {
   max-width: 860px;
   margin-top: 8px;
   padding: 13px 14px 12px;
-  border-color: var(--blue);
+  border-color: var(--gold-dark);
   border-radius: 4px;
   background: #050505;
   color: var(--white);
   font-family: Consolas, "Courier New", monospace;
   font-size: 12px;
   line-height: 1.35;
-  box-shadow: 0 0 0 1px rgba(31, 111, 191, 0.18);
+  box-shadow: 0 0 0 1px rgba(245, 181, 27, 0.18);
 }
 
 .message.session-info::before {
@@ -729,7 +792,7 @@ textarea:focus {
   left: 16px;
   padding: 0 8px;
   background: #050505;
-  color: #7aa7ff;
+  color: var(--gold);
   font-family: "Helvetica Neue", Arial, sans-serif;
   font-size: 12px;
   font-weight: 800;
@@ -766,6 +829,12 @@ textarea:focus {
 .thinking-copy {
   display: grid;
   gap: 1px;
+}
+
+.thinking-status {
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 
 .thinking-time,
@@ -820,24 +889,129 @@ textarea:focus {
   border-top: 1px solid var(--line);
   padding: 8px 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
   background: #f8f6f1;
 }
 
+.composer-toolbar {
+  position: relative;
+  z-index: 3;
+}
+
+.toolbar-button,
+.prompt-actions-menu summary,
 .file-button {
   min-height: 34px;
-  padding: 0 12px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--ink);
-  color: var(--white);
   font-weight: 800;
-  cursor: pointer;
-  border-radius: 10px;
   white-space: nowrap;
+}
+
+.prompt-actions-menu summary,
+.file-button {
+  width: 42px;
+  padding: 0;
+  gap: 2px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.prompt-actions-menu {
+  position: relative;
+}
+
+.prompt-actions-menu summary {
+  list-style: none;
+  box-shadow: 0 0 0 3px rgba(245, 181, 27, 0.08);
+}
+
+.prompt-actions-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-actions-menu summary::after {
+  content: "";
+  width: 0;
+  height: 0;
+  margin-left: 1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--gold-dark);
+  transition: transform 0.18s ease;
+}
+
+.prompt-actions-menu[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.prompt-actions {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(720px, calc(100vw - 340px));
+  max-height: 260px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  box-shadow: var(--shadow);
+  overflow: auto;
+  z-index: 20;
+}
+
+.toolbar-button:hover,
+.prompt-actions-menu summary:hover {
+  border-color: var(--gold-dark);
+  background: #fffaf0;
+}
+
+.agents-mode-button {
+  gap: 6px;
+  padding: 0 12px;
+  border-color: rgba(245, 181, 27, 0.42);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.agents-mode-button .agents-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.agents-mode-button .agents-mode-label {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agents-mode-button:hover {
+  border-color: var(--gold-dark);
+  background: #fffaf0;
+}
+
+.agents-mode-button.active {
+  border-color: var(--gold-dark);
+  background: var(--gold);
+  color: var(--ink);
+}
+
+.file-button {
+  background: var(--gold);
+  color: var(--ink);
+  border: 1px solid var(--gold-dark);
+  font-size: 18px;
+}
+
+.file-button:hover {
+  background: #ffd05a;
 }
 
 .attachments-list {
@@ -902,7 +1076,7 @@ textarea:focus {
 
 .composer textarea {
   min-height: 48px;
-  resize: vertical;
+  resize: none;
   border-radius: 12px;
   padding: 12px;
   font-size: 14px;
@@ -1265,7 +1439,52 @@ textarea:focus {
 .tool-panel {
   display: grid;
   gap: 14px;
-  border-top: 5px solid var(--blue);
+  border-top: 5px solid var(--gold);
+}
+
+.tools-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 7, 5, 0.42);
+  z-index: 40;
+}
+
+.tools-backdrop[hidden] {
+  display: none;
+}
+
+.tools-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 92vw);
+  margin: 0;
+  border: 0;
+  border-left: 4px solid var(--gold);
+  border-radius: 0;
+  box-shadow: -18px 0 48px rgba(22, 19, 14, 0.22);
+  transform: translateX(100%);
+  transition: transform 0.24s ease;
+  overflow-y: auto;
+  align-content: start;
+  z-index: 50;
+}
+
+.tools-drawer.open {
+  transform: translateX(0);
+}
+
+.tools-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.tools-drawer .panel-note {
+  max-width: none;
+  text-align: left;
 }
 
 .quick-actions {
@@ -1288,12 +1507,12 @@ textarea:focus {
 }
 
 .action-chip:hover {
-  border-color: var(--blue-line);
-  background: var(--blue-soft);
+  border-color: var(--gold-dark);
+  background: #fffaf0;
 }
 
 .action-chip span {
-  color: var(--blue);
+  color: var(--gold-dark);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1301,7 +1520,72 @@ textarea:focus {
 
 .tools-list {
   display: grid;
-  gap: 14px;
+  gap: 8px;
+}
+
+.tool-section {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  overflow: hidden;
+}
+
+.tool-section summary {
+  min-height: 46px;
+  padding: 0 44px 0 14px;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  list-style: none;
+  position: relative;
+  font-weight: 800;
+}
+
+.tool-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-section summary::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid var(--gold-dark);
+  transform: translateY(-50%);
+  transition: transform 0.18s ease;
+}
+
+.tool-section[open] summary::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.tool-section summary span,
+.tool-section summary small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-section summary small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tool-section[open] summary {
+  border-bottom: 1px solid var(--line);
+  background: #fffaf0;
+}
+
+.tool-section .quick-actions,
+.tool-section .tool-grid {
+  padding: 12px;
 }
 
 .tool-group {
@@ -1348,7 +1632,7 @@ textarea:focus {
 }
 
 .tool-card small {
-  color: var(--blue);
+  color: var(--gold-dark);
 }
 
 .tool-card.compact {
@@ -1402,15 +1686,13 @@ textarea:focus {
   .topbar,
   .hero,
   .attachment-bar,
-  .composer,
-  .chat-tools,
-  .chat-controls,
-  .token-counter {
+  .composer {
     grid-template-columns: 1fr;
   }
 
-  .token-counter {
-    width: 100%;
+  .prompt-actions {
+    width: min(100%, calc(100vw - 28px));
+    left: 0;
   }
 
   .top-actions {
