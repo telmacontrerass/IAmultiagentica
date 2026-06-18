@@ -17,6 +17,7 @@ which apply to any task.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import uuid
 from collections import deque
@@ -58,6 +59,7 @@ from ci2lab.harness.security.policy import (
     tool_call_signature,
 )
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
+from ci2lab.harness.tools.todo import todo_read
 from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
@@ -256,28 +258,69 @@ def _tool_progress_label(calls: list[ToolCall]) -> str:
     return "Running the next step..."
 
 
-def _current_request_anchor(user_prompt: str) -> dict[str, str]:
+def _todo_plan_snippet(cwd: str) -> str:
+    """A compact, current view of the workspace task plan, or "" if none.
+
+    Re-surfacing the plan keeps a long multi-step task oriented for far fewer
+    tokens than restating the whole prompt, and it survives compaction because
+    `todo_write`/`todo_read` results are not compactable.
+    """
+    raw = todo_read(cwd)
+    try:
+        items = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(items, list) or not items:
+        return ""
+    lines = [
+        f"  [{item.get('status', 'pending')}] {item.get('content', '')}".rstrip()
+        for item in items
+        if isinstance(item, dict)
+    ]
+    if not lines:
+        return ""
+    return "Current task plan (keep it updated with `todo_write`):\n" + "\n".join(lines)
+
+
+def _current_request_anchor(user_prompt: str, cwd: str) -> dict[str, Any]:
+    plan = _todo_plan_snippet(cwd)
+    plan_block = f"\n\n{plan}" if plan else ""
     return {
         "role": "user",
+        "_anchor": True,
         "content": (
             "The user's current request is:\n"
             f"{user_prompt}\n\n"
             "Finish this request fully, including any file/tool-output "
             "instructions it depends on. Do not resume an unrelated earlier task."
+            f"{plan_block}"
         ),
     }
 
 
-def _role_anchor_message(role_anchor: str) -> dict[str, str]:
+def _role_anchor_message(role_anchor: str) -> dict[str, Any]:
     """Wrap a subagent role anchor as a user message for reinjection."""
     return {
         "role": "user",
+        "_anchor": True,
         "content": (
             f"{role_anchor}\n\n"
             "Continue within this subagent role. Use the tool results already "
             "available and do not switch responsibilities."
         ),
     }
+def _strip_anchors(history: list[dict[str, Any]]) -> None:
+    """Remove every anchor message from history, in place.
+
+    Anchors are re-appended fresh each round; clearing the prior round's first
+    means history holds at most one anchor pair instead of accumulating one full
+    copy of the prompt (+ role boilerplate) per round — the dominant context
+    leak on long multi-step tasks. Anchors are synthetic user messages appended
+    after tool results, so dropping them never breaks tool_call/result pairing.
+    """
+    history[:] = [m for m in history if not m.get("_anchor")]
+
+
 def _print_model_step(content: str, *, already_streamed: bool) -> None:
     """Show non-tool text from a model round before executing tools."""
     display = strip_tool_markup(content).strip()
@@ -731,9 +774,12 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            # Keep only the freshest anchors: drop the previous round's before
+            # re-appending, so the prompt is restated once, not once per round.
+            _strip_anchors(history)
             if cfg.role_anchor:
                 history.append(_role_anchor_message(cfg.role_anchor))
-            history.append(_current_request_anchor(user_prompt))
+            history.append(_current_request_anchor(user_prompt, cfg.cwd))
 
             # Error-streak cutoff: even when arguments change each round (so the
             # signature detector does not see a loop), if every tool fails for

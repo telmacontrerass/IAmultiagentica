@@ -19,23 +19,28 @@ from ci2lab.harness.context.trim import estimate_tokens
 TOOL_RESULT_STUB = "[Old tool result cleared to save context — re-run the tool if needed]"
 SUMMARY_PREFIX = "[Summary of earlier conversation]"
 
-COMPACTABLE_TOOLS = frozenset({
-    "read_file",
-    "bash",
-    "grep",
-    "glob",
-    "ls",
-    "web_fetch",
-    "git_status",
-    "git_diff",
-    "write_file",
-    "edit_file",
+# Compact by default: any tool result old enough is replaced by a stub. Only a
+# small set of tools is protected, because their output is short, structural, or
+# the model is expected to act on it directly (a re-read would lose the plan).
+# Inverting the rule this way means new/rare tools (read_document, web_search,
+# tree, inspect_file, mcp__*, …) are covered automatically instead of leaking.
+NON_COMPACTABLE_TOOLS = frozenset({
+    "todo_write",
+    "todo_read",
+    "ask_user",
 })
 
 MIN_STUB_CHARS = 200
-KEEP_RECENT_TOOL_RESULTS = 4
+KEEP_RECENT_TOOL_RESULTS = 3
 KEEP_RECENT_MESSAGES = 6
-COMPACT_THRESHOLD_PCT = 0.8
+# Two-stage gate: the cheap, near-lossless micro-compact fires early so context
+# stays lean throughout a long task; the expensive LLM summary stays
+# conservative so we don't burn a model call (or, with a small context model,
+# fire one almost immediately) until trimming is genuinely needed.
+MICRO_COMPACT_THRESHOLD_PCT = 0.65
+SUMMARY_COMPACT_THRESHOLD_PCT = 0.8
+# Back-compat default for should_compact callers that don't specify a stage.
+COMPACT_THRESHOLD_PCT = MICRO_COMPACT_THRESHOLD_PCT
 MAX_SUMMARY_FAILURES = 3
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -89,7 +94,7 @@ def micro_compact(
         if len(content) <= MIN_STUB_CHARS or content == TOOL_RESULT_STUB:
             continue
         tool_name = names.get(str(msg.get("tool_call_id")), "")
-        if tool_name and tool_name not in COMPACTABLE_TOOLS:
+        if tool_name in NON_COMPACTABLE_TOOLS:
             continue
         result[i] = {**msg, "content": TOOL_RESULT_STUB}
         stubbed += 1
@@ -189,14 +194,20 @@ def manage_context(
 ) -> tuple[list[dict[str, Any]], int, list[str]]:
     events: list[str] = []
 
-    if not should_compact(history, context_length):
+    if not should_compact(
+        history, context_length, threshold_pct=MICRO_COMPACT_THRESHOLD_PCT
+    ):
         return history, summary_failures, events
 
     history, stubbed = micro_compact(history)
     if stubbed:
         events.append(f"Context: micro-compact cleared {stubbed} old tool result(s).")
 
-    if not should_compact(history, context_length):
+    # Only reach for the expensive LLM summary once the cheaper pass leaves us
+    # near the real ceiling — not at the proactive micro-compact threshold.
+    if not should_compact(
+        history, context_length, threshold_pct=SUMMARY_COMPACT_THRESHOLD_PCT
+    ):
         return history, summary_failures, events
 
     if summary_failures >= MAX_SUMMARY_FAILURES:
