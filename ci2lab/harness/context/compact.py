@@ -101,6 +101,84 @@ def micro_compact(
     return result, stubbed
 
 
+# Path-keyed readers: an older result for the same path is stale once a newer
+# read of that path appears (e.g. the file was re-read after an edit), so the
+# older one is safe to drop. Search/listing tools are excluded — their key is
+# the query, not a single path, and dropping them is riskier.
+SUPERSEDABLE_READ_TOOLS = frozenset({
+    "read_file",
+    "read_document",
+    "inspect_file",
+    "file_info",
+})
+SUPERSEDED_READ_STUB = (
+    "[Earlier read of {path} cleared — a newer read of it appears later in the "
+    "conversation. Re-read it if you need this older version.]"
+)
+
+
+def _tool_meta_by_call_id(
+    messages: list[dict[str, Any]],
+) -> dict[str, tuple[str, dict[str, Any]]]:
+    """Map each tool_call_id to its (tool_name, parsed-arguments)."""
+    meta: dict[str, tuple[str, dict[str, Any]]] = {}
+    for msg in messages:
+        for tc in msg.get("tool_calls") or []:
+            call_id = tc.get("id")
+            fn = tc.get("function") or {}
+            name = fn.get("name")
+            if not call_id or not name:
+                continue
+            raw_args = fn.get("arguments")
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                try:
+                    parsed = json.loads(raw_args) if raw_args else {}
+                    args = parsed if isinstance(parsed, dict) else {}
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+            meta[call_id] = (name, args)
+    return meta
+
+
+def prune_superseded_reads(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Stub every read of a path except the most recent one for that path.
+
+    Runs regardless of context pressure: a stale duplicate read is pure waste,
+    so clearing it keeps long, edit-heavy tasks lean without an LLM call.
+    """
+    meta = _tool_meta_by_call_id(messages)
+    keyed: list[tuple[int, str]] = []
+    for i, msg in enumerate(messages):
+        if msg.get("role") != "tool":
+            continue
+        nm = meta.get(str(msg.get("tool_call_id")))
+        if not nm:
+            continue
+        name, args = nm
+        path = args.get("path")
+        if name in SUPERSEDABLE_READ_TOOLS and path:
+            keyed.append((i, f"{name}:{path}"))
+
+    last_index_for_key: dict[str, int] = {key: i for i, key in keyed}
+    result = list(messages)
+    pruned = 0
+    for i, key in keyed:
+        if i == last_index_for_key[key]:
+            continue  # keep the freshest read of this path
+        msg = result[i]
+        content = msg.get("content") or ""
+        if len(content) <= MIN_STUB_CHARS or content == TOOL_RESULT_STUB:
+            continue
+        path = key.split(":", 1)[1]
+        result[i] = {**msg, "content": SUPERSEDED_READ_STUB.format(path=path)}
+        pruned += 1
+    return result, pruned
+
+
 def _render_transcript(messages: list[dict[str, Any]], max_chars: int) -> str:
     lines: list[str] = []
     for msg in messages:
@@ -193,6 +271,16 @@ def manage_context(
     summary_failures: int = 0,
 ) -> tuple[list[dict[str, Any]], int, list[str]]:
     events: list[str] = []
+
+    # Always drop stale duplicate reads first — cheap, lossless, and it keeps a
+    # long edit-heavy task from carrying every prior version of a file. Keep the
+    # original list identity when nothing was pruned (callers may rely on it).
+    pruned_history, superseded = prune_superseded_reads(history)
+    if superseded:
+        history = pruned_history
+        events.append(
+            f"Context: cleared {superseded} superseded read(s) of re-read file(s)."
+        )
 
     if not should_compact(
         history, context_length, threshold_pct=MICRO_COMPACT_THRESHOLD_PCT

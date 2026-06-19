@@ -28,6 +28,7 @@ TOOL_NAMES = frozenset({
     "mcp_call",
     "docx_to_pdf",
     "pdf_to_docx",
+    "delegate",
 })
 
 

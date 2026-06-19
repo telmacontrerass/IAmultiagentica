@@ -177,6 +177,8 @@ def build_subagent_config(
         session_id=None,
         skill_allowed_tools=_resolve_subagent_allowed_tools(role, config),
         role_anchor=build_role_anchor(role),
+        delegation_depth=config.delegation_depth + 1,
+        verify_completion=False,
     )
 
 

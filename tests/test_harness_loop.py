@@ -657,6 +657,43 @@ def test_read_cache_invalidated_after_mutation():
     assert exec_mock.call_count == 3
 
 
+def test_final_round_forces_toolfree_wrapup():
+    # A task that never finishes must not end on half-formed tool output. On the
+    # last allowed round the loop disables tools and asks for a handoff summary.
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".", stream=False, auto_confirm=True, run_log_enabled=False, max_rounds=2
+    )
+    keep_calling = LLMResponse(
+        content="",
+        tool_calls=[{"id": "c1", "function": {"name": "ls", "arguments": '{"path": "."}'}}],
+    )
+    wrapup = LLMResponse(content="Done step 1; step 2 remains. Next: run tests.", tool_calls=[])
+
+    exec_mock = MagicMock(
+        side_effect=lambda call, _cfg: ToolResult(
+            tool_name=call.name, content="a\nb", is_error=False, call_id=call.call_id
+        )
+    )
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", exec_mock),
+    ):
+        client = MockClient.return_value
+        # Model would keep calling tools forever; the second call is the final round.
+        client.chat.side_effect = [keep_calling, wrapup]
+        result = run_agent("do a long multi-step task", selection, config=config)
+
+    # The tool ran only on round 1; round 2 was forced tool-free.
+    assert exec_mock.call_count == 1
+    # Round 2 was called with tools disabled and carried the wrap-up directive.
+    final_call = client.chat.call_args_list[1]
+    assert final_call.kwargs.get("tools") is None
+    sent = final_call.args[0]
+    assert any("final step for this request" in str(m.get("content", "")) for m in sent)
+    assert "step 2 remains" in result
+
+
 def test_described_change_without_write_triggers_one_nudge():
     # The user asked to write code; the model only narrates it and never calls a
     # write tool. The loop nudges once to actually apply it, then accepts a real
@@ -695,6 +732,46 @@ def test_described_change_without_write_triggers_one_nudge():
         if isinstance(m, dict)
     )
     assert "main.py" in result
+
+
+def test_dependent_write_skipped_after_failed_read_in_same_round():
+    # The model batches an optimistic plan in one turn: pdf_to_docx (fails) ->
+    # read_document (fails) -> write_file with placeholder content. The write
+    # depends on the failed steps, so it must be SKIPPED, never committing the
+    # placeholder to disk.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    batched = LLMResponse(
+        content="",
+        tool_calls=[
+            {"id": "c1", "function": {"name": "pdf_to_docx", "arguments": '{"source": "exam.pdf", "output": "exam.docx"}'}},
+            {"id": "c2", "function": {"name": "read_document", "arguments": '{"path": "exam.docx"}'}},
+            {"id": "c3", "function": {"name": "write_file", "arguments": '{"path": "ex1.txt", "content": "<EXERCISE_1_TEXT>"}'}},
+        ],
+    )
+    final = LLMResponse(content="I could not read the PDF.", tool_calls=[])
+
+    def fake_execute(call, _cfg):
+        # Both upstream steps fail; the write must never reach execute_tool.
+        return ToolResult(
+            tool_name=call.name,
+            content="Error: dependency missing" if call.name != "write_file" else "Wrote ex1.txt",
+            is_error=call.name != "write_file",
+            call_id=call.call_id,
+        )
+
+    exec_mock = MagicMock(side_effect=fake_execute)
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", exec_mock),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [batched, final]
+        run_agent("read exam.pdf and write exercise 1 to a txt", selection, config=config)
+
+    executed = [c.args[0].name for c in exec_mock.call_args_list]
+    assert "write_file" not in executed  # placeholder write was skipped
+    assert executed == ["pdf_to_docx", "read_document"]
 
 
 def test_no_write_nudge_for_read_only_request():

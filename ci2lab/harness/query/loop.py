@@ -50,6 +50,7 @@ from ci2lab.harness.query.retry_governor import (
     error_class_key,
 )
 from ci2lab.harness.query.session_hooks import maybe_save_session
+from ci2lab.harness.query.verifier import VERIFIER_MAX_PER_TURN, verify_completion
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.session import delete_session, is_delete_session_request, load_session
 from ci2lab.harness.security.policy import (
@@ -134,6 +135,29 @@ _ALREADY_RETRIEVED_MESSAGE = (
     "above. Not running it again. Use that result and continue with the next "
     "step of the task; if every step is already done, give the final answer."
 )
+_MAX_ROUNDS_WRAPUP = (
+    "This is the final step for this request — no more tools will run after this "
+    "message, so do not attempt any tool call. Reply with a short plain-text "
+    "handoff so the work can be picked up cleanly:\n"
+    "- What you accomplished (with exact files/commands/results).\n"
+    "- What is still unfinished.\n"
+    "- The single recommended next step.\n"
+    "- Any blocker that stopped you.\n"
+    "Do not claim the task is fully done unless a tool result already confirmed it."
+)
+_SKIPPED_AFTER_ERROR_MESSAGE = (
+    "Not run: an earlier tool call in this same turn failed, and this call "
+    "depends on workspace state that the failed step was supposed to produce. "
+    "Writing now would only save placeholder or stale content. Read the error "
+    "above, do the read/convert step first and wait for its real result, then "
+    "issue this write in a later turn with the actual content."
+)
+_VERIFIER_FIX_MESSAGE = (
+    "An independent verifier checked your work against the original request and "
+    "found issues that must be fixed before this is done:\n\n{issues}\n\n"
+    "Fix these now with the appropriate tools, then finish. If a point is wrong, "
+    "explain why instead of guessing."
+)
 _DESCRIBED_NOT_WRITTEN_NUDGE = (
     "You described the change in prose but did not apply it — nothing was written "
     "to disk. The request needs a file created or edited, so call `write_file` "
@@ -165,6 +189,10 @@ _MUTATING_TOOLS = frozenset({
     "write_docx",
     "docx_to_pdf",
     "pdf_to_docx",
+    # An "edit"-mode delegation can create or modify files via its subagent, so
+    # treat it as a mutation: it invalidates the read cache and is skipped after
+    # an upstream error in the same batch, like any other write.
+    "delegate",
 })
 # The user's current prompt explicitly asks to create or change something. Used
 # only to nudge once when the model narrates a change without ever applying it.
@@ -253,6 +281,8 @@ def _tool_progress_label(calls: list[ToolCall]) -> str:
         return "Running the requested check..."
     if names & {"todo_write"}:
         return "Updating the task plan..."
+    if names & {"delegate"}:
+        return "Delegating a focused subtask to a subagent..."
     if any(name == "skill" or name == "mcp_call" or name.startswith("mcp__") for name in names):
         return "Using the selected integration..."
     return "Running the next step..."
@@ -406,6 +436,8 @@ def run_agent(
     on_progress: Callable[[str], None] | None = None,
 ) -> str:
     cfg = config or AgentConfig(cwd=".")
+    # Bind the model so tools that spawn a subagent (e.g. `delegate`) reuse it.
+    cfg.selection = selection
     cfg.token_usage.reset_turn()
     if cfg.session_id:
         stored_session = load_session(cfg.session_id)
@@ -461,6 +493,11 @@ def run_agent(
     # only to suppress the "describe but don't write" nudge — if the model
     # already tried to write, re-nudging it is pointless.
     attempted_write_this_turn = False
+    # Effectful work that actually succeeded this turn, with a short descriptor
+    # per action. Drives the opt-in completion verifier: no successful mutation
+    # means there is nothing to independently check.
+    effectful_actions: list[str] = []
+    verifier_runs = 0
     write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
     completed_edits: set[EditSignature] = set()
     final_text = ""
@@ -495,10 +532,18 @@ def run_agent(
             content = ""
             calls: list[ToolCall] = []
 
+            # On the last allowed round, stop starting new tool work that cannot
+            # finish. Force a tool-free turn that produces a clean handoff (what
+            # is done, what remains, the next step) instead of ending on whatever
+            # half-formed text the model happened to emit.
+            final_round = round_num == cfg.max_rounds and cfg.max_rounds > 1
+            if final_round:
+                history.append({"role": "user", "content": _MAX_ROUNDS_WRAPUP})
+
             trimmed = trim_messages(history, selection.context_length)
             tools = (
                 get_function_schemas(cfg)
-                if selection.supports_tools and not stop_tools_requested
+                if selection.supports_tools and not stop_tools_requested and not final_round
                 else None
             )
             web_search_available = bool(
@@ -556,7 +601,10 @@ def run_agent(
                 llm_response.tool_calls,
                 tool_mode=selection.tool_mode,
             )
-            if stop_tools_requested:
+            if stop_tools_requested or final_round:
+                # Fenced tool mode can parse a tool call straight out of the
+                # text even with tools disabled; drop them so the wrap-up turn
+                # truly runs no tools.
                 calls = []
             calls = _prepend_missing_reads(calls, user_prompt)
             calls = _redirect_fetch_to_search(calls, user_prompt, web_search_used)
@@ -566,6 +614,22 @@ def run_agent(
                 content = ""
 
             if not calls:
+                if final_round:
+                    # Forced wrap-up turn: take the handoff text as-is and stop.
+                    # Skip the recovery nudges — there is no round left to act on
+                    # them, and the model was told not to call tools.
+                    status = "max_rounds"
+                    final_text = (
+                        strip_tool_markup(content).strip()
+                        or content.strip()
+                        or "Reached the round limit without a final answer."
+                    )
+                    _emit_progress("", on_progress)
+                    if final_text and not streamed_this_round:
+                        console.print(final_text)
+                    append_assistant_turn(history, final_text or content)
+                    maybe_save_session(cfg, history, selection)
+                    break
                 if (
                     stop_tools_requested
                     and not (strip_tool_markup(content).strip() or content.strip())
@@ -631,6 +695,38 @@ def run_agent(
                     )
                     maybe_save_session(cfg, history, selection)
                     continue
+                # Opt-in completion verification: the agent is about to report
+                # done and effectful work really happened this turn. A fresh
+                # read-only subagent checks the workspace against the original
+                # request; on a clear failure, feed the gaps back and keep going.
+                if (
+                    final_text
+                    and cfg.verify_completion
+                    and effectful_actions
+                    and verifier_runs < VERIFIER_MAX_PER_TURN
+                    and selection.supports_tools
+                    and not stop_tools_requested
+                ):
+                    verifier_runs += 1
+                    _emit_progress("Verifying the result against the request...", on_progress)
+                    issues = verify_completion(
+                        cfg, selection, user_prompt, effectful_actions
+                    )
+                    if issues:
+                        console.print(
+                            "[yellow]Verifier found gaps; asking the model to "
+                            "fix them before finishing.[/yellow]"
+                        )
+                        append_assistant_turn(history, final_text or content)
+                        history.append({
+                            "role": "user",
+                            "content": _VERIFIER_FIX_MESSAGE.format(issues=issues),
+                        })
+                        # The fix work invalidates this snapshot; rebuild it from
+                        # the next round's real actions.
+                        effectful_actions = []
+                        maybe_save_session(cfg, history, selection)
+                        continue
                 _emit_progress("Finalizing the answer...", on_progress)
                 _emit_progress("", on_progress)
                 if final_text and streamed_this_round:
@@ -676,6 +772,12 @@ def run_agent(
             append_assistant_turn(history, content, calls)
             results = []
             round_policy_error = False
+            # A model may emit a whole optimistic plan in one turn (e.g. convert →
+            # read → write) before seeing any result. If an earlier call fails,
+            # running a later *mutating* call here would commit placeholder or
+            # stale content to disk — and falsely report success. Skip those
+            # writes and let the model re-issue them next turn with real data.
+            round_had_error = False
             _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
@@ -692,7 +794,17 @@ def run_agent(
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
                 rsig = _read_signature(call)
-                if (
+                if round_had_error and call.name in _MUTATING_TOOLS:
+                    # An earlier call in this same batch failed. Do not commit a
+                    # dependent write built on data that step never produced.
+                    result = ToolResult(
+                        tool_name=call.name,
+                        content=_SKIPPED_AFTER_ERROR_MESSAGE,
+                        is_error=True,
+                        call_id=call.call_id,
+                        outcome="skipped_after_error",
+                    )
+                elif (
                     call.name in _READ_ONLY_TOOLS
                     and rsig in satisfied_reads
                     and psig not in policy_blocked_sigs
@@ -750,13 +862,22 @@ def run_agent(
                     attempted_write_this_turn = True
                     if not result.is_error:
                         satisfied_reads.clear()
+                        # Record real, successful effectful work for the verifier.
+                        effectful_actions.append(
+                            f"{call.name} {summarize_args(call.arguments)}".strip()
+                        )
                 if not result.is_error and call.name in _READ_ONLY_TOOLS:
                     satisfied_reads.add(rsig)
-                if result.is_error and result.outcome != "blocked_by_policy":
-                    failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
-                    eclass = error_class_key(call, result)
-                    error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
-                    error_class_last[eclass] = result.content
+                if result.is_error:
+                    # Remember a real failure so a later call in this batch is not
+                    # built on it. A skipped write is not itself a failed call, so
+                    # it must not feed the retry-governor counters below.
+                    round_had_error = True
+                    if result.outcome not in ("blocked_by_policy", "skipped_after_error"):
+                        failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
+                        eclass = error_class_key(call, result)
+                        error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
+                        error_class_last[eclass] = result.content
                 ended_at = datetime.now(timezone.utc)
                 if run_log:
                     run_log.record_tool_call(

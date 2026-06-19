@@ -104,6 +104,7 @@ DISPATCH: dict[str, Callable[..., str]] = {
         a["skill_name"],
         a.get("args"),
     ),
+    "delegate": lambda cfg, a: _run_delegate(cfg, a),
     "mcp_call": lambda cfg, a: execute_mcp_call(
         cfg,
         a["server"],
@@ -123,6 +124,16 @@ def execute_mcp_call(
 
     mgr = get_mcp_manager(config.cwd, connect=True)
     return mgr.call(server, tool, arguments)
+
+
+def _run_delegate(config: AgentConfig, args: dict[str, Any]) -> str:
+    from ci2lab.harness.tools.delegate import run_delegation
+
+    return run_delegation(
+        config,
+        str(args.get("task", "")),
+        str(args.get("mode", "explore") or "explore"),
+    )
 
 
 def _run_fill_docx(config: AgentConfig, args: dict[str, Any]) -> str:

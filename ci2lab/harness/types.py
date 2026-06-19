@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from ci2lab.harness.token_usage import TokenUsageState
 
 if TYPE_CHECKING:
+    from ci2lab.contracts.types import ModelSelection
     from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
     from ci2lab.settings import ToolSettings
 
@@ -65,6 +66,12 @@ class AgentConfig:
     require_diff_preview: bool = True
     """If True, write/edit always show a diff and ask for confirmation (--yes does not skip)."""
 
+    verify_completion: bool = False
+    """If True, after the agent reports a task done AND effectful work happened
+    this turn, a fresh read-only subagent verifies the result against the
+    original request; on failure the agent is asked to fix it. Opt-in: on weak
+    local models the verifier can false-reject, so it stays off by default."""
+
     security_profile: str = "standard"
     """Security profile (strict, standard, dev, audit)."""
 
@@ -79,6 +86,14 @@ class AgentConfig:
 
     role_anchor: str | None = None
     """English role-discipline anchor reinjected for subagents after tool rounds."""
+
+    selection: ModelSelection | None = None
+    """Active model selection. Set by run_agent so tools (e.g. `delegate`) can
+    spawn a subagent with the same model. Not part of the persisted config."""
+
+    delegation_depth: int = 0
+    """How deep this run is in the delegate-subagent chain. 0 = top-level agent.
+    Bounds recursion: a subagent at the max depth cannot delegate again."""
 
     last_run_dir: str | None = None
     """Latest run directory produced by RunLogger for this config instance."""

@@ -257,10 +257,18 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
         )
 
-    if len(output) > config.max_tool_output_chars:
+    if len(output) > config.max_tool_output_chars and not output.startswith("Error:"):
+        # Preserve the full result on disk and hand back a head+tail preview so
+        # the tail is recoverable instead of silently dropped.
+        from ci2lab.harness.tools.output_offload import offload_large_output
+
+        output = offload_large_output(
+            config.cwd, name, call.call_id, output, config.max_tool_output_chars
+        )
+    elif len(output) > config.max_tool_output_chars:
         output = (
             output[: config.max_tool_output_chars]
-            + f"\n... (truncado, {len(output)} caracteres totales)"
+            + f"\n... (truncated, {len(output)} characters total)"
         )
     is_error = output.startswith("Error:")
     if is_error:
