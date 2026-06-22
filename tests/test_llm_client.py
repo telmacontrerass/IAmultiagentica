@@ -103,7 +103,6 @@ def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
     # The OpenAI-only fields must not leak into the native request.
     assert "max_tokens" not in captured["payload"]
 
-
 def test_chat_cancel_event_closes_blocking_client(monkeypatch):
     cancel_event = threading.Event()
     closed_clients = []
@@ -138,6 +137,64 @@ def test_chat_cancel_event_closes_blocking_client(monkeypatch):
 
     assert closed_clients
     assert closed_clients[0].closed is True
+
+
+def test_native_payload_converts_openai_tool_history(monkeypatch):
+    # Regression: the history stores tool calls OpenAI-style (arguments as a
+    # JSON string, tool results with tool_call_id). Ollama's native endpoint
+    # rejects that and only accepts arguments-as-object + bare tool messages.
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"message": {"content": "done"}, "done": True},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    history = [
+        {"role": "user", "content": "search it"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_0",
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "arguments": '{"query": "Spain vs Saudi Arabia", "max_results": 5}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_0", "content": "Spain won 4-0"},
+    ]
+
+    client = LLMClient(_selection())
+    client.chat(history)
+
+    sent = captured["payload"]["messages"]
+    # Assistant tool-call arguments are now an object, not a string.
+    assistant = next(m for m in sent if m.get("tool_calls"))
+    args = assistant["tool_calls"][0]["function"]["arguments"]
+    assert args == {"query": "Spain vs Saudi Arabia", "max_results": 5}
+    # Tool result is reduced to the native shape (no tool_call_id).
+    tool_msg = next(m for m in sent if m.get("role") == "tool")
+    assert tool_msg == {"role": "tool", "content": "Spain won 4-0"}
 
 
 def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):

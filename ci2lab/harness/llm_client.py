@@ -101,13 +101,53 @@ class LLMClient:
             options["num_predict"] = self.selection.max_tokens
         payload: dict[str, Any] = {
             "model": model or self.selection.ollama_tag,
-            "messages": messages,
+            "messages": self._to_native_messages(messages),
             "stream": stream,
             "options": options,
         }
         if tools and self.selection.supports_tools and self.selection.tool_mode == "native":
             payload["tools"] = tools
         return payload
+
+    @staticmethod
+    def _to_native_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Adapt the harness's OpenAI-shaped history to Ollama's native format.
+
+        History is stored OpenAI-style (for the /v1 path and session files):
+        tool-call `arguments` are a JSON *string* and tool results carry a
+        `tool_call_id`. Ollama's native /api/chat instead wants `arguments` as a
+        JSON *object* and a bare `{role: tool, content}` — sending the OpenAI
+        shape makes it reject the request once a prior tool call is replayed.
+        """
+        converted: list[dict[str, Any]] = []
+        for msg in messages:
+            raw_calls = msg.get("tool_calls")
+            if raw_calls:
+                native_calls = []
+                for tc in raw_calls:
+                    fn = tc.get("function") or {}
+                    args = fn.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args) if args.strip() else {}
+                        except json.JSONDecodeError:
+                            args = {}
+                    elif not isinstance(args, dict):
+                        args = {}
+                    native_calls.append(
+                        {"function": {"name": fn.get("name", ""), "arguments": args}}
+                    )
+                new_msg = {k: v for k, v in msg.items() if k != "tool_calls"}
+                new_msg["tool_calls"] = native_calls
+                converted.append(new_msg)
+            elif msg.get("role") == "tool":
+                # Native tool result: role + content only (no tool_call_id).
+                converted.append({"role": "tool", "content": msg.get("content", "")})
+            else:
+                converted.append(msg)
+        return converted
 
     def _model_candidates(self) -> list[str]:
         candidates = [
