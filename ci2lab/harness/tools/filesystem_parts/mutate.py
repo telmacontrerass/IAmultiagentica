@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from ci2lab.harness.tools.filesystem_parts.access import resolve_or_error
+from ci2lab.harness.tools.placeholder_content import (
+    looks_like_placeholder_content,
+    placeholder_content_message,
+)
 from ci2lab.harness.tools.secret_files import is_sensitive_path, secret_file_block_message
 
 
@@ -13,6 +17,11 @@ def write_file(cwd: str, path: str, content: str) -> str:
     assert resolved is not None
     if is_sensitive_path(resolved, workspace=cwd):
         return secret_file_block_message()
+    if looks_like_placeholder_content(content):
+        # The model wrote a variable reference instead of the real text; refuse
+        # so the file does not end up holding a useless token, and tell it to
+        # inline the actual content.
+        return placeholder_content_message(content)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
     return f"Wrote {resolved} ({len(content)} characters)"
