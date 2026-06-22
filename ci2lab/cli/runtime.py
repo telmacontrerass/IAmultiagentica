@@ -48,18 +48,33 @@ def _build_config(
     args: argparse.Namespace,
     selection,
 ):
+    import os
+    from pathlib import Path
+
     from ci2lab.pipeline import build_agent_config
     from ci2lab.settings import load_settings
 
-    tool_settings = load_settings(
-        getattr(args, "workspace", None) or getattr(args, "cwd", None) or "."
+    effective_cwd = (
+        getattr(args, "workspace", None)
+        or getattr(args, "cwd", None)
+        or runtime.workspace
+        or os.getcwd()
     )
+    tool_settings = load_settings(effective_cwd)
+
+    # Resolve --image paths against the effective workspace so that relative
+    # paths like "--image image1.png" work from any working directory.
+    raw_images = getattr(args, "images", None) or []
+    resolved_images = [
+        str(Path(p) if Path(p).is_absolute() else Path(effective_cwd) / p)
+        for p in raw_images
+    ]
 
     return build_agent_config(
         runtime,
         selection,
         session_id=args.session,
-        image_paths=getattr(args, "images", None) or [],
+        image_paths=resolved_images,
         tool_settings=tool_settings,
         vision_model=tool_settings.vision_model or "",
         vision_enabled=tool_settings.vision_enabled if tool_settings.vision_enabled is not None else True,

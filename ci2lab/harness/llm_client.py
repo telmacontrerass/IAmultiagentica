@@ -120,6 +120,10 @@ class LLMClient:
         `tool_call_id`. Ollama's native /api/chat instead wants `arguments` as a
         JSON *object* and a bare `{role: tool, content}` — sending the OpenAI
         shape makes it reject the request once a prior tool call is replayed.
+
+        Multimodal messages are also converted: OpenAI uses a *list* of typed
+        content blocks, while Ollama native uses a plain ``content`` string plus
+        a separate ``images`` list of raw base64 strings (no data-URL prefix).
         """
         converted: list[dict[str, Any]] = []
         for msg in messages:
@@ -145,6 +149,24 @@ class LLMClient:
             elif msg.get("role") == "tool":
                 # Native tool result: role + content only (no tool_call_id).
                 converted.append({"role": "tool", "content": msg.get("content", "")})
+            elif isinstance(msg.get("content"), list):
+                # Multimodal message: OpenAI list-of-blocks → Ollama native format.
+                # Collect text parts and base64 image data separately.
+                text_parts: list[str] = []
+                images: list[str] = []
+                for block in msg["content"]:
+                    if block.get("type") == "text":
+                        text_parts.append(block.get("text") or "")
+                    elif block.get("type") == "image_url":
+                        url = (block.get("image_url") or {}).get("url", "")
+                        # Strip "data:image/TYPE;base64," prefix → raw base64.
+                        if ";base64," in url:
+                            images.append(url.split(";base64,", 1)[1])
+                new_msg = {k: v for k, v in msg.items() if k != "content"}
+                new_msg["content"] = " ".join(text_parts)
+                if images:
+                    new_msg["images"] = images
+                converted.append(new_msg)
             else:
                 converted.append(msg)
         return converted

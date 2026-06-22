@@ -147,6 +147,96 @@ def build_vision_content(
 
 
 # ---------------------------------------------------------------------------
+# Image path extraction from free-form text
+# ---------------------------------------------------------------------------
+
+_IMG_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif",
+})
+
+# One pattern that captures image-looking strings in order of specificity:
+#   group 1: double-quoted path  "C:\...\file.ext" or "/path/file.ext"
+#   group 2: single-quoted path  'file.ext'
+#   group 3: Windows absolute    C:\path\to\file.ext  (unquoted)
+#   group 4: Unix absolute       /path/to/file.ext    (unquoted)
+#   group 5: bare filename       image1.png           (no separators)
+_IMAGE_CANDIDATE_RE = re.compile(
+    r'"([^"\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"'
+    r"|'([^'\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))'"
+    r"|([A-Za-z]:[/\\]\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"
+    r"|(/\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"
+    r"|([\w.\-]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))",
+    re.IGNORECASE,
+)
+
+
+def find_image_candidates(text: str) -> list[str]:
+    """Return every image-like string matched by regex, regardless of whether the file exists.
+
+    Used by the REPL to detect filenames the user *intended* as images so it
+    can warn when they don't resolve to a real file.
+    """
+    results: list[str] = []
+    for m in _IMAGE_CANDIDATE_RE.finditer(text):
+        raw = next(g for g in m.groups() if g is not None)
+        raw = raw.strip().rstrip(".,;:!?")
+        if raw:
+            results.append(raw)
+    return results
+
+
+def extract_image_paths(text: str, cwd: str) -> tuple[str, list[str]]:
+    """Scan *text* for image file references, resolve them, and strip them.
+
+    Returns ``(cleaned_prompt, resolved_paths)``.
+
+    Handles all common forms a user might type in the REPL:
+      - ``C:\\Users\\clara\\image.png describe this``
+      - ``what is in image1.jpg?``
+      - ``/home/user/photo.png``
+      - Quoted variants: ``"C:\\path with spaces\\img.png"``
+
+    Only paths that **actually exist on disk** are returned — the existence
+    check is the primary guard against false positives (e.g. a Python
+    variable named ``plot.png`` in text).
+
+    The returned ``cleaned_prompt`` has the matched path tokens removed and
+    whitespace normalised.  If removing the paths would leave an empty
+    string, the original *text* is kept as the prompt so the model still
+    receives something meaningful.
+    """
+    found: list[str] = []
+    spans_to_remove: list[tuple[int, int]] = []
+    seen: set[str] = set()
+
+    for m in _IMAGE_CANDIDATE_RE.finditer(text):
+        raw = next(g for g in m.groups() if g is not None)
+        raw = raw.strip().rstrip(".,;:!?")
+
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path(cwd) / raw
+
+        if p.suffix.lower() in _IMG_EXTENSIONS and p.exists():
+            resolved = str(p.resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                found.append(resolved)
+                spans_to_remove.append((m.start(), m.end()))
+
+    if not spans_to_remove:
+        return text, []
+
+    # Remove matched spans from right to left so earlier indices stay valid
+    chars = list(text)
+    for start, end in sorted(spans_to_remove, reverse=True):
+        chars[start:end] = []
+
+    cleaned = " ".join("".join(chars).split()).strip()
+    return cleaned or text, found
+
+
+# ---------------------------------------------------------------------------
 # VL fallback analysis
 # ---------------------------------------------------------------------------
 

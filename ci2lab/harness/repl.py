@@ -6,6 +6,7 @@ from rich.panel import Panel
 
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.vision import extract_image_paths, find_image_candidates, is_vision_model
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.query.loop import run_agent
@@ -48,6 +49,99 @@ class _TransientProgress:
             active_progress.clear(self._status)
             self._status.stop()
             self._status = None
+
+
+def _extract_inline_images(
+    line: str,
+    config: "AgentConfig",
+    selection: "ModelSelection",
+) -> tuple[str, list[str]]:
+    """Detect image paths in *line*, print feedback, return (prompt, paths).
+
+    If images are found but the active model cannot handle them and no
+    fallback vision_model is configured, a warning is printed and the
+    paths are returned empty so they are not silently dropped without notice.
+
+    When an image-like name is mentioned but the file does not exist, a
+    "not found — did you mean?" warning is printed immediately so the user
+    can correct the typo before the bad turn pollutes the session history.
+    """
+    import difflib
+    from pathlib import Path
+
+    cleaned, paths = extract_image_paths(line, config.cwd)
+
+    # Warn about any image-like strings that were mentioned but don't exist.
+    # Also build a context note injected into the prompt so the model knows
+    # immediately — preventing it from spending rounds trying to read the file.
+    candidates = find_image_candidates(line)
+    resolved_names = {Path(p).name.lower() for p in paths}
+    not_found_notes: list[str] = []
+
+    try:
+        workspace_images = [
+            f.name for f in Path(config.cwd).iterdir()
+            if f.is_file() and f.suffix.lower() in {
+                ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"
+            }
+        ]
+    except OSError:
+        workspace_images = []
+
+    for candidate in candidates:
+        name = Path(candidate).name
+        if name.lower() not in resolved_names:
+            suggestions = difflib.get_close_matches(name, workspace_images, n=2, cutoff=0.55)
+            if suggestions:
+                hint = "  Did you mean: " + ", ".join(
+                    f"[bold]{s}[/bold]" for s in suggestions
+                )
+                console.print(f"[yellow]'{name}' not found in workspace.[/yellow]{hint}")
+                note = (
+                    f"[Context: '{name}' was mentioned as an image but does not exist "
+                    f"in the workspace. Similar files: {', '.join(suggestions)}. "
+                    f"Tell the user the file was not found and suggest the correct name. "
+                    f"Do NOT use read_file or file tools to search for it.]"
+                )
+            else:
+                console.print(
+                    f"[yellow]'{name}' not found in workspace — image will not be attached.[/yellow]"
+                )
+                note = (
+                    f"[Context: '{name}' was mentioned as an image but does not exist "
+                    f"in the workspace. Tell the user the file was not found. "
+                    f"Do NOT use read_file or file tools to search for it.]"
+                )
+            not_found_notes.append(note)
+
+    if not paths:
+        # Prepend not-found notes so the model answers directly without looping.
+        if not_found_notes:
+            enriched = "\n".join(not_found_notes) + "\n\n" + line
+            return enriched, []
+        return line, []
+
+    for p in paths:
+        console.print(f"[dim]Image detected: {Path(p).name}[/dim]")
+
+    if not config.vision_enabled:
+        console.print(
+            "[yellow]Vision is disabled — images ignored.[/yellow] "
+            "[dim]Set vision_enabled: true in ~/.ci2lab/settings.json[/dim]"
+        )
+        return cleaned, []
+
+    if not is_vision_model(selection.ollama_tag) and not (config.vision_model or "").strip():
+        console.print(
+            "[yellow]Image detected but the active model is not vision-capable "
+            "and no fallback vision_model is configured — image ignored.[/yellow]\n"
+            "[dim]Tip: restart with a vision model "
+            "(e.g. ci2lab --model qwen2.5vl:7b chat) "
+            "or add  vision_model: \"llava\"  to ~/.ci2lab/settings.json[/dim]"
+        )
+        return cleaned, []
+
+    return cleaned, paths
 
 
 def run_repl(
@@ -241,13 +335,24 @@ def run_repl(
                         history = data.get("messages")
                     continue
 
+        # Scan the user's message for image file paths typed inline.
+        # Paths are stripped from the text and attached as vision content,
+        # matching the behaviour of Ollama's own REPL but working for both
+        # absolute paths and bare filenames relative to the workspace.
+        prompt, detected_images = _extract_inline_images(line, config, selection)
+
         progress = _TransientProgress()
         try:
             config.skill_allowed_tools = None
             last_user_prompt = line
+            # Temporarily attach any detected images for this turn only.
+            _prior_images = config.image_paths
+            if detected_images:
+                config.image_paths = detected_images
+
             if multi_agent:
                 final_text = run_multi_agent(
-                    line,
+                    prompt,
                     selection,
                     config=config,
                     on_progress=progress.update,
@@ -255,7 +360,7 @@ def run_repl(
                 if final_text:
                     console.print(final_text)
                     history = (history or []) + [
-                        {"role": "user", "content": line},
+                        {"role": "user", "content": prompt},
                         {"role": "assistant", "content": final_text},
                     ]
                     save_session(
@@ -267,14 +372,14 @@ def run_repl(
                     )
             elif history is None:
                 run_agent(
-                    line,
+                    prompt,
                     selection,
                     config=config,
                     on_progress=progress.update,
                 )
             else:
                 run_agent(
-                    line,
+                    prompt,
                     selection,
                     config=config,
                     messages=history,
@@ -286,6 +391,7 @@ def run_repl(
             last_error_message = exc.user_message
             continue
         finally:
+            config.image_paths = _prior_images  # restore for next turn
             progress.clear()
 
         data = load_session(sid)
