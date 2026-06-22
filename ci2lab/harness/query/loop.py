@@ -60,7 +60,7 @@ from ci2lab.harness.security.policy import (
     tool_call_signature,
 )
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
-from ci2lab.harness.tools.todo import todo_read
+from ci2lab.harness.tools.todo import open_todos, todo_read
 from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
@@ -164,6 +164,20 @@ _DESCRIBED_NOT_WRITTEN_NUDGE = (
     "(or `edit_file`) now with the full content. Do not just show the code as "
     "text; actually write it."
 )
+# Fires when the model tries to finish while its own task plan still has open
+# steps — the "stops after step 1" failure. Bounded so a model that genuinely
+# finished but forgot to tick the list off is not trapped forever.
+_TODO_INCOMPLETE_NUDGE = (
+    "You are stopping, but your task plan still has unfinished steps:\n"
+    "{open_steps}\n\n"
+    "Do NOT end the turn yet. Do the next step now with the right tool. As each "
+    "step finishes, mark it `completed` with `todo_write`. If a step is in fact "
+    "already done, mark it completed and continue. Only give the final answer "
+    "once every step is completed — or explain plainly what is blocking a step "
+    "you cannot finish."
+)
+# Max times per turn the loop will push the model back to an unfinished plan.
+TODO_CONTINUE_MAX_PER_TURN = 3
 
 # Read-only tools whose result for a given argument set does not change within a
 # turn unless a mutating tool runs. Re-calling them is pure waste and only bloats
@@ -498,6 +512,11 @@ def run_agent(
     # means there is nothing to independently check.
     effectful_actions: list[str] = []
     verifier_runs = 0
+    # The model created a task plan with `todo_write` during this run. Only then
+    # does the loop hold it to that plan on finish — so a stale todos.json from a
+    # prior run (or a task that never planned) can never block finalization.
+    todo_plan_active = False
+    todo_continue_nudges = 0
     write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
     completed_edits: set[EditSignature] = set()
     final_text = ""
@@ -673,6 +692,36 @@ def run_agent(
                     history.append({"role": "user", "content": _WEB_CAPABILITY_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
+                # The model authored a task plan but is trying to finish while
+                # steps remain open — the "stops after step 1" failure. Push it
+                # back to the next step instead of accepting a partial result.
+                # Run-scoped (todo_plan_active) and bounded so it never traps a
+                # model that finished but forgot to tick the list off.
+                if (
+                    final_text
+                    and todo_plan_active
+                    and todo_continue_nudges < TODO_CONTINUE_MAX_PER_TURN
+                    and selection.supports_tools
+                    and not stop_tools_requested
+                ):
+                    open_steps = open_todos(cfg.cwd)
+                    if open_steps:
+                        todo_continue_nudges += 1
+                        console.print(
+                            "[yellow]Task plan still has open steps; asking the "
+                            "model to continue instead of stopping.[/yellow]"
+                        )
+                        steps_text = "\n".join(
+                            f"  [{s.get('status', 'pending')}] {s.get('content', '')}".rstrip()
+                            for s in open_steps
+                        )
+                        append_assistant_turn(history, final_text or content)
+                        history.append({
+                            "role": "user",
+                            "content": _TODO_INCOMPLETE_NUDGE.format(open_steps=steps_text),
+                        })
+                        maybe_save_session(cfg, history, selection)
+                        continue
                 # The user asked to create/change something, the model is about to
                 # finalize with only prose, and nothing was ever written this turn.
                 # Nudge once to actually apply the change instead of describing it.
@@ -868,6 +917,10 @@ def run_agent(
                         )
                 if not result.is_error and call.name in _READ_ONLY_TOOLS:
                     satisfied_reads.add(rsig)
+                if not result.is_error and call.name == "todo_write":
+                    # From now on the model is working to a plan it authored; the
+                    # finish guard will hold it to that plan's open steps.
+                    todo_plan_active = True
                 if result.is_error:
                     # Remember a real failure so a later call in this batch is not
                     # built on it. A skipped write is not itself a failed call, so

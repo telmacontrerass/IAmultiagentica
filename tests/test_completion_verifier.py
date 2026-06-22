@@ -29,6 +29,10 @@ def test_verdict_parsing_is_conservative():
 
 def test_verifier_failure_injects_fix_message_then_finishes():
     selection = default_selection("test:1b")
+    # Large window so context summarization (which consumes a mocked chat
+    # response) never fires and shifts the scripted call sequence; this test is
+    # about the verifier fix flow, not about context management.
+    selection.context_length = 1_000_000
     config = AgentConfig(
         cwd=".", stream=False, auto_confirm=True, run_log_enabled=False,
         verify_completion=True,

@@ -259,6 +259,11 @@ def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
 
 def test_run_agent_loop_break_nudge_restates_original_prompt():
     selection = default_selection("test:1b")
+    # This test asserts loop-break behavior, not context management. Give it a
+    # large window so summarization (which also consumes a mocked chat response)
+    # never fires and shifts the call indices — otherwise the assertion below is
+    # coupled to the exact token size of the system prompt.
+    selection.context_length = 1_000_000
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     original = "tell me the score of spains soccer match from yesterday"
     repeated_call = LLMResponse(
@@ -692,6 +697,77 @@ def test_final_round_forces_toolfree_wrapup():
     sent = final_call.args[0]
     assert any("final step for this request" in str(m.get("content", "")) for m in sent)
     assert "step 2 remains" in result
+
+
+def test_finish_blocked_while_todo_plan_has_open_steps(tmp_path):
+    # The model plans with todo_write, does no real work, then tries to finish
+    # while a step is still pending. The loop must push it back to the plan
+    # instead of accepting a partial result — and accept the finish once the plan
+    # is all completed.
+    selection = default_selection("test:1b")
+    selection.context_length = 1_000_000
+    config = AgentConfig(
+        cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False
+    )
+    plan = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {
+                "name": "todo_write",
+                "arguments": '{"todos": [{"content": "do the real work", "status": "pending"}]}',
+            },
+        }],
+    )
+    premature_finish = LLMResponse(content="All set!", tool_calls=[])
+    complete_plan = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c2",
+            "function": {
+                "name": "todo_write",
+                "arguments": '{"todos": [{"content": "do the real work", "status": "completed"}]}',
+            },
+        }],
+    )
+    final = LLMResponse(content="Done — the work is complete.", tool_calls=[])
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [plan, premature_finish, complete_plan, final]
+        result = run_agent("do a multi-step task", selection, config=config)
+
+    # After the premature finish (round 2), round 3 must carry the continue nudge.
+    third_turn_messages = client.chat.call_args_list[2].args[0]
+    assert any(
+        m.get("role") == "user" and "unfinished steps" in str(m.get("content", ""))
+        for m in third_turn_messages
+        if isinstance(m, dict)
+    )
+    # Once the plan is fully completed, the finish is accepted.
+    assert "complete" in result.lower()
+
+
+def test_finish_not_blocked_when_no_plan_was_created(tmp_path):
+    # A task that never calls todo_write must finalize immediately — the guard is
+    # run-scoped and must not read a stale todos.json from a prior run.
+    (tmp_path / ".ci2lab").mkdir()
+    (tmp_path / ".ci2lab" / "todos.json").write_text(
+        '[{"id": "1", "content": "leftover", "status": "pending"}]',
+        encoding="utf-8",
+    )
+    selection = default_selection("test:1b")
+    selection.context_length = 1_000_000
+    config = AgentConfig(
+        cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False
+    )
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [LLMResponse(content="Here is the answer.", tool_calls=[])]
+        result = run_agent("just answer a question", selection, config=config)
+
+    assert client.chat.call_count == 1
+    assert "answer" in result.lower()
 
 
 def test_described_change_without_write_triggers_one_nudge():

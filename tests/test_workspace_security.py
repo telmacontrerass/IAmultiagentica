@@ -164,6 +164,10 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
     ws = tmp_path / "workspace"
     ws.mkdir()
     selection = default_selection("test:1b")
+    # Large window so context summarization (which consumes a mocked chat
+    # response) never fires and shifts the scripted call sequence; this test is
+    # about not repeating a blocked read, not about context management.
+    selection.context_length = 1_000_000
     config = AgentConfig(
         cwd=str(ws),
         stream=False,
