@@ -6,12 +6,14 @@ from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 
 
-def _selection() -> ModelSelection:
-    return ModelSelection(
+def _selection(**overrides) -> ModelSelection:
+    base = dict(
         model_id="qwen2.5-coder-1.5b",
         ollama_tag="qwen2.5-coder:1.5b",
         display_name="Qwen2.5 Coder 1.5B",
     )
+    base.update(overrides)
+    return ModelSelection(**base)
 
 
 def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
@@ -36,15 +38,14 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
                     json={"error": "model qwen2.5-coder:1.5b not found"},
                     request=request,
                 )
+            # Native Ollama (/api/chat) response shape.
             return httpx.Response(
                 200,
                 json={
-                    "choices": [{"message": {"content": "ok"}}],
-                    "usage": {
-                        "prompt_tokens": 7,
-                        "completion_tokens": 2,
-                        "total_tokens": 9,
-                    },
+                    "message": {"role": "assistant", "content": "ok"},
+                    "done": True,
+                    "prompt_eval_count": 7,
+                    "eval_count": 2,
                 },
                 request=request,
             )
@@ -62,6 +63,41 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
     assert result.usage.total_tokens == 9
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+
+
+def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"message": {"content": "hi"}, "done": True},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection(context_length=65536, max_tokens=4096))
+    client.chat([{"role": "user", "content": "x"}])
+
+    # Hits the native endpoint and asks for the full window the harness assumes.
+    assert captured["url"].endswith("/api/chat")
+    assert captured["payload"]["options"]["num_ctx"] == 65536
+    assert captured["payload"]["options"]["num_predict"] == 4096
+    # The OpenAI-only fields must not leak into the native request.
+    assert "max_tokens" not in captured["payload"]
 
 
 def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
@@ -87,18 +123,16 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
             return None
 
         def iter_lines(self):
-            chunk = {"choices": [{"delta": {"content": "ok"}}]}
-            yield f"data: {json.dumps(chunk)}"
-            usage = {
-                "choices": [],
-                "usage": {
-                    "prompt_tokens": 3,
-                    "completion_tokens": 1,
-                    "total_tokens": 4,
-                },
-            }
-            yield f"data: {json.dumps(usage)}"
-            yield "data: [DONE]"
+            # Native streaming: newline-delimited JSON objects, no `data:` frame.
+            yield json.dumps({"message": {"content": "ok"}, "done": False})
+            yield json.dumps(
+                {
+                    "message": {"content": ""},
+                    "done": True,
+                    "prompt_eval_count": 3,
+                    "eval_count": 1,
+                }
+            )
 
     class FakeClient:
         def __init__(self, timeout):
@@ -136,3 +170,97 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
     assert events[-1].usage.total_tokens == 4
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+
+
+def test_native_stream_collects_tool_calls(monkeypatch):
+    class StreamContext:
+        def __init__(self, response):
+            self.response = response
+
+        def __enter__(self):
+            return self.response
+
+        def __exit__(self, *args):
+            return False
+
+    class StreamResponse:
+        is_error = False
+
+        def read(self):
+            return b""
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            # Ollama emits the whole tool call in one message (args as an object).
+            yield json.dumps(
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "ls", "arguments": {"path": "."}}}
+                        ],
+                    },
+                    "done": True,
+                    "prompt_eval_count": 5,
+                    "eval_count": 4,
+                }
+            )
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, url, json):
+            return StreamContext(StreamResponse())
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection())
+    events = list(client.stream_chat([{"role": "user", "content": "list files"}]))
+
+    final = events[-1]
+    assert isinstance(final, LLMResponse)
+    assert final.tool_calls == [
+        {"function": {"name": "ls", "arguments": {"path": "."}}}
+    ]
+
+
+def test_openai_backend_still_uses_v1_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}]},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    # A non-Ollama backend keeps the OpenAI-compatible path untouched.
+    client = LLMClient(_selection(backend="openai", backend_url="http://vllm:8000/v1"))
+    client.chat([{"role": "user", "content": "x"}])
+
+    assert captured["url"].endswith("/v1/chat/completions")
+    assert "options" not in captured["payload"]
+    assert captured["payload"]["max_tokens"] == 4096

@@ -622,10 +622,71 @@ def test_repeated_read_only_call_is_served_from_cache():
     )
 
 
+def test_repeated_web_search_is_served_from_cache():
+    # The reported failure: a weak model re-issues the same web_search every
+    # round instead of answering from the first results. The second search (here
+    # only differing by max_results) must be served from cache, not re-run, so
+    # the model is pushed to answer instead of looping.
+    selection = default_selection("test:1b")
+    selection.context_length = 1_000_000
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    search = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c1",
+            "function": {
+                "name": "web_search",
+                "arguments": '{"query": "Spain vs Saudi Arabia result", "max_results": 5}',
+            },
+        }],
+    )
+    # Same query, different max_results and casing/whitespace — must still hit
+    # the normalized cache key.
+    search_again = LLMResponse(
+        content="",
+        tool_calls=[{
+            "id": "c2",
+            "function": {
+                "name": "web_search",
+                "arguments": '{"query": "  Spain vs Saudi Arabia RESULT ", "max_results": 3}',
+            },
+        }],
+    )
+    final = LLMResponse(content="Spain won 4-0.", tool_calls=[])
+    exec_mock = MagicMock(
+        return_value=ToolResult(
+            tool_name="web_search",
+            content="Spain 4-0 Saudi Arabia",
+            is_error=False,
+            call_id="c1",
+        )
+    )
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", exec_mock),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [search, search_again, final]
+        run_agent("what was the score of Spain vs Saudi Arabia", selection, config=config)
+
+    # The search actually ran only once; the near-duplicate was cached.
+    assert exec_mock.call_count == 1
+    third_turn_messages = client.chat.call_args_list[2].args[0]
+    assert any(
+        "Already retrieved earlier in this turn" in str(m.get("content", ""))
+        for m in third_turn_messages
+        if isinstance(m, dict)
+    )
+
+
 def test_read_cache_invalidated_after_mutation():
     # If a file is read, then written, a later read of the same path must run
     # again (the workspace changed), not be served from the stale cache.
     selection = default_selection("test:1b")
+    # Large window so summarization (which consumes a mocked chat response) never
+    # fires and shifts the scripted call sequence; this test is about cache
+    # invalidation, not context management.
+    selection.context_length = 1_000_000
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     read = LLMResponse(
         content="",

@@ -49,11 +49,14 @@ class _FakeChatClient:
 
     def post(self, url, json):
         request = httpx.Request("POST", url)
+        # Native Ollama (/api/chat) reports usage at the top level.
         return httpx.Response(
             200,
             json={
-                "choices": [{"message": {"content": "Four"}}],
-                "usage": {"prompt_tokens": 42, "completion_tokens": 3, "total_tokens": 45},
+                "message": {"role": "assistant", "content": "Four"},
+                "done": True,
+                "prompt_eval_count": 42,
+                "eval_count": 3,
             },
             request=request,
         )
@@ -89,13 +92,14 @@ def test_chat_usage_empty_when_ollama_does_not_return_it(monkeypatch):
             request = httpx.Request("POST", url)
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"content": "ok"}}]},
+                json={"message": {"content": "ok"}, "done": True},
                 request=request,
             )
 
     monkeypatch.setattr(httpx, "Client", _FakeNoUsage)
     client = LLMClient(_selection())
     resp = client.chat([{"role": "user", "content": "hi"}])
+    assert resp.content == "ok"
     assert resp.usage is None
 
 
@@ -124,12 +128,17 @@ class _FakeStreamResponse:
         return None
 
     def iter_lines(self):
-        # Content chunks
-        yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Fo'}}]})}"
-        yield f"data: {json.dumps({'choices': [{'delta': {'content': 'ur'}}]})}"
-        # Final chunk with usage (before [DONE])
-        yield f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 55, 'completion_tokens': 7, 'total_tokens': 62}})}"
-        yield "data: [DONE]"
+        # Native streaming: newline-delimited JSON; usage rides the done chunk.
+        yield json.dumps({"message": {"content": "Fo"}, "done": False})
+        yield json.dumps({"message": {"content": "ur"}, "done": False})
+        yield json.dumps(
+            {
+                "message": {"content": ""},
+                "done": True,
+                "prompt_eval_count": 55,
+                "eval_count": 7,
+            }
+        )
 
 
 class _FakeStreamClient:
@@ -163,7 +172,7 @@ def test_stream_chat_captures_usage(monkeypatch):
 
 
 def test_stream_chat_usage_in_separate_chunk(monkeypatch):
-    """Ollama sometimes emits usage in a chunk with empty choices."""
+    """Native streaming reports usage on the final done chunk (empty content)."""
 
     class _FakeResponseUsageEmpty:
         is_error = False
@@ -175,11 +184,16 @@ def test_stream_chat_usage_in_separate_chunk(monkeypatch):
             return None
 
         def iter_lines(self):
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Ok'}}]})}"
-            yield f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}]})}"
-            # Separate chunk with only usage, empty choices
-            yield f"data: {json.dumps({'choices': [], 'usage': {'prompt_tokens': 10, 'completion_tokens': 2, 'total_tokens': 12}})}"
-            yield "data: [DONE]"
+            yield json.dumps({"message": {"content": "Ok"}, "done": False})
+            # Final chunk: no new content, only the usage counts.
+            yield json.dumps(
+                {
+                    "message": {"content": ""},
+                    "done": True,
+                    "prompt_eval_count": 10,
+                    "eval_count": 2,
+                }
+            )
 
     class _FakeClientUsageEmpty:
         def __init__(self, timeout):

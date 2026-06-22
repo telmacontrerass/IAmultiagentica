@@ -60,6 +60,24 @@ def test_build_model_selection_explicit_override(_mock_scan):
 
 
 @patch("ci2lab.router.selection.scan_hardware", return_value=_profile())
+def test_build_model_selection_uses_catalog_context_length(_mock_scan, monkeypatch):
+    monkeypatch.delenv("CI2LAB_NUM_CTX", raising=False)
+    selection = build_model_selection("mixtral:8x22b")
+
+    assert selection.context_length == 65536
+
+
+@patch("ci2lab.router.selection.scan_hardware", return_value=_profile())
+def test_num_ctx_env_override_caps_context_length(_mock_scan, monkeypatch):
+    # The override drives both the Ollama num_ctx and the harness compaction
+    # math, so they stay consistent.
+    monkeypatch.setenv("CI2LAB_NUM_CTX", "16384")
+    selection = build_model_selection("mixtral:8x22b")
+
+    assert selection.context_length == 16384
+
+
+@patch("ci2lab.router.selection.scan_hardware", return_value=_profile())
 def test_prepare_session_does_not_auto_pick_router_model(_mock_scan):
     from ci2lab.pipeline import prepare_session
 

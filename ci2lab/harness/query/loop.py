@@ -191,6 +191,14 @@ _READ_ONLY_TOOLS = frozenset({
     "grep",
     "file_info",
     "inspect_file",
+    # Web lookups are cached within a turn too: re-running the same search or
+    # fetch returns essentially the same results and only burns rounds. Weak
+    # models often re-issue an identical `web_search` instead of reading the
+    # results they already have — caching short-circuits that into a note that
+    # tells them to answer from what is above. See `_read_signature` for the
+    # query/url-normalized key that also catches near-duplicate repeats.
+    "web_search",
+    "web_fetch",
 })
 # Tools that can change the workspace; running any of them invalidates the
 # read-only cache so a later re-read reflects the new state.
@@ -217,6 +225,20 @@ _WRITE_INTENT_RE = re.compile(
 
 
 def _read_signature(call: ToolCall) -> str:
+    """Per-turn cache key for a read-only call.
+
+    For web tools the key is normalized on the query/URL alone (trimmed,
+    lowercased) so trivially different repeats — a different `max_results`, a
+    case or whitespace change — still collapse to one entry and are served from
+    cache instead of re-running. The exact-arguments hash is kept for every
+    other read-only tool.
+    """
+    if call.name == "web_search":
+        norm = str(call.arguments.get("query", "")).strip().lower()
+        return "web_search:" + hashlib.md5(norm.encode()).hexdigest()[:8]
+    if call.name == "web_fetch":
+        norm = str(call.arguments.get("url", "")).strip().lower()
+        return "web_fetch:" + hashlib.md5(norm.encode()).hexdigest()[:8]
     return f"{call.name}:{hashlib.md5(str(call.arguments).encode()).hexdigest()[:8]}"
 
 

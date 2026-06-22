@@ -127,7 +127,7 @@ class ModelSelection:
     ollama_tag: str
     display_name: str
 
-    backend: Literal["ollama"] = "ollama"
+    backend: Literal["ollama", "openai"] = "ollama"
     backend_url: str = "http://localhost:11434/v1"
 
     tool_mode: ToolMode = "native"
