@@ -15,6 +15,7 @@ from ci2lab.router.recommend import (
 )
 from ci2lab.ui.server_parts.agent import (
     chat as _chat,
+    chat_cancel as _chat_cancel,
     chat_start as _chat_start,
     save_completed_session as _save_completed_session,
     save_pending_session as _save_pending_session,

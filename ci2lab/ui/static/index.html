@@ -21,14 +21,16 @@
           <button class="nav-button active" type="button" data-view="homeView">
             <span>⌂</span> Home
           </button>
+          <div class="home-subnav" aria-label="Home sections">
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
+              <span>▦</span> Local models
+            </button>
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
+              <span>◷</span> Sessions
+            </button>
+          </div>
           <button id="openChat" class="nav-button" type="button" data-view="chatView">
             <span>+</span> Chat
-          </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
-            <span>▦</span> Local models
-          </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
-            <span>◷</span> Sessions
           </button>
         </nav>
 
@@ -154,106 +156,78 @@
             </article>
           </section>
 
-          <section id="toolsPanel" class="panel tool-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Herramientas</p>
-                <h3>Acciones rapidas e integraciones</h3>
-              </div>
-              <p id="toolsSummary" class="panel-note">Cargando herramientas...</p>
-            </div>
-            <div id="quickActions" class="quick-actions"></div>
-            <div id="toolsList" class="tools-list"></div>
-          </section>
         </section>
 
         <section id="chatView" class="view" hidden>
-          <section class="panel chat-tools">
-            <div class="chat-tools-heading">
-              <p class="eyebrow">Local chat</p>
-              <h3>Pick a model and chat with Florentino</h3>
-            </div>
-            <div class="chat-controls">
-              <div class="model-picker">
-                <label for="modelSelect">Model</label>
-                <select id="modelSelect"></select>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <label class="toggle agents-toggle" title="Activa subagentes secuenciales">
-                    <input id="agentsMode" type="checkbox" />
-                    <span id="agentsModeLabel">Modo agentes</span>
-                  </label>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="agentsHelp"
-                    aria-expanded="false"
-                    aria-label="Explicar modo agentes"
-                    title="Ver explicacion"
-                  ></button>
-                </div>
-                <p id="agentsHelp" class="control-help-text" hidden>
-                  Usa subagentes secuenciales para planificar, investigar, implementar, validar y revisar.
-                </p>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <button id="newChat" class="ghost-button" type="button">New chat</button>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="newChatHelp"
-                    aria-expanded="false"
-                    aria-label="Explain new chat"
-                    title="View explanation"
-                  ></button>
-                </div>
-                <p id="newChatHelp" class="control-help-text" hidden>
-                  Starts a clean conversation without mixing it with the current session.
-                </p>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <button
-                    id="chatRefreshButton"
-                    class="ghost-button"
-                    type="button"
-                    title="Refresh Ollama status, hardware, models and sessions"
-                  >
-                    Refresh data
-                  </button>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="refreshHelp"
-                    aria-expanded="false"
-                    aria-label="Explain refresh data"
-                    title="View explanation"
-                  ></button>
-                </div>
-                <p id="refreshHelp" class="control-help-text" hidden>
-                  Reloads models, sessions, hardware and Ollama's local status.
-                </p>
-              </div>
-            </div>
-            <button
-              id="tokenCounter"
-              class="token-counter"
-              type="button"
-              title="See how tokens are counted"
-            >
-              <span class="token-counter-label">Tokens</span>
-              <strong id="tokenTurnValue">Turn 0</strong>
-              <span id="tokenSessionValue">Conversation 0</span>
-              <span class="token-arrow" aria-hidden="true">›</span>
-            </button>
-          </section>
-
           <section class="chat-panel">
+            <div class="chat-topbar">
+            <div class="chat-topbar-main">
+              <div class="model-picker">
+                <select id="modelSelect" aria-label="Model"></select>
+              </div>
+              <button
+                id="tokenCounter"
+                class="token-counter"
+                type="button"
+                title="See how tokens are counted"
+              >
+                <span class="token-counter-label">Tokens</span>
+                <strong id="tokenTurnValue">Turn 0</strong>
+                <span id="tokenSessionValue">Conversation 0</span>
+                <span class="token-arrow" aria-hidden="true">›</span>
+              </button>
+            </div>
+            <div class="chat-topbar-actions">
+              <button
+                id="newChat"
+                class="strip-button"
+                type="button"
+                title="Start a clean conversation without mixing it with the current session"
+              >
+                New
+              </button>
+              <button
+                id="chatRefreshButton"
+                class="strip-button"
+                type="button"
+                title="Refresh Ollama status, hardware, models and sessions"
+              >
+                Refresh
+              </button>
+              <button
+                id="toolsDrawerToggle"
+                class="strip-button strip-icon"
+                type="button"
+                aria-expanded="false"
+                aria-controls="toolsPanel"
+                title="Tools and integrations"
+              >
+                <span aria-hidden="true">🛠</span>
+              </button>
+            </div>
+            </div>
             <div id="messages" class="messages" aria-live="polite"></div>
-            <div class="attachment-bar">
-              <label class="file-button" for="fileInput">+ Attach file</label>
+            <div class="attachment-bar composer-toolbar">
+              <details id="promptActionsMenu" class="prompt-actions-menu">
+                <summary title="Prompt suggestions" aria-label="Open prompt suggestions">
+                  <span aria-hidden="true">&#10022;</span>
+                </summary>
+                <div id="quickActions" class="quick-actions prompt-actions"></div>
+              </details>
+              <input id="agentsMode" class="sr-only" type="checkbox" />
+              <button
+                id="agentsModeButton"
+                class="toolbar-button agents-mode-button"
+                type="button"
+                aria-pressed="false"
+                title="Enable sequential subagents"
+              >
+                <span class="agents-icon" aria-hidden="true">&#9881;</span>
+                <span id="agentsModeLabel" class="agents-mode-label">Agents</span>
+              </button>
+              <label class="file-button" for="fileInput" title="Attach file" aria-label="Attach file">
+                <span aria-hidden="true">+</span>
+              </label>
               <input
                 id="fileInput"
                 class="sr-only"
@@ -268,6 +242,27 @@
               <button id="sendButton" type="submit">Send</button>
             </form>
           </section>
+
+          <div id="toolsBackdrop" class="tools-backdrop" hidden></div>
+          <aside id="toolsPanel" class="panel tool-panel tools-drawer" aria-hidden="true">
+            <div class="tools-drawer-head">
+              <div>
+                <p class="eyebrow">Tools</p>
+                <h3>Tools and integrations</h3>
+              </div>
+              <button
+                id="toolsDrawerClose"
+                class="strip-button strip-icon"
+                type="button"
+                aria-label="Close tools"
+                title="Close"
+              >
+                <span aria-hidden="true">&#10005;</span>
+              </button>
+            </div>
+            <p id="toolsSummary" class="panel-note">Loading tools...</p>
+            <div id="toolsList" class="tools-list"></div>
+          </aside>
 
           <pre id="commandPreview" class="sr-only">ci2lab --model &lt;model&gt; chat</pre>
         </section>
@@ -326,7 +321,7 @@
               <p class="meta">
                 More information:
                 <a href="https://docs.ollama.com/api/openai-compatibility" target="_blank" rel="noreferrer">Ollama OpenAI compatibility</a>
-                y
+                and
                 <a href="https://github.com/ollama/ollama/blob/main/docs/api.md" target="_blank" rel="noreferrer">Ollama API stats</a>.
               </p>
             </section>

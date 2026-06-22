@@ -95,6 +95,9 @@ class AgentConfig:
     """How deep this run is in the delegate-subagent chain. 0 = top-level agent.
     Bounds recursion: a subagent at the max depth cannot delegate again."""
 
+    cancellation_event: Any | None = None
+    """Optional threading.Event-like object used to stop an in-flight run."""
+
     last_run_dir: str | None = None
     """Latest run directory produced by RunLogger for this config instance."""
 
