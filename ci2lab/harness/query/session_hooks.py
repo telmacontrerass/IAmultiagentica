@@ -23,5 +23,6 @@ def maybe_save_session(
         model_tag=selection.ollama_tag,
         cwd=cfg.cwd,
         token_usage=cfg.token_usage.to_dict(),
+        project_id=cfg.project_id,
     )
     console.print(f"[dim]Session saved: {path}[/dim]")

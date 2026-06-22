@@ -49,6 +49,7 @@ def sessions_payload() -> list[dict[str, Any]]:
         enriched = dict(row)
         enriched["internal_tag"] = session_id
         enriched["title"] = session_title(data.get("messages", []) if data else [])
+        enriched["project_id"] = data.get("project_id") if data else None
         rows.append(enriched)
     return rows
 
@@ -79,6 +80,7 @@ def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
             "updated_at": data.get("updated_at", "?"),
             "messages": messages,
             "token_usage": data.get("token_usage") or {},
+            "project_id": data.get("project_id"),
         },
     }, 200
 

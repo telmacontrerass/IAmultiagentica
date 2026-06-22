@@ -26,6 +26,7 @@ def save_session(
     model_tag: str,
     cwd: str,
     token_usage: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> Path:
     payload = {
         "id": session_id,
@@ -36,6 +37,8 @@ def save_session(
     }
     if token_usage is not None:
         payload["token_usage"] = token_usage
+    if project_id:
+        payload["project_id"] = project_id
     path = sessions_dir() / f"{session_id}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
@@ -102,6 +105,7 @@ def list_sessions() -> list[dict[str, str]]:
                 "model": data.get("model_tag", "?"),
                 "cwd": data.get("cwd", "?"),
                 "updated_at": data.get("updated_at", "?"),
+                "project_id": data.get("project_id"),
             })
         except (json.JSONDecodeError, OSError):
             continue

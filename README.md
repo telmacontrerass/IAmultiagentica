@@ -134,6 +134,20 @@ ci2lab sessions
 | MCP | `.ci2lab/mcp.json` | External tool servers |
 | Project memory | `CI2LAB.md`, `AGENTS.md` | Persistent instructions injected into the prompt |
 
+### Knowledge projects in the web UI
+
+The local web UI supports isolated projects for subjects, courses, or recurring
+work. A project has its own SQLite database and source directory under
+`~/.ci2lab/projects/<project-id>/`.
+
+- Create or open a project from the **Projects** panel.
+- Upload PDFs, notes, slides, spreadsheets, or text as persistent sources.
+- Chats started inside a project automatically retrieve relevant excerpts from
+  that project's sources.
+- Sessions keep their project association and cannot be resumed in a different
+  project.
+- Select **Outside projects** to use a normal standalone chat.
+
 ### Tool modes (`tool_mode`)
 
 Each catalog model defines `native` or `fenced`. Override: `--tool-mode fenced`.

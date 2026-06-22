@@ -30,7 +30,10 @@
             </button>
           </div>
           <button id="openChat" class="nav-button" type="button" data-view="chatView">
-            <span>+</span> Chat
+            <span>＋</span> Chat
+          </button>
+          <button id="openProjects" class="nav-button" type="button" data-view="projectsView">
+            <span>▱</span> MIS PROYECTOS
           </button>
         </nav>
 
@@ -158,10 +161,97 @@
 
         </section>
 
+        <section id="projectsView" class="view" hidden>
+          <section class="projects-page">
+            <div class="projects-page-heading">
+              <div>
+                <p class="eyebrow">Independent knowledge spaces</p>
+                <h2>My projects</h2>
+                <p>Organize sources and conversations by subject, course or recurring task.</p>
+              </div>
+              <button id="showProjectCreate" class="primary-action" type="button">
+                <span aria-hidden="true">＋</span> New project
+              </button>
+            </div>
+
+            <form id="projectCreateForm" class="project-create-form project-create-card" hidden>
+              <div>
+                <label for="projectNameInput">Project name</label>
+                <input id="projectNameInput" maxlength="100" placeholder="For example: Machine learning" />
+              </div>
+              <div class="project-create-actions">
+                <button id="cancelProjectCreate" class="ghost-button" type="button">Cancel</button>
+                <button type="submit">Create project</button>
+              </div>
+            </form>
+
+            <div id="projectsList" class="projects-list projects-library"></div>
+          </section>
+        </section>
+
+        <section id="projectDetailView" class="view" hidden>
+          <section class="project-detail-page">
+            <div class="project-detail-heading">
+              <button id="backToProjects" class="back-link" type="button">
+                <span aria-hidden="true">←</span> My projects
+              </button>
+              <div class="project-title-row">
+                <div class="project-folder-mark" aria-hidden="true">▱</div>
+                <div>
+                  <p class="eyebrow">Active project</p>
+                  <h2 id="projectDetailName">Project</h2>
+                  <p id="projectDetailMeta">0 sources · 0 conversations</p>
+                </div>
+                <button id="newProjectChat" class="primary-action" type="button">
+                  <span aria-hidden="true">＋</span> New chat
+                </button>
+              </div>
+            </div>
+
+            <section class="project-detail-section">
+              <div class="project-section-heading">
+                <div>
+                  <p class="eyebrow">Reference material</p>
+                  <h3>Project sources</h3>
+                  <p>These documents are used as reference in every chat inside this project.</p>
+                </div>
+                <label class="source-add-button" for="projectDetailSourceInput" title="Add project sources">
+                  <span aria-hidden="true">＋</span>
+                  <span>Add sources</span>
+                </label>
+                <input
+                  id="projectDetailSourceInput"
+                  class="sr-only"
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.text,.md,.rst,.json,.xml,.html,.py,.js,.ts,.css,.yml,.yaml,.toml,.ini,.log,.rtf"
+                />
+              </div>
+              <div id="projectDetailSources" class="project-detail-sources"></div>
+            </section>
+
+            <section class="project-detail-section">
+              <div class="project-section-heading">
+                <div>
+                  <p class="eyebrow">Project history</p>
+                  <h3>Conversations</h3>
+                  <p>Continue any previous chat without leaving this project's context.</p>
+                </div>
+              </div>
+              <div id="projectChatsList" class="project-chats-list"></div>
+            </section>
+          </section>
+        </section>
+
         <section id="chatView" class="view" hidden>
           <section class="chat-panel">
             <div class="chat-topbar">
             <div class="chat-topbar-main">
+              <div class="project-picker">
+                <select id="projectSelect" aria-label="Knowledge project">
+                  <option value="">Outside projects</option>
+                </select>
+              </div>
               <div class="model-picker">
                 <select id="modelSelect" aria-label="Model"></select>
               </div>
@@ -206,6 +296,24 @@
               </button>
             </div>
             </div>
+            <section id="projectContextBar" class="project-context-bar" hidden>
+              <div>
+                <strong id="projectContextName">Project</strong>
+                <span id="projectContextMeta">0 sources</span>
+              </div>
+              <div class="project-context-actions">
+                <label class="project-source-button" for="projectSourceInput">Add sources</label>
+                <input
+                  id="projectSourceInput"
+                  class="sr-only"
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.text,.md,.rst,.json,.xml,.html,.py,.js,.ts,.css,.yml,.yaml,.toml,.ini,.log,.rtf"
+                />
+                <button id="toggleProjectSources" class="strip-button" type="button">View sources</button>
+              </div>
+              <div id="projectSourcesList" class="project-sources-list" hidden></div>
+            </section>
             <div id="messages" class="messages" aria-live="polite"></div>
             <div class="attachment-bar composer-toolbar">
               <details id="promptActionsMenu" class="prompt-actions-menu">

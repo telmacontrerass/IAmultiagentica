@@ -26,6 +26,21 @@ def test_initial_progress_label_describes_user_visible_work():
     assert _initial_progress_label("hola") == "Deciding the next step..."
 
 
+def test_spanish_prompts_still_produce_english_progress_labels():
+    assert _initial_progress_label("lee este documento") == (
+        "Preparing to read the document..."
+    )
+    assert _initial_progress_label("busca información actual en internet") == (
+        "Checking what information is needed..."
+    )
+    assert _initial_progress_label("corrige esta prueba") == (
+        "Planning the code change..."
+    )
+    assert _initial_progress_label("revisa los archivos del repositorio") == (
+        "Inspecting the relevant project context..."
+    )
+
+
 def test_model_progress_label_explains_later_rounds():
     assert _model_progress_label("fix this test", 1) == "Planning the code change..."
     assert (

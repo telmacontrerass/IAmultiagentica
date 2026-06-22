@@ -269,6 +269,28 @@ def test_run_multi_agent_prints_subagent_progress(monkeypatch):
     assert any("completed reviewer" in message for message in printed)
 
 
+def test_all_multiagent_role_progress_labels_are_english():
+    from ci2lab.harness.multiagent.orchestrator import _role_progress_label
+
+    expected = {
+        AgentRole.PLANNER: "Planning the work",
+        AgentRole.RESEARCHER: "Gathering the needed context",
+        AgentRole.PYTHON_CODER: "Applying Python changes",
+        AgentRole.FRONTEND_CODER: "Applying interface changes",
+        AgentRole.TEST_CODER: "Updating tests",
+        AgentRole.DOCS_CODER: "Updating documentation",
+        AgentRole.GENERALIST_CODER: "Applying the requested changes",
+        AgentRole.VALIDATOR: "Checking the result",
+        AgentRole.REVIEWER: "Reviewing the outcome",
+        AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+    }
+
+    assert {
+        role: _role_progress_label(role, 1)
+        for role in AgentRole
+    } == expected
+
+
 def test_run_multi_agent_repairs_with_same_coder(monkeypatch):
     calls: list[tuple[AgentRole, int]] = []
     validator_outputs = iter(["pytest failed: assertion error", "pytest passed"])

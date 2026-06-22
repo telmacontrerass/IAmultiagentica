@@ -113,6 +113,22 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/tools":
                 self._json(facade._tools_payload(state))
                 return
+            if parsed.path == "/api/projects":
+                self._json({"ok": True, "projects": facade._list_projects()})
+                return
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
+                project_id = unquote(parsed.path.split("/")[-2]).strip()
+                payload = facade._list_project_sources(project_id)
+                self._json(payload, status=200 if payload.get("ok") else 404)
+                return
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                project = facade._get_project(project_id)
+                self._json(
+                    {"ok": bool(project), "project": project, "error": None if project else "Project not found."},
+                    status=200 if project else 404,
+                )
+                return
             if parsed.path.startswith("/api/models/pull/"):
                 task_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = facade._pull_task_payload(state, task_id)
@@ -158,6 +174,26 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/files/upload":
                 self._json(facade._upload_file(state, payload))
                 return
+            if parsed.path == "/api/projects":
+                result = facade._create_project(str(payload.get("name") or ""))
+                self._json(result, status=201 if result.get("ok") else 400)
+                return
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
+                project_id = unquote(parsed.path.split("/")[-2]).strip()
+                result = facade._add_project_source(project_id, payload)
+                self._json(result, status=201 if result.get("ok") else 400)
+                return
+            self._json({"error": "Not found"}, status=404)
+
+        def do_PATCH(self) -> None:  # noqa: N802
+            facade = _facade()
+            parsed = urlparse(self.path)
+            payload = self._read_json()
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._rename_project(project_id, str(payload.get("name") or ""))
+                self._json(result, status=200 if result.get("ok") else 400)
+                return
             self._json({"error": "Not found"}, status=404)
 
         def do_DELETE(self) -> None:  # noqa: N802
@@ -167,6 +203,19 @@ def handler_factory(state: UIState):
                 session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = facade._delete_session_payload(session_id)
                 self._json(payload, status=status)
+                return
+            if parsed.path.startswith("/api/projects/") and "/sources/" in parsed.path:
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) == 5:
+                    project_id = unquote(parts[2]).strip()
+                    source_id = unquote(parts[4]).strip()
+                    result = facade._delete_project_source(project_id, source_id)
+                    self._json(result, status=200 if result.get("ok") else 404)
+                    return
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._delete_project(project_id)
+                self._json(result, status=200 if result.get("ok") else 404)
                 return
             self._json({"error": "Not found"}, status=404)
 

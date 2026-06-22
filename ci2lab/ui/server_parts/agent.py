@@ -10,6 +10,7 @@ from ci2lab.harness.session import load_session, new_session_id, save_session
 from ci2lab.harness.token_usage import TokenUsageState
 from ci2lab.router.catalog import find_model_by_tag
 from ci2lab.runtime.ollama import is_catalog_model_installed
+from ci2lab.ui.projects import get_project, project_dir, project_prompt
 from ci2lab.ui.server_parts.uploads import normalize_attachments, prompt_with_uploaded_files
 
 
@@ -26,9 +27,19 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     if not model_result["ok"]:
         return model_result
     model = str(model_result["model"])
-    workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    project_id = str(payload.get("project_id") or "").strip()
+    project = get_project(project_id) if project_id else None
+    if project_id and project is None:
+        return {"ok": False, "error": "The selected project no longer exists."}
+    workspace = (
+        str(project_dir(project_id))
+        if project
+        else str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    )
     attachments = normalize_attachments(payload.get("attachments"))
     prompt_for_model = prompt_with_uploaded_files(prompt, workspace, attachments)
+    if project:
+        prompt_for_model = project_prompt(project_id, prompt_for_model)
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     stream = bool(payload.get("stream", False))
     multi_agent = bool(payload.get("multi_agent", False))
@@ -44,6 +55,17 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             progress_events.append(message)
 
     loaded = load_session(session_id)
+    loaded_project_id = str((loaded or {}).get("project_id") or "").strip()
+    if loaded and loaded_project_id != project_id:
+        return {
+            "ok": False,
+            "error": (
+                "This conversation belongs to a different project. "
+                "Open it from that project or start a new conversation."
+            ),
+            "session_id": session_id,
+            "project_id": project_id or None,
+        }
     messages = loaded.get("messages") if loaded else None
     existing_token_usage = loaded.get("token_usage") if loaded else None
     save_pending_session(
@@ -53,6 +75,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         model_tag=model,
         cwd=workspace,
         token_usage=existing_token_usage,
+        project_id=project_id or None,
     )
 
     try:
@@ -74,6 +97,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             confirm_callback=(lambda _tool, _summary: True),
         )
         agent.cancellation_event = cancellation_event
+        agent.project_id = project_id or None
         if multi_agent:
             answer = _call_with_optional_progress(
                 run_multi_agent,
@@ -90,6 +114,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 model_tag=selection.ollama_tag,
                 cwd=workspace,
                 token_usage=agent.token_usage.to_dict(),
+                project_id=project_id or None,
             )
         else:
             answer = run_agent(
@@ -99,6 +124,20 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 messages=messages,
                 on_progress=record_progress,
             )
+            # Project source excerpts are retrieval context, not user-authored
+            # conversation. Persist a clean visible turn so repeated project
+            # queries do not accumulate copied source text in session history.
+            if project:
+                save_completed_session(
+                    session_id=session_id,
+                    messages=messages,
+                    prompt=prompt,
+                    answer=answer,
+                    model_tag=selection.ollama_tag,
+                    cwd=workspace,
+                    token_usage=agent.token_usage.to_dict(),
+                    project_id=project_id,
+                )
         return {
             "ok": True,
             "answer": answer,
@@ -108,6 +147,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "multi_agent": multi_agent,
             "usage": agent.token_usage.to_dict(),
             "process_log": progress_events,
+            "project_id": project_id or None,
         }
     except (ChatCancelled, LLMCancelledError):
         return {
@@ -148,7 +188,15 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     if not model_result["ok"]:
         return model_result
     model = str(model_result["model"])
-    workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    project_id = str(payload.get("project_id") or "").strip()
+    project = get_project(project_id) if project_id else None
+    if project_id and project is None:
+        return {"ok": False, "error": "The selected project no longer exists."}
+    workspace = (
+        str(project_dir(project_id))
+        if project
+        else str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    )
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     multi_agent = bool(payload.get("multi_agent", False))
     warnings: list[str] = []
@@ -184,6 +232,8 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "security_engine": state.runtime.security.engine,
         "warnings": warnings,
         "usage": TokenUsageState().to_dict(),
+        "project_id": project_id or None,
+        "project_name": project["name"] if project else None,
     }
 
 
@@ -195,6 +245,7 @@ def save_pending_session(
     model_tag: str,
     cwd: str,
     token_usage: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> None:
     try:
         history = list(messages or [])
@@ -206,6 +257,7 @@ def save_pending_session(
             model_tag=model_tag,
             cwd=cwd,
             token_usage=token_usage,
+            project_id=project_id,
         )
     except Exception:  # noqa: BLE001
         return
@@ -220,6 +272,7 @@ def save_completed_session(
     model_tag: str,
     cwd: str,
     token_usage: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> None:
     try:
         history = list(messages or [])
@@ -232,6 +285,7 @@ def save_completed_session(
             model_tag=model_tag,
             cwd=cwd,
             token_usage=token_usage,
+            project_id=project_id,
         )
     except Exception:  # noqa: BLE001
         return

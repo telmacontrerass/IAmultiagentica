@@ -73,6 +73,17 @@ from ci2lab.ui.server_parts.uploads import (
     unique_upload_path as _unique_upload_path,
     upload_file as _upload_file,
 )
+from ci2lab.ui.projects import (
+    add_project_source as _add_project_source,
+    create_project as _create_project,
+    delete_project as _delete_project,
+    delete_project_source as _delete_project_source,
+    get_project as _get_project,
+    list_project_sources as _list_project_sources,
+    list_projects as _list_projects,
+    project_prompt as _project_prompt,
+    rename_project as _rename_project,
+)
 
 __all__ = [
     "DOCUMENT_UPLOAD_SUFFIXES",
@@ -83,4 +94,3 @@ __all__ = [
     "UPLOAD_DIR_NAME",
     "run_ui",
 ]
-

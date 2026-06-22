@@ -49,6 +49,9 @@ class AgentConfig:
     session_id: str | None = None
     """If set, persists the history at the end of each turn."""
 
+    project_id: str | None = None
+    """Optional UI knowledge-project identifier associated with the session."""
+
     confirm_callback: Callable[[str, str], bool] | None = None
 
     run_log_enabled: bool = True

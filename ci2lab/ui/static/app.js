@@ -11,6 +11,10 @@ const state = {
   deletePolls: {},
   tokenUsage: null,
   agentsMode: false,
+  projects: [],
+  currentProject: null,
+  projectSources: [],
+  allSessions: [],
 };
 
 let activeChatRequest = null;
@@ -85,6 +89,26 @@ const els = {
   modeValue: document.querySelector("#modeValue"),
   modeMeta: document.querySelector("#modeMeta"),
   recommendationsStrip: document.querySelector("#recommendationsStrip"),
+  projectsList: document.querySelector("#projectsList"),
+  projectCreateForm: document.querySelector("#projectCreateForm"),
+  projectNameInput: document.querySelector("#projectNameInput"),
+  projectSelect: document.querySelector("#projectSelect"),
+  projectContextBar: document.querySelector("#projectContextBar"),
+  projectContextName: document.querySelector("#projectContextName"),
+  projectContextMeta: document.querySelector("#projectContextMeta"),
+  projectSourceInput: document.querySelector("#projectSourceInput"),
+  projectSourcesList: document.querySelector("#projectSourcesList"),
+  toggleProjectSources: document.querySelector("#toggleProjectSources"),
+  openProjects: document.querySelector("#openProjects"),
+  showProjectCreate: document.querySelector("#showProjectCreate"),
+  cancelProjectCreate: document.querySelector("#cancelProjectCreate"),
+  backToProjects: document.querySelector("#backToProjects"),
+  projectDetailName: document.querySelector("#projectDetailName"),
+  projectDetailMeta: document.querySelector("#projectDetailMeta"),
+  projectDetailSources: document.querySelector("#projectDetailSources"),
+  projectDetailSourceInput: document.querySelector("#projectDetailSourceInput"),
+  projectChatsList: document.querySelector("#projectChatsList"),
+  newProjectChat: document.querySelector("#newProjectChat"),
 };
 
 async function api(path, options = {}) {
@@ -196,6 +220,7 @@ function persistUiState() {
     tokenUsage: state.tokenUsage,
     agentsMode: Boolean(els.agentsMode?.checked),
     selectedModel: els.modelSelect?.value || "",
+    currentProject: state.currentProject,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
@@ -210,7 +235,16 @@ function restoreUiState() {
     state.uploadedFiles = Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles : [];
     state.tokenUsage = normalizeTokenUsage(payload.tokenUsage);
     state.agentsMode = Boolean(payload.agentsMode);
-    state.activeView = "homeView";
+    state.currentProject = payload.currentProject || null;
+    state.activeView = [
+      "homeView",
+      "projectsView",
+      "projectDetailView",
+      "chatView",
+      "tokenInfoView",
+    ].includes(payload.activeView)
+      ? payload.activeView
+      : "homeView";
     if (payload.selectedModel) {
       els.modelSelect.dataset.pendingValue = payload.selectedModel;
     }
@@ -220,6 +254,7 @@ function restoreUiState() {
     state.uploadedFiles = [];
     state.tokenUsage = emptyTokenUsage();
     state.agentsMode = false;
+    state.currentProject = null;
     state.activeView = "homeView";
   }
 }
@@ -248,7 +283,12 @@ function switchView(viewId, scrollTarget = null) {
   });
 
   els.navButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === viewId && !button.dataset.scroll);
+    const projectsArea = viewId === "projectsView" || viewId === "projectDetailView";
+    const active = (
+      button.dataset.view === viewId
+      || (projectsArea && button.id === "openProjects")
+    ) && !button.dataset.scroll;
+    button.classList.toggle("active", active);
   });
 
   if (scrollTarget) {
@@ -586,6 +626,7 @@ function buildSessionInfoMessage(payload) {
     `Tool mode: ${payload.tool_mode || "?"}`,
     `CWD: ${payload.cwd || "?"}`,
     `Session: ${payload.session_id || "?"}`,
+    `Project: ${payload.project_name || "Outside projects"}`,
     `Mode: ${payload.multi_agent ? "agents" : "classic chat"}`,
     `Security: ${payload.security_profile || "standard"} / ${payload.security_engine || "ci2lab"}`,
     "",
@@ -601,6 +642,7 @@ async function startChatSession({ forceNew = false } = {}) {
     body: JSON.stringify({
       model: els.modelSelect.value,
       multi_agent: Boolean(els.agentsMode?.checked),
+      project_id: state.currentProject,
     }),
   });
   if (!result.ok) {
@@ -667,6 +709,12 @@ function readFileAsDataUrl(file) {
 async function uploadSelectedFiles(event) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
+  if (state.currentProject) {
+    const forwardedEvent = { target: { files, value: "", disabled: false } };
+    await uploadProjectSources(forwardedEvent);
+    event.target.value = "";
+    return;
+  }
   els.fileInput.disabled = true;
   for (const file of files) {
     try {
@@ -857,10 +905,14 @@ function renderSessions(sessions) {
     els.sessionsList.innerHTML = `<p class="meta">No saved sessions yet.</p>`;
     return;
   }
-  els.sessionsList.innerHTML = sessions.map((session) => `
+  els.sessionsList.innerHTML = sessions.map((session) => {
+    const project = state.projects.find((item) => item.id === session.project_id);
+    const scope = project ? `Project: ${project.name}` : "Outside projects";
+    return `
     <article class="session-card">
       <h4>${escapeHtml(session.title || "Conversation")}</h4>
       <div class="session-tag">Internal tag: <code>${escapeHtml(session.internal_tag || session.id)}</code></div>
+      <div class="session-tag">${escapeHtml(scope)}</div>
       <div class="meta">${escapeHtml(session.model)} · ${escapeHtml(formatDate(session.updated_at))}</div>
       <div class="meta">${escapeHtml(session.cwd)}</div>
       <div class="session-actions">
@@ -873,7 +925,252 @@ function renderSessions(sessions) {
         >Delete</button>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
+}
+
+function currentProjectInfo() {
+  return state.projects.find((project) => project.id === state.currentProject) || null;
+}
+
+function renderProjects() {
+  if (!els.projectsList) return;
+  if (!state.projects.length) {
+    els.projectsList.innerHTML = `
+      <div class="project-empty">
+        <strong>No projects yet</strong>
+        <p>Create one to keep sources and conversations for a subject together.</p>
+      </div>
+    `;
+  } else {
+    els.projectsList.innerHTML = state.projects.map((project) => `
+      <article
+        class="project-card ${project.id === state.currentProject ? "active" : ""}"
+        data-open-project="${escapeHtml(project.id)}"
+        tabindex="0"
+      >
+        <div class="project-card-folder" aria-hidden="true">▱</div>
+        <div class="project-card-copy">
+          <h4>${escapeHtml(project.name)}</h4>
+          <p>${project.source_count} source${project.source_count === 1 ? "" : "s"} · ${escapeHtml(project.source_size_label)}</p>
+          <small>Updated ${escapeHtml(formatDate(project.updated_at))}</small>
+        </div>
+        <div class="project-card-actions">
+          <button class="danger-button" type="button" data-delete-project="${escapeHtml(project.id)}">Delete</button>
+          <span class="project-open-arrow" aria-hidden="true">›</span>
+        </div>
+      </article>
+    `).join("");
+  }
+
+  if (els.projectSelect) {
+    els.projectSelect.innerHTML = [
+      `<option value="">Outside projects</option>`,
+      ...state.projects.map((project) => (
+        `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`
+      )),
+    ].join("");
+    els.projectSelect.value = currentProjectInfo() ? state.currentProject : "";
+  }
+  renderProjectContext();
+  if (state.activeView === "projectDetailView") renderProjectDetail();
+}
+
+async function loadProjectSources() {
+  if (!state.currentProject) {
+    state.projectSources = [];
+    renderProjectContext();
+    return;
+  }
+  const result = await api(`/api/projects/${encodeURIComponent(state.currentProject)}/sources`);
+  state.projectSources = result.ok ? (result.sources || []) : [];
+  renderProjectContext();
+}
+
+function renderProjectContext() {
+  const project = currentProjectInfo();
+  if (!els.projectContextBar) return;
+  els.projectContextBar.hidden = !project;
+  if (!project) {
+    state.projectSources = [];
+    if (els.projectSourcesList) els.projectSourcesList.hidden = true;
+    return;
+  }
+  els.projectContextName.textContent = project.name;
+  els.projectContextMeta.textContent = `${project.source_count} persistent source${project.source_count === 1 ? "" : "s"}`;
+  if (!els.projectSourcesList) return;
+  els.projectSourcesList.innerHTML = state.projectSources.length
+    ? state.projectSources.map((source) => `
+        <div class="project-source-row">
+          <span><strong>${escapeHtml(source.name)}</strong><small>${escapeHtml(source.size_label)}</small></span>
+          <button type="button" data-delete-source="${escapeHtml(source.id)}">Remove</button>
+        </div>
+      `).join("")
+    : `<p class="meta">No sources yet. Add notes, slides, PDFs or other course material.</p>`;
+}
+
+function projectSessions(projectId = state.currentProject) {
+  return state.allSessions.filter((session) => session.project_id === projectId);
+}
+
+function renderProjectDetail() {
+  const project = currentProjectInfo();
+  if (!project) {
+    if (state.activeView === "projectDetailView") switchView("projectsView");
+    return;
+  }
+  const conversations = projectSessions(project.id);
+  els.projectDetailName.textContent = project.name;
+  els.projectDetailMeta.textContent = (
+    `${project.source_count} source${project.source_count === 1 ? "" : "s"}`
+    + ` · ${conversations.length} conversation${conversations.length === 1 ? "" : "s"}`
+  );
+
+  els.projectDetailSources.innerHTML = state.projectSources.length
+    ? state.projectSources.map((source) => `
+        <article class="project-source-card">
+          <div class="source-file-icon" aria-hidden="true">▤</div>
+          <div class="source-file-copy">
+            <strong>${escapeHtml(source.name)}</strong>
+            <span>${escapeHtml(source.size_label)} · added ${escapeHtml(formatDate(source.created_at))}</span>
+          </div>
+          <button
+            class="source-remove-button"
+            type="button"
+            data-delete-source="${escapeHtml(source.id)}"
+            title="Remove source"
+            aria-label="Remove ${escapeHtml(source.name)}"
+          >×</button>
+        </article>
+      `).join("")
+    : `
+      <div class="project-detail-empty">
+        <div class="empty-folder-icon" aria-hidden="true">▱</div>
+        <strong>No sources yet</strong>
+        <p>Add notes, slides, PDFs or other course material. Every chat in this project will use them as reference.</p>
+        <label class="source-add-button inline-source-add" for="projectDetailSourceInput">
+          <span aria-hidden="true">＋</span> Add first source
+        </label>
+      </div>
+    `;
+
+  els.projectChatsList.innerHTML = conversations.length
+    ? conversations.map((session) => `
+        <article class="project-chat-row">
+          <button
+            class="project-chat-open"
+            type="button"
+            data-project-session="${escapeHtml(session.id)}"
+          >
+            <span class="project-chat-icon" aria-hidden="true">◯</span>
+            <span>
+              <strong>${escapeHtml(session.title || "Conversation")}</strong>
+              <small>${escapeHtml(formatDate(session.updated_at))} · ${escapeHtml(session.model)}</small>
+            </span>
+            <span class="project-chat-arrow" aria-hidden="true">›</span>
+          </button>
+          <button
+            class="project-chat-delete"
+            type="button"
+            data-delete-session="${escapeHtml(session.id)}"
+            title="Delete conversation"
+            aria-label="Delete ${escapeHtml(session.title || "conversation")}"
+          >×</button>
+        </article>
+      `).join("")
+    : `
+      <div class="project-detail-empty compact">
+        <strong>No conversations yet</strong>
+        <p>Start a chat and the model will use this project's sources as its reference base.</p>
+      </div>
+    `;
+}
+
+async function openProjectDetail(projectId) {
+  const exists = state.projects.some((project) => project.id === projectId);
+  if (!exists) return;
+  state.currentProject = projectId;
+  state.currentSession = null;
+  state.chatMessages = [];
+  state.uploadedFiles = [];
+  state.tokenUsage = emptyTokenUsage();
+  renderProjects();
+  await loadProjectSources();
+  renderProjectDetail();
+  persistUiState();
+  switchView("projectDetailView");
+}
+
+async function selectProject(projectId, { startChat = false } = {}) {
+  state.currentProject = projectId || null;
+  state.currentSession = null;
+  state.chatMessages = [];
+  state.uploadedFiles = [];
+  state.tokenUsage = emptyTokenUsage();
+  renderProjects();
+  renderAttachments();
+  setEmptyChat();
+  persistUiState();
+  await loadProjectSources();
+  if (startChat) {
+    switchView("chatView");
+    await startChatSession({ forceNew: true });
+  }
+}
+
+async function createProject(event) {
+  event.preventDefault();
+  const name = els.projectNameInput?.value.trim();
+  if (!name) return;
+  const result = await api("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  if (!result.ok) {
+    addMessage("assistant", result.error || "Could not create the project.", "error");
+    return;
+  }
+  els.projectNameInput.value = "";
+  els.projectCreateForm.hidden = true;
+  await refreshProjects();
+  await openProjectDetail(result.project.id);
+}
+
+async function refreshProjects() {
+  const result = await api("/api/projects");
+  state.projects = result.projects || [];
+  if (state.currentProject && !state.projects.some((item) => item.id === state.currentProject)) {
+    state.currentProject = null;
+    state.projectSources = [];
+  }
+  renderProjects();
+  if (state.currentProject) await loadProjectSources();
+  if (state.activeView === "projectDetailView") renderProjectDetail();
+}
+
+async function uploadProjectSources(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length || !state.currentProject) return;
+  const input = event.target;
+  input.disabled = true;
+  for (const file of files) {
+    try {
+      const content = await readFileAsDataUrl(file);
+      const result = await api(`/api/projects/${encodeURIComponent(state.currentProject)}/sources`, {
+        method: "POST",
+        body: JSON.stringify({ name: file.name, content_base64: content }),
+      });
+      if (!result.ok) {
+        addMessage("assistant", result.error || `Could not add ${file.name}`, "error");
+      }
+    } catch (error) {
+      addMessage("assistant", error.message || `Could not add ${file.name}`, "error");
+    }
+  }
+  input.value = "";
+  input.disabled = false;
+  await refreshProjects();
+  renderProjectDetail();
 }
 
 function renderSystem(payload) {
@@ -1068,8 +1365,12 @@ async function refreshAll() {
   renderModels();
   renderTokenInfo();
 
+  await refreshProjects();
+
   const sessions = await api("/api/sessions");
-  renderSessions(sessions.sessions || []);
+  state.allSessions = sessions.sessions || [];
+  renderSessions(state.allSessions);
+  if (state.currentProject) renderProjectDetail();
 
   const toolsPayload = await api("/api/tools");
   renderTools(toolsPayload);
@@ -1124,6 +1425,7 @@ async function sendMessage(event) {
         session_id: sessionId,
         request_id: requestId,
         multi_agent: Boolean(els.agentsMode?.checked),
+        project_id: state.currentProject,
         stream: false,
       }),
     });
@@ -1199,6 +1501,9 @@ async function loadSessionIntoChat(sessionId) {
   }
 
   const session = result.session;
+  state.currentProject = session.project_id || null;
+  renderProjects();
+  await loadProjectSources();
   state.currentSession = session.id;
   state.chatMessages = [];
   state.uploadedFiles = [];
@@ -1394,6 +1699,96 @@ function bindEvents() {
     removeAttachment(button.dataset.removeAttachment);
   });
   els.modelSelect.addEventListener("change", handleModelSelectChange);
+  els.projectSelect?.addEventListener("change", async () => {
+    await selectProject(els.projectSelect.value, { startChat: true });
+  });
+  els.projectCreateForm?.addEventListener("submit", createProject);
+  els.showProjectCreate?.addEventListener("click", () => {
+    els.projectCreateForm.hidden = false;
+    els.projectNameInput.focus();
+  });
+  els.cancelProjectCreate?.addEventListener("click", () => {
+    els.projectCreateForm.hidden = true;
+    els.projectNameInput.value = "";
+  });
+  els.backToProjects?.addEventListener("click", () => switchView("projectsView"));
+  els.newProjectChat?.addEventListener("click", async () => {
+    await selectProject(state.currentProject, { startChat: true });
+  });
+  els.projectsList?.addEventListener("click", async (event) => {
+    const deleteButton = event.target.closest("button[data-delete-project]");
+    if (deleteButton) {
+      const project = state.projects.find((item) => item.id === deleteButton.dataset.deleteProject);
+      if (!window.confirm(`Delete “${project?.name || "this project"}” and all its local sources?`)) return;
+      const result = await api(`/api/projects/${encodeURIComponent(deleteButton.dataset.deleteProject)}`, {
+        method: "DELETE",
+      });
+      if (!result.ok) {
+        addMessage("assistant", result.error || "Could not delete the project.", "error");
+        return;
+      }
+      if (state.currentProject === deleteButton.dataset.deleteProject) {
+        state.currentProject = null;
+        state.currentSession = null;
+        state.projectSources = [];
+      }
+      await refreshProjects();
+      persistUiState();
+      return;
+    }
+    const projectCard = event.target.closest("[data-open-project]");
+    if (projectCard) await openProjectDetail(projectCard.dataset.openProject);
+  });
+  els.projectsList?.addEventListener("keydown", async (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const projectCard = event.target.closest("[data-open-project]");
+    if (!projectCard || event.target.closest("button")) return;
+    event.preventDefault();
+    await openProjectDetail(projectCard.dataset.openProject);
+  });
+  els.projectSourceInput?.addEventListener("change", uploadProjectSources);
+  els.projectDetailSourceInput?.addEventListener("change", uploadProjectSources);
+  els.toggleProjectSources?.addEventListener("click", () => {
+    const willShow = els.projectSourcesList.hidden;
+    els.projectSourcesList.hidden = !willShow;
+    els.toggleProjectSources.textContent = willShow ? "Hide sources" : "View sources";
+  });
+  els.projectSourcesList?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-delete-source]");
+    if (!button || !state.currentProject) return;
+    const result = await api(
+      `/api/projects/${encodeURIComponent(state.currentProject)}/sources/${encodeURIComponent(button.dataset.deleteSource)}`,
+      { method: "DELETE" },
+    );
+    if (!result.ok) {
+      addMessage("assistant", result.error || "Could not remove the source.", "error");
+      return;
+    }
+    await refreshProjects();
+  });
+  els.projectDetailSources?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-delete-source]");
+    if (!button || !state.currentProject) return;
+    const result = await api(
+      `/api/projects/${encodeURIComponent(state.currentProject)}/sources/${encodeURIComponent(button.dataset.deleteSource)}`,
+      { method: "DELETE" },
+    );
+    if (!result.ok) {
+      addMessage("assistant", result.error || "Could not remove the source.", "error");
+      return;
+    }
+    await refreshProjects();
+  });
+  els.projectChatsList?.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("button[data-delete-session]");
+    if (deleteButton) {
+      deleteSavedSession(deleteButton.dataset.deleteSession, deleteButton);
+      return;
+    }
+    const button = event.target.closest("button[data-project-session]");
+    if (!button) return;
+    loadSessionIntoChat(button.dataset.projectSession);
+  });
   els.modelSearch.addEventListener("input", renderModels);
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
@@ -1449,10 +1844,11 @@ function bindEvents() {
   els.navButtons.forEach((button) => {
     if (button.id === "newChat") return;
     button.addEventListener("click", async () => {
-      switchView(button.dataset.view || "homeView", button.dataset.scroll || null);
-      if (button.id === "openChat" && !state.currentSession && !state.chatMessages.length) {
-        await startChatSession({ forceNew: true });
+      if (button.id === "openChat") {
+        await selectProject("", { startChat: true });
+        return;
       }
+      switchView(button.dataset.view || "homeView", button.dataset.scroll || null);
     });
   });
 }
