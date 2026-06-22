@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rich.panel import Panel
 
-from ci2lab.console import console
+from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.multiagent import run_multi_agent
@@ -37,11 +37,15 @@ class _TransientProgress:
         if self._status is None:
             self._status = console.status(rendered, spinner="dots")
             self._status.start()
+            # Let interactive prompts (e.g. permission requests) pause the
+            # spinner while they read input, otherwise it hides the prompt.
+            active_progress.set(self._status)
         else:
             self._status.update(rendered)
 
     def clear(self) -> None:
         if self._status is not None:
+            active_progress.clear(self._status)
             self._status.stop()
             self._status = None
 
