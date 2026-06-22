@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import base64
 import shlex
 import shutil
 import subprocess
@@ -59,6 +60,11 @@ _ANSI_BLUE = "\x1b[34;1m"
 MAIN_OPTIONS: tuple[MenuOption, ...] = (
     MenuOption("Open web interface", "Start the local browser UI.", "ui"),
     MenuOption("Start chat with tools", "Classic ci2lab chat with the selected model.", "chat"),
+    MenuOption(
+        "My projects",
+        "Open a project, manage its sources and continue its chats.",
+        "projects",
+    ),
     MenuOption(
         "Start chat with agents",
         "Sequential planner/researcher/coder/validator/reviewer flow.",
@@ -163,6 +169,8 @@ def _handle_main_choice(
         return _run_command(["ui"], runner)
     if selected == "chat":
         return _run_chat_command(runtime, runner, ["chat"])
+    if selected == "projects":
+        return _projects_menu(runtime)
     if selected == "multi_chat":
         return _run_chat_command(runtime, runner, ["--multi-agent", "chat"])
     if selected == "tools_chat":
@@ -227,6 +235,267 @@ def _run_chat_command(
     if choice is None or not _ensure_model_installed(choice):
         return 0
     return _run_command(["--model", choice.catalog_id or choice.ollama_tag, *base_args], runner)
+
+
+def _projects_menu(runtime: Ci2LabConfig) -> int:
+    from ci2lab.ui.projects import create_project, list_projects
+
+    while True:
+        projects = list_projects()
+        options = [
+            MenuOption(
+                "Create new project",
+                "Create an isolated workspace with its own sources and chats.",
+                "create",
+            ),
+            *[
+                MenuOption(
+                    project["name"],
+                    (
+                        f"{project['source_count']} source"
+                        f"{'' if project['source_count'] == 1 else 's'} · "
+                        f"{project['source_size_label']}"
+                    ),
+                    project["id"],
+                )
+                for project in projects
+            ],
+            MenuOption("Back", "Return to the main menu.", "back"),
+        ]
+        selected = select_from_menu(
+            "My projects",
+            options,
+            subtitle="Each project has independent sources and conversations.",
+        )
+        if selected in {None, "back"}:
+            return 0
+        if selected == "create":
+            name = _ask_text("Project name")
+            if not name:
+                continue
+            result = create_project(name)
+            if not result.get("ok"):
+                console.print(f"[red]{result.get('error', 'Could not create project.')}[/red]")
+                continue
+            project = result["project"]
+            console.print(f"[green]Project created:[/green] {project['name']}")
+            _project_detail_menu(runtime, project["id"])
+            continue
+        _project_detail_menu(runtime, selected)
+
+
+def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
+    from ci2lab.ui.projects import delete_project, get_project
+
+    while True:
+        project = get_project(project_id)
+        if project is None:
+            console.print("[yellow]Project not found.[/yellow]")
+            return 0
+        conversations = _project_sessions(project_id)
+        options = (
+            MenuOption(
+                "Start new chat",
+                "Classic chat using this project's sources on every turn.",
+                "chat",
+            ),
+            MenuOption(
+                "Start new multi-agent chat",
+                "Use sequential agents with this project's sources.",
+                "multi_chat",
+            ),
+            MenuOption(
+                "Continue a conversation",
+                f"{len(conversations)} saved project conversation(s).",
+                "sessions",
+            ),
+            MenuOption(
+                "Add source",
+                "Upload a local document, PDF, notes, slides or spreadsheet.",
+                "add_source",
+            ),
+            MenuOption(
+                "View or remove sources",
+                f"{project['source_count']} source(s) in this project.",
+                "sources",
+            ),
+            MenuOption("Delete project", "Delete its sources and conversations.", "delete"),
+            MenuOption("Back", "Return to My projects.", "back"),
+        )
+        selected = select_from_menu(
+            project["name"],
+            options,
+            subtitle=(
+                f"{project['source_count']} sources · "
+                f"{len(conversations)} conversations"
+            ),
+        )
+        if selected in {None, "back"}:
+            return 0
+        if selected == "chat":
+            _run_project_chat(runtime, project_id, multi_agent=False)
+        elif selected == "multi_chat":
+            _run_project_chat(runtime, project_id, multi_agent=True)
+        elif selected == "sessions":
+            session = _select_project_session(project_id)
+            if session:
+                _run_project_chat(
+                    runtime,
+                    project_id,
+                    session_id=session["id"],
+                    multi_agent=False,
+                )
+        elif selected == "add_source":
+            _add_project_source_from_path(project_id)
+        elif selected == "sources":
+            _project_sources_menu(project_id)
+        elif selected == "delete":
+            if _confirm(
+                f"Delete project '{project['name']}' and all its sources/chats? [y/N] "
+            ):
+                result = delete_project(project_id)
+                if result.get("ok"):
+                    console.print("[green]Project deleted.[/green]")
+                    return 0
+                console.print(f"[red]{result.get('error', 'Could not delete project.')}[/red]")
+
+
+def _run_project_chat(
+    runtime: Ci2LabConfig,
+    project_id: str,
+    *,
+    session_id: str | None = None,
+    multi_agent: bool = False,
+) -> int:
+    from ci2lab.harness.repl import run_repl
+    from ci2lab.pipeline import build_agent_config, prepare_session
+    from ci2lab.ui.projects import get_project
+
+    project = get_project(project_id)
+    if project is None:
+        console.print("[red]Project not found.[/red]")
+        return 1
+    choice = select_model(runtime)
+    if choice is None or not _ensure_model_installed(choice):
+        return 0
+    _, selection = prepare_session(
+        "",
+        force_model=choice.ollama_tag,
+        backend_url=runtime.backend_url,
+        pull=False,
+    )
+    config = build_agent_config(
+        runtime,
+        selection,
+        cwd=project["workspace"],
+        session_id=session_id,
+    )
+    config.project_id = project_id
+    console.print(
+        f"[bold]Project:[/bold] {project['name']} "
+        f"[dim]({project['source_count']} sources)[/dim]"
+    )
+    run_repl(
+        selection,
+        config,
+        session_id=session_id,
+        multi_agent=multi_agent,
+    )
+    return 0
+
+
+def _project_sessions(project_id: str) -> list[dict[str, str]]:
+    from ci2lab.harness.session import list_sessions
+
+    return [
+        row for row in list_sessions()
+        if str(row.get("project_id") or "") == project_id
+    ]
+
+
+def _select_project_session(project_id: str) -> dict[str, str] | None:
+    from ci2lab.harness.session import load_session
+    from ci2lab.ui.server_parts.serializers import session_title
+
+    rows = _project_sessions(project_id)
+    if not rows:
+        console.print("[yellow]This project has no saved conversations yet.[/yellow]")
+        return None
+    options = []
+    for row in rows:
+        data = load_session(row["id"])
+        title = session_title(data.get("messages", []) if data else [])
+        options.append(
+            MenuOption(
+                title,
+                f"{row['updated_at'][:19]} · {row['model']}",
+                row["id"],
+            )
+        )
+    selected = select_from_menu("Project conversations", options)
+    return next((row for row in rows if row["id"] == selected), None)
+
+
+def _add_project_source_from_path(project_id: str) -> bool:
+    from ci2lab.ui.projects import add_project_source
+
+    raw_path = _ask_text("Path to source file")
+    if not raw_path:
+        return False
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        console.print(f"[red]File not found:[/red] {path}")
+        return False
+    try:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        console.print(f"[red]Could not read file:[/red] {exc}")
+        return False
+    result = add_project_source(
+        project_id,
+        {"name": path.name, "content_base64": encoded},
+    )
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('error', 'Could not add source.')}[/red]")
+        return False
+    console.print(
+        f"[green]Source added:[/green] {result['source']['name']} "
+        f"({result['source']['size_label']})"
+    )
+    return True
+
+
+def _project_sources_menu(project_id: str) -> int:
+    from ci2lab.ui.projects import delete_project_source, list_project_sources
+
+    while True:
+        result = list_project_sources(project_id)
+        sources = result.get("sources", []) if result.get("ok") else []
+        options = [
+            MenuOption("Add source", "Upload another local file.", "add"),
+            *[
+                MenuOption(
+                    source["name"],
+                    f"{source['size_label']} · select to remove",
+                    source["id"],
+                )
+                for source in sources
+            ],
+            MenuOption("Back", "Return to the project.", "back"),
+        ]
+        selected = select_from_menu("Project sources", options)
+        if selected in {None, "back"}:
+            return 0
+        if selected == "add":
+            _add_project_source_from_path(project_id)
+            continue
+        source = next((item for item in sources if item["id"] == selected), None)
+        if source and _confirm(f"Remove source '{source['name']}'? [y/N] "):
+            removed = delete_project_source(project_id, source["id"])
+            if removed.get("ok"):
+                console.print("[green]Source removed.[/green]")
+            else:
+                console.print(f"[red]{removed.get('error', 'Could not remove source.')}[/red]")
 
 
 def _sessions_menu(runner: CommandRunner) -> int:

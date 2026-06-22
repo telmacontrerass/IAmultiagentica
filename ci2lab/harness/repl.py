@@ -160,11 +160,31 @@ def run_repl(
     if session_id:
         data = load_session(session_id)
         if data:
+            stored_project_id = str(data.get("project_id") or "")
+            active_project_id = str(config.project_id or "")
+            if stored_project_id != active_project_id:
+                console.print(
+                    "[red]This session belongs to a different project and cannot "
+                    "be resumed here.[/red]"
+                )
+                return
             history = data.get("messages")
             console.print(f"[dim]Resuming session {session_id}[/dim]")
 
+    project_line = ""
+    if config.project_id:
+        from ci2lab.ui.projects import get_project
+
+        project = get_project(config.project_id)
+        if project:
+            project_line = (
+                f"Project: {project['name']} "
+                f"({project['source_count']} persistent sources)\n"
+            )
+
     console.print(Panel(
         f"[bold]ci2lab REPL[/bold]\n"
+        f"{project_line}"
         f"Model: {selection.ollama_tag}\n"
         f"Tool mode: {selection.tool_mode}\n"
         f"Mode: {'multi-agent' if multi_agent else 'classic'}\n"
@@ -211,6 +231,12 @@ def run_repl(
             if not data:
                 console.print(f"[yellow]Session {target} does not exist.[/yellow]")
                 continue
+            if str(data.get("project_id") or "") != str(config.project_id or ""):
+                console.print(
+                    "[yellow]That session belongs to a different project and "
+                    "cannot be resumed here.[/yellow]"
+                )
+                continue
             sid = target
             config.session_id = sid
             history = data.get("messages")
@@ -247,6 +273,7 @@ def run_repl(
                     model_tag=selection.ollama_tag,
                     cwd=config.cwd,
                     token_usage=config.token_usage.to_dict(),
+                    project_id=config.project_id,
                 )
                 console.print(f"[green]Saved to {path}[/green]")
             else:
@@ -292,12 +319,13 @@ def run_repl(
                         f"{body}\n\n---\nUser request: "
                         f"{user_request or '(use skill instructions above)'}"
                     )
+                    execution_prompt = _project_prompt(config, prompt)
                     progress = _TransientProgress()
                     try:
                         last_user_prompt = line
                         if multi_agent:
                             final_text = run_multi_agent(
-                                prompt,
+                                execution_prompt,
                                 selection,
                                 config=config,
                                 on_progress=progress.update,
@@ -314,15 +342,29 @@ def run_repl(
                                     model_tag=selection.ollama_tag,
                                     cwd=config.cwd,
                                     token_usage=config.token_usage.to_dict(),
+                                    project_id=config.project_id,
                                 )
                         else:
-                            run_agent(
-                                prompt,
+                            final_text = run_agent(
+                                execution_prompt,
                                 selection,
                                 config=config,
                                 messages=history,
                                 on_progress=progress.update,
                             )
+                            if config.project_id:
+                                history = (history or []) + [
+                                    {"role": "user", "content": prompt},
+                                    {"role": "assistant", "content": final_text},
+                                ]
+                                save_session(
+                                    sid,
+                                    messages=history,
+                                    model_tag=selection.ollama_tag,
+                                    cwd=config.cwd,
+                                    token_usage=config.token_usage.to_dict(),
+                                    project_id=config.project_id,
+                                )
                         last_error_message = None
                     except LLMError as exc:
                         console.print(f"[red]{exc.user_message}[/red]")
@@ -340,6 +382,7 @@ def run_repl(
         # matching the behaviour of Ollama's own REPL but working for both
         # absolute paths and bare filenames relative to the workspace.
         prompt, detected_images = _extract_inline_images(line, config, selection)
+        execution_prompt = _project_prompt(config, prompt)
 
         progress = _TransientProgress()
         try:
@@ -352,7 +395,7 @@ def run_repl(
 
             if multi_agent:
                 final_text = run_multi_agent(
-                    prompt,
+                    execution_prompt,
                     selection,
                     config=config,
                     on_progress=progress.update,
@@ -369,21 +412,35 @@ def run_repl(
                         model_tag=selection.ollama_tag,
                         cwd=config.cwd,
                         token_usage=config.token_usage.to_dict(),
+                        project_id=config.project_id,
                     )
             elif history is None:
-                run_agent(
-                    prompt,
+                final_text = run_agent(
+                    execution_prompt,
                     selection,
                     config=config,
                     on_progress=progress.update,
                 )
             else:
-                run_agent(
-                    prompt,
+                final_text = run_agent(
+                    execution_prompt,
                     selection,
                     config=config,
                     messages=history,
                     on_progress=progress.update,
+                )
+            if config.project_id and not multi_agent:
+                history = (history or []) + [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": final_text},
+                ]
+                save_session(
+                    sid,
+                    messages=history,
+                    model_tag=selection.ollama_tag,
+                    cwd=config.cwd,
+                    token_usage=config.token_usage.to_dict(),
+                    project_id=config.project_id,
                 )
             last_error_message = None
         except LLMError as exc:
@@ -397,3 +454,11 @@ def run_repl(
         data = load_session(sid)
         if data:
             history = data.get("messages")
+
+
+def _project_prompt(config: AgentConfig, prompt: str) -> str:
+    if not config.project_id:
+        return prompt
+    from ci2lab.ui.projects import project_prompt
+
+    return project_prompt(config.project_id, prompt)
