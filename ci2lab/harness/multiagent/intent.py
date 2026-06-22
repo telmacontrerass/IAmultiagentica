@@ -50,6 +50,11 @@ class MultiAgentIntentDecision:
 _FULL_FLOW = ["planner", "researcher", "coder", "validator", "reviewer"]
 _REVIEW_FLOW = ["planner", "researcher", "reviewer"]
 _RESEARCH_REVIEW_FLOW = ["researcher", "reviewer"]
+# Read a document AND produce output from it (e.g. "read the pdf and write the
+# answer to a file"): research reads, a coder writes, a reviewer checks. No
+# planner — a document task does not need one, and a toolless planner only
+# stalls on it.
+_RESEARCH_WRITE_FLOW = ["researcher", "coder", "reviewer"]
 
 
 # Explicit negative constraints / review-only blockers. These must beat any
@@ -101,7 +106,9 @@ _READ_ONLY_MARKERS = (
     "read-only",
 )
 
-# Asking to implement/fix/modify code.
+# Asking to implement/fix/modify code, or to produce/complete something. These
+# are all write-intent verbs: a false positive only adds a coder phase, while a
+# false negative leaves the task with no way to produce output at all.
 _CODE_CHANGE_MARKERS = (
     "implement",
     "fix",
@@ -109,6 +116,14 @@ _CODE_CHANGE_MARKERS = (
     "add",
     "change",
     "edit",
+    "complete",
+    "solve",
+    "create",
+    "write",
+    "make",
+    "generate",
+    "build",
+    "develop",
 )
 
 # Markers signalling an explicit request to persist output to a file.
@@ -153,14 +168,18 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
         )
 
     if _contains_any(text, _DOCUMENT_SUMMARY_MARKERS):
-        requires_write = _contains_any(text, _WRITE_REQUEST_MARKERS)
+        # "read the pdf and write/solve/complete ..." needs an implementer too —
+        # a file output marker or any write verb means a coder must run.
+        requires_write = _contains_any(text, _WRITE_REQUEST_MARKERS) or _contains_any(
+            text, _CODE_CHANGE_MARKERS
+        )
         reason = "Prompt asks to read/summarize a document."
         if requires_write:
-            reason += " It also asks to persist the summary to a file."
+            reason += " It also asks to produce output, so an implementer is included."
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.DOCUMENT_SUMMARY,
             requires_write=requires_write,
-            allowed_phases=list(_RESEARCH_REVIEW_FLOW),
+            allowed_phases=list(_RESEARCH_WRITE_FLOW if requires_write else _RESEARCH_REVIEW_FLOW),
             reason=reason,
             confidence="high",
         )

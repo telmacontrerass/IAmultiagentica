@@ -96,8 +96,10 @@ _IMPLEMENTATION_TASK_MARKERS = (
 )
 
 
-def _combined_output(*results: SubAgentResult) -> str:
-    return "\n\n".join(result.output for result in results if result.output)
+def _combined_output(*results: SubAgentResult | None) -> str:
+    return "\n\n".join(
+        result.output for result in results if result is not None and result.output
+    )
 
 
 def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
@@ -386,7 +388,9 @@ def _execute_phase(
     return result
 
 
-def choose_coder_role(plan: SubAgentResult, research: SubAgentResult) -> AgentRole:
+def choose_coder_role(
+    plan: SubAgentResult | None, research: SubAgentResult | None
+) -> AgentRole:
     """Choose an implementation role from planner/researcher evidence."""
     text = _combined_output(plan, research).lower()
     if any(marker in text for marker in ("readme", ".md", "docs/", "documentacion")):
@@ -479,20 +483,28 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
 
 def _build_implementation_prompt(
     user_prompt: str,
-    plan: SubAgentResult,
-    research: SubAgentResult,
+    plan: SubAgentResult | None,
+    research: SubAgentResult | None,
 ) -> str:
+    # A document task runs no planner, so `plan` may be absent — fall back to the
+    # user task directly rather than failing.
+    plan_text = plan.output if plan is not None else (
+        "No separate plan was produced; follow the user task directly."
+    )
+    research_text = research.output if research is not None else (
+        "No research output was produced."
+    )
     return (
-        "Follow the planner's execution plan and the researcher findings. "
+        "Follow the execution plan and the researcher findings. "
         "Implement only the tasks assigned to your implementer role. Do not "
         "take over validation, review, security review, or unrelated role "
-        "responsibilities. Do not touch files or areas outside the planner's "
+        "responsibilities. Do not touch files or areas outside the stated "
         "boundaries unless the research context proves they are required; if "
         "that happens, explain why.\n\n"
         "If a dependency from the plan or research is missing, return `BLOCKED:` "
         "with the exact missing dependency instead of guessing.\n\n"
-        f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
-        f"Research:\n{research.output}"
+        f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
+        f"Research:\n{research_text}"
     )
 
 
@@ -568,7 +580,16 @@ def _build_security_review_prompt(run: MultiAgentRun) -> str:
 
 def synthesize_final_answer(run: MultiAgentRun) -> str:
     """Create a concise final answer from orchestrator state."""
-    blocked = next((result for result in run.results if subagent_blocked(result)), None)
+    # A blocked planner is not fatal — it is advisory and the load-bearing roles
+    # (researcher, coder) run after it — so it must not mark the whole run blocked.
+    blocked = next(
+        (
+            result
+            for result in run.results
+            if subagent_blocked(result) and result.role != AgentRole.PLANNER
+        ),
+        None,
+    )
     if blocked:
         return (
             "Multi-agent run finished with status: blocked\n"
@@ -667,8 +688,18 @@ def run_multi_agent(
                 on_progress=on_progress,
             )
             if subagent_blocked(plan):
-                state.final_answer = synthesize_final_answer(state)
-                return state.final_answer
+                # The planner is advisory and has no tools; a weak model may flail
+                # trying to act and burn its round cap. That must NOT abort the run
+                # — the researcher (read tools) and coder (write tools) do the real
+                # work. Keep the partial plan and continue.
+                if on_progress is None:
+                    console.print(
+                        "[yellow][multi-agent][/yellow] planner did not finish "
+                        "cleanly; continuing with the available plan."
+                    )
+                plan.status = "partial"
+                state.failed_phase = None
+                state.error = None
 
         research: SubAgentResult | None = None
         if "researcher" in planned_phases:

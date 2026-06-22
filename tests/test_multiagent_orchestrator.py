@@ -116,7 +116,8 @@ def test_downstream_prompts_require_following_planner_contract():
     assert "Follow the planner's execution plan" in research_prompt
     assert "Only perform the research/context gathering assigned" in research_prompt
     assert "Implement only the tasks assigned" in implementation_prompt
-    assert "outside the planner's boundaries" in implementation_prompt
+    # Wording is plan-source-agnostic: a document task runs no planner.
+    assert "outside the stated boundaries" in implementation_prompt
     assert "planner's validation expectations" in validation_prompt
     assert "did not follow the plan" in validation_prompt
     assert "against the planner's execution plan" in review_prompt
