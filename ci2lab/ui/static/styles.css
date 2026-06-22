@@ -245,7 +245,8 @@ button {
 }
 
 .chat-view-active .topbar,
-.token-info-view-active .topbar {
+.token-info-view-active .topbar,
+.projects-view-active .topbar {
   display: none;
 }
 

@@ -276,6 +276,10 @@ function switchView(viewId, scrollTarget = null) {
   state.activeView = viewId;
   document.body.classList.toggle("chat-view-active", viewId === "chatView");
   document.body.classList.toggle("token-info-view-active", viewId === "tokenInfoView");
+  document.body.classList.toggle(
+    "projects-view-active",
+    viewId === "projectsView" || viewId === "projectDetailView",
+  );
   els.views.forEach((view) => {
     const active = view.id === viewId;
     view.hidden = !active;

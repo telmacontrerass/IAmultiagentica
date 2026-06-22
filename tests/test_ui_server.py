@@ -59,7 +59,8 @@ def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
     app_js = (root / "app.js").read_text(encoding="utf-8")
 
     assert 'id="openProjects"' in index_html
-    assert "> MIS PROYECTOS" in index_html
+    assert "> My projects" in index_html
+    assert "MIS PROYECTOS" not in index_html
     assert 'id="projectsView"' in index_html
     assert 'id="projectDetailView"' in index_html
     assert 'id="projectDetailSourceInput"' in index_html
@@ -67,6 +68,7 @@ def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
     assert 'id="newProjectChat"' in index_html
     assert "session.project_id === projectId" in app_js
     assert "openProjectDetail" in app_js
+    assert '"projects-view-active"' in app_js
 
 
 def test_health_payload_reports_local_only(monkeypatch):
