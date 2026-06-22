@@ -80,6 +80,9 @@ class AgentConfig:
     role_anchor: str | None = None
     """English role-discipline anchor reinjected for subagents after tool rounds."""
 
+    cancellation_event: Any | None = None
+    """Optional threading.Event-like object used to stop an in-flight run."""
+
     last_run_dir: str | None = None
     """Latest run directory produced by RunLogger for this config instance."""
 

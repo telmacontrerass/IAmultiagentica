@@ -5,12 +5,16 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from ci2lab.harness.llm_errors import LLMError
+from ci2lab.harness.llm_errors import LLMCancelledError, LLMError
 from ci2lab.harness.session import load_session, new_session_id, save_session
 from ci2lab.harness.token_usage import TokenUsageState
 from ci2lab.router.catalog import find_model_by_tag
 from ci2lab.runtime.ollama import is_catalog_model_installed
 from ci2lab.ui.server_parts.uploads import normalize_attachments, prompt_with_uploaded_files
+
+
+class ChatCancelled(RuntimeError):
+    """Raised when the web UI asks an in-flight chat request to stop."""
 
 
 def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -28,6 +32,17 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     stream = bool(payload.get("stream", False))
     multi_agent = bool(payload.get("multi_agent", False))
+    request_id = str(payload.get("request_id") or "").strip()
+    cancellation_event = state.begin_chat_request(request_id) if request_id else None
+    progress_events: list[str] = []
+
+    def record_progress(message: str) -> None:
+        if cancellation_event and cancellation_event.is_set():
+            raise ChatCancelled()
+        message = str(message or "").strip()
+        if message:
+            progress_events.append(message)
+
     loaded = load_session(session_id)
     messages = loaded.get("messages") if loaded else None
     existing_token_usage = loaded.get("token_usage") if loaded else None
@@ -58,8 +73,15 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             auto_confirm=True,
             confirm_callback=(lambda _tool, _summary: True),
         )
+        agent.cancellation_event = cancellation_event
         if multi_agent:
-            answer = run_multi_agent(prompt_for_model, selection, config=agent)
+            answer = _call_with_optional_progress(
+                run_multi_agent,
+                prompt_for_model,
+                selection,
+                config=agent,
+                on_progress=record_progress,
+            )
             save_completed_session(
                 session_id=session_id,
                 messages=messages,
@@ -70,7 +92,13 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 token_usage=agent.token_usage.to_dict(),
             )
         else:
-            answer = run_agent(prompt_for_model, selection, config=agent, messages=messages)
+            answer = run_agent(
+                prompt_for_model,
+                selection,
+                config=agent,
+                messages=messages,
+                on_progress=record_progress,
+            )
         return {
             "ok": True,
             "answer": answer,
@@ -79,11 +107,40 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "display_name": selection.display_name,
             "multi_agent": multi_agent,
             "usage": agent.token_usage.to_dict(),
+            "process_log": progress_events,
+        }
+    except (ChatCancelled, LLMCancelledError):
+        return {
+            "ok": False,
+            "cancelled": True,
+            "error": "Stopped by the user.",
+            "session_id": session_id,
+            "process_log": progress_events,
         }
     except LLMError as exc:
-        return {"ok": False, "error": exc.user_message, "session_id": session_id}
+        return {
+            "ok": False,
+            "error": exc.user_message,
+            "session_id": session_id,
+            "process_log": progress_events,
+        }
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc), "session_id": session_id}
+        return {
+            "ok": False,
+            "error": str(exc),
+            "session_id": session_id,
+            "process_log": progress_events,
+        }
+    finally:
+        if request_id:
+            state.finish_chat_request(request_id)
+
+
+def chat_cancel(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    request_id = str(payload.get("request_id") or "").strip()
+    if not request_id:
+        return {"ok": False, "error": "Missing request id."}
+    return {"ok": True, "cancelled": state.cancel_chat_request(request_id)}
 
 
 def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -189,6 +246,15 @@ def _agent_dependencies():
         facade.run_agent,
         facade.run_multi_agent,
     )
+
+
+def _call_with_optional_progress(func: Any, *args: Any, on_progress: Any, **kwargs: Any) -> Any:
+    try:
+        return func(*args, on_progress=on_progress, **kwargs)
+    except TypeError as exc:
+        if "on_progress" not in str(exc):
+            raise
+        return func(*args, **kwargs)
 
 
 def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:

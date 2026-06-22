@@ -1,8 +1,12 @@
 import json
+import threading
+import time
 
 import httpx
+import pytest
 
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.llm_errors import LLMCancelledError
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 
 
@@ -62,6 +66,42 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
     assert result.usage.total_tokens == 9
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+
+
+def test_chat_cancel_event_closes_blocking_client(monkeypatch):
+    cancel_event = threading.Event()
+    closed_clients = []
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+            self.closed = False
+            closed_clients.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def close(self):
+            self.closed = True
+
+        def post(self, url, json):
+            cancel_event.set()
+            deadline = time.time() + 2
+            while not self.closed and time.time() < deadline:
+                time.sleep(0.01)
+            raise httpx.ReadError("closed", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection())
+    with pytest.raises(LLMCancelledError):
+        client.chat([{"role": "user", "content": "hola"}], cancel_event=cancel_event)
+
+    assert closed_clients
+    assert closed_clients[0].closed is True
 
 
 def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):

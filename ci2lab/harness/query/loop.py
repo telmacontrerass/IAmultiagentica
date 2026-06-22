@@ -30,7 +30,7 @@ from ci2lab.harness.context import manage_context, trim_messages
 from ci2lab.harness.edit_followup import EditSignature, process_edit_round
 from ci2lab.harness.hooks import emit_hook_event
 from ci2lab.harness.llm_client import LLMClient
-from ci2lab.harness.llm_errors import LLMError, classify_request_error
+from ci2lab.harness.llm_errors import LLMCancelledError, LLMError, classify_request_error
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
 from ci2lab.harness.mcp.session import close_mcp_manager
 from ci2lab.harness.parsing import (
@@ -192,6 +192,12 @@ def _emit_progress(
     if not label:
         return
     _status(label)
+
+
+def _raise_if_cancelled(cfg: AgentConfig) -> None:
+    event = cfg.cancellation_event
+    if event is not None and event.is_set():
+        raise LLMCancelledError()
 
 
 def _initial_progress_label(user_prompt: str) -> str:
@@ -478,6 +484,7 @@ def run_agent(
 
     try:
         for round_num in range(1, cfg.max_rounds + 1):
+            _raise_if_cancelled(cfg)
             console.print(f"[dim]── Round {round_num} ──[/dim]")
             if run_log:
                 run_log.set_rounds_completed(round_num)
@@ -515,6 +522,7 @@ def run_agent(
                 _model_progress_label(user_prompt, round_num),
                 on_progress,
             )
+            _raise_if_cancelled(cfg)
             streamed_this_round = stream_this_round
             try:
                 llm_response = call_llm(
@@ -522,6 +530,7 @@ def run_agent(
                     trimmed,
                     tools=tools,
                     stream=stream_this_round,
+                    cancel_event=cfg.cancellation_event,
                 )
             except LLMError as exc:
                 status = "llm_error"
@@ -539,6 +548,7 @@ def run_agent(
                 raise err from exc
 
             content = llm_response.content or ""
+            _raise_if_cancelled(cfg)
             usage = llm_response.usage
             cfg.token_usage.record_call(usage)
             if usage and usage.available:
@@ -678,6 +688,7 @@ def run_agent(
             round_policy_error = False
             _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
+                _raise_if_cancelled(cfg)
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
                 psig = tool_call_signature(call)

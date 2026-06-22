@@ -13,6 +13,8 @@ const state = {
   agentsMode: false,
 };
 
+let activeChatRequest = null;
+
 const STORAGE_KEY = "ci2lab.ui.state.v1";
 
 const MODEL_SEARCH_SYNONYMS = {
@@ -331,7 +333,7 @@ function renderChatMessages() {
       message.role,
       message.text,
       message.extraClass || "",
-      { duration_ms: message.duration_ms },
+      { duration_ms: message.duration_ms, process_log: message.process_log },
     );
   });
 }
@@ -341,18 +343,97 @@ function appendMessageNode(role, text, extraClass = "", meta = {}) {
   if (empty) empty.remove();
   const node = document.createElement("div");
   node.className = `message ${role} ${extraClass}`.trim();
-  const body = document.createElement("div");
-  body.textContent = text;
-  node.appendChild(body);
+  if (extraClass.includes("session-info")) {
+    appendSessionInfo(node, text);
+  } else {
+    const body = document.createElement("div");
+    body.textContent = text;
+    node.appendChild(body);
+  }
   if (meta.duration_ms) {
     const detail = document.createElement("small");
     detail.className = "message-meta";
     detail.textContent = `Answered in ${formatElapsed(meta.duration_ms)}`;
     node.appendChild(detail);
   }
+  if (Array.isArray(meta.process_log) && meta.process_log.length) {
+    appendProcessLog(node, meta.process_log);
+  }
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return node;
+}
+
+function appendProcessLog(node, entries = [], label = "Process") {
+  const cleanEntries = entries
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+  if (!cleanEntries.length) return null;
+  const details = document.createElement("details");
+  details.className = "process-log";
+  const summary = document.createElement("summary");
+  summary.textContent = label;
+  details.appendChild(summary);
+  const list = document.createElement("ol");
+  cleanEntries.forEach((entry) => {
+    const item = document.createElement("li");
+    item.textContent = entry;
+    list.appendChild(item);
+  });
+  details.appendChild(list);
+  node.appendChild(details);
+  return details;
+}
+
+function appendSessionInfo(node, text) {
+  const lines = String(text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const entries = [];
+  const notes = [];
+  lines.slice(1).forEach((line) => {
+    const separator = line.indexOf(":");
+    if (separator > 0) {
+      entries.push({
+        key: line.slice(0, separator).trim(),
+        value: line.slice(separator + 1).trim(),
+      });
+    } else {
+      notes.push(line);
+    }
+  });
+
+  const details = document.createElement("details");
+  details.className = "session-details";
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.textContent = "Session ready";
+  const mode = entries.find((entry) => entry.key.toLowerCase() === "mode")?.value || "classic chat";
+  const model = entries.find((entry) => entry.key.toLowerCase() === "model")?.value || "local model";
+  const meta = document.createElement("small");
+  meta.textContent = `${model} · ${mode}`;
+  summary.append(title, meta);
+  details.appendChild(summary);
+
+  const list = document.createElement("dl");
+  list.className = "session-facts";
+  entries.forEach((entry) => {
+    const wrapper = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = entry.key;
+    description.textContent = entry.value;
+    wrapper.append(term, description);
+    list.appendChild(wrapper);
+  });
+  details.appendChild(list);
+
+  if (notes.length) {
+    const note = document.createElement("p");
+    note.className = "session-note";
+    note.textContent = notes.join(" ");
+    details.appendChild(note);
+  }
+
+  node.appendChild(details);
 }
 
 function addMessage(role, text, extraClass = "", meta = {}) {
@@ -391,17 +472,37 @@ function addThinkingMessage(prompt = "", files = []) {
   node.className = "message assistant thinking";
   const startedAt = Date.now();
   const progressMessages = buildProgressMessages(prompt, files);
+  const processEntries = [progressMessages[0]];
   node.innerHTML = `
-    <span class="thinking-loader" aria-hidden="true"></span>
-    <span class="thinking-copy">
-      <span class="thinking-status">${escapeHtml(progressMessages[0])}</span>
-      <small class="thinking-time">0.0s</small>
-    </span>
+    <div class="thinking-main">
+      <span class="thinking-loader" aria-hidden="true"></span>
+      <span class="thinking-copy">
+        <span class="thinking-status">${escapeHtml(progressMessages[0])}</span>
+        <small class="thinking-time">0.0s</small>
+      </span>
+    </div>
+    <details class="process-log thinking-process">
+      <summary>Process</summary>
+      <ol>
+        <li>${escapeHtml(progressMessages[0])}</li>
+      </ol>
+    </details>
   `;
   const status = node.querySelector(".thinking-status");
   const timer = node.querySelector(".thinking-time");
+  const processList = node.querySelector(".thinking-process ol");
+  const addProcessEntry = (entry) => {
+    const clean = String(entry || "").trim();
+    if (!clean || processEntries.includes(clean)) return;
+    processEntries.push(clean);
+    const item = document.createElement("li");
+    item.textContent = clean;
+    processList?.appendChild(item);
+  };
   node._startedAt = startedAt;
   node._progressIndex = 0;
+  node._processEntries = processEntries;
+  node._addProcessEntry = addProcessEntry;
   node._timerId = window.setInterval(() => {
     if (timer) timer.textContent = formatElapsed(Date.now() - startedAt);
   }, 100);
@@ -409,6 +510,7 @@ function addThinkingMessage(prompt = "", files = []) {
     if (!status || progressMessages.length <= 1) return;
     node._progressIndex = Math.min(node._progressIndex + 1, progressMessages.length - 1);
     status.textContent = progressMessages[node._progressIndex];
+    addProcessEntry(progressMessages[node._progressIndex]);
   }, 3500);
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
@@ -428,7 +530,38 @@ function removeThinkingMessage(node) {
 }
 
 function formatElapsed(ms) {
-  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const wholeSeconds = Math.round(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainder = wholeSeconds % 60;
+  return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+}
+
+function setChatRequestRunning(running) {
+  els.sendButton.disabled = false;
+  els.sendButton.textContent = running ? "Stop" : "Send";
+  els.sendButton.classList.toggle("stop-button", Boolean(running));
+  els.sendButton.setAttribute("aria-label", running ? "Stop current response" : "Send message");
+}
+
+function createRequestId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `chat_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function stopActiveChatRequest() {
+  if (!activeChatRequest) return;
+  const { controller, requestId } = activeChatRequest;
+  api("/api/chat/cancel", {
+    method: "POST",
+    body: JSON.stringify({ request_id: requestId }),
+  }).catch(() => {});
+  controller.abort();
 }
 
 function setEmptyChat() {
@@ -958,6 +1091,10 @@ async function runRefreshFromButton(button) {
 
 async function sendMessage(event) {
   event.preventDefault();
+  if (activeChatRequest) {
+    stopActiveChatRequest();
+    return;
+  }
   const message = els.messageInput.value.trim();
   const files = [...state.uploadedFiles];
   if (!message && !files.length) return;
@@ -968,8 +1105,10 @@ async function sendMessage(event) {
   els.messageInput.value = "";
   state.uploadedFiles = [];
   renderAttachments();
-  els.sendButton.disabled = true;
-  els.sendButton.textContent = "Working...";
+  const controller = new AbortController();
+  const requestId = createRequestId();
+  activeChatRequest = { controller, requestId };
+  setChatRequestRunning(true);
   persistUiState();
   const thinkingNode = addThinkingMessage(prompt, files);
   const requestStartedAt = Date.now();
@@ -977,11 +1116,13 @@ async function sendMessage(event) {
   try {
     const result = await api("/api/chat", {
       method: "POST",
+      signal: controller.signal,
       body: JSON.stringify({
         message: prompt,
         attachments: files,
         model,
         session_id: sessionId,
+        request_id: requestId,
         multi_agent: Boolean(els.agentsMode?.checked),
         stream: false,
       }),
@@ -990,25 +1131,53 @@ async function sendMessage(event) {
     state.currentSession = result.session_id || state.currentSession;
     removeThinkingMessage(thinkingNode);
 
-    if (result.ok) {
+    if (result.cancelled) {
+      addMessage(
+        "assistant",
+        "Stopped. You can edit the request or start a new task.",
+        "stopped",
+        {
+          duration_ms: Date.now() - requestStartedAt,
+          process_log: result.process_log,
+        },
+      );
+    } else if (result.ok) {
       applyTokenUsage(result.usage);
       addMessage(
         "assistant",
         result.answer || "(no response)",
         "",
-        { duration_ms: Date.now() - requestStartedAt },
+        {
+          duration_ms: Date.now() - requestStartedAt,
+          process_log: result.process_log,
+        },
       );
     } else {
       addMessage(
         "assistant",
         result.error || "Unknown error",
         "error",
-        { duration_ms: Date.now() - requestStartedAt },
+        {
+          duration_ms: Date.now() - requestStartedAt,
+          process_log: result.process_log,
+        },
       );
     }
     refreshAll();
   } catch (error) {
     removeThinkingMessage(thinkingNode);
+    if (error.name === "AbortError") {
+      addMessage(
+        "assistant",
+        "Stopped. You can edit the request or start a new task.",
+        "stopped",
+        {
+          duration_ms: Date.now() - requestStartedAt,
+          process_log: thinkingNode?._processEntries,
+        },
+      );
+      return;
+    }
     addMessage(
       "assistant",
       error.message || "Could not reach Ci2Lab.",
@@ -1016,8 +1185,8 @@ async function sendMessage(event) {
       { duration_ms: Date.now() - requestStartedAt },
     );
   } finally {
-    els.sendButton.disabled = false;
-    els.sendButton.textContent = "Send";
+    activeChatRequest = null;
+    setChatRequestRunning(false);
     persistUiState();
   }
 }

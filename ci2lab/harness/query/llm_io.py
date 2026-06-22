@@ -17,15 +17,23 @@ def call_llm(
     *,
     tools: list[dict[str, Any]] | None,
     stream: bool,
+    cancel_event: Any | None = None,
 ) -> LLMResponse:
     if not stream:
-        return client.chat(messages, tools=tools)
+        if cancel_event is None:
+            return client.chat(messages, tools=tools)
+        return client.chat(messages, tools=tools, cancel_event=cancel_event)
 
     llm_response: LLMResponse | None = None
     buffer = Text()
 
     with Live(buffer, console=console, refresh_per_second=12, transient=False) as live:
-        for event in client.stream_chat(messages, tools=tools):
+        events = (
+            client.stream_chat(messages, tools=tools)
+            if cancel_event is None
+            else client.stream_chat(messages, tools=tools, cancel_event=cancel_event)
+        )
+        for event in events:
             if isinstance(event, StreamToken):
                 buffer.append(event.text)
                 live.update(buffer)

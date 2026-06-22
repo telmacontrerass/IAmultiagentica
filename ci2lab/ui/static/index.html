@@ -21,14 +21,16 @@
           <button class="nav-button active" type="button" data-view="homeView">
             <span>⌂</span> Home
           </button>
+          <div class="home-subnav" aria-label="Home sections">
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
+              <span>▦</span> Local models
+            </button>
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
+              <span>◷</span> Sessions
+            </button>
+          </div>
           <button id="openChat" class="nav-button" type="button" data-view="chatView">
             <span>+</span> Chat
-          </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
-            <span>▦</span> Local models
-          </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
-            <span>◷</span> Sessions
           </button>
         </nav>
 
@@ -157,7 +159,8 @@
         </section>
 
         <section id="chatView" class="view" hidden>
-          <section class="chat-topbar">
+          <section class="chat-panel">
+            <div class="chat-topbar">
             <div class="chat-topbar-main">
               <div class="model-picker">
                 <select id="modelSelect" aria-label="Model"></select>
@@ -202,14 +205,12 @@
                 <span aria-hidden="true">🛠</span>
               </button>
             </div>
-          </section>
-
-          <section class="chat-panel">
+            </div>
             <div id="messages" class="messages" aria-live="polite"></div>
             <div class="attachment-bar composer-toolbar">
               <details id="promptActionsMenu" class="prompt-actions-menu">
                 <summary title="Prompt suggestions" aria-label="Open prompt suggestions">
-                  <span aria-hidden="true">✦</span>
+                  <span aria-hidden="true">&#10022;</span>
                 </summary>
                 <div id="quickActions" class="quick-actions prompt-actions"></div>
               </details>
@@ -221,7 +222,7 @@
                 aria-pressed="false"
                 title="Enable sequential subagents"
               >
-                <span class="agents-icon" aria-hidden="true">⚙</span>
+                <span class="agents-icon" aria-hidden="true">&#9881;</span>
                 <span id="agentsModeLabel" class="agents-mode-label">Agents</span>
               </button>
               <label class="file-button" for="fileInput" title="Attach file" aria-label="Attach file">
@@ -256,7 +257,7 @@
                 aria-label="Close tools"
                 title="Close"
               >
-                <span aria-hidden="true">✕</span>
+                <span aria-hidden="true">&#10005;</span>
               </button>
             </div>
             <p id="toolsSummary" class="panel-note">Loading tools...</p>

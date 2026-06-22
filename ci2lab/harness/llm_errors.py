@@ -50,6 +50,13 @@ class LLMModelNotFoundError(LLMError):
         super().__init__("\n".join(lines), exit_code=3)
 
 
+class LLMCancelledError(LLMError):
+    """The active inference request was cancelled by the caller."""
+
+    def __init__(self) -> None:
+        super().__init__("Stopped by the user.", exit_code=130)
+
+
 def _response_detail(response: httpx.Response) -> str:
     try:
         response.read()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,7 +11,11 @@ from typing import Any
 import httpx
 
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.llm_errors import LLMModelNotFoundError, classify_request_error
+from ci2lab.harness.llm_errors import (
+    LLMCancelledError,
+    LLMModelNotFoundError,
+    classify_request_error,
+)
 from ci2lab.harness.token_usage import TokenUsage
 
 
@@ -67,6 +72,29 @@ class LLMClient:
         return unique
 
     @staticmethod
+    def _raise_if_cancelled(cancel_event: Any | None) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise LLMCancelledError()
+
+    @staticmethod
+    def _watch_cancellation(
+        client: httpx.Client,
+        cancel_event: Any | None,
+    ) -> threading.Event | None:
+        if cancel_event is None:
+            return None
+        done = threading.Event()
+
+        def watch() -> None:
+            while not done.wait(0.1):
+                if cancel_event.is_set():
+                    client.close()
+                    return
+
+        threading.Thread(target=watch, name="ci2lab-llm-cancel", daemon=True).start()
+        return done
+
+    @staticmethod
     def _parse_message(
         choice: dict[str, Any],
         *,
@@ -82,31 +110,39 @@ class LLMClient:
         messages: list[dict[str, Any]],
         *,
         tools: list[dict[str, Any]] | None = None,
+        cancel_event: Any | None = None,
     ) -> LLMResponse:
         with httpx.Client(timeout=self.timeout) as client:
-            for model in self._model_candidates():
-                payload = self._build_payload(
-                    messages,
-                    tools=tools,
-                    stream=False,
-                    model=model,
-                )
-                try:
-                    response = client.post(self.chat_url, json=payload)
-                    response.raise_for_status()
-                    data = response.json()
-                    self.selection.ollama_tag = model
-                    usage = TokenUsage.from_provider(data.get("usage"), model=model)
-                    return self._parse_message(data["choices"][0], usage=usage)
-                except Exception as exc:
-                    err = classify_request_error(
-                        exc,
+            done = self._watch_cancellation(client, cancel_event)
+            try:
+                for model in self._model_candidates():
+                    self._raise_if_cancelled(cancel_event)
+                    payload = self._build_payload(
+                        messages,
+                        tools=tools,
+                        stream=False,
                         model=model,
-                        url=self.chat_url,
                     )
-                    if isinstance(err, LLMModelNotFoundError) and model != self._model_candidates()[-1]:
-                        continue
-                    raise err from exc
+                    try:
+                        response = client.post(self.chat_url, json=payload)
+                        response.raise_for_status()
+                        data = response.json()
+                        self.selection.ollama_tag = model
+                        usage = TokenUsage.from_provider(data.get("usage"), model=model)
+                        return self._parse_message(data["choices"][0], usage=usage)
+                    except Exception as exc:
+                        self._raise_if_cancelled(cancel_event)
+                        err = classify_request_error(
+                            exc,
+                            model=model,
+                            url=self.chat_url,
+                        )
+                        if isinstance(err, LLMModelNotFoundError) and model != self._model_candidates()[-1]:
+                            continue
+                        raise err from exc
+            finally:
+                if done is not None:
+                    done.set()
 
         raise LLMModelNotFoundError(self.selection.ollama_tag)
 
@@ -115,88 +151,98 @@ class LLMClient:
         messages: list[dict[str, Any]],
         *,
         tools: list[dict[str, Any]] | None = None,
+        cancel_event: Any | None = None,
     ) -> Iterator[StreamToken | LLMResponse]:
         """
         Emits a StreamToken for each text fragment and ends with a complete LLMResponse.
         """
         with httpx.Client(timeout=self.timeout) as client:
-            for model in self._model_candidates():
-                content_parts: list[str] = []
-                tool_calls_acc: dict[int, dict[str, Any]] = {}
-                usage: TokenUsage | None = None
-                emitted_tokens = False
-                payload = self._build_payload(
-                    messages,
-                    tools=tools,
-                    stream=True,
-                    model=model,
-                )
+            done = self._watch_cancellation(client, cancel_event)
+            try:
+                for model in self._model_candidates():
+                    self._raise_if_cancelled(cancel_event)
+                    content_parts: list[str] = []
+                    tool_calls_acc: dict[int, dict[str, Any]] = {}
+                    usage: TokenUsage | None = None
+                    emitted_tokens = False
+                    payload = self._build_payload(
+                        messages,
+                        tools=tools,
+                        stream=True,
+                        model=model,
+                    )
 
-                try:
-                    with client.stream("POST", self.chat_url, json=payload) as response:
-                        if getattr(response, "is_error", False):
-                            response.read()
-                        response.raise_for_status()
-                        self.selection.ollama_tag = model
-                        for line in response.iter_lines():
-                            if not line or not line.startswith("data: "):
-                                continue
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-                            choices = chunk.get("choices") or []
-                            chunk_usage = TokenUsage.from_provider(
-                                chunk.get("usage"),
-                                model=model,
-                            )
-                            if chunk_usage is not None:
-                                usage = chunk_usage
-                            if not choices:
-                                continue
-                            delta = choices[0].get("delta") or {}
-                            if delta.get("content"):
-                                piece = delta["content"]
-                                content_parts.append(piece)
-                                emitted_tokens = True
-                                yield StreamToken(text=piece)
-                            for tc in delta.get("tool_calls") or []:
-                                idx = tc.get("index", 0)
-                                entry = tool_calls_acc.setdefault(
-                                    idx,
-                                    {
-                                        "id": "",
-                                        "type": "function",
-                                        "function": {"name": "", "arguments": ""},
-                                    },
+                    try:
+                        with client.stream("POST", self.chat_url, json=payload) as response:
+                            if getattr(response, "is_error", False):
+                                response.read()
+                            response.raise_for_status()
+                            self.selection.ollama_tag = model
+                            for line in response.iter_lines():
+                                self._raise_if_cancelled(cancel_event)
+                                if not line or not line.startswith("data: "):
+                                    continue
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    continue
+                                choices = chunk.get("choices") or []
+                                chunk_usage = TokenUsage.from_provider(
+                                    chunk.get("usage"),
+                                    model=model,
                                 )
-                                if tc.get("id"):
-                                    entry["id"] = tc["id"]
-                                fn = tc.get("function") or {}
-                                if fn.get("name"):
-                                    entry["function"]["name"] = fn["name"]
-                                if fn.get("arguments"):
-                                    entry["function"]["arguments"] += fn["arguments"]
-                except Exception as exc:
-                    err = classify_request_error(exc, model=model, url=self.chat_url)
-                    if (
-                        isinstance(err, LLMModelNotFoundError)
-                        and not emitted_tokens
-                        and model != self._model_candidates()[-1]
-                    ):
-                        continue
-                    raise err from exc
+                                if chunk_usage is not None:
+                                    usage = chunk_usage
+                                if not choices:
+                                    continue
+                                delta = choices[0].get("delta") or {}
+                                if delta.get("content"):
+                                    piece = delta["content"]
+                                    content_parts.append(piece)
+                                    emitted_tokens = True
+                                    yield StreamToken(text=piece)
+                                for tc in delta.get("tool_calls") or []:
+                                    idx = tc.get("index", 0)
+                                    entry = tool_calls_acc.setdefault(
+                                        idx,
+                                        {
+                                            "id": "",
+                                            "type": "function",
+                                            "function": {"name": "", "arguments": ""},
+                                        },
+                                    )
+                                    if tc.get("id"):
+                                        entry["id"] = tc["id"]
+                                    fn = tc.get("function") or {}
+                                    if fn.get("name"):
+                                        entry["function"]["name"] = fn["name"]
+                                    if fn.get("arguments"):
+                                        entry["function"]["arguments"] += fn["arguments"]
+                    except Exception as exc:
+                        self._raise_if_cancelled(cancel_event)
+                        err = classify_request_error(exc, model=model, url=self.chat_url)
+                        if (
+                            isinstance(err, LLMModelNotFoundError)
+                            and not emitted_tokens
+                            and model != self._model_candidates()[-1]
+                        ):
+                            continue
+                        raise err from exc
 
-                tool_calls = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
-                yield LLMResponse(
-                    content="".join(content_parts),
-                    tool_calls=tool_calls,
-                    raw={},
-                    usage=usage,
-                )
-                return
+                    self._raise_if_cancelled(cancel_event)
+                    tool_calls = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+                    yield LLMResponse(
+                        content="".join(content_parts),
+                        tool_calls=tool_calls,
+                        raw={},
+                        usage=usage,
+                    )
+                    return
+            finally:
+                if done is not None:
+                    done.set()
 
         raise LLMModelNotFoundError(self.selection.ollama_tag)
