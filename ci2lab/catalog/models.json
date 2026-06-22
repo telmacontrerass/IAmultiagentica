@@ -1224,7 +1224,7 @@
     "vram_min_gb": 5.3,
     "ram_inference_gb": 8.8,
     "supports_tools": true,
-    "tool_mode": "fenced",
+    "tool_mode": "native",
     "context_length": 131072,
     "tier": "workstation",
     "benchmark_score": {
@@ -1379,6 +1379,473 @@
       "coding": 0.9,
       "reasoning": 0.74,
       "edge": 0.2
+    }
+  },
+  {
+    "id": "moondream-1.8b",
+    "display_name": "Moondream 1.8B",
+    "family": "moondream",
+    "categories": [
+      "vision",
+      "edge"
+    ],
+    "ollama_tag": "moondream",
+    "vision": true,
+    "vram_min_gb": 1.7,
+    "ram_inference_gb": 3.5,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 2048,
+    "tier": "edge",
+    "benchmark_score": {
+      "general": 0.42,
+      "coding": 0.25,
+      "reasoning": 0.35,
+      "edge": 0.92,
+      "vision": 0.55
+    }
+  },
+  {
+    "id": "granite3.2-vision-2b",
+    "display_name": "Granite 3.2 Vision 2B",
+    "family": "granite",
+    "categories": [
+      "vision",
+      "general",
+      "edge"
+    ],
+    "ollama_tag": "granite3.2-vision",
+    "vision": true,
+    "vram_min_gb": 2.0,
+    "ram_inference_gb": 3.5,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "edge",
+    "benchmark_score": {
+      "general": 0.55,
+      "coding": 0.40,
+      "reasoning": 0.50,
+      "edge": 0.88,
+      "vision": 0.58
+    }
+  },
+  {
+    "id": "qwen2.5vl-3b",
+    "display_name": "Qwen2.5-VL 3B Instruct",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "edge"
+    ],
+    "ollama_tag": "qwen2.5vl:3b",
+    "vision": true,
+    "vram_min_gb": 2.2,
+    "ram_inference_gb": 4.5,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "edge",
+    "benchmark_score": {
+      "general": 0.62,
+      "coding": 0.52,
+      "reasoning": 0.58,
+      "edge": 0.80,
+      "vision": 0.70
+    }
+  },
+  {
+    "id": "qwen3.5-4b",
+    "display_name": "Qwen3.5 4B",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "edge"
+    ],
+    "ollama_tag": "qwen3.5:4b",
+    "vision": true,
+    "vram_min_gb": 2.8,
+    "ram_inference_gb": 5.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "edge",
+    "benchmark_score": {
+      "general": 0.68,
+      "coding": 0.58,
+      "reasoning": 0.62,
+      "edge": 0.78,
+      "vision": 0.73
+    }
+  },
+  {
+    "id": "gemma3-4b",
+    "display_name": "Gemma 3 4B Instruct",
+    "family": "gemma",
+    "categories": [
+      "vision",
+      "general",
+      "edge"
+    ],
+    "ollama_tag": "gemma3:4b",
+    "vision": true,
+    "vram_min_gb": 3.3,
+    "ram_inference_gb": 5.5,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "edge",
+    "benchmark_score": {
+      "general": 0.70,
+      "coding": 0.60,
+      "reasoning": 0.64,
+      "edge": 0.72,
+      "vision": 0.72
+    }
+  },
+  {
+    "id": "llava-7b",
+    "display_name": "LLaVA 7B",
+    "family": "llava",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "llava",
+    "vision": true,
+    "vram_min_gb": 4.7,
+    "ram_inference_gb": 7.5,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 4096,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.65,
+      "coding": 0.45,
+      "reasoning": 0.52,
+      "edge": 0.30,
+      "vision": 0.62
+    }
+  },
+  {
+    "id": "bakllava-7b",
+    "display_name": "BakLLaVA 7B",
+    "family": "llava",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "bakllava",
+    "vision": true,
+    "vram_min_gb": 4.7,
+    "ram_inference_gb": 7.5,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 4096,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.63,
+      "coding": 0.43,
+      "reasoning": 0.50,
+      "edge": 0.28,
+      "vision": 0.60
+    }
+  },
+  {
+    "id": "qwen2.5vl-7b",
+    "display_name": "Qwen2.5-VL 7B Instruct",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "qwen2.5vl:7b",
+    "vision": true,
+    "vram_min_gb": 5.0,
+    "ram_inference_gb": 9.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.74,
+      "coding": 0.64,
+      "reasoning": 0.70,
+      "edge": 0.22,
+      "vision": 0.80
+    }
+  },
+  {
+    "id": "minicpm-v-8b",
+    "display_name": "MiniCPM-V 8B",
+    "family": "minicpm",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "minicpm-v",
+    "vision": true,
+    "vram_min_gb": 5.0,
+    "ram_inference_gb": 9.0,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 32768,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.70,
+      "coding": 0.55,
+      "reasoning": 0.62,
+      "edge": 0.20,
+      "vision": 0.75
+    }
+  },
+  {
+    "id": "internvl2.5-8b",
+    "display_name": "InternVL 2.5 8B",
+    "family": "internvl",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "internvl2.5",
+    "vision": true,
+    "vram_min_gb": 5.0,
+    "ram_inference_gb": 9.0,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 32768,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.74,
+      "coding": 0.62,
+      "reasoning": 0.68,
+      "edge": 0.20,
+      "vision": 0.82
+    }
+  },
+  {
+    "id": "llava-onevision-7b",
+    "display_name": "LLaVA-OneVision 7B",
+    "family": "llava",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "llava-onevision",
+    "vision": true,
+    "vram_min_gb": 5.0,
+    "ram_inference_gb": 8.5,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 32768,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.72,
+      "coding": 0.55,
+      "reasoning": 0.64,
+      "edge": 0.18,
+      "vision": 0.78
+    }
+  },
+  {
+    "id": "qwen3-vl-8b",
+    "display_name": "Qwen3-VL 8B Instruct",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "qwen3-vl",
+    "vision": true,
+    "vram_min_gb": 6.1,
+    "ram_inference_gb": 11.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 262144,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.78,
+      "coding": 0.68,
+      "reasoning": 0.76,
+      "edge": 0.15,
+      "vision": 0.85
+    }
+  },
+  {
+    "id": "glm-4.5v",
+    "display_name": "GLM-4.5V",
+    "family": "glm",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "glm-4.5v",
+    "vision": true,
+    "vram_min_gb": 6.0,
+    "ram_inference_gb": 10.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.74,
+      "coding": 0.64,
+      "reasoning": 0.68,
+      "edge": 0.15,
+      "vision": 0.78
+    }
+  },
+  {
+    "id": "glm-4.6v",
+    "display_name": "GLM-4.6V",
+    "family": "glm",
+    "categories": [
+      "vision",
+      "general"
+    ],
+    "ollama_tag": "glm-4.6v",
+    "vision": true,
+    "vram_min_gb": 6.0,
+    "ram_inference_gb": 10.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.76,
+      "coding": 0.66,
+      "reasoning": 0.70,
+      "edge": 0.15,
+      "vision": 0.80
+    }
+  },
+  {
+    "id": "qwen3.5-9b",
+    "display_name": "Qwen3.5 9B",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "qwen3.5:9b",
+    "vision": true,
+    "vram_min_gb": 5.5,
+    "ram_inference_gb": 9.5,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.76,
+      "coding": 0.66,
+      "reasoning": 0.70,
+      "edge": 0.18,
+      "vision": 0.78
+    }
+  },
+  {
+    "id": "gemma4-e4b",
+    "display_name": "Gemma 4 E4B Instruct",
+    "family": "gemma",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "gemma4",
+    "vision": true,
+    "vram_min_gb": 9.0,
+    "ram_inference_gb": 12.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.78,
+      "coding": 0.68,
+      "reasoning": 0.72,
+      "edge": 0.12,
+      "vision": 0.82
+    }
+  },
+  {
+    "id": "phi4-multimodal-14b",
+    "display_name": "Phi-4 Multimodal 14B",
+    "family": "phi",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "phi4-multimodal",
+    "vision": true,
+    "vram_min_gb": 8.5,
+    "ram_inference_gb": 14.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.80,
+      "coding": 0.75,
+      "reasoning": 0.78,
+      "edge": 0.10,
+      "vision": 0.80
+    }
+  },
+  {
+    "id": "llama3.2-vision-11b",
+    "display_name": "Llama 3.2 Vision 11B",
+    "family": "llama",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "llama3.2-vision",
+    "vision": true,
+    "vram_min_gb": 7.8,
+    "ram_inference_gb": 13.0,
+    "supports_tools": false,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.76,
+      "coding": 0.62,
+      "reasoning": 0.70,
+      "edge": 0.12,
+      "vision": 0.76
+    }
+  },
+  {
+    "id": "qwen3.6-27b",
+    "display_name": "Qwen3.6 27B",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "qwen3.6:27b",
+    "vision": true,
+    "vram_min_gb": 16.5,
+    "ram_inference_gb": 27.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "high-end",
+    "benchmark_score": {
+      "general": 0.84,
+      "coding": 0.76,
+      "reasoning": 0.80,
+      "edge": 0.05,
+      "vision": 0.82
     }
   }
 ]

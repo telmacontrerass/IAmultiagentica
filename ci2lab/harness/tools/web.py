@@ -90,7 +90,12 @@ def web_search(query: str, max_results: int = _DEFAULT_SEARCH_RESULTS) -> str:
     if not results:
         return f"No results found for: {query!r}"
 
-    lines: list[str] = [f"Search results for: {query!r}\n"]
+    lines: list[str] = [
+        f"Search results for: {query!r}\n"
+        "IMPORTANT: Read the snippets below carefully — they often already contain "
+        "the answer. Only call web_fetch if a snippet is incomplete and you need "
+        "the full article. Prefer free/open sources over paywalled ones (NYT, The Athletic).\n"
+    ]
     for i, r in enumerate(results, 1):
         title = r.get("title", "(no title)")
         href = r.get("href", "")

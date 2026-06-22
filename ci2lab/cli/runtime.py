@@ -49,8 +49,21 @@ def _build_config(
     selection,
 ):
     from ci2lab.pipeline import build_agent_config
+    from ci2lab.settings import load_settings
 
-    return build_agent_config(runtime, selection, session_id=args.session)
+    tool_settings = load_settings(
+        getattr(args, "workspace", None) or getattr(args, "cwd", None) or "."
+    )
+
+    return build_agent_config(
+        runtime,
+        selection,
+        session_id=args.session,
+        image_paths=getattr(args, "images", None) or [],
+        tool_settings=tool_settings,
+        vision_model=tool_settings.vision_model or "",
+        vision_enabled=tool_settings.vision_enabled if tool_settings.vision_enabled is not None else True,
+    )
 
 
 def _tool_mode_override(runtime: Ci2LabConfig, args: argparse.Namespace) -> str | None:

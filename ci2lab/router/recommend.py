@@ -10,7 +10,7 @@ from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
 
-USE_CASES: tuple[IntentCategory, ...] = ("coding", "reasoning", "general", "rag")
+USE_CASES: tuple[IntentCategory, ...] = ("coding", "reasoning", "general", "rag", "vision")
 
 MemoryFitStatus = Literal["ok_now", "requires_cleanup", "not_recommended"]
 RecommendationStatus = Literal["OK_NOW", "OK_IF_MEMORY_FREED", "NOT_RECOMMENDED"]
@@ -244,10 +244,23 @@ def _score_for_category(
     scored = [
         _score_recommendation(model, profile, category)
         for model in models
-        if model_fits(model, profile)
+        if model_fits(model, profile) and _category_filter(model, category)
     ]
     scored.sort(key=lambda item: item.total_score, reverse=True)
     return scored[:limit]
+
+
+def _category_filter(model: ModelSpec, category: IntentCategory) -> bool:
+    """Return False to exclude *model* from a category's recommendation pool.
+
+    For most categories every hardware-fitting model is a valid candidate and
+    scores are differentiated by benchmark_score[category].  For 'vision' we
+    hard-filter to only vision-capable models so that text-only models never
+    surface when the user explicitly asks for image analysis.
+    """
+    if category == "vision":
+        return "vision" in model.categories or getattr(model, "vision", False)
+    return True
 
 
 def classify_model_memory(

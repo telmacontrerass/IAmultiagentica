@@ -66,6 +66,10 @@ def build_agent_config(
     stream: bool | None = None,
     auto_confirm: bool | None = None,
     confirm_callback: Callable[[str, str], bool] | None = None,
+    image_paths: list[str] | None = None,
+    tool_settings=None,
+    vision_model: str = "",
+    vision_enabled: bool = True,
 ) -> AgentConfig:
     """
     Effective AgentConfig for a single run (CLI, UI or scripts).
@@ -101,6 +105,10 @@ def build_agent_config(
         opencode_permissions=opencode_perms,
         bash_timeout_seconds=limits.bash_timeout_seconds,
         max_tool_output_chars=limits.max_tool_output_chars,
+        tool_settings=tool_settings,
+        image_paths=image_paths or [],
+        vision_model=vision_model,
+        vision_enabled=vision_enabled,
     )
     agent.config_snapshot = build_config_snapshot(
         runtime_fields={

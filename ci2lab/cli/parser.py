@@ -73,6 +73,9 @@ def _print_global_help() -> None:
         "  --session ID                      Resume session in chat/agent",
         "  --runs-dir PATH                   Logs directory (default: runs)",
         "  --no-log                          Do not save artifacts in runs/",
+        "  --image PATH                      Attach an image (PNG/JPG/WEBP/BMP).",
+        "                                    Repeat for multiple images.",
+        "                                    Requires a vision model (e.g. qwen2.5vl:7b).",
         "",
         "Important: agent flags go BEFORE the subcommand:",
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
@@ -158,6 +161,18 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         "--no-log",
         action="store_true",
         help="Do not save run artifacts in runs/",
+    )
+    p.add_argument(
+        "--image",
+        action="append",
+        dest="images",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Image file to attach (PNG, JPG, WEBP, GIF, BMP). "
+            "Repeat to attach multiple images. "
+            "Requires a vision-capable model (e.g. --model qwen2.5vl:7b)."
+        ),
     )
 
 

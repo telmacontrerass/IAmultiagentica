@@ -107,3 +107,18 @@ class AgentConfig:
 
     token_usage: TokenUsageState = field(default_factory=TokenUsageState)
     """Token counters for the current turn and session."""
+
+    vision_model: str = ""
+    """Ollama tag of the fallback vision model (e.g. 'llava', 'qwen3-vl').
+    Empty = use the main model when it is vision-capable; otherwise image
+    analysis is unavailable unless the agent calls analyze_image explicitly."""
+
+    vision_enabled: bool = True
+    """If False, image_paths are ignored and analyze_image tool returns a
+    disabled message."""
+
+    image_paths: list[str] = field(default_factory=list)
+    """Image files to attach to the first user message.  Forwarded natively as
+    base64 image_url blocks when the main model is vision-capable; otherwise
+    each image is described by the fallback vision_model and the description is
+    injected into the prompt text."""

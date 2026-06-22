@@ -68,5 +68,6 @@ def test_download_plan_keeps_separate_rows_per_use_case():
 
     assert all(len(item.use_cases) == 1 for item in plan)
     download_rows = [item for item in plan if not item.installed]
-    assert len(download_rows) == 4
-    assert len({item.use_cases[0] for item in download_rows}) == 4
+    from ci2lab.router.recommend import USE_CASES
+    assert len(download_rows) == len(USE_CASES)
+    assert len({item.use_cases[0] for item in download_rows}) == len(USE_CASES)

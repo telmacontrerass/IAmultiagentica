@@ -20,6 +20,7 @@ import hashlib
 import json
 import re
 import uuid
+from pathlib import Path
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -39,6 +40,7 @@ from ci2lab.harness.parsing import (
     strip_tool_markup,
 )
 from ci2lab.harness.prompts import build_system_prompt
+from ci2lab.harness.vision import analyze_image, build_vision_content, is_vision_model
 from ci2lab.harness.query.llm_io import call_llm
 from ci2lab.harness.query.nudges import (
     summarize_args,
@@ -401,6 +403,20 @@ def _print_model_step(content: str, *, already_streamed: bool) -> None:
     console.print(f"[dim]Model:[/dim] {display}")
 
 
+_TEMPORAL_RE = re.compile(
+    r"\b(yesterday|today|this week|last week|hoy|ayer|esta semana)\b",
+    re.IGNORECASE,
+)
+
+
+def _enrich_query(query: str) -> str:
+    """Append today's date to queries that use relative time words."""
+    if _TEMPORAL_RE.search(query):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return f"{query} (date: {today})"
+    return query
+
+
 def _redirect_fetch_to_search(
     calls: list[ToolCall],
     user_prompt: str,
@@ -424,7 +440,10 @@ def _redirect_fetch_to_search(
                 redirected.append(
                     ToolCall(
                         name="web_search",
-                        arguments={"query": user_prompt, "max_results": 5},
+                        arguments={
+                            "query": _enrich_query(user_prompt),
+                            "max_results": 5,
+                        },
                         call_id=call.call_id,
                     )
                 )
@@ -498,16 +517,40 @@ def run_agent(
     client = LLMClient(selection)
     system = build_system_prompt(selection, cfg.cwd)
 
+    # Vision pre-processing (adapted from Odysseus chat_handler.preprocess_message).
+    # Two paths:
+    #   A — main model is vision-capable: attach images directly as base64 image_url
+    #       blocks so the model sees the pixels natively.
+    #   B — main model is text-only: call the fallback vision_model once per image,
+    #       inject the description into the prompt text.
+    _user_content: str | list = user_prompt
+    if cfg.image_paths and cfg.vision_enabled:
+        if is_vision_model(selection.ollama_tag):
+            # Path A: native multimodal message
+            _user_content = build_vision_content(user_prompt, cfg.image_paths)
+        else:
+            # Path B: describe each image via the fallback vision model
+            _vision_tag = (cfg.vision_model or "").strip()
+            if _vision_tag:
+                _enriched = user_prompt
+                for _img in cfg.image_paths:
+                    _desc = analyze_image(_img, selection.backend_url, _vision_tag)
+                    _enriched = (
+                        f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
+                    )
+                _user_content = _enriched
+            # if no vision_model configured, pass user_prompt unchanged
+
     if messages is None:
         history: list[dict[str, Any]] = [
             {"role": "system", "content": system},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": _user_content},
         ]
     else:
         history = list(messages)
         if not any(m.get("role") == "system" for m in history):
             history.insert(0, {"role": "system", "content": system})
-        history.append({"role": "user", "content": user_prompt})
+        history.append({"role": "user", "content": _user_content})
 
     # Read once from the user's own words; harness nudges never change this.
     stop_tools_requested = bool(_STOP_TOOLS_RE.search(user_prompt))

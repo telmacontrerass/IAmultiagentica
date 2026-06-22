@@ -107,6 +107,9 @@ class ModelSpec:
     tier: HardwareTier
     benchmark_score: dict[str, float] = field(default_factory=dict)
 
+    vision: bool = False
+    """True when the model natively accepts image input (matches models.json 'vision' key)."""
+
 
 @dataclass
 class ModelAlternative:
