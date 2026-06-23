@@ -146,6 +146,50 @@ button {
   text-align: center;
 }
 
+.language-control {
+  margin-top: auto;
+  display: grid;
+  gap: 7px;
+  padding: 0 4px;
+}
+
+.language-control label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #c9c4ba;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.language-control label span:first-child {
+  width: 18px;
+  color: var(--gold);
+  text-align: center;
+}
+
+.language-control select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: #171714;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.language-control select:focus {
+  border-color: var(--gold);
+  outline: 2px solid rgba(245, 181, 27, 0.18);
+  outline-offset: 1px;
+}
+
 .status-card {
   border: 1px solid rgba(255, 255, 255, 0.16);
   padding: 10px 12px;
@@ -1930,7 +1974,7 @@ body {
 }
 
 .status-card {
-  margin-top: auto;
+  margin-top: 6px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.045);
