@@ -156,12 +156,14 @@ def extract_pdf_text(path: Path) -> str:
 
 
 def pdf_has_extractable_text(
-    path: Path,
+    path: Path | str,
     *,
     min_chars: int = 40,
     max_pages: int = 5,
 ) -> bool:
     """Return True when the PDF has enough embedded text for ``read_document``."""
+    path = Path(path)
+
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -186,8 +188,9 @@ def pdf_has_extractable_text(
     return False
 
 
-def pdf_needs_vision(path: Path) -> bool:
+def pdf_needs_vision(path: Path | str) -> bool:
     """Return True for scanned/image-only PDFs that need a vision model."""
+    path = Path(path)
     return path.suffix.lower() == ".pdf" and not pdf_has_extractable_text(path)
 
 
