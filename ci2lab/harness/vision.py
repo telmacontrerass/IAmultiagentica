@@ -35,6 +35,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -362,12 +364,21 @@ def extract_image_paths(text: str, cwd: str) -> tuple[str, list[str]]:
         if not p.is_absolute():
             p = Path(cwd) / raw
 
-        if p.suffix.lower() in _DETECTABLE_EXTENSIONS and p.exists():
-            resolved = str(p.resolve())
-            if resolved not in seen:
-                seen.add(resolved)
-                found.append(resolved)
-                spans_to_remove.append((m.start(), m.end()))
+        if not p.exists():
+            continue
+
+        suffix = p.suffix.lower()
+        if suffix == ".pdf":
+            if not pdf_needs_vision(p):
+                continue
+        elif suffix not in _IMG_EXTENSIONS:
+            continue
+
+        resolved = str(p.resolve())
+        if resolved not in seen:
+            seen.add(resolved)
+            found.append(resolved)
+            spans_to_remove.append((m.start(), m.end()))
 
     if not spans_to_remove:
         return text, []

@@ -1579,6 +1579,31 @@
     }
   },
   {
+    "id": "qwen2.5vl-32b",
+    "display_name": "Qwen2.5-VL 32B Instruct",
+    "family": "qwen",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "qwen2.5vl:32b",
+    "vision": true,
+    "vram_min_gb": 20.0,
+    "ram_inference_gb": 32.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 131072,
+    "tier": "enterprise",
+    "benchmark_score": {
+      "general": 0.86,
+      "coding": 0.72,
+      "reasoning": 0.84,
+      "edge": 0.05,
+      "vision": 0.92
+    }
+  },
+  {
     "id": "minicpm-v-8b",
     "display_name": "MiniCPM-V 8B",
     "family": "minicpm",

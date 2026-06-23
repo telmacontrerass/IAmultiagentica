@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 
 from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
+from ci2lab.console import console
 from ci2lab.harness.security_profiles import SecurityConfig
+from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 
 
 def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
@@ -64,11 +68,20 @@ def _build_config(
 
     # Resolve --image paths against the effective workspace so that relative
     # paths like "--image image1.png" work from any working directory.
+    # Text-based PDFs are skipped — they should be read with read_document.
     raw_images = getattr(args, "images", None) or []
-    resolved_images = [
-        str(Path(p) if Path(p).is_absolute() else Path(effective_cwd) / p)
-        for p in raw_images
-    ]
+    resolved_images: list[str] = []
+    for p in raw_images:
+        path = Path(p) if Path(p).is_absolute() else Path(effective_cwd) / p
+        resolved = str(path)
+        if path.suffix.lower() == ".pdf" and not pdf_needs_vision(path):
+            console.print(
+                f"[yellow]Skipping --image for text PDF '{path.name}'.[/yellow] "
+                "[dim]Mention the file in your prompt and the agent will use "
+                "read_document.[/dim]"
+            )
+            continue
+        resolved_images.append(resolved)
 
     return build_agent_config(
         runtime,

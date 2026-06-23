@@ -8,6 +8,7 @@ from rich.panel import Panel
 
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.tools.filesystem_parts.documents import pdf_has_extractable_text, pdf_needs_vision
 from ci2lab.harness.vision import (
     extract_image_paths,
     find_image_candidates,
@@ -97,29 +98,50 @@ def _extract_inline_images(
 
     for candidate in candidates:
         name = Path(candidate).name
-        if name.lower() not in resolved_names:
-            suggestions = difflib.get_close_matches(name, workspace_images, n=2, cutoff=0.55)
-            if suggestions:
-                hint = "  Did you mean: " + ", ".join(
-                    f"[bold]{s}[/bold]" for s in suggestions
-                )
-                console.print(f"[yellow]'{name}' not found in workspace.[/yellow]{hint}")
-                note = (
-                    f"[Context: '{name}' was mentioned as an image but does not exist "
-                    f"in the workspace. Similar files: {', '.join(suggestions)}. "
-                    f"Tell the user the file was not found and suggest the correct name. "
-                    f"Do NOT use read_file or file tools to search for it.]"
-                )
-            else:
-                console.print(
-                    f"[yellow]'{name}' not found in workspace — image will not be attached.[/yellow]"
-                )
-                note = (
-                    f"[Context: '{name}' was mentioned as an image but does not exist "
-                    f"in the workspace. Tell the user the file was not found. "
-                    f"Do NOT use read_file or file tools to search for it.]"
-                )
-            not_found_notes.append(note)
+        if name.lower() in resolved_names:
+            continue
+
+        candidate_path = Path(candidate)
+        if not candidate_path.is_absolute():
+            candidate_path = Path(config.cwd) / candidate
+
+        if (
+            candidate_path.is_file()
+            and candidate_path.suffix.lower() == ".pdf"
+            and pdf_has_extractable_text(candidate_path)
+        ):
+            console.print(
+                f"[dim]PDF detected: {name} — text document "
+                f"(use read_document, not vision)[/dim]"
+            )
+            not_found_notes.append(
+                f"[Context: '{name}' is a text-based PDF. Use read_document to "
+                f"extract its content — do NOT treat it as an image.]"
+            )
+            continue
+
+        suggestions = difflib.get_close_matches(name, workspace_images, n=2, cutoff=0.55)
+        if suggestions:
+            hint = "  Did you mean: " + ", ".join(
+                f"[bold]{s}[/bold]" for s in suggestions
+            )
+            console.print(f"[yellow]'{name}' not found in workspace.[/yellow]{hint}")
+            note = (
+                f"[Context: '{name}' was mentioned as an image but does not exist "
+                f"in the workspace. Similar files: {', '.join(suggestions)}. "
+                f"Tell the user the file was not found and suggest the correct name. "
+                f"Do NOT use read_file or file tools to search for it.]"
+            )
+        else:
+            console.print(
+                f"[yellow]'{name}' not found in workspace — image will not be attached.[/yellow]"
+            )
+            note = (
+                f"[Context: '{name}' was mentioned as an image but does not exist "
+                f"in the workspace. Tell the user the file was not found. "
+                f"Do NOT use read_file or file tools to search for it.]"
+            )
+        not_found_notes.append(note)
 
     if not paths:
         # Prepend not-found notes so the model answers directly without looping.

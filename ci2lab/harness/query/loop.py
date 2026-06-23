@@ -49,6 +49,7 @@ from ci2lab.harness.vision import (
     pdf_to_images,
     strip_vision_from_messages,
 )
+from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 from ci2lab.harness.query.llm_io import call_llm
 from ci2lab.harness.query.nudges import (
     summarize_args,
@@ -542,6 +543,12 @@ def run_agent(
         _pdf_temp_dirs: list[Path] = []
         for _raw_path in cfg.image_paths:
             if Path(_raw_path).suffix.lower() == ".pdf":
+                if not pdf_needs_vision(_raw_path):
+                    logger.info(
+                        "Skipping vision for text PDF (use read_document): %s",
+                        _raw_path,
+                    )
+                    continue
                 _vision_has_pdf = True
                 try:
                     _pages, _tmp = pdf_to_images(_raw_path)
