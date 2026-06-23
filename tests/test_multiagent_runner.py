@@ -188,6 +188,31 @@ def test_run_subagent_captures_internal_console_output(capsys):
     assert "internal subagent output" not in capsys.readouterr().out
 
 
+def test_run_subagent_shows_full_output_when_interactive(capsys):
+    # With a progress sink attached (interactive REPL), the subagent's reasoning
+    # and tool calls must be visible — not captured — so the user can see what
+    # each role is doing and what a permission prompt is for.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)
+
+    def noisy_run_agent(*args, **kwargs):
+        from ci2lab.console import console
+
+        console.print("internal subagent reasoning")
+        return "result"
+
+    with patch("ci2lab.harness.multiagent.runner.run_agent", side_effect=noisy_run_agent):
+        run_subagent(
+            AgentRole.RESEARCHER,
+            "Research this",
+            selection,
+            config,
+            on_progress=lambda _label: None,
+        )
+
+    assert "internal subagent reasoning" in capsys.readouterr().out
+
+
 def test_run_subagent_forwards_concise_progress_while_output_is_captured(capsys):
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)
