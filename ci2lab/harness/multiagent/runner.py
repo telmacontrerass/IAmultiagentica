@@ -198,6 +198,13 @@ def run_subagent(
     system_prompt = build_subagent_system_prompt(role, selection, subagent_config)
     messages = [{"role": "system", "content": system_prompt}]
 
+    # When a progress sink is attached we are running interactively (the REPL).
+    # Show the subagent's full reasoning and tool calls instead of hiding them,
+    # so the user can follow each role's thinking — and, crucially, knows what a
+    # permission prompt is actually for. Headless runs keep output captured for
+    # clean logs.
+    show_output = on_progress is not None
+
     def show_progress(label: str) -> None:
         if on_progress:
             # A subagent finishing is not the end of the overall multi-agent
@@ -211,23 +218,25 @@ def run_subagent(
         # still receives concise live activity updates.
         print(f"[multi-agent:{role.value}] {label}", flush=True)
 
-    if capture_output:
-        with console.capture():
-            output = run_agent(
-                task_prompt,
-                selection,
-                config=subagent_config,
-                messages=messages,
-                on_progress=show_progress,
-            )
-    else:
-        output = run_agent(
+    def _invoke() -> str:
+        return run_agent(
             task_prompt,
             selection,
             config=subagent_config,
             messages=messages,
             on_progress=show_progress,
         )
+
+    if show_output:
+        # A clear banner so the scrolling reasoning/tool output below is
+        # attributed to the right role.
+        console.rule(f"[bold cyan]{role.value}[/bold cyan]")
+        output = _invoke()
+    elif capture_output:
+        with console.capture():
+            output = _invoke()
+    else:
+        output = _invoke()
 
     trace_data = _load_subagent_run_artifacts(subagent_config.last_run_dir)
     return SubAgentResult(
