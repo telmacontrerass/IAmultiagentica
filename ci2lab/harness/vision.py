@@ -30,6 +30,8 @@ import logging
 import mimetypes
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +128,17 @@ def build_vision_content(
             continue
 
         ext = Path(path).suffix.lower()
+
+        # PDFs must be converted to images before reaching this function.
+        # If one slips through (e.g. conversion failed upstream), skip it.
+        if ext in _PDF_EXTENSIONS:
+            logger.warning(
+                "Vision: PDF path reached build_vision_content unconverted: %s — skipping.",
+                path,
+            )
+            content[0]["text"] += f"\n\n[PDF '{Path(path).name}' could not be converted to images]"
+            continue
+
         img_format = _MIME_FROM_EXT.get(ext) or (
             (mimetypes.guess_type(path)[0] or "").split("/")[-1] or "jpeg"
         )
@@ -146,6 +159,41 @@ def build_vision_content(
     return content
 
 
+def count_vision_images_in_messages(messages: list[dict[str, Any]]) -> int:
+    """Count image_url blocks across all messages (for timeout budgeting)."""
+    total = 0
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            total += sum(
+                1 for block in content if block.get("type") == "image_url"
+            )
+    return total
+
+
+def strip_vision_from_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop image blocks from messages, keeping text only.
+
+    Used before re-attaching images on a follow-up turn so earlier page
+    renders are not duplicated in the context window.
+    """
+    stripped: list[dict[str, Any]] = []
+    for msg in messages:
+        item = dict(msg)
+        content = item.get("content")
+        if isinstance(content, list):
+            text_parts = [
+                block.get("text", "")
+                for block in content
+                if block.get("type") == "text"
+            ]
+            item["content"] = " ".join(p for p in text_parts if p).strip() or ""
+        stripped.append(item)
+    return stripped
+
+
 # ---------------------------------------------------------------------------
 # Image path extraction from free-form text
 # ---------------------------------------------------------------------------
@@ -154,20 +202,117 @@ _IMG_EXTENSIONS = frozenset({
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif",
 })
 
-# One pattern that captures image-looking strings in order of specificity:
+# PDF pages are converted to images before being passed to the model.
+# Detection uses a separate extension set so build_vision_content (which
+# encodes raw bytes) never accidentally receives a .pdf path.
+_PDF_EXTENSIONS = frozenset({".pdf"})
+
+_DETECTABLE_EXTENSIONS = _IMG_EXTENSIONS | _PDF_EXTENSIONS
+
+# One pattern that captures image/PDF-looking strings in order of specificity:
 #   group 1: double-quoted path  "C:\...\file.ext" or "/path/file.ext"
 #   group 2: single-quoted path  'file.ext'
 #   group 3: Windows absolute    C:\path\to\file.ext  (unquoted)
 #   group 4: Unix absolute       /path/to/file.ext    (unquoted)
-#   group 5: bare filename       image1.png           (no separators)
+#   group 5: bare filename       image1.png / doc.pdf (no separators)
 _IMAGE_CANDIDATE_RE = re.compile(
-    r'"([^"\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"'
-    r"|'([^'\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))'"
-    r"|([A-Za-z]:[/\\]\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"
-    r"|(/\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?))"
-    r"|([\w.\-]+\.(?:png|jpe?g|webp|gif|bmp|tiff?))",
+    r'"([^"\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?|pdf))"'
+    r"|'([^'\r\n]+\.(?:png|jpe?g|webp|gif|bmp|tiff?|pdf))'"
+    r"|([A-Za-z]:[/\\]\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?|pdf))"
+    r"|(/\S+\.(?:png|jpe?g|webp|gif|bmp|tiff?|pdf))"
+    r"|([\w.\-]+\.(?:png|jpe?g|webp|gif|bmp|tiff?|pdf))",
     re.IGNORECASE,
 )
+
+
+def compute_llm_timeout(num_images: int = 0, *, has_pdf: bool = False) -> float:
+    """Return the HTTP timeout (seconds) for an LLM request.
+
+    Vision workloads — especially multi-page PDFs rendered as images — can
+    take several minutes before Ollama emits the first token on CPU-bound
+    hardware.  The default 300 s ceiling is too short for those cases.
+    """
+    if num_images <= 0:
+        return 300.0
+    per_image = 240.0 if has_pdf else 180.0
+    base = 600.0 if has_pdf else 480.0
+    return min(1800.0, base + per_image * max(0, num_images - 1))
+
+
+def pdf_to_images(
+    pdf_path: str,
+    max_pages: int = 10,
+    dpi: int = 96,
+) -> tuple[list[Path], Path]:
+    """Render a PDF to per-page PNG files and return (page_paths, temp_dir).
+
+    The caller **must** delete ``temp_dir`` after the images are no longer
+    needed (use ``shutil.rmtree(temp_dir, ignore_errors=True)``).
+
+    Parameters
+    ----------
+    pdf_path:
+        Absolute path to the PDF file.
+    max_pages:
+        Maximum number of pages to render (default 10).  Documents longer
+        than this are truncated with a log warning.
+    dpi:
+        Rendering resolution (default 96 dpi).  96 dpi gives ~770×1100 px
+        for an A4 page — enough for handwriting OCR while keeping inference
+        fast on CPU-bound laptops.  Raise to 150–200 for dense small text.
+
+    Raises
+    ------
+    ImportError
+        If ``pymupdf`` is not installed.
+    FileNotFoundError
+        If ``pdf_path`` does not exist.
+    RuntimeError
+        If the PDF cannot be opened (encrypted, corrupt, etc.).
+    """
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        raise ImportError(
+            "pymupdf is required for PDF support. "
+            "Install it with:  pip install pymupdf"
+        ) from None
+
+    pdf_path = str(pdf_path)
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ci2lab_pdf_"))
+    pages: list[Path] = []
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as exc:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError(f"Could not open PDF '{pdf_path}': {exc}") from exc
+
+    try:
+        total = len(doc)
+        if total > max_pages:
+            logger.warning(
+                "PDF has %d pages; rendering only the first %d (max_pages=%d).",
+                total,
+                max_pages,
+                max_pages,
+            )
+        n = min(total, max_pages)
+        scale = dpi / 72.0  # PDF base resolution is 72 dpi
+        mat = fitz.Matrix(scale, scale)
+        for i in range(n):
+            page = doc[i]
+            pix = page.get_pixmap(matrix=mat)
+            out_path = tmp_dir / f"page_{i + 1:03d}.png"
+            pix.save(str(out_path))
+            pages.append(out_path)
+    finally:
+        doc.close()
+
+    return pages, tmp_dir
 
 
 def find_image_candidates(text: str) -> list[str]:
@@ -217,7 +362,7 @@ def extract_image_paths(text: str, cwd: str) -> tuple[str, list[str]]:
         if not p.is_absolute():
             p = Path(cwd) / raw
 
-        if p.suffix.lower() in _IMG_EXTENSIONS and p.exists():
+        if p.suffix.lower() in _DETECTABLE_EXTENSIONS and p.exists():
             resolved = str(p.resolve())
             if resolved not in seen:
                 seen.add(resolved)
@@ -244,7 +389,7 @@ def analyze_image(
     image_path: str,
     backend_url: str,
     model_tag: str,
-    timeout: float = 120.0,
+    timeout: float = 600.0,
 ) -> str:
     """Call a vision-language model and return a text description of the image.
 
@@ -257,7 +402,7 @@ def analyze_image(
     model_tag:
         Ollama tag of the vision model, e.g. ``llava`` or ``qwen3-vl``.
     timeout:
-        HTTP timeout in seconds (default 120 — VL inference can be slow).
+        HTTP timeout in seconds (default 600 — VL inference can be slow).
 
     Returns the model's description string, or a human-readable error string
     that the caller can inject into the prompt and continue.  Never raises.

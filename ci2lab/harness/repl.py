@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rich.panel import Panel
 
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.vision import extract_image_paths, find_image_candidates, is_vision_model
+from ci2lab.harness.vision import (
+    extract_image_paths,
+    find_image_candidates,
+    is_vision_model,
+    pdf_to_images,
+)
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.query.loop import run_agent
@@ -82,7 +89,7 @@ def _extract_inline_images(
         workspace_images = [
             f.name for f in Path(config.cwd).iterdir()
             if f.is_file() and f.suffix.lower() in {
-                ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"
+                ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".pdf"
             }
         ]
     except OSError:
@@ -121,8 +128,43 @@ def _extract_inline_images(
             return enriched, []
         return line, []
 
+    pdf_context_notes: list[str] = []
     for p in paths:
-        console.print(f"[dim]Image detected: {Path(p).name}[/dim]")
+        name = Path(p).name
+        if Path(p).suffix.lower() == ".pdf":
+            # Show page count so the user knows how many pages will be processed.
+            try:
+                import fitz
+                _doc = fitz.open(p)
+                _n = len(_doc)
+                _doc.close()
+                _shown = min(_n, 10)
+                _suffix = f" ({_shown} of {_n} pages)" if _n > 1 else " (1 page)"
+            except Exception:
+                _shown = "?"
+                _suffix = ""
+            console.print(f"[dim]PDF detected: {name}{_suffix} — will render pages as images[/dim]")
+            console.print(
+                "[dim]Vision PDF requests can take several minutes on first run — please wait.[/dim]"
+            )
+            # Tell the model the pages are already visually attached so it does
+            # not waste tool calls trying to read_document the file.
+            pdf_context_notes.append(
+                f"[Context: '{name}' has been rendered as page images and attached "
+                f"to this message. Do NOT call read_document or any file tool on "
+                f"'{name}' — the content is already visible in the attached images. "
+                f"Analyse the images directly to answer the user's request. "
+                f"When checking an exercise: verify every equation coefficient and "
+                f"numeric result step by step (e.g. N₂ on the product side should be "
+                f"12.5 × 3.76 = 47, not 4.7). Do not assume the work is correct — "
+                f"re-read all values from the images and show your arithmetic.]"
+            )
+        else:
+            console.print(f"[dim]Image detected: {name}[/dim]")
+
+    # Prepend PDF context notes so the model sees them before its tool schemas.
+    if pdf_context_notes:
+        cleaned = "\n".join(pdf_context_notes) + "\n\n" + (cleaned or line)
 
     if not config.vision_enabled:
         console.print(
@@ -157,6 +199,7 @@ def run_repl(
     history = None
     last_user_prompt: str | None = None
     last_error_message: str | None = None
+    session_vision_paths: list[str] = []
     if session_id:
         data = load_session(session_id)
         if data:
@@ -263,6 +306,7 @@ def run_repl(
             history = [
                 {"role": "system", "content": history[0]["content"]}
             ] if history and history[0].get("role") == "system" else None
+            session_vision_paths = []
             console.print("[dim]History cleared (system kept).[/dim]")
             continue
         if line.lower() == "/save":
@@ -382,13 +426,30 @@ def run_repl(
         # matching the behaviour of Ollama's own REPL but working for both
         # absolute paths and bare filenames relative to the workspace.
         prompt, detected_images = _extract_inline_images(line, config, selection)
+
+        # Re-attach the last PDF/images on follow-up turns so the model re-reads
+        # the pages instead of relying on its earlier (possibly wrong) summary.
+        if detected_images:
+            session_vision_paths = list(detected_images)
+        elif session_vision_paths:
+            detected_images = list(session_vision_paths)
+            names = ", ".join(Path(p).name for p in detected_images)
+            console.print(f"[dim]Re-attaching: {names}[/dim]")
+            follow_note = (
+                "[Context: The document pages are re-attached to this message. "
+                "Re-read the images directly — do not rely on earlier summaries. "
+                "All values (coefficients, enthalpy, Cp, results) are visible "
+                "in the images. Re-check every number step by step.]"
+            )
+            prompt = follow_note + "\n\n" + prompt
+
         execution_prompt = _project_prompt(config, prompt)
 
         progress = _TransientProgress()
         try:
             config.skill_allowed_tools = None
             last_user_prompt = line
-            # Temporarily attach any detected images for this turn only.
+            # Temporarily attach images for this turn (new or re-attached).
             _prior_images = config.image_paths
             if detected_images:
                 config.image_paths = detected_images

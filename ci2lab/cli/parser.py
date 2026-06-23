@@ -168,11 +168,12 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         dest="images",
         default=None,
         metavar="PATH",
-        help=(
-            "Image file to attach (PNG, JPG, WEBP, GIF, BMP). "
-            "Repeat to attach multiple images. "
-            "Requires a vision-capable model (e.g. --model qwen2.5vl:7b)."
-        ),
+            help=(
+                "Image or PDF file to attach. "
+                "PDFs are automatically converted to per-page images (up to 10 pages). "
+                "Repeat to attach multiple files. "
+                "Requires a vision-capable model (e.g. --model qwen2.5vl:7b)."
+            ),
     )
 
 

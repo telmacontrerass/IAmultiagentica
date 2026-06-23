@@ -40,7 +40,15 @@ from ci2lab.harness.parsing import (
     strip_tool_markup,
 )
 from ci2lab.harness.prompts import build_system_prompt
-from ci2lab.harness.vision import analyze_image, build_vision_content, is_vision_model
+from ci2lab.harness.vision import (
+    analyze_image,
+    build_vision_content,
+    compute_llm_timeout,
+    count_vision_images_in_messages,
+    is_vision_model,
+    pdf_to_images,
+    strip_vision_from_messages,
+)
 from ci2lab.harness.query.llm_io import call_llm
 from ci2lab.harness.query.nudges import (
     summarize_args,
@@ -514,32 +522,75 @@ def run_agent(
         console.print(final_text)
         return final_text
 
-    client = LLMClient(selection)
     system = build_system_prompt(selection, cfg.cwd)
 
     # Vision pre-processing (adapted from Odysseus chat_handler.preprocess_message).
-    # Two paths:
+    # PDFs are rendered to per-page PNGs first, then two paths:
     #   A — main model is vision-capable: attach images directly as base64 image_url
     #       blocks so the model sees the pixels natively.
     #   B — main model is text-only: call the fallback vision_model once per image,
     #       inject the description into the prompt text.
     _user_content: str | list = user_prompt
+    _vision_image_count = 0
+    _vision_has_pdf = False
+    _history_image_count = count_vision_images_in_messages(messages or [])
     if cfg.image_paths and cfg.vision_enabled:
-        if is_vision_model(selection.ollama_tag):
-            # Path A: native multimodal message
-            _user_content = build_vision_content(user_prompt, cfg.image_paths)
-        else:
-            # Path B: describe each image via the fallback vision model
-            _vision_tag = (cfg.vision_model or "").strip()
-            if _vision_tag:
-                _enriched = user_prompt
-                for _img in cfg.image_paths:
-                    _desc = analyze_image(_img, selection.backend_url, _vision_tag)
-                    _enriched = (
-                        f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
-                    )
-                _user_content = _enriched
-            # if no vision_model configured, pass user_prompt unchanged
+        import shutil as _shutil
+
+        # Expand PDF paths into per-page PNG files.
+        _expanded_paths: list[str] = []
+        _pdf_temp_dirs: list[Path] = []
+        for _raw_path in cfg.image_paths:
+            if Path(_raw_path).suffix.lower() == ".pdf":
+                _vision_has_pdf = True
+                try:
+                    _pages, _tmp = pdf_to_images(_raw_path)
+                    _expanded_paths.extend(str(p) for p in _pages)
+                    _pdf_temp_dirs.append(_tmp)
+                except Exception as _exc:
+                    logger.warning("PDF conversion failed for %s: %s", _raw_path, _exc)
+            else:
+                _expanded_paths.append(_raw_path)
+
+        _vision_image_count = len(_expanded_paths)
+
+        try:
+            if is_vision_model(selection.ollama_tag):
+                # Path A: native multimodal message
+                _user_content = build_vision_content(user_prompt, _expanded_paths)
+            else:
+                # Path B: describe each image via the fallback vision model
+                _vision_tag = (cfg.vision_model or "").strip()
+                if _vision_tag:
+                    _image_timeout = compute_llm_timeout(1, has_pdf=_vision_has_pdf)
+                    _enriched = user_prompt
+                    for _img in _expanded_paths:
+                        _desc = analyze_image(
+                            _img,
+                            selection.backend_url,
+                            _vision_tag,
+                            timeout=_image_timeout,
+                        )
+                        _enriched = (
+                            f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
+                        )
+                    _user_content = _enriched
+                # if no vision_model configured, pass user_prompt unchanged
+        finally:
+            # Temp PNG files from PDF rendering are no longer needed once
+            # build_vision_content has base64-encoded them.
+            for _td in _pdf_temp_dirs:
+                _shutil.rmtree(_td, ignore_errors=True)
+
+    _timeout_images = _vision_image_count or _history_image_count
+    _timeout_has_pdf = _vision_has_pdf or (
+        _history_image_count > 0 and _vision_image_count == 0
+    )
+    client = LLMClient(
+        selection,
+        timeout=compute_llm_timeout(_timeout_images, has_pdf=_timeout_has_pdf),
+        vision_image_count=_timeout_images,
+    )
 
     if messages is None:
         history: list[dict[str, Any]] = [
@@ -548,6 +599,13 @@ def run_agent(
         ]
     else:
         history = list(messages)
+        if (
+            cfg.image_paths
+            and cfg.vision_enabled
+            and _vision_image_count > 0
+            and is_vision_model(selection.ollama_tag)
+        ):
+            history = strip_vision_from_messages(history)
         if not any(m.get("role") == "system" for m in history):
             history.insert(0, {"role": "system", "content": system})
         history.append({"role": "user", "content": _user_content})

@@ -19,6 +19,33 @@ class LLMError(Exception):
         self.exit_code = exit_code
 
 
+class LLMTimeoutError(LLMError):
+    """The model did not respond within the allowed time."""
+
+    def __init__(self, detail: str = "", *, num_images: int = 0) -> None:
+        lines = [
+            "The model did not respond in time.",
+        ]
+        if num_images > 0:
+            lines.extend([
+                "Vision requests with attached images or PDF pages can take several",
+                "minutes on CPU-bound hardware — especially the first run while the",
+                "model loads.",
+                "Try:",
+                "  - Wait and retry (a 2-page PDF may need 5–10 minutes)",
+                "  - Use a smaller vision model (e.g. moondream, llava:7b)",
+                "  - Attach fewer pages or a single PNG instead of a PDF",
+            ])
+        else:
+            lines.extend([
+                "Check that Ollama is running (`ollama serve`) and try again.",
+                "Run `ci2lab doctor` to diagnose.",
+            ])
+        if detail:
+            lines.append(f"\nDetail: {detail}")
+        super().__init__("\n".join(lines), exit_code=2)
+
+
 class LLMConnectionError(LLMError):
     """Ollama is not responding or there is no connectivity."""
 
@@ -114,7 +141,13 @@ def classify_http_error(
     )
 
 
-def classify_request_error(exc: Exception, *, model: str, url: str) -> LLMError:
+def classify_request_error(
+    exc: Exception,
+    *,
+    model: str,
+    url: str,
+    num_images: int = 0,
+) -> LLMError:
     if isinstance(exc, httpx.HTTPStatusError):
         return classify_http_error(exc, model=model, url=url)
 
@@ -122,7 +155,7 @@ def classify_request_error(exc: Exception, *, model: str, url: str) -> LLMError:
         return LLMConnectionError(str(exc))
 
     if isinstance(exc, httpx.TimeoutException):
-        return LLMConnectionError(f"Timeout contacting {url}: {exc}")
+        return LLMTimeoutError(f"Timeout contacting {url}: {exc}", num_images=num_images)
 
     if isinstance(exc, httpx.RequestError):
         return LLMConnectionError(str(exc))

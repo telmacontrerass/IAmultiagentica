@@ -44,9 +44,16 @@ class StreamToken:
 
 
 class LLMClient:
-    def __init__(self, selection: ModelSelection, timeout: float = 300.0) -> None:
+    def __init__(
+        self,
+        selection: ModelSelection,
+        timeout: float = 300.0,
+        *,
+        vision_image_count: int = 0,
+    ) -> None:
         self.selection = selection
         self.timeout = timeout
+        self.vision_image_count = vision_image_count
         base = selection.backend_url.rstrip("/")
         self.chat_url = f"{base}/chat/completions"
         # Native Ollama endpoint lives at the server root, not under /v1.
@@ -266,6 +273,7 @@ class LLMClient:
                             exc,
                             model=model,
                             url=url,
+                            num_images=self.vision_image_count,
                         )
                         if isinstance(err, LLMModelNotFoundError) and model != self._model_candidates()[-1]:
                             continue
@@ -346,7 +354,12 @@ class LLMClient:
                                         usage = chunk_usage
                     except Exception as exc:
                         self._raise_if_cancelled(cancel_event)
-                        err = classify_request_error(exc, model=model, url=self.ollama_chat_url)
+                        err = classify_request_error(
+                            exc,
+                            model=model,
+                            url=self.ollama_chat_url,
+                            num_images=self.vision_image_count,
+                        )
                         if (
                             isinstance(err, LLMModelNotFoundError)
                             and not emitted_tokens
@@ -443,7 +456,12 @@ class LLMClient:
                                         entry["function"]["arguments"] += fn["arguments"]
                     except Exception as exc:
                         self._raise_if_cancelled(cancel_event)
-                        err = classify_request_error(exc, model=model, url=self.chat_url)
+                        err = classify_request_error(
+                            exc,
+                            model=model,
+                            url=self.chat_url,
+                            num_images=self.vision_image_count,
+                        )
                         if (
                             isinstance(err, LLMModelNotFoundError)
                             and not emitted_tokens
