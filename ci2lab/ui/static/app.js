@@ -21,9 +21,13 @@ let activeChatRequest = null;
 
 const STORAGE_KEY = "ci2lab.ui.state.v1";
 const LANGUAGE_KEY = "ci2lab.ui.language";
+const INTERNAL_LANGUAGE = "en";
 const SUPPORTED_LANGUAGES = ["es", "en"];
 let currentLanguage = localStorage.getItem(LANGUAGE_KEY) || "en";
 if (!SUPPORTED_LANGUAGES.includes(currentLanguage)) currentLanguage = "en";
+const NO_AUTO_TRANSLATE_SELECTOR = "#messages, .message, .process-log, [data-no-translate]";
+const originalTextNodes = new WeakMap();
+const originalAttributes = new WeakMap();
 
 const SPANISH_TRANSLATIONS = {
   "Main navigation": "Navegación principal",
@@ -131,6 +135,15 @@ const SPANISH_TRANSLATIONS = {
   "Florentino local": "Florentino local",
   "Start a conversation": "Inicia una conversación",
   "Try: \"summarize this project\" or \"list the Python files\".": "Prueba: «resume este proyecto» o «enumera los archivos Python».",
+  "Deciding the next step...": "Decidiendo el siguiente paso...",
+  "Reading the attached files...": "Leyendo los archivos adjuntos...",
+  "Extracting information from the PDF...": "Extrayendo información del PDF...",
+  "Reading the document...": "Leyendo el documento...",
+  "Planning the code change...": "Planificando el cambio de código...",
+  "Generating code changes...": "Generando cambios de código...",
+  "Looking up current information...": "Buscando información actualizada...",
+  "Checking the result...": "Comprobando el resultado...",
+  "Preparing the answer...": "Preparando la respuesta...",
   "Agents on": "Agentes activos",
   "Local PDF or text": "PDF o texto local",
   "Remove file": "Quitar archivo",
@@ -199,10 +212,17 @@ function translateText(value) {
   return String(value).replace(trimmed, translated);
 }
 
+function isAutoTranslateBlocked(node) {
+  if (!node) return false;
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  return Boolean(element?.closest?.(NO_AUTO_TRANSLATE_SELECTOR));
+}
+
 function translateNode(root) {
-  if (currentLanguage !== "es" || !root) return;
+  if (!root || isAutoTranslateBlocked(root)) return;
   if (root.nodeType === Node.TEXT_NODE) {
-    const translated = translateText(root.nodeValue);
+    if (!originalTextNodes.has(root)) originalTextNodes.set(root, root.nodeValue);
+    const translated = currentLanguage === "es" ? translateText(originalTextNodes.get(root)) : originalTextNodes.get(root);
     if (translated !== root.nodeValue) root.nodeValue = translated;
     return;
   }
@@ -210,30 +230,65 @@ function translateNode(root) {
   if (root.nodeType === Node.ELEMENT_NODE) {
     ["placeholder", "title", "aria-label"].forEach((attribute) => {
       if (root.hasAttribute(attribute)) {
-        const value = root.getAttribute(attribute);
-        const translated = translateText(value);
-        if (translated !== value) root.setAttribute(attribute, translated);
+        let sources = originalAttributes.get(root);
+        if (!sources) {
+          sources = {};
+          originalAttributes.set(root, sources);
+        }
+        if (!Object.prototype.hasOwnProperty.call(sources, attribute)) {
+          sources[attribute] = root.getAttribute(attribute);
+        }
+        const value = sources[attribute];
+        const translated = currentLanguage === "es" ? translateText(value) : value;
+        if (translated !== root.getAttribute(attribute)) root.setAttribute(attribute, translated);
       }
     });
   }
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return isAutoTranslateBlocked(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
   let textNode = walker.nextNode();
   while (textNode) {
-    const translated = translateText(textNode.nodeValue);
+    if (!originalTextNodes.has(textNode)) originalTextNodes.set(textNode, textNode.nodeValue);
+    const source = originalTextNodes.get(textNode);
+    const translated = currentLanguage === "es" ? translateText(source) : source;
     if (translated !== textNode.nodeValue) textNode.nodeValue = translated;
     textNode = walker.nextNode();
   }
   if (root.querySelectorAll) {
     root.querySelectorAll("[placeholder], [title], [aria-label]").forEach((element) => {
+      if (isAutoTranslateBlocked(element)) return;
       ["placeholder", "title", "aria-label"].forEach((attribute) => {
         if (element.hasAttribute(attribute)) {
-          const value = element.getAttribute(attribute);
-          const translated = translateText(value);
-          if (translated !== value) element.setAttribute(attribute, translated);
+          let sources = originalAttributes.get(element);
+          if (!sources) {
+            sources = {};
+            originalAttributes.set(element, sources);
+          }
+          if (!Object.prototype.hasOwnProperty.call(sources, attribute)) {
+            sources[attribute] = element.getAttribute(attribute);
+          }
+          const value = sources[attribute];
+          const translated = currentLanguage === "es" ? translateText(value) : value;
+          if (translated !== element.getAttribute(attribute)) element.setAttribute(attribute, translated);
         }
       });
     });
   }
+}
+
+function uiText(value) {
+  return translateText(value);
+}
+
+function translateUi() {
+  document.documentElement.lang = currentLanguage;
+  translateNode(document.body);
+  if (!activeChatRequest) renderChatMessages();
+  renderAttachments();
+  renderTokenInfo();
 }
 
 document.documentElement.lang = currentLanguage;
@@ -609,13 +664,13 @@ function appendMessageNode(role, text, extraClass = "", meta = {}) {
     appendSessionInfo(node, text);
   } else {
     const body = document.createElement("div");
-    body.textContent = text;
+    body.textContent = extraClass.includes("error") || extraClass.includes("stopped") ? uiText(text) : text;
     node.appendChild(body);
   }
   if (meta.duration_ms) {
     const detail = document.createElement("small");
     detail.className = "message-meta";
-    detail.textContent = `Answered in ${formatElapsed(meta.duration_ms)}`;
+    detail.textContent = uiText(`Answered in ${formatElapsed(meta.duration_ms)}`);
     node.appendChild(detail);
   }
   if (Array.isArray(meta.process_log) && meta.process_log.length) {
@@ -634,12 +689,12 @@ function appendProcessLog(node, entries = [], label = "Process") {
   const details = document.createElement("details");
   details.className = "process-log";
   const summary = document.createElement("summary");
-  summary.textContent = label;
+  summary.textContent = uiText(label);
   details.appendChild(summary);
   const list = document.createElement("ol");
   cleanEntries.forEach((entry) => {
     const item = document.createElement("li");
-    item.textContent = entry;
+    item.textContent = uiText(entry);
     list.appendChild(item);
   });
   details.appendChild(list);
@@ -667,11 +722,11 @@ function appendSessionInfo(node, text) {
   details.className = "session-details";
   const summary = document.createElement("summary");
   const title = document.createElement("span");
-  title.textContent = "Session ready";
+  title.textContent = uiText("Session ready");
   const mode = entries.find((entry) => entry.key.toLowerCase() === "mode")?.value || "classic chat";
   const model = entries.find((entry) => entry.key.toLowerCase() === "model")?.value || "local model";
   const meta = document.createElement("small");
-  meta.textContent = `${model} · ${mode}`;
+  meta.textContent = uiText(`${model} · ${mode}`);
   summary.append(title, meta);
   details.appendChild(summary);
 
@@ -681,8 +736,8 @@ function appendSessionInfo(node, text) {
     const wrapper = document.createElement("div");
     const term = document.createElement("dt");
     const description = document.createElement("dd");
-    term.textContent = entry.key;
-    description.textContent = entry.value;
+    term.textContent = uiText(entry.key);
+    description.textContent = uiText(entry.value);
     wrapper.append(term, description);
     list.appendChild(wrapper);
   });
@@ -691,7 +746,7 @@ function appendSessionInfo(node, text) {
   if (notes.length) {
     const note = document.createElement("p");
     note.className = "session-note";
-    note.textContent = notes.join(" ");
+    note.textContent = uiText(notes.join(" "));
     details.appendChild(note);
   }
 
@@ -739,14 +794,14 @@ function addThinkingMessage(prompt = "", files = []) {
     <div class="thinking-main">
       <span class="thinking-loader" aria-hidden="true"></span>
       <span class="thinking-copy">
-        <span class="thinking-status">${escapeHtml(progressMessages[0])}</span>
+        <span class="thinking-status">${escapeHtml(uiText(progressMessages[0]))}</span>
         <small class="thinking-time">0.0s</small>
       </span>
     </div>
     <details class="process-log thinking-process">
-      <summary>Process</summary>
+      <summary>${escapeHtml(uiText("Process"))}</summary>
       <ol>
-        <li>${escapeHtml(progressMessages[0])}</li>
+        <li>${escapeHtml(uiText(progressMessages[0]))}</li>
       </ol>
     </details>
   `;
@@ -758,7 +813,7 @@ function addThinkingMessage(prompt = "", files = []) {
     if (!clean || processEntries.includes(clean)) return;
     processEntries.push(clean);
     const item = document.createElement("li");
-    item.textContent = clean;
+    item.textContent = uiText(clean);
     processList?.appendChild(item);
   };
   node._startedAt = startedAt;
@@ -771,7 +826,7 @@ function addThinkingMessage(prompt = "", files = []) {
   node._progressTimerId = window.setInterval(() => {
     if (!status || progressMessages.length <= 1) return;
     node._progressIndex = Math.min(node._progressIndex + 1, progressMessages.length - 1);
-    status.textContent = progressMessages[node._progressIndex];
+    status.textContent = uiText(progressMessages[node._progressIndex]);
     addProcessEntry(progressMessages[node._progressIndex]);
   }, 3500);
   els.messages.appendChild(node);
@@ -830,9 +885,9 @@ function setEmptyChat() {
   els.messages.innerHTML = `
     <div class="empty-state">
       <div>
-        <p class="eyebrow">Florentino local</p>
-        <h3>Start a conversation</h3>
-        <p>Try: "summarize this project" or "list the Python files".</p>
+        <p class="eyebrow">${escapeHtml(uiText("Florentino local"))}</p>
+        <h3>${escapeHtml(uiText("Start a conversation"))}</h3>
+        <p>${escapeHtml(uiText("Try: \"summarize this project\" or \"list the Python files\"."))}</p>
       </div>
     </div>
   `;
@@ -1914,8 +1969,11 @@ function toggleControlHelp(button) {
 
 function bindEvents() {
   els.languageSelect?.addEventListener("change", () => {
-    localStorage.setItem(LANGUAGE_KEY, els.languageSelect.value);
-    window.location.reload();
+    const nextLanguage = els.languageSelect.value;
+    if (!SUPPORTED_LANGUAGES.includes(nextLanguage)) return;
+    currentLanguage = nextLanguage;
+    localStorage.setItem(LANGUAGE_KEY, currentLanguage);
+    translateUi();
   });
   els.chatForm.addEventListener("submit", sendMessage);
   els.fileInput.addEventListener("change", uploadSelectedFiles);
@@ -2082,22 +2140,20 @@ function bindEvents() {
 restoreUiState();
 if (els.languageSelect) els.languageSelect.value = currentLanguage;
 translateNode(document.body);
-if (currentLanguage === "es") {
-  const translationObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach(translateNode);
-      if (mutation.type === "characterData") translateNode(mutation.target);
-      if (mutation.type === "attributes") translateNode(mutation.target);
-    });
+const translationObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    mutation.addedNodes.forEach(translateNode);
+    if (mutation.type === "characterData") translateNode(mutation.target);
+    if (mutation.type === "attributes") translateNode(mutation.target);
   });
-  translationObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-    attributes: true,
-    attributeFilter: ["placeholder", "title", "aria-label"],
-  });
-}
+});
+translationObserver.observe(document.body, {
+  childList: true,
+  subtree: true,
+  characterData: true,
+  attributes: true,
+  attributeFilter: ["placeholder", "title", "aria-label"],
+});
 state.tokenUsage = normalizeTokenUsage(state.tokenUsage);
 if (els.agentsMode) {
   els.agentsMode.checked = Boolean(state.agentsMode);

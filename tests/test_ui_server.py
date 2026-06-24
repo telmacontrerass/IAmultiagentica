@@ -51,6 +51,20 @@ def test_web_chat_progress_messages_are_in_english():
     )
 
     assert all(message in app_js for message in expected)
+    assert 'const INTERNAL_LANGUAGE = "en";' in app_js
+    assert "NO_AUTO_TRANSLATE_SELECTOR" in app_js
+    assert "#messages" in app_js
+
+
+def test_web_chat_transcript_is_not_auto_translated():
+    root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="messages" class="messages" aria-live="polite" data-no-translate' in index_html
+    assert 'message: prompt,' in app_js
+    assert "ui_language" not in app_js
+    assert "interface_language" not in app_js
 
 
 def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
