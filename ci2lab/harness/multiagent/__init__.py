@@ -5,7 +5,9 @@ from __future__ import annotations
 from ci2lab.harness.multiagent.intent import (
     MultiAgentIntent,
     MultiAgentIntentDecision,
+    OrchestrationDecision,
     classify_multiagent_intent,
+    classify_orchestration_decision,
 )
 from ci2lab.harness.multiagent.orchestrator import run_multi_agent
 from ci2lab.harness.multiagent.roles import ROLE_SPECS, RoleSpec
@@ -21,10 +23,12 @@ __all__ = [
     "MultiAgentIntent",
     "MultiAgentIntentDecision",
     "MultiAgentRun",
+    "OrchestrationDecision",
     "ROLE_SPECS",
     "RoleSpec",
     "SubAgentResult",
     "classify_multiagent_intent",
+    "classify_orchestration_decision",
     "run_multi_agent",
     "run_subagent",
 ]

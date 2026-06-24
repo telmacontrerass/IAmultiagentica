@@ -738,6 +738,94 @@ def test_read_cache_invalidated_after_mutation():
     assert exec_mock.call_count == 3
 
 
+def test_contract_write_then_readback_synthesizes_parseable_final(tmp_path):
+    selection = default_selection("test:1b", tool_mode="fenced")
+    selection.context_length = 1_000_000
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        run_log_enabled=False,
+        role_anchor="Role anchor: You are currently acting as generalist_coder.",
+    )
+    write = LLMResponse(
+        content=(
+            "```write_file\n"
+            '{"path": "contract-output.txt", "content": "CONTRACT_OK"}\n'
+            "```"
+        ),
+        tool_calls=[],
+    )
+    readback = LLMResponse(
+        content="```read_file\ncontract-output.txt\n```",
+        tool_calls=[],
+    )
+    prompt = (
+        "Crea un archivo llamado contract-output.txt con exactamente este "
+        "contenido: CONTRACT_OK."
+    )
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [write, readback]
+        result = run_agent(prompt, selection, config=config)
+
+    assert result == (
+        "Created contract-output.txt with exact content.\n"
+        "Tool used: write_file\n"
+        "Verification tool used: read_file"
+    )
+    assert (tmp_path / "contract-output.txt").read_text(encoding="utf-8") == "CONTRACT_OK"
+    assert client.chat.call_count == 2
+
+    # Anchor cleanup must retain real tool-result history and exactly one fresh
+    # request/role anchor for the readback round.
+    second_round_messages = client.chat.call_args_list[1].args[0]
+    assert any(m.get("role") == "tool" for m in second_round_messages)
+    assert sum(bool(m.get("_anchor")) for m in second_round_messages) == 2
+
+
+def test_contract_readback_for_different_path_does_not_synthesize_success(tmp_path):
+    selection = default_selection("test:1b", tool_mode="fenced")
+    selection.context_length = 1_000_000
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        run_log_enabled=False,
+    )
+    (tmp_path / "other-output.txt").write_text("CONTRACT_OK", encoding="utf-8")
+    write = LLMResponse(
+        content=(
+            "```write_file\n"
+            '{"path": "contract-output.txt", "content": "CONTRACT_OK"}\n'
+            "```"
+        ),
+        tool_calls=[],
+    )
+    wrong_readback = LLMResponse(
+        content="```read_file\nother-output.txt\n```",
+        tool_calls=[],
+    )
+    final = LLMResponse(content="Created the file.", tool_calls=[])
+    prompt = (
+        "Crea un archivo llamado contract-output.txt con exactamente este "
+        "contenido: CONTRACT_OK."
+    )
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [write, wrong_readback, final]
+        result = run_agent(prompt, selection, config=config)
+
+    assert result == "Created the file."
+    assert "Tool used: write_file" not in result
+    assert "Verification tool used: read_file" not in result
+    assert client.chat.call_count == 3
+
+
 def test_final_round_forces_toolfree_wrapup():
     # A task that never finishes must not end on half-formed tool output. On the
     # last allowed round the loop disables tools and asks for a handoff summary.
