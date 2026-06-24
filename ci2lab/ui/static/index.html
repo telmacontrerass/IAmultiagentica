@@ -8,6 +8,17 @@
   </head>
   <body>
     <div class="app-shell">
+      <div class="language-control">
+        <label for="languageSelect">
+          <span aria-hidden="true">◎</span>
+          <span>Change language</span>
+        </label>
+        <select id="languageSelect" aria-label="Change interface language">
+          <option value="en">English</option>
+          <option value="es">Español</option>
+        </select>
+      </div>
+
       <aside class="sidebar">
         <div class="brand">
           <div class="crest">ICAI</div>
@@ -36,17 +47,6 @@
             <span>▱</span> My projects
           </button>
         </nav>
-
-        <div class="language-control">
-          <label for="languageSelect">
-            <span aria-hidden="true">◎</span>
-            <span>Change language</span>
-          </label>
-          <select id="languageSelect" aria-label="Change interface language">
-            <option value="es">Español</option>
-            <option value="en">English</option>
-          </select>
-        </div>
 
         <div class="status-card">
           <p class="label">Local status</p>

@@ -22,8 +22,7 @@ let activeChatRequest = null;
 const STORAGE_KEY = "ci2lab.ui.state.v1";
 const LANGUAGE_KEY = "ci2lab.ui.language";
 const SUPPORTED_LANGUAGES = ["es", "en"];
-const browserLanguage = navigator.language?.toLowerCase().startsWith("es") ? "es" : "en";
-let currentLanguage = localStorage.getItem(LANGUAGE_KEY) || browserLanguage;
+let currentLanguage = localStorage.getItem(LANGUAGE_KEY) || "en";
 if (!SUPPORTED_LANGUAGES.includes(currentLanguage)) currentLanguage = "en";
 
 const SPANISH_TRANSLATIONS = {
