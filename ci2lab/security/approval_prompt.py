@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 
+from ci2lab.console import active_progress
 from ci2lab.harness.types import AgentConfig
 from ci2lab.security.audit import get_audit_persist_context
 from ci2lab.security.engine import ToolGateResult, normalize_security_engine, uses_permission_layer
@@ -100,7 +101,10 @@ def prompt_opencode_approval(
     output_func("")
     output_func("  [a] Allow once   [s] Allow session   [d] Deny once   [c] Cancel")
     try:
-        raw = input_func("Choice [a/s/d/c]: ")
+        # Pause the "thinking" spinner so it doesn't repaint over this prompt
+        # and block the user from answering.
+        with active_progress.suspended():
+            raw = input_func("Choice [a/s/d/c]: ")
     except EOFError:
         return ApprovalChoice.ABORT
     if not raw.strip():

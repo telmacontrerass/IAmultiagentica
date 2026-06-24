@@ -28,7 +28,7 @@ def _run_git(cwd: str, *args: str) -> str:
     out = out.strip()
     if proc.returncode != 0:
         return f"Error: git exited {proc.returncode}\n{out}" if out else f"Error: git exited {proc.returncode}"
-    return out or "(sin salida)"
+    return out or "(no output)"
 
 
 def _scoped_path(cwd: str, raw: str | None) -> str | None:

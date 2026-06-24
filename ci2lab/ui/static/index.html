@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,24 +17,40 @@
           </div>
         </div>
 
-        <nav class="side-nav" aria-label="Navegación principal">
+        <nav class="side-nav" aria-label="Main navigation">
           <button class="nav-button active" type="button" data-view="homeView">
-            <span>⌂</span> Inicio
+            <span>⌂</span> Home
           </button>
+          <div class="home-subnav" aria-label="Home sections">
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
+              <span>▦</span> Local models
+            </button>
+            <button class="nav-button sub-nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
+              <span>◷</span> Sessions
+            </button>
+          </div>
           <button id="openChat" class="nav-button" type="button" data-view="chatView">
-            <span>+</span> Chat
+            <span>＋</span> Chat
           </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="modelsPanel">
-            <span>▦</span> Modelos locales
-          </button>
-          <button class="nav-button" type="button" data-view="homeView" data-scroll="sessionsPanel">
-            <span>◷</span> Sesiones
+          <button id="openProjects" class="nav-button" type="button" data-view="projectsView">
+            <span>▱</span> My projects
           </button>
         </nav>
 
+        <div class="language-control">
+          <label for="languageSelect">
+            <span aria-hidden="true">◎</span>
+            <span>Change language</span>
+          </label>
+          <select id="languageSelect" aria-label="Change interface language">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+
         <div class="status-card">
-          <p class="label">Estado local</p>
-          <strong id="ollamaStatus">Comprobando...</strong>
+          <p class="label">Local status</p>
+          <strong id="ollamaStatus">Checking...</strong>
           <small id="workspaceLabel"></small>
         </div>
       </aside>
@@ -42,8 +58,8 @@
       <main class="main">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Agente local multi-modelo</p>
-            <h2>Interactúa con Florentino sin abrir la terminal</h2>
+            <p class="eyebrow">Local multi-model agent</p>
+            <h2>Interact with Florentino without opening the terminal</h2>
           </div>
           <div class="top-actions">
             <div class="control-with-help">
@@ -52,21 +68,21 @@
                   id="refreshButton"
                   class="ghost-button"
                   type="button"
-                  title="Actualizar estado de Ollama, hardware, modelos y sesiones"
+                  title="Refresh Ollama status, hardware, models and sessions"
                 >
-                  Actualizar datos
+                  Refresh data
                 </button>
                 <button
                   class="help-toggle"
                   type="button"
                   data-help-toggle="homeRefreshHelp"
                   aria-expanded="false"
-                  aria-label="Explicar actualizar datos"
-                  title="Ver explicación"
+                  aria-label="Explain refresh data"
+                  title="View explanation"
                 ></button>
               </div>
               <p id="homeRefreshHelp" class="control-help-text" hidden>
-                Recarga modelos, sesiones, hardware y estado local de Ollama.
+                Reloads models, sessions, hardware and Ollama's local status.
               </p>
             </div>
           </div>
@@ -76,44 +92,44 @@
           <section id="systemPanel" class="panel system-panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Tu equipo</p>
-                <h3>Capacidad local y modelos recomendados</h3>
+                <p class="eyebrow">Your machine</p>
+                <h3>Local capacity and recommended models</h3>
               </div>
-              <p id="systemSummary" class="panel-note">Escaneando hardware...</p>
+              <p id="systemSummary" class="panel-note">Scanning hardware...</p>
             </div>
 
             <section class="system-section hardware-section">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">Comprobación del ordenador</p>
-                  <h4>Memoria, disco y modo local</h4>
+                  <p class="eyebrow">Computer check</p>
+                  <h4>Memory, disk and local mode</h4>
                 </div>
               </div>
 
               <div class="system-grid">
                 <article class="metric-card">
-                  <span>RAM disponible</span>
+                  <span>Available RAM</span>
                   <strong id="ramValue">--</strong>
                   <div class="meter"><i id="ramBar"></i></div>
                   <small id="ramMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Disco libre</span>
+                  <span>Free disk</span>
                   <strong id="diskValue">--</strong>
                   <div class="meter"><i id="diskBar"></i></div>
                   <small id="diskMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Presupuesto IA</span>
+                  <span>AI budget</span>
                   <strong id="budgetValue">--</strong>
                   <div class="meter"><i id="budgetBar"></i></div>
                   <small id="budgetMeta">--</small>
                 </article>
 
                 <article class="metric-card">
-                  <span>Modo de inferencia</span>
+                  <span>Inference mode</span>
                   <strong id="modeValue">--</strong>
                   <small id="modeMeta">--</small>
                 </article>
@@ -123,8 +139,8 @@
             <section class="system-section recommendation-section">
               <div class="section-heading">
                 <div>
-                  <p class="eyebrow">Modelos recomendados</p>
-                  <h4>Opciones que encajan mejor en este equipo</h4>
+                  <p class="eyebrow">Recommended models</p>
+                  <h4>Options that fit this machine best</h4>
                 </div>
               </div>
               <div id="recommendationsStrip" class="recommendation-strip"></div>
@@ -135,10 +151,10 @@
             <article id="modelsPanel" class="panel models-panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Ollama + catálogo</p>
-                  <h3>Modelos</h3>
+                  <p class="eyebrow">Ollama + catalog</p>
+                  <h3>Models</h3>
                 </div>
-                <input id="modelSearch" type="search" placeholder="Filtrar modelo..." />
+                <input id="modelSearch" type="search" placeholder="Filter model..." />
               </div>
               <div id="modelsList" class="model-list"></div>
             </article>
@@ -146,102 +162,191 @@
             <article id="sessionsPanel" class="panel sessions-panel">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">Historial local</p>
-                  <h3>Sesiones</h3>
+                  <p class="eyebrow">Local history</p>
+                  <h3>Sessions</h3>
                 </div>
               </div>
               <div id="sessionsList" class="sessions-list"></div>
             </article>
           </section>
+
+        </section>
+
+        <section id="projectsView" class="view" hidden>
+          <section class="projects-page">
+            <div class="projects-page-heading">
+              <div>
+                <p class="eyebrow">Independent knowledge spaces</p>
+                <h2>My projects</h2>
+                <p>Organize sources and conversations by subject, course or recurring task.</p>
+              </div>
+              <button id="showProjectCreate" class="primary-action" type="button">
+                <span aria-hidden="true">＋</span> New project
+              </button>
+            </div>
+
+            <form id="projectCreateForm" class="project-create-form project-create-card" hidden>
+              <div>
+                <label for="projectNameInput">Project name</label>
+                <input id="projectNameInput" maxlength="100" placeholder="For example: Machine learning" />
+              </div>
+              <div class="project-create-actions">
+                <button id="cancelProjectCreate" class="ghost-button" type="button">Cancel</button>
+                <button type="submit">Create project</button>
+              </div>
+            </form>
+
+            <div id="projectsList" class="projects-list projects-library"></div>
+          </section>
+        </section>
+
+        <section id="projectDetailView" class="view" hidden>
+          <section class="project-detail-page">
+            <div class="project-detail-heading">
+              <button id="backToProjects" class="back-link" type="button">
+                <span aria-hidden="true">←</span> My projects
+              </button>
+              <div class="project-title-row">
+                <div class="project-folder-mark" aria-hidden="true">▱</div>
+                <div>
+                  <p class="eyebrow">Active project</p>
+                  <h2 id="projectDetailName">Project</h2>
+                  <p id="projectDetailMeta">0 sources · 0 conversations</p>
+                </div>
+                <button id="newProjectChat" class="primary-action" type="button">
+                  <span aria-hidden="true">＋</span> New chat
+                </button>
+              </div>
+            </div>
+
+            <section class="project-detail-section">
+              <div class="project-section-heading">
+                <div>
+                  <p class="eyebrow">Reference material</p>
+                  <h3>Project sources</h3>
+                  <p>These documents are used as reference in every chat inside this project.</p>
+                </div>
+                <label class="source-add-button" for="projectDetailSourceInput" title="Add project sources">
+                  <span aria-hidden="true">＋</span>
+                  <span>Add sources</span>
+                </label>
+                <input
+                  id="projectDetailSourceInput"
+                  class="sr-only"
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.text,.md,.rst,.json,.xml,.html,.py,.js,.ts,.css,.yml,.yaml,.toml,.ini,.log,.rtf"
+                />
+              </div>
+              <div id="projectDetailSources" class="project-detail-sources"></div>
+            </section>
+
+            <section class="project-detail-section">
+              <div class="project-section-heading">
+                <div>
+                  <p class="eyebrow">Project history</p>
+                  <h3>Conversations</h3>
+                  <p>Continue any previous chat without leaving this project's context.</p>
+                </div>
+              </div>
+              <div id="projectChatsList" class="project-chats-list"></div>
+            </section>
+          </section>
         </section>
 
         <section id="chatView" class="view" hidden>
-          <section class="panel chat-tools">
-            <div class="chat-tools-heading">
-              <p class="eyebrow">Chat local</p>
-              <h3>Selecciona un modelo y conversa con Florentino</h3>
-            </div>
-            <div class="chat-controls">
-              <div class="model-picker">
-                <label for="modelSelect">Modelo</label>
-                <select id="modelSelect"></select>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <label class="toggle technical-toggle" title="Permite herramientas con confirmación automática">
-                    <input id="technicalMode" type="checkbox" />
-                    <span id="technicalModeLabel">Modo técnico</span>
-                  </label>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="technicalHelp"
-                    aria-expanded="false"
-                    aria-label="Explicar modo tecnico"
-                    title="Ver explicación"
-                  ></button>
-                </div>
-                <p id="technicalHelp" class="control-help-text" hidden>
-                  Activa herramientas avanzadas y confirmaciones automáticas para tareas técnicas.
-                </p>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <button id="newChat" class="ghost-button" type="button">Nuevo chat</button>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="newChatHelp"
-                    aria-expanded="false"
-                    aria-label="Explicar nuevo chat"
-                    title="Ver explicación"
-                  ></button>
-                </div>
-                <p id="newChatHelp" class="control-help-text" hidden>
-                  Empieza una conversación limpia sin mezclarla con la sesión actual.
-                </p>
-              </div>
-              <div class="control-with-help">
-                <div class="control-main-row">
-                  <button
-                    id="chatRefreshButton"
-                    class="ghost-button"
-                    type="button"
-                    title="Actualizar estado de Ollama, hardware, modelos y sesiones"
-                  >
-                    Actualizar datos
-                  </button>
-                  <button
-                    class="help-toggle"
-                    type="button"
-                    data-help-toggle="refreshHelp"
-                    aria-expanded="false"
-                    aria-label="Explicar actualizar datos"
-                    title="Ver explicación"
-                  ></button>
-                </div>
-                <p id="refreshHelp" class="control-help-text" hidden>
-                  Recarga modelos, sesiones, hardware y estado local de Ollama.
-                </p>
-              </div>
-            </div>
-            <button
-              id="tokenCounter"
-              class="token-counter"
-              type="button"
-              title="Ver como se calculan los tokens"
-            >
-              <span class="token-counter-label">Tokens</span>
-              <strong id="tokenTurnValue">Turno 0</strong>
-              <span id="tokenSessionValue">Conversacion 0</span>
-              <span class="token-arrow" aria-hidden="true">›</span>
-            </button>
-          </section>
-
           <section class="chat-panel">
+            <div class="chat-topbar">
+            <div class="chat-topbar-main">
+              <div class="project-picker">
+                <select id="projectSelect" aria-label="Knowledge project">
+                  <option value="">Outside projects</option>
+                </select>
+              </div>
+              <div class="model-picker">
+                <select id="modelSelect" aria-label="Model"></select>
+              </div>
+              <button
+                id="tokenCounter"
+                class="token-counter"
+                type="button"
+                title="See how tokens are counted"
+              >
+                <span class="token-counter-label">Tokens</span>
+                <strong id="tokenTurnValue">Turn 0</strong>
+                <span id="tokenSessionValue">Conversation 0</span>
+                <span class="token-arrow" aria-hidden="true">›</span>
+              </button>
+            </div>
+            <div class="chat-topbar-actions">
+              <button
+                id="newChat"
+                class="strip-button"
+                type="button"
+                title="Start a clean conversation without mixing it with the current session"
+              >
+                New
+              </button>
+              <button
+                id="chatRefreshButton"
+                class="strip-button"
+                type="button"
+                title="Refresh Ollama status, hardware, models and sessions"
+              >
+                Refresh
+              </button>
+              <button
+                id="toolsDrawerToggle"
+                class="strip-button strip-icon"
+                type="button"
+                aria-expanded="false"
+                aria-controls="toolsPanel"
+                title="Tools and integrations"
+              >
+                <span aria-hidden="true">🛠</span>
+              </button>
+            </div>
+            </div>
+            <section id="projectContextBar" class="project-context-bar" hidden>
+              <div>
+                <strong id="projectContextName">Project</strong>
+                <span id="projectContextMeta">0 sources</span>
+              </div>
+              <div class="project-context-actions">
+                <label class="project-source-button" for="projectSourceInput">Add sources</label>
+                <input
+                  id="projectSourceInput"
+                  class="sr-only"
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.pptx,.xlsx,.csv,.tsv,.txt,.text,.md,.rst,.json,.xml,.html,.py,.js,.ts,.css,.yml,.yaml,.toml,.ini,.log,.rtf"
+                />
+                <button id="toggleProjectSources" class="strip-button" type="button">View sources</button>
+              </div>
+              <div id="projectSourcesList" class="project-sources-list" hidden></div>
+            </section>
             <div id="messages" class="messages" aria-live="polite"></div>
-            <div class="attachment-bar">
-              <label class="file-button" for="fileInput">+ Adjuntar archivo</label>
+            <div class="attachment-bar composer-toolbar">
+              <details id="promptActionsMenu" class="prompt-actions-menu">
+                <summary title="Prompt suggestions" aria-label="Open prompt suggestions">
+                  <span aria-hidden="true">&#10022;</span>
+                </summary>
+                <div id="quickActions" class="quick-actions prompt-actions"></div>
+              </details>
+              <input id="agentsMode" class="sr-only" type="checkbox" />
+              <button
+                id="agentsModeButton"
+                class="toolbar-button agents-mode-button"
+                type="button"
+                aria-pressed="false"
+                title="Enable sequential subagents"
+              >
+                <span class="agents-icon" aria-hidden="true">&#9881;</span>
+                <span id="agentsModeLabel" class="agents-mode-label">Agents</span>
+              </button>
+              <label class="file-button" for="fileInput" title="Attach file" aria-label="Attach file">
+                <span aria-hidden="true">+</span>
+              </label>
               <input
                 id="fileInput"
                 class="sr-only"
@@ -252,69 +357,90 @@
               <div id="attachmentsList" class="attachments-list" aria-live="polite"></div>
             </div>
             <form id="chatForm" class="composer">
-              <textarea id="messageInput" rows="2" placeholder="Escribe una petición para el agente local..."></textarea>
-              <button id="sendButton" type="submit">Enviar</button>
+              <textarea id="messageInput" rows="2" placeholder="Type a request for the local agent..."></textarea>
+              <button id="sendButton" type="submit">Send</button>
             </form>
           </section>
 
-          <pre id="commandPreview" class="sr-only">ci2lab --model &lt;modelo&gt; chat</pre>
+          <div id="toolsBackdrop" class="tools-backdrop" hidden></div>
+          <aside id="toolsPanel" class="panel tool-panel tools-drawer" aria-hidden="true">
+            <div class="tools-drawer-head">
+              <div>
+                <p class="eyebrow">Tools</p>
+                <h3>Tools and integrations</h3>
+              </div>
+              <button
+                id="toolsDrawerClose"
+                class="strip-button strip-icon"
+                type="button"
+                aria-label="Close tools"
+                title="Close"
+              >
+                <span aria-hidden="true">&#10005;</span>
+              </button>
+            </div>
+            <p id="toolsSummary" class="panel-note">Loading tools...</p>
+            <div id="toolsList" class="tools-list"></div>
+          </aside>
+
+          <pre id="commandPreview" class="sr-only">ci2lab --model &lt;model&gt; chat</pre>
         </section>
 
         <section id="tokenInfoView" class="view" hidden>
           <section class="panel token-info-panel">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Uso de tokens</p>
-                <h3 id="tokenInfoTitle">Contador de la conversacion</h3>
+                <p class="eyebrow">Token usage</p>
+                <h3 id="tokenInfoTitle">Conversation counter</h3>
               </div>
-              <button id="backToChatFromTokens" class="ghost-button" type="button">Volver al chat</button>
+              <button id="backToChatFromTokens" class="ghost-button" type="button">Back to chat</button>
             </div>
             <div class="token-info-grid">
               <article class="metric-card">
-                <span>Entrada ultimo turno</span>
+                <span>Last turn input</span>
                 <strong id="tokenInfoInput">0</strong>
-                <small>Prompt, historial y contexto enviado al modelo.</small>
+                <small>Prompt, history and context sent to the model.</small>
               </article>
               <article class="metric-card">
-                <span>Salida ultimo turno</span>
+                <span>Last turn output</span>
                 <strong id="tokenInfoOutput">0</strong>
-                <small>Texto generado por el modelo.</small>
+                <small>Text generated by the model.</small>
               </article>
               <article class="metric-card">
-                <span>Total ultimo turno</span>
+                <span>Last turn total</span>
                 <strong id="tokenInfoTurn">0</strong>
-                <small>Entrada + salida.</small>
+                <small>Input + output.</small>
               </article>
               <article class="metric-card">
-                <span>Total conversacion</span>
+                <span>Conversation total</span>
                 <strong id="tokenInfoSession">0</strong>
-                <small>Suma acumulada de llamadas del chat actual.</small>
+                <small>Cumulative sum of calls in the current chat.</small>
               </article>
             </div>
             <section class="token-info-section">
-              <h4>Calculo</h4>
+              <h4>Calculation</h4>
               <p id="tokenInfoFormula">
-                Total = tokens de entrada + tokens de salida. Los valores vienen del proveedor local cuando Ollama los devuelve.
+                Total = input tokens + output tokens. The values come from the local provider when Ollama returns them.
               </p>
               <dl class="token-model-facts">
-                <div><dt>Modelo</dt><dd id="tokenInfoModel">--</dd></div>
-                <div><dt>Familia</dt><dd id="tokenInfoFamily">--</dd></div>
-                <div><dt>Contexto maximo</dt><dd id="tokenInfoContext">--</dd></div>
-                <div><dt>Modo de herramientas</dt><dd id="tokenInfoToolMode">--</dd></div>
+                <div><dt>Model</dt><dd id="tokenInfoModel">--</dd></div>
+                <div><dt>Family</dt><dd id="tokenInfoFamily">--</dd></div>
+                <div><dt>Max context</dt><dd id="tokenInfoContext">--</dd></div>
+                <div><dt>Tool mode</dt><dd id="tokenInfoToolMode">--</dd></div>
               </dl>
             </section>
             <section class="token-info-section">
-              <h4>Buenas practicas</h4>
+              <h4>Best practices</h4>
               <ul class="token-tips">
-                <li>Empieza un chat nuevo cuando el historial anterior ya no aporte contexto.</li>
-                <li>Resume documentos largos antes de pedir varias tareas sobre ellos.</li>
-                <li>Adjunta solo los archivos y fragmentos necesarios para la pregunta.</li>
-                <li>Evita pegar el mismo contenido varias veces en la conversacion.</li>
+                <li>Start a new chat when the previous history no longer adds context.</li>
+                <li>Summarize long documents before requesting several tasks on them.</li>
+                <li>Attach only the files and fragments needed for the question.</li>
+                <li>Avoid pasting the same content multiple times in the conversation.</li>
               </ul>
               <p class="meta">
-                Mas informacion:
+                More information:
                 <a href="https://docs.ollama.com/api/openai-compatibility" target="_blank" rel="noreferrer">Ollama OpenAI compatibility</a>
-                y
+                and
                 <a href="https://github.com/ollama/ollama/blob/main/docs/api.md" target="_blank" rel="noreferrer">Ollama API stats</a>.
               </p>
             </section>

@@ -34,7 +34,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _SETTINGS_FILENAME = "settings.json"
-_VALID_TOP_KEYS = frozenset({"allow", "deny"})
+_VALID_TOP_KEYS = frozenset({"allow", "deny", "vision_model", "vision_enabled"})
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +43,16 @@ _VALID_TOP_KEYS = frozenset({"allow", "deny"})
 
 @dataclass
 class ToolSettings:
-    """allow/deny rules already merged from all active levels."""
+    """allow/deny rules and vision settings already merged from all active levels."""
 
     allow: dict[str, list[str]] = field(default_factory=dict)
     deny: dict[str, list[str]] = field(default_factory=dict)
+
+    vision_model: str | None = None
+    """Ollama tag of the fallback vision model (None = not configured)."""
+
+    vision_enabled: bool | None = None
+    """Whether vision features are enabled (None = not configured, defaults to True)."""
 
     @classmethod
     def empty(cls) -> ToolSettings:
@@ -137,7 +143,14 @@ def _parse_single_file(data: dict[str, Any], *, source: str) -> ToolSettings:
     deny = _parse_tool_patterns(
         data.get("deny", {}), context=f"{source}.deny"
     )
-    return ToolSettings(allow=allow, deny=deny)
+    vision_model = str(data["vision_model"]) if "vision_model" in data else None
+    vision_enabled = bool(data["vision_enabled"]) if "vision_enabled" in data else None
+    return ToolSettings(
+        allow=allow,
+        deny=deny,
+        vision_model=vision_model,
+        vision_enabled=vision_enabled,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +180,24 @@ def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
     # the global value is kept
     merged_allow: dict[str, list[str]] = {**global_s.allow, **project_s.allow}
 
-    return ToolSettings(allow=merged_allow, deny=merged_deny)
+    # vision settings: project wins when set; otherwise fall back to global
+    merged_vision_model = (
+        project_s.vision_model
+        if project_s.vision_model is not None
+        else global_s.vision_model
+    )
+    merged_vision_enabled = (
+        project_s.vision_enabled
+        if project_s.vision_enabled is not None
+        else global_s.vision_enabled
+    )
+
+    return ToolSettings(
+        allow=merged_allow,
+        deny=merged_deny,
+        vision_model=merged_vision_model,
+        vision_enabled=merged_vision_enabled,
+    )
 
 
 # ---------------------------------------------------------------------------

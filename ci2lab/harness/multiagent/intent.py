@@ -147,6 +147,11 @@ class OrchestrationDecision:
 _FULL_FLOW = ["planner", "researcher", "coder", "validator", "reviewer"]
 _REVIEW_FLOW = ["planner", "researcher", "reviewer"]
 _RESEARCH_REVIEW_FLOW = ["researcher", "reviewer"]
+# Read a document AND produce output from it (e.g. "read the pdf and write the
+# answer to a file"): research reads, a coder writes, a reviewer checks. No
+# planner — a document task does not need one, and a toolless planner only
+# stalls on it.
+_RESEARCH_WRITE_FLOW = ["researcher", "coder", "reviewer"]
 
 
 # --- Dimension 3: write-permission signals --------------------------------
@@ -164,6 +169,7 @@ _GLOBAL_NO_WRITE_MARKERS = (
     "review only",
     "only review",
     "only inspect",
+    "only analyze",
     "solo revisar",
     "solo revisa",
     "solo analiza",
@@ -188,6 +194,7 @@ _GLOBAL_NO_WRITE_MARKERS = (
     "no edites archivos",
     "no modifiques archivos",
     "no cambies archivos",
+    "without changing",
 )
 
 # Scope constraints: writing is allowed, but only within a limited surface.
@@ -290,18 +297,18 @@ _DOCUMENT_SUMMARY_MARKERS = (
     "resumelo",
     "summarize document",
     "summarize the document",
+    "read pdf",
+    "read the pdf",
+    "read the document",
+    "summary of the",
 )
 
 # Asking to convert/export a document.
 _DOCUMENT_TRANSFORM_MARKERS = (
-    "convertir docx a pdf",
     "docx to pdf",
-    "docx a pdf",
-    "convertir a pdf",
-    "exportar",
+    "convert to pdf",
     "export to pdf",
     "export as pdf",
-    "guardar como pdf",
     "save as pdf",
     "convert document",
 )
@@ -318,24 +325,34 @@ _READ_ONLY_MARKERS = (
     "sin editar",
     "sin modificar",
     "solo leer",
+    "explain",
+    "analyze",
+    "analyse",
+    "what does it mean",
+    "what does",
+    "without editing",
     "read only",
     "read-only",
 )
 
-# Asking to implement/fix/modify code.
+# Asking to implement/fix/modify code, or to produce/complete something. These
+# are all write-intent verbs: a false positive only adds a coder phase, while a
+# false negative leaves the task with no way to produce output at all.
 _CODE_CHANGE_MARKERS = (
-    "implementa",
-    "implementar",
     "implement",
-    "arregla",
-    "arreglar",
-    "modifica",
-    "modificar",
-    "añade",
-    "anade",
     "fix",
+    "modify",
+    "add",
     "change",
     "edit",
+    "complete",
+    "solve",
+    "create",
+    "write",
+    "make",
+    "generate",
+    "build",
+    "develop",
 )
 
 # Markers signalling an explicit request to persist output to a file.
@@ -344,14 +361,9 @@ _WRITE_REQUEST_MARKERS = (
     ".md",
     ".csv",
     ".json",
-    "guarda",
-    "guárda",
-    "guardar",
     "save",
     "write to file",
-    "escribe en",
     "export",
-    "exporta",
 )
 
 
@@ -539,14 +551,18 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     # --- Document domain first (its own read/write semantics) --------------
     if _contains_any(text, _DOCUMENT_SUMMARY_MARKERS):
+        # Preserve clause-aware write detection (so scoped constraints do not
+        # negate a real write) while also accepting main's broader document
+        # output verbs such as "complete" and "solve".
         requires_write = explicit_write or _contains_any(text, _WRITE_REQUEST_MARKERS)
+        requires_write = requires_write or _contains_any(text, _CODE_CHANGE_MARKERS)
         reason = "Prompt asks to read/summarize a document."
         if requires_write:
-            reason += " It also asks to persist the summary to a file."
+            reason += " It also asks to produce output, so an implementer is included."
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.DOCUMENT_SUMMARY,
             requires_write=requires_write,
-            allowed_phases=list(_RESEARCH_REVIEW_FLOW),
+            allowed_phases=list(_RESEARCH_WRITE_FLOW if requires_write else _RESEARCH_REVIEW_FLOW),
             reason=reason,
             confidence="high",
         )
@@ -580,7 +596,11 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     # Read/analysis intent (no file changes) is checked before review-only so a
     # genuine "read and explain" prompt is not mislabeled as a code review.
-    if _contains_any(text, _READ_ONLY_MARKERS) and not explicit_write:
+    if (
+        _contains_any(text, _READ_ONLY_MARKERS)
+        and not explicit_write
+        and not global_no_write
+    ):
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.READ_ONLY_ANSWER,
             requires_write=False,

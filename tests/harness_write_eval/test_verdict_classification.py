@@ -1,4 +1,4 @@
-"""Clasificacion de verdicts live (sin LLM)."""
+"""Live verdict classification (without LLM)."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def test_classify_model_tool_format():
     verdict, _ = classify_live_verdict(
         case=_case("create_file_simple"),
         oracle_ok=False,
-        oracle_detail="falta archivo",
+        oracle_detail="missing file",
         answer=answer,
         tool_calls=[],
         harness_error=None,
@@ -56,7 +56,7 @@ def test_classify_harness_patch_when_tool_ok_oracle_fails():
     verdict, _ = classify_live_verdict(
         case=_case("create_file_simple"),
         oracle_ok=False,
-        oracle_detail="contenido mal",
+        oracle_detail="wrong content",
         answer="ok",
         tool_calls=[{"tool": "write_file", "ok": True, "outcome": "approved"}],
         harness_error=None,
@@ -70,8 +70,8 @@ def test_classify_outside_block_pass():
     verdict, _ = classify_live_verdict(
         case=_case("outside_workspace_block", expects_outside_block=True),
         oracle_ok=True,
-        oracle_detail="sin archivo externo",
-        answer="bloqueado",
+        oracle_detail="no external file",
+        answer="blocked",
         tool_calls=[
             {
                 "tool": "write_file",
@@ -90,7 +90,7 @@ def test_classify_outside_leak_policy_fail():
     verdict, _ = classify_live_verdict(
         case=_case("outside_workspace_block", expects_outside_block=True),
         oracle_ok=False,
-        oracle_detail="archivo externo",
+        oracle_detail="external file",
         answer="ok",
         tool_calls=[],
         harness_error=None,
@@ -118,8 +118,8 @@ def test_classify_no_tools_model_understanding():
     verdict, _ = classify_live_verdict(
         case=_case("create_file_simple"),
         oracle_ok=False,
-        oracle_detail="falta hello.txt",
-        answer="Ya lo cree.",
+        oracle_detail="missing hello.txt",
+        answer="I already created it.",
         tool_calls=[],
         harness_error=None,
         timed_out=False,

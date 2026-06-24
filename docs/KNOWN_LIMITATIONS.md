@@ -20,7 +20,7 @@
 | Per-turn multi-model routing | Not implemented |
 | Live per-model benchmark of the catalog | Static scores in `models.json` only |
 | Vector memory across sessions | Not implemented |
-| Claude-Code-style extensible hooks | Not implemented |
+| Claude-Code-style extensible hooks | Basic workspace lifecycle implemented for `before_tool`, `after_tool`, and `after_final_answer`; no UI editor or marketplace yet |
 
 ## Integrated
 
@@ -28,6 +28,7 @@
 |------|--------|
 | MCP client (stdio) | Done — `.ci2lab/mcp.json` |
 | Workspace skills | Done — `.ci2lab/skills/*/SKILL.md` |
+| Hook lifecycle | Basic — `.ci2lab/hooks.json` |
 | Project memory | Done — `CI2LAB.md`, `AGENTS.md` |
 | Local web UI | Done — `ci2lab ui` |
 | Context compaction | Done — `harness/context/` |

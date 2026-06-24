@@ -26,6 +26,7 @@ def save_session(
     model_tag: str,
     cwd: str,
     token_usage: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> Path:
     payload = {
         "id": session_id,
@@ -36,6 +37,8 @@ def save_session(
     }
     if token_usage is not None:
         payload["token_usage"] = token_usage
+    if project_id:
+        payload["project_id"] = project_id
     path = sessions_dir() / f"{session_id}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
@@ -62,19 +65,15 @@ def delete_session(session_id: str) -> bool:
 
 def is_delete_session_request(text: str) -> bool:
     normalized = text.strip().lower()
-    if normalized in {"/delete", "/delete-session", "/forget", "/borrar", "/eliminar"}:
+    if normalized in {"/delete", "/delete-session", "/forget"}:
         return True
-    delete_words = ("elimina", "eliminar", "borra", "borrar")
+    delete_words = ("delete", "remove", "erase", "forget")
     saved_words = (
-        "guardado",
-        "guardada",
-        "guardar",
-        "guardé",
-        "guarde",
-        "sesion",
-        "sesión",
-        "conversacion",
-        "conversación",
+        "saved",
+        "save",
+        "session",
+        "conversation",
+        "history",
     )
     return any(word in normalized for word in delete_words) and any(
         word in normalized for word in saved_words
@@ -106,6 +105,7 @@ def list_sessions() -> list[dict[str, str]]:
                 "model": data.get("model_tag", "?"),
                 "cwd": data.get("cwd", "?"),
                 "updated_at": data.get("updated_at", "?"),
+                "project_id": data.get("project_id"),
             })
         except (json.JSONDecodeError, OSError):
             continue

@@ -19,23 +19,28 @@ from ci2lab.harness.context.trim import estimate_tokens
 TOOL_RESULT_STUB = "[Old tool result cleared to save context — re-run the tool if needed]"
 SUMMARY_PREFIX = "[Summary of earlier conversation]"
 
-COMPACTABLE_TOOLS = frozenset({
-    "read_file",
-    "bash",
-    "grep",
-    "glob",
-    "ls",
-    "web_fetch",
-    "git_status",
-    "git_diff",
-    "write_file",
-    "edit_file",
+# Compact by default: any tool result old enough is replaced by a stub. Only a
+# small set of tools is protected, because their output is short, structural, or
+# the model is expected to act on it directly (a re-read would lose the plan).
+# Inverting the rule this way means new/rare tools (read_document, web_search,
+# tree, inspect_file, mcp__*, …) are covered automatically instead of leaking.
+NON_COMPACTABLE_TOOLS = frozenset({
+    "todo_write",
+    "todo_read",
+    "ask_user",
 })
 
 MIN_STUB_CHARS = 200
-KEEP_RECENT_TOOL_RESULTS = 4
+KEEP_RECENT_TOOL_RESULTS = 3
 KEEP_RECENT_MESSAGES = 6
-COMPACT_THRESHOLD_PCT = 0.8
+# Two-stage gate: the cheap, near-lossless micro-compact fires early so context
+# stays lean throughout a long task; the expensive LLM summary stays
+# conservative so we don't burn a model call (or, with a small context model,
+# fire one almost immediately) until trimming is genuinely needed.
+MICRO_COMPACT_THRESHOLD_PCT = 0.65
+SUMMARY_COMPACT_THRESHOLD_PCT = 0.8
+# Back-compat default for should_compact callers that don't specify a stage.
+COMPACT_THRESHOLD_PCT = MICRO_COMPACT_THRESHOLD_PCT
 MAX_SUMMARY_FAILURES = 3
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -89,11 +94,89 @@ def micro_compact(
         if len(content) <= MIN_STUB_CHARS or content == TOOL_RESULT_STUB:
             continue
         tool_name = names.get(str(msg.get("tool_call_id")), "")
-        if tool_name and tool_name not in COMPACTABLE_TOOLS:
+        if tool_name in NON_COMPACTABLE_TOOLS:
             continue
         result[i] = {**msg, "content": TOOL_RESULT_STUB}
         stubbed += 1
     return result, stubbed
+
+
+# Path-keyed readers: an older result for the same path is stale once a newer
+# read of that path appears (e.g. the file was re-read after an edit), so the
+# older one is safe to drop. Search/listing tools are excluded — their key is
+# the query, not a single path, and dropping them is riskier.
+SUPERSEDABLE_READ_TOOLS = frozenset({
+    "read_file",
+    "read_document",
+    "inspect_file",
+    "file_info",
+})
+SUPERSEDED_READ_STUB = (
+    "[Earlier read of {path} cleared — a newer read of it appears later in the "
+    "conversation. Re-read it if you need this older version.]"
+)
+
+
+def _tool_meta_by_call_id(
+    messages: list[dict[str, Any]],
+) -> dict[str, tuple[str, dict[str, Any]]]:
+    """Map each tool_call_id to its (tool_name, parsed-arguments)."""
+    meta: dict[str, tuple[str, dict[str, Any]]] = {}
+    for msg in messages:
+        for tc in msg.get("tool_calls") or []:
+            call_id = tc.get("id")
+            fn = tc.get("function") or {}
+            name = fn.get("name")
+            if not call_id or not name:
+                continue
+            raw_args = fn.get("arguments")
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                try:
+                    parsed = json.loads(raw_args) if raw_args else {}
+                    args = parsed if isinstance(parsed, dict) else {}
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+            meta[call_id] = (name, args)
+    return meta
+
+
+def prune_superseded_reads(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Stub every read of a path except the most recent one for that path.
+
+    Runs regardless of context pressure: a stale duplicate read is pure waste,
+    so clearing it keeps long, edit-heavy tasks lean without an LLM call.
+    """
+    meta = _tool_meta_by_call_id(messages)
+    keyed: list[tuple[int, str]] = []
+    for i, msg in enumerate(messages):
+        if msg.get("role") != "tool":
+            continue
+        nm = meta.get(str(msg.get("tool_call_id")))
+        if not nm:
+            continue
+        name, args = nm
+        path = args.get("path")
+        if name in SUPERSEDABLE_READ_TOOLS and path:
+            keyed.append((i, f"{name}:{path}"))
+
+    last_index_for_key: dict[str, int] = {key: i for i, key in keyed}
+    result = list(messages)
+    pruned = 0
+    for i, key in keyed:
+        if i == last_index_for_key[key]:
+            continue  # keep the freshest read of this path
+        msg = result[i]
+        content = msg.get("content") or ""
+        if len(content) <= MIN_STUB_CHARS or content == TOOL_RESULT_STUB:
+            continue
+        path = key.split(":", 1)[1]
+        result[i] = {**msg, "content": SUPERSEDED_READ_STUB.format(path=path)}
+        pruned += 1
+    return result, pruned
 
 
 def _render_transcript(messages: list[dict[str, Any]], max_chars: int) -> str:
@@ -189,14 +272,30 @@ def manage_context(
 ) -> tuple[list[dict[str, Any]], int, list[str]]:
     events: list[str] = []
 
-    if not should_compact(history, context_length):
+    # Always drop stale duplicate reads first — cheap, lossless, and it keeps a
+    # long edit-heavy task from carrying every prior version of a file. Keep the
+    # original list identity when nothing was pruned (callers may rely on it).
+    pruned_history, superseded = prune_superseded_reads(history)
+    if superseded:
+        history = pruned_history
+        events.append(
+            f"Context: cleared {superseded} superseded read(s) of re-read file(s)."
+        )
+
+    if not should_compact(
+        history, context_length, threshold_pct=MICRO_COMPACT_THRESHOLD_PCT
+    ):
         return history, summary_failures, events
 
     history, stubbed = micro_compact(history)
     if stubbed:
         events.append(f"Context: micro-compact cleared {stubbed} old tool result(s).")
 
-    if not should_compact(history, context_length):
+    # Only reach for the expensive LLM summary once the cheaper pass leaves us
+    # near the real ceiling — not at the proactive micro-compact threshold.
+    if not should_compact(
+        history, context_length, threshold_pct=SUMMARY_COMPACT_THRESHOLD_PCT
+    ):
         return history, summary_failures, events
 
     if summary_failures >= MAX_SUMMARY_FAILURES:

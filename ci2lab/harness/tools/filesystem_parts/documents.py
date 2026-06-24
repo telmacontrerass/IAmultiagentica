@@ -155,6 +155,45 @@ def extract_pdf_text(path: Path) -> str:
     return "\n".join(chunks).strip()
 
 
+def pdf_has_extractable_text(
+    path: Path | str,
+    *,
+    min_chars: int = 40,
+    max_pages: int = 5,
+) -> bool:
+    """Return True when the PDF has enough embedded text for ``read_document``."""
+    path = Path(path)
+
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return False
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+
+    try:
+        reader = PdfReader(str(path))
+    except Exception:  # noqa: BLE001
+        return False
+
+    total_chars = 0
+    for index in range(min(len(reader.pages), max_pages)):
+        try:
+            page_text = (reader.pages[index].extract_text() or "").strip()
+        except Exception:  # noqa: BLE001
+            continue
+        total_chars += len(page_text)
+        if total_chars >= min_chars:
+            return True
+    return False
+
+
+def pdf_needs_vision(path: Path | str) -> bool:
+    """Return True for scanned/image-only PDFs that need a vision model."""
+    path = Path(path)
+    return path.suffix.lower() == ".pdf" and not pdf_has_extractable_text(path)
+
+
 def extract_docx_text(path: Path) -> str:
     try:
         from docx import Document

@@ -13,7 +13,15 @@ SIGNALS: dict[IntentCategory, list[str]] = {
     "rag": ["documentos", "pdf", "buscar", "rag", "base de datos", "archivos"],
     "reasoning": ["razonar", "matematicas", "plan", "analizar", "resolver", "logica"],
     "translation": ["traducir", "translate", "idioma", "ingles", "espanol"],
-    "vision": ["imagen", "foto", "vision", "captura"],
+    "vision": [
+        # Spanish
+        "imagen", "foto", "vision", "captura", "analizar imagen",
+        "describe imagen", "ver imagen", "fotografía", "pantalla",
+        # English
+        "image", "photo", "picture", "screenshot", "analyze image",
+        "describe image", "vision model", "look at", "what is in",
+        "identify", "detect objects", "ocr", "read image",
+    ],
     "voice": ["audio", "voz", "transcribir", "microfono"],
 }
 

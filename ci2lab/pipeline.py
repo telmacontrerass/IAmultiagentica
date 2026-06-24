@@ -13,8 +13,34 @@ from typing import Callable
 from ci2lab.config import DEFAULT_MODEL, Ci2LabConfig
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.hardware import scan_hardware
+from ci2lab.harness.security_profiles import SecurityConfig
 from ci2lab.harness.types import AgentConfig
 from ci2lab.router.selection import build_model_selection
+
+# A single tool result may use up to this fraction of the model's context
+# window; the rest is left for the system prompt, prior turns and the model's
+# own output. Sized in characters (~4 per token).
+_TOOL_OUTPUT_CONTEXT_FRACTION = 0.5
+_CHARS_PER_TOKEN = 4
+_TOOL_OUTPUT_FLOOR = 8_000
+_TOOL_OUTPUT_CAP = 200_000
+
+
+def resolve_tool_output_budget(selection: ModelSelection, sec: SecurityConfig) -> int:
+    """Per-call tool-output budget, scaled to the model's context window.
+
+    The fixed 10k-char default was sized for a ~4k-token window. Now that the
+    real window is loaded (Ollama `num_ctx`), that default needlessly offloaded
+    normal documents to disk as a head+tail preview — hiding the middle, so the
+    model could not actually read what it was asked to (it wrote placeholders).
+    Scaling to the window keeps an ordinary document inline. An explicit
+    `security.limits.max_tool_output_chars` still wins.
+    """
+    if sec.max_tool_output_chars is not None:
+        return sec.max_tool_output_chars
+    context_length = getattr(selection, "context_length", 0) or 0
+    scaled = int(context_length * _CHARS_PER_TOKEN * _TOOL_OUTPUT_CONTEXT_FRACTION)
+    return max(_TOOL_OUTPUT_FLOOR, min(scaled, _TOOL_OUTPUT_CAP))
 
 
 def prepare_session(
@@ -66,6 +92,10 @@ def build_agent_config(
     stream: bool | None = None,
     auto_confirm: bool | None = None,
     confirm_callback: Callable[[str, str], bool] | None = None,
+    image_paths: list[str] | None = None,
+    tool_settings=None,
+    vision_model: str = "",
+    vision_enabled: bool = True,
 ) -> AgentConfig:
     """
     Effective AgentConfig for a single run (CLI, UI or scripts).
@@ -94,12 +124,17 @@ def build_agent_config(
         runs_dir=runtime.runs_dir,
         write_tools_enabled=runtime.write_tools_enabled,
         require_diff_preview=runtime.require_diff_preview,
+        verify_completion=runtime.verify_completion,
         confirm_callback=confirm_callback,
         security_engine=sec.engine,
         security_profile=sec.profile,
         opencode_permissions=opencode_perms,
         bash_timeout_seconds=limits.bash_timeout_seconds,
-        max_tool_output_chars=limits.max_tool_output_chars,
+        max_tool_output_chars=resolve_tool_output_budget(selection, sec),
+        tool_settings=tool_settings,
+        image_paths=image_paths or [],
+        vision_model=vision_model,
+        vision_enabled=vision_enabled,
     )
     agent.config_snapshot = build_config_snapshot(
         runtime_fields={

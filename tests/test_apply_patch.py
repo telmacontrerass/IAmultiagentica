@@ -6,53 +6,53 @@ from ci2lab.harness.types import AgentConfig, ToolCall
 
 
 SAMPLE_PATCH = """\
---- a/nota.txt
-+++ b/nota.txt
+--- a/note.txt
++++ b/note.txt
 @@ -1,2 +1,2 @@
- hola
--mundo
+ hello
+-world
 +ci2lab
 """
 
 
 def test_apply_patch_replaces_line(tmp_path: Path):
-    target = tmp_path / "nota.txt"
-    target.write_text("hola\nmundo\n", encoding="utf-8")
+    target = tmp_path / "note.txt"
+    target.write_text("hello\nworld\n", encoding="utf-8")
 
     result = apply_patch(str(tmp_path), SAMPLE_PATCH)
 
-    assert result.startswith("Parche aplicado")
-    assert target.read_text(encoding="utf-8") == "hola\nci2lab\n"
+    assert result.startswith("Patch applied")
+    assert target.read_text(encoding="utf-8") == "hello\nci2lab\n"
 
 
 def test_apply_patch_context_mismatch(tmp_path: Path):
-    target = tmp_path / "nota.txt"
-    target.write_text("hola\notro\n", encoding="utf-8")
+    target = tmp_path / "note.txt"
+    target.write_text("hello\nother\n", encoding="utf-8")
 
     result = apply_patch(str(tmp_path), SAMPLE_PATCH)
 
     assert result.startswith("Error:")
-    assert "patch context not found" in result or "mundo" in result
+    assert "patch context not found" in result or "world" in result
 
 
 def test_plan_patch_creates_new_file(tmp_path: Path):
     patch = """\
 --- /dev/null
-+++ b/nuevo.txt
++++ b/new.txt
 @@ -0,0 +1,2 @@
-+uno
-+dos
++one
++two
 """
     plan, error = plan_patch(str(tmp_path), patch)
 
     assert error is None
     assert plan is not None
-    assert plan.files["nuevo.txt"] in {"uno\ndos", "uno\ndos\n"}
+    assert plan.files["new.txt"] in {"one\ntwo", "one\ntwo\n"}
 
 
 def test_execute_apply_patch_with_auto_confirm(tmp_path: Path):
-    target = tmp_path / "nota.txt"
-    target.write_text("hola\nmundo\n", encoding="utf-8")
+    target = tmp_path / "note.txt"
+    target.write_text("hello\nworld\n", encoding="utf-8")
     config = AgentConfig(cwd=str(tmp_path), auto_confirm=True, require_diff_preview=False)
 
     result = execute_tool(
@@ -61,27 +61,27 @@ def test_execute_apply_patch_with_auto_confirm(tmp_path: Path):
     )
 
     assert not result.is_error
-    assert target.read_text(encoding="utf-8") == "hola\nci2lab\n"
+    assert target.read_text(encoding="utf-8") == "hello\nci2lab\n"
 
 
 def test_apply_patch_finds_hunk_when_header_line_is_wrong(tmp_path: Path):
-    target = tmp_path / "Pruebas.py"
+    target = tmp_path / "Tests.py"
     target.write_text(
-        "# archivo de prueba\nlinea dos\nlinea tres\nlinea cuatro\n",
+        "# test file\nline two\nline three\nline four\n",
         encoding="utf-8",
     )
     patch = """\
---- a/Pruebas.py
-+++ b/Pruebas.py
+--- a/Tests.py
++++ b/Tests.py
 @@ -2,1 +2,1 @@
--linea tres
-+Linea cambiada otra vez
+-line three
++Line changed again
 """
     result = apply_patch(str(tmp_path), patch)
 
     assert not result.startswith("Error:")
     assert target.read_text(encoding="utf-8") == (
-        "# archivo de prueba\nlinea dos\nLinea cambiada otra vez\nlinea cuatro\n"
+        "# test file\nline two\nLine changed again\nline four\n"
     )
 
 

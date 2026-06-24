@@ -66,6 +66,41 @@ def test_prompt_empty_input_aborts():
     assert choice == ApprovalChoice.ABORT
 
 
+def test_prompt_suspends_thinking_spinner_during_input():
+    """The thinking spinner must be paused while the prompt reads input, so it
+    cannot repaint over the prompt and block the user from answering."""
+    from ci2lab.console import active_progress
+
+    events: list[str] = []
+
+    class _FakeStatus:
+        def start(self) -> None:
+            events.append("start")
+
+        def stop(self) -> None:
+            events.append("stop")
+
+    fake = _FakeStatus()
+    active_progress.set(fake)
+    try:
+        def _input(_: str) -> str:
+            # The spinner must already be stopped by the time we read input.
+            events.append("input")
+            return "a"
+
+        choice = prompt_opencode_approval(
+            OpenCodeApprovalDecision(tool_name="bash", target_summary="x"),
+            input_func=_input,
+            output_func=lambda _: None,
+        )
+    finally:
+        active_progress.clear(fake)
+
+    assert choice == ApprovalChoice.ALLOW_ONCE
+    # Stopped before reading input, resumed afterwards.
+    assert events == ["stop", "input", "start"]
+
+
 def test_confirm_auto_confirm_skips_prompt(workspace: Path):
     rules = OpenCodePermissionConfig(rules={"bash": {"*": "ask"}})
     args = {"command": "echo safe"}

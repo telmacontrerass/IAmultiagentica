@@ -8,6 +8,9 @@ from ci2lab.cli.menu import (
     open_session_json,
     _parse_command_line,
     _run_doctor_with_ollama_install_option,
+    _add_project_source_from_path,
+    _projects_menu,
+    _run_project_chat,
     _visible_option_window,
     run_start_menu,
     select_from_menu,
@@ -18,20 +21,6 @@ from ci2lab.contracts import HardwareProfile, ModelSpec
 
 def test_build_model_choices_marks_installed_and_missing():
     models = [
-        ModelSpec(
-            id="small",
-            display_name="Small Model",
-            family="test",
-            categories=["general"],
-            ollama_tag="small:1b",
-            vram_min_gb=1,
-            ram_inference_gb=2,
-            supports_tools=True,
-            context_length=4096,
-            tool_mode="native",
-            tier="edge",
-            benchmark_score={"general": 0.5},
-        ),
         ModelSpec(
             id="large",
             display_name="Large Model",
@@ -45,6 +34,20 @@ def test_build_model_choices_marks_installed_and_missing():
             tool_mode="native",
             tier="enterprise",
             benchmark_score={"general": 0.8},
+        ),
+        ModelSpec(
+            id="small",
+            display_name="Small Model",
+            family="test",
+            categories=["general"],
+            ollama_tag="small:1b",
+            vram_min_gb=1,
+            ram_inference_gb=2,
+            supports_tools=True,
+            context_length=4096,
+            tool_mode="native",
+            tier="edge",
+            benchmark_score={"general": 0.5},
         ),
     ]
     profile = HardwareProfile(
@@ -72,6 +75,7 @@ def test_build_model_choices_marks_installed_and_missing():
 
     assert error is None
     assert choices[0].installed is True
+    assert choices[0].ollama_tag == "small:1b"
     assert "(installed" in choices[0].label
     assert choices[1].installed is False
     assert "(not installed" in choices[1].label
@@ -96,6 +100,123 @@ def test_menu_chat_uses_selected_model_and_existing_runner():
 
     assert result == 0
     assert calls == [["--model", "small", "chat"]]
+
+
+def test_main_menu_exposes_my_projects():
+    from ci2lab.cli.menu import MAIN_OPTIONS
+
+    project_option = next(option for option in MAIN_OPTIONS if option.value == "projects")
+    assert project_option.label == "My projects"
+
+
+def test_projects_menu_opens_selected_project(monkeypatch):
+    project = {
+        "id": "prj_123456789abc",
+        "name": "Physics",
+        "source_count": 2,
+        "source_size_label": "1.2 MB",
+    }
+    monkeypatch.setattr("ci2lab.ui.projects.list_projects", lambda: [project])
+    opened = []
+    with (
+        patch("ci2lab.cli.menu.select_from_menu", side_effect=[project["id"], "back"]),
+        patch(
+            "ci2lab.cli.menu._project_detail_menu",
+            side_effect=lambda runtime, project_id: opened.append(project_id) or 0,
+        ),
+    ):
+        assert _projects_menu(Ci2LabConfig()) == 0
+
+    assert opened == [project["id"]]
+
+
+def test_projects_menu_can_create_project(monkeypatch):
+    created = {
+        "ok": True,
+        "project": {
+            "id": "prj_123456789abc",
+            "name": "Machine Learning",
+        },
+    }
+    monkeypatch.setattr("ci2lab.ui.projects.list_projects", lambda: [])
+    monkeypatch.setattr("ci2lab.ui.projects.create_project", lambda name: created)
+    opened = []
+    with (
+        patch("ci2lab.cli.menu.select_from_menu", side_effect=["create", "back"]),
+        patch("ci2lab.cli.menu._ask_text", return_value="Machine Learning"),
+        patch(
+            "ci2lab.cli.menu._project_detail_menu",
+            side_effect=lambda runtime, project_id: opened.append(project_id) or 0,
+        ),
+    ):
+        assert _projects_menu(Ci2LabConfig()) == 0
+
+    assert opened == ["prj_123456789abc"]
+
+
+def test_add_project_source_reads_selected_local_file(tmp_path, monkeypatch):
+    source = tmp_path / "notes.txt"
+    source.write_text("course notes", encoding="utf-8")
+    captured = {}
+
+    def fake_add(project_id, payload):
+        captured["project_id"] = project_id
+        captured["payload"] = payload
+        return {
+            "ok": True,
+            "source": {"name": "notes.txt", "size_label": "12 B"},
+        }
+
+    monkeypatch.setattr("ci2lab.ui.projects.add_project_source", fake_add)
+    with patch("ci2lab.cli.menu._ask_text", return_value=str(source)):
+        assert _add_project_source_from_path("prj_123456789abc") is True
+
+    assert captured["project_id"] == "prj_123456789abc"
+    assert captured["payload"]["name"] == "notes.txt"
+    assert captured["payload"]["content_base64"]
+
+
+def test_run_project_chat_uses_project_workspace_and_id(monkeypatch):
+    selected = ModelChoice(
+        label="Small Model",
+        value="small",
+        catalog_id="small",
+        ollama_tag="small:1b",
+        installed=True,
+    )
+    project = {
+        "id": "prj_123456789abc",
+        "name": "Physics",
+        "source_count": 3,
+        "workspace": "/tmp/physics-project",
+    }
+    selection = type("Selection", (), {"ollama_tag": "small:1b"})()
+    config = type("Config", (), {"project_id": None})()
+    captured = {}
+
+    monkeypatch.setattr("ci2lab.ui.projects.get_project", lambda project_id: project)
+    with (
+        patch("ci2lab.cli.menu.select_model", return_value=selected),
+        patch("ci2lab.pipeline.prepare_session", return_value=(None, selection)),
+        patch("ci2lab.pipeline.build_agent_config", return_value=config) as build,
+        patch(
+            "ci2lab.harness.repl.run_repl",
+            side_effect=lambda sel, cfg, **kwargs: captured.update(
+                {"selection": sel, "config": cfg, **kwargs}
+            ),
+        ),
+    ):
+        assert _run_project_chat(
+            Ci2LabConfig(),
+            project["id"],
+            session_id="session-1",
+            multi_agent=True,
+        ) == 0
+
+    assert build.call_args.kwargs["cwd"] == project["workspace"]
+    assert config.project_id == project["id"]
+    assert captured["session_id"] == "session-1"
+    assert captured["multi_agent"] is True
 
 
 def test_menu_command_mode_runs_manual_args():

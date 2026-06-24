@@ -28,27 +28,27 @@ from ci2lab.ui.server_parts.uploads import DOCUMENT_UPLOAD_SUFFIXES, SUPPORTED_U
 
 # NOTE: "id", "tool" and "group" are wire/identifier values. "group" shares the
 # vocabulary returned by tool_group() below, which the frontend (app.js groupNames)
-# matches verbatim, so the group labels are intentionally left in Spanish.
+# matches verbatim, so the group labels must stay consistent across both files.
 UI_ACTIONS: list[dict[str, str]] = [
     {
         "id": "read_document",
         "label": "Summarize attachment",
         "tool": "read_document",
-        "group": "Documentos",
+        "group": "Documents",
         "prompt": "Read and summarize the attached files. Extract key ideas and actionable points.",
     },
     {
         "id": "workspace_tree",
         "label": "Project map",
         "tool": "tree",
-        "group": "Explorar",
+        "group": "Explore",
         "prompt": "Make a brief map of the project using tree, file_info and read_file only when needed.",
     },
     {
         "id": "search_workspace",
         "label": "Search in files",
         "tool": "grep",
-        "group": "Explorar",
+        "group": "Explore",
         "prompt": "Search the workspace for the text or concept I give you and tell me which files it appears in.",
     },
     {
@@ -69,7 +69,7 @@ UI_ACTIONS: list[dict[str, str]] = [
         "id": "todo_plan",
         "label": "Task plan",
         "tool": "todo_write",
-        "group": "Planificación",
+        "group": "Planning",
         "prompt": "Create or update a task list for this work using todo_write.",
     },
     {
@@ -261,15 +261,15 @@ def tools_payload(state: Any) -> dict[str, Any]:
 
 def tool_group(name: str) -> str:
     # Return values are wire-coupled: app.js (groupNames) matches these labels
-    # verbatim to group the tools list, so they are left untranslated.
+    # verbatim to group the tools list, so keep both sides in sync.
     if name in {"read_document", "read_file", "ls", "grep", "glob", "file_info", "tree", "inspect_file"}:
-        return "Explorar"
+        return "Explore"
     if name in {"write_file", "edit_file", "notebook_edit"}:
-        return "Editar"
+        return "Edit"
     if name in {"git_status", "git_diff"}:
         return "Git"
     if name in {"todo_write", "ask_user"}:
-        return "Planificación"
+        return "Planning"
     if name == "web_fetch":
         return "Web"
     if name == "skill":
@@ -277,15 +277,15 @@ def tool_group(name: str) -> str:
     if name == "mcp_call" or name.startswith("mcp__"):
         return "MCP"
     if name == "bash":
-        return "Sistema"
-    return "Otras"
+        return "System"
+    return "Other"
 
 
 def tool_web_status(name: str) -> str:
     if name == "ask_user":
         return "Terminal only; on the web it asks directly in the chat."
     if name in CONFIRM_TOOLS:
-        return "Requires technical mode to auto-approve on the web."
+        return "Available from the chat with the same tool access as the CLI."
     return "Available from the chat."
 
 

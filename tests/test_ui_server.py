@@ -1,4 +1,5 @@
 import base64
+from pathlib import Path
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts.types import ModelSelection
@@ -24,12 +25,50 @@ from ci2lab.ui.server import (
     _tools_payload,
     _upload_file,
 )
+from ci2lab.ui import projects as ui_projects
 
 
 def test_content_type_for_static_assets():
     assert _content_type("index.html").startswith("text/html")
     assert _content_type("styles.css").startswith("text/css")
     assert _content_type("app.js").startswith("application/javascript")
+
+
+def test_web_chat_progress_messages_are_in_english():
+    app_js = (
+        Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static" / "app.js"
+    ).read_text(encoding="utf-8")
+    expected = (
+        "Deciding the next step...",
+        "Reading the attached files...",
+        "Extracting information from the PDF...",
+        "Reading the document...",
+        "Planning the code change...",
+        "Generating code changes...",
+        "Looking up current information...",
+        "Checking the result...",
+        "Preparing the answer...",
+    )
+
+    assert all(message in app_js for message in expected)
+
+
+def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
+    root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="openProjects"' in index_html
+    assert "> My projects" in index_html
+    assert "MIS PROYECTOS" not in index_html
+    assert 'id="projectsView"' in index_html
+    assert 'id="projectDetailView"' in index_html
+    assert 'id="projectDetailSourceInput"' in index_html
+    assert 'id="projectChatsList"' in index_html
+    assert 'id="newProjectChat"' in index_html
+    assert "session.project_id === projectId" in app_js
+    assert "openProjectDetail" in app_js
+    assert '"projects-view-active"' in app_js
 
 
 def test_health_payload_reports_local_only(monkeypatch):
@@ -63,7 +102,7 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
 
     payload = _chat_start(
         state,
-        {"technical_mode": True, "model": "qwen2.5-coder-1.5b"},
+        {"model": "qwen2.5-coder-1.5b"},
     )
 
     assert payload["ok"] is True
@@ -72,6 +111,36 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
     assert payload["cwd"] == str(tmp_path)
     assert payload["session_id"]
     assert payload["ui_mode"] == "herramientas_activas"
+    assert payload["multi_agent"] is False
+
+
+def test_chat_start_reports_multi_agent_mode(tmp_path, monkeypatch):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path), model="qwen2.5-coder:1.5b"))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+            tool_mode="fenced",
+        )
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+
+    payload = _chat_start(
+        state,
+        {"multi_agent": True, "model": "qwen2.5-coder-1.5b"},
+    )
+
+    assert payload["ok"] is True
+    assert payload["multi_agent"] is True
+    assert payload["ui_mode"] == "multi_agent"
+    assert payload["security_profile"] == state.runtime.security.profile
 
 
 def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
@@ -96,7 +165,7 @@ def test_chat_returns_llm_error_without_crashing(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
 
-    payload = _chat(state, {"message": "hola", "model": "missing:1b"})
+    payload = _chat(state, {"message": "hello", "model": "missing:1b"})
 
     assert payload["ok"] is False
     assert "missing:1b" in payload["error"]
@@ -113,16 +182,16 @@ def test_chat_saves_pending_session_when_model_setup_fails(tmp_path, monkeypatch
     )
 
     def fail_prepare_session(*args, **kwargs):
-        raise RuntimeError("modelo roto")
+        raise RuntimeError("broken model")
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fail_prepare_session)
 
-    payload = _chat(state, {"message": "hola", "model": "missing:1b"})
+    payload = _chat(state, {"message": "hello", "model": "missing:1b"})
 
     assert payload["ok"] is False
     data = load_session(payload["session_id"])
     assert data is not None
-    assert data["messages"][-1]["content"] == "hola"
+    assert data["messages"][-1]["content"] == "hello"
 
 
 def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
@@ -134,7 +203,7 @@ def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
         lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
     )
 
-    payload = _chat(state, {"message": "hola", "model": ""})
+    payload = _chat(state, {"message": "hello", "model": ""})
 
     assert payload["ok"] is False
     assert "Select an installed model" in payload["error"]
@@ -143,33 +212,33 @@ def test_chat_rejects_missing_selected_model(tmp_path, monkeypatch):
 
 def test_upload_file_saves_supported_file_inside_workspace(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido local").decode("ascii")
+    content = base64.b64encode(b"local content").decode("ascii")
 
     payload = _upload_file(
         state,
-        {"name": "../Mi Documento.PDF", "content_base64": content},
+        {"name": "../My Document.PDF", "content_base64": content},
     )
 
     assert payload["ok"] is True
-    assert payload["file"]["path"] == "ci2lab_uploads/mi documento.pdf"
-    assert (tmp_path / payload["file"]["path"]).read_bytes() == b"contenido local"
+    assert payload["file"]["path"] == "ci2lab_uploads/my document.pdf"
+    assert (tmp_path / payload["file"]["path"]).read_bytes() == b"local content"
 
 
 def test_upload_file_accepts_office_document_formats(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
     content = base64.b64encode(b"fake docx bytes").decode("ascii")
 
-    payload = _upload_file(state, {"name": "Tema 1.DOCX", "content_base64": content})
+    payload = _upload_file(state, {"name": "Topic 1.DOCX", "content_base64": content})
 
     assert payload["ok"] is True
-    assert payload["file"]["path"] == "ci2lab_uploads/tema 1.docx"
+    assert payload["file"]["path"] == "ci2lab_uploads/topic 1.docx"
 
 
 def test_upload_file_rejects_unsupported_suffix(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido").decode("ascii")
+    content = base64.b64encode(b"content").decode("ascii")
 
-    payload = _upload_file(state, {"name": "documento.exe", "content_base64": content})
+    payload = _upload_file(state, {"name": "document.exe", "content_base64": content})
 
     assert payload["ok"] is False
     assert "Unsupported format" in payload["error"]
@@ -177,7 +246,7 @@ def test_upload_file_rejects_unsupported_suffix(tmp_path):
 
 def test_upload_file_rejects_sensitive_names(tmp_path):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
-    content = base64.b64encode(b"contenido").decode("ascii")
+    content = base64.b64encode(b"content").decode("ascii")
 
     payload = _upload_file(state, {"name": "token.pdf", "content_base64": content})
 
@@ -188,15 +257,15 @@ def test_upload_file_rejects_sensitive_names(tmp_path):
 def test_prompt_with_uploaded_files_reads_attachment_content(tmp_path):
     upload_dir = tmp_path / "ci2lab_uploads"
     upload_dir.mkdir()
-    (upload_dir / "doc.txt").write_text("contenido importante", encoding="utf-8")
+    (upload_dir / "doc.txt").write_text("important content", encoding="utf-8")
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
     )
 
-    assert "contenido importante" in prompt
+    assert "important content" in prompt
     assert "Answer using the following content" in prompt
     assert "read_document" in prompt
 
@@ -207,38 +276,37 @@ def test_prompt_with_uploaded_files_reports_read_errors(tmp_path, monkeypatch):
     (upload_dir / "doc.pdf").write_bytes(b"%PDF simulated")
     monkeypatch.setattr(
         "ci2lab.ui.server.read_document",
-        lambda *_args, **_kwargs: "Error: no se puede leer PDF porque falta pypdf",
+        lambda *_args, **_kwargs: "Error: cannot read PDF because pypdf is missing",
     )
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.pdf", "path": "ci2lab_uploads/doc.pdf"}],
     )
 
     assert "Could not read the attached file" in prompt
-    assert "Contenido leído" not in prompt
-    assert "Contenido leido" not in prompt
+    assert "Content read with read_document" not in prompt
 
 
 def test_prompt_with_uploaded_files_rejects_non_upload_paths(tmp_path):
-    (tmp_path / "doc.txt").write_text("contenido privado", encoding="utf-8")
+    (tmp_path / "doc.txt").write_text("private content", encoding="utf-8")
 
     prompt = _prompt_with_uploaded_files(
-        "resume el documento",
+        "summarize the document",
         str(tmp_path),
         [{"name": "doc.txt", "path": "doc.txt"}],
     )
 
     assert "rejected" in prompt
-    assert "contenido privado" not in prompt
+    assert "private content" not in prompt
 
 
 def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
     upload_dir = tmp_path / "ci2lab_uploads"
     upload_dir.mkdir()
-    (upload_dir / "doc.txt").write_text("contenido del pdf simulado", encoding="utf-8")
+    (upload_dir / "doc.txt").write_text("simulated pdf content", encoding="utf-8")
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
     monkeypatch.setattr(
         state,
@@ -256,7 +324,7 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
 
     def fake_run_agent(prompt, *args, **kwargs):
         captured["prompt"] = prompt
-        return "resumen"
+        return "summary"
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
@@ -264,15 +332,113 @@ def test_chat_passes_uploaded_file_content_to_agent(tmp_path, monkeypatch):
     payload = _chat(
         state,
         {
-            "message": "usa este adjunto para contestar con detalle tecnico",
+            "message": "use this attachment to answer with technical detail",
             "model": "qwen2.5-coder:1.5b",
             "attachments": [{"name": "doc.txt", "path": "ci2lab_uploads/doc.txt"}],
         },
     )
 
     assert payload["ok"] is True
-    assert captured["prompt"].startswith("usa este adjunto")
-    assert "contenido del pdf simulado" in captured["prompt"]
+    assert captured["prompt"].startswith("use this attachment")
+    assert "simulated pdf content" in captured["prompt"]
+
+
+def test_chat_uses_selected_project_sources_and_workspace(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: sessions)
+    project_root = tmp_path / "projects"
+    project_root.mkdir()
+    monkeypatch.setattr(ui_projects, "projects_root", lambda: project_root)
+    project = ui_projects.create_project("Physics")["project"]
+    ui_projects.add_project_source(
+        project["id"],
+        {
+            "name": "course-notes.txt",
+            "content_base64": base64.b64encode(
+                b"Acceleration is the rate of change of velocity."
+            ).decode(),
+        },
+    )
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+    captured = {}
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_agent(prompt, _selection, *, config, **_kwargs):
+        captured["prompt"] = prompt
+        captured["cwd"] = config.cwd
+        captured["project_id"] = config.project_id
+        return "answer"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "What is acceleration?",
+            "model": "qwen2.5-coder:1.5b",
+            "project_id": project["id"],
+        },
+    )
+
+    assert payload["ok"] is True
+    assert "course-notes.txt" in captured["prompt"]
+    assert "rate of change of velocity" in captured["prompt"]
+    assert captured["cwd"] == project["workspace"]
+    assert captured["project_id"] == project["id"]
+    stored = load_session(payload["session_id"])
+    assert stored is not None
+    assert stored["messages"][-2]["content"] == "What is acceleration?"
+    assert "rate of change of velocity" not in stored["messages"][-2]["content"]
+
+
+def test_chat_rejects_session_from_another_project(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: sessions)
+    project_root = tmp_path / "projects"
+    project_root.mkdir()
+    monkeypatch.setattr(ui_projects, "projects_root", lambda: project_root)
+    first = ui_projects.create_project("First")["project"]
+    second = ui_projects.create_project("Second")["project"]
+    save_session(
+        "isolated-session",
+        messages=[{"role": "user", "content": "private project context"}],
+        model_tag="qwen2.5-coder:1.5b",
+        cwd=first["workspace"],
+        project_id=first["id"],
+    )
+    state = UIState(runtime=Ci2LabConfig())
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    payload = _chat(
+        state,
+        {
+            "message": "continue",
+            "model": "qwen2.5-coder:1.5b",
+            "session_id": "isolated-session",
+            "project_id": second["id"],
+        },
+    )
+
+    assert payload["ok"] is False
+    assert "different project" in payload["error"]
 
 
 def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
@@ -301,6 +467,40 @@ def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
                 model="qwen2.5-coder:1.5b",
             )
         )
+        return "response"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_agent", fake_run_agent)
+
+    payload = _chat(
+        state,
+        {"message": "hello", "model": "qwen2.5-coder:1.5b"},
+    )
+
+    assert payload["ok"] is True
+    assert payload["usage"]["last_turn"]["total_tokens"] == 16
+    assert payload["usage"]["session_total"]["prompt_tokens"] == 12
+
+
+def test_chat_keeps_tools_available_from_ui(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_agent(_prompt, _selection, *, config, **_kwargs):
+        assert config.auto_confirm is True
+        assert config.write_tools_enabled is True
         return "respuesta"
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
@@ -308,12 +508,50 @@ def test_chat_returns_token_usage_payload(tmp_path, monkeypatch):
 
     payload = _chat(
         state,
-        {"message": "hola", "model": "qwen2.5-coder:1.5b"},
+        {
+            "message": "hola",
+            "model": "qwen2.5-coder:1.5b",
+        },
     )
 
     assert payload["ok"] is True
-    assert payload["usage"]["last_turn"]["total_tokens"] == 16
-    assert payload["usage"]["session_total"]["prompt_tokens"] == 12
+
+
+def test_chat_agents_mode_uses_multi_agent_orchestrator(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path / "sessions")
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_multi_agent(_prompt, _selection, *, config):
+        assert config.auto_confirm is True
+        return "respuesta multiagente"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_multi_agent", fake_run_multi_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "hola",
+            "model": "qwen2.5-coder:1.5b",
+            "multi_agent": True,
+        },
+    )
+
+    assert payload["ok"] is True
+    assert payload["answer"] == "respuesta multiagente"
+    assert payload["multi_agent"] is True
 
 
 def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
@@ -322,8 +560,8 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
         "abc123",
         messages=[
             {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": "hola"},
-            {"role": "assistant", "content": "respuesta"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "response"},
         ],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
@@ -335,7 +573,7 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["session"]["model"] == "qwen2.5-coder:1.5b"
     assert payload["session"]["internal_tag"] == "abc123"
-    assert payload["session"]["title"] == "Hola"
+    assert payload["session"]["title"] == "Hello"
     assert [item["role"] for item in payload["session"]["messages"]] == [
         "system",
         "user",
@@ -343,11 +581,27 @@ def test_session_payload_returns_visible_messages(tmp_path, monkeypatch):
     ]
 
 
+def test_session_payload_preserves_project_id(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    save_session(
+        "project-session",
+        messages=[{"role": "user", "content": "correct this exam"}],
+        model_tag="qwen2.5-coder:1.5b",
+        cwd="/tmp/project",
+        project_id="prj_123456789abc",
+    )
+
+    payload, status = _session_payload("project-session")
+
+    assert status == 200
+    assert payload["session"]["project_id"] == "prj_123456789abc"
+
+
 def test_delete_session_payload_removes_saved_session_file(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     save_session(
         "abc123",
-        messages=[{"role": "user", "content": "hola"}],
+        messages=[{"role": "user", "content": "hello"}],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
     )
@@ -368,7 +622,7 @@ def test_sessions_payload_includes_short_title_and_internal_tag(tmp_path, monkey
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     save_session(
         "abc123",
-        messages=[{"role": "user", "content": "puedes resumir este documento pdf importante"}],
+        messages=[{"role": "user", "content": "can you summarize this important pdf document"}],
         model_tag="qwen2.5-coder:1.5b",
         cwd="/tmp",
     )
@@ -376,7 +630,7 @@ def test_sessions_payload_includes_short_title_and_internal_tag(tmp_path, monkey
     sessions = _sessions_payload()
 
     assert sessions[0]["internal_tag"] == "abc123"
-    assert sessions[0]["title"] == "Resumir documento pdf importante"
+    assert sessions[0]["title"] == "Summarize important pdf document"
 
 
 def test_system_payload_includes_hardware_disk_and_recommendations(monkeypatch):
@@ -410,7 +664,7 @@ def test_pull_task_progress_is_computed_from_ollama_events():
     state.pull_tasks["task1"] = {
         "id": "task1",
         "tag": "model:1b",
-        "status": "Preparando descarga",
+        "status": "Preparing download",
         "completed": 0,
         "total": 0,
         "percent": 0.0,
@@ -445,7 +699,7 @@ def test_delete_task_payload_reports_progress_and_completion():
     state.delete_tasks["delete1"] = {
         "id": "delete1",
         "tag": "model:1b",
-        "status": "Eliminando modelo local",
+        "status": "Removing local model",
         "percent": 65.0,
         "done": False,
         "ok": None,
@@ -458,7 +712,7 @@ def test_delete_task_payload_reports_progress_and_completion():
     assert payload["task"]["percent"] == 65.0
     assert payload["task"]["done"] is False
 
-    _finish_delete_task(state, "delete1", ok=True, status="Modelo desinstalado")
+    _finish_delete_task(state, "delete1", ok=True, status="Model uninstalled")
     payload, _ = _delete_task_payload(state, "delete1")
 
     assert payload["task"]["done"] is True

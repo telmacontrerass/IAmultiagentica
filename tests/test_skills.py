@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from rich.console import Console
 
+from ci2lab.cli.commands.skills import _cmd_skills
+from ci2lab.config import Ci2LabConfig
 from ci2lab.harness import default_selection
 from ci2lab.harness.repl import run_repl
 from ci2lab.harness.skills.loader import load_skills, skills_for_model
@@ -43,6 +47,24 @@ def test_load_skills_from_workspace(workspace_with_skill: Path) -> None:
     assert skill.description == "Demo workflow"
     assert skill.allowed_tools == ["bash", "write_file"]
     assert "Run bash" in skill.body
+
+
+def test_cmd_skills_lists_workspace_skill(workspace_with_skill: Path, tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "skills.txt"
+    with output.open("w", encoding="utf-8") as handle:
+        monkeypatch.setattr(
+            "ci2lab.cli.commands.skills.console",
+            Console(file=handle, width=160),
+        )
+        code = _cmd_skills(
+            SimpleNamespace(json=False, workspace=str(workspace_with_skill)),
+            Ci2LabConfig(workspace=str(workspace_with_skill)),
+        )
+
+    assert code == 0
+    text = output.read_text(encoding="utf-8")
+    assert "demo-skill" in text
+    assert "workspace" in text
 
 
 def test_skills_for_model_hides_disabled(tmp_path: Path) -> None:

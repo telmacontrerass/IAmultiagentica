@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from typing import Callable
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -43,8 +44,6 @@ _VALIDATION_SUCCESS_MARKERS = (
     "successful",
     "ok",
     "no errors",
-    "sin errores",
-    "todo pasa",
 )
 
 # A validator that cannot find real tool evidence must always be treated as a
@@ -95,31 +94,13 @@ _READ_ONLY_TASK_MARKERS = (
     "review",
     "access",
     "open",
-    "lee",
-    "leer",
-    "resume",
-    "resumir",
-    "resumelo",
-    "resúmelo",
-    "resumen",
-    "extrae",
-    "extraer",
-    "explica",
-    "analiza",
-    "revisa",
-    "accede",
-    "acceder",
-    "abre",
-    "abrir",
 )
 
 _DOCUMENT_TASK_MARKERS = (
     "pdf",
     "docx",
     "document",
-    "documento",
     "file",
-    "archivo",
 )
 
 _IMPLEMENTATION_TASK_MARKERS = (
@@ -134,23 +115,6 @@ _IMPLEMENTATION_TASK_MARKERS = (
     "change",
     "convert",
     "generate code",
-    "añade",
-    "agrega",
-    "crea",
-    "crear",
-    "escribe",
-    "editar",
-    "edita",
-    "modifica",
-    "actualiza",
-    "implementa",
-    "arregla",
-    "corrige",
-    "cambia",
-    "convierte",
-    "convertir",
-    "genera codigo",
-    "genera código",
 )
 
 _WRITE_EVIDENCE_TOOLS = frozenset({
@@ -176,8 +140,10 @@ _CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset({
 })
 
 
-def _combined_output(*results: SubAgentResult) -> str:
-    return "\n\n".join(result.output for result in results if result.output)
+def _combined_output(*results: SubAgentResult | None) -> str:
+    return "\n\n".join(
+        result.output for result in results if result is not None and result.output
+    )
 
 
 def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
@@ -329,7 +295,6 @@ def subagent_blocked(result: SubAgentResult) -> bool:
     return (
         result.status == "blocked"
         or text.startswith("blocked:")
-        or "se alcanzó el límite de rondas" in text
         or "max rounds" in text
     )
 
@@ -519,21 +484,27 @@ def _run_subagent_stage(
     config: AgentConfig,
     *,
     attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
     label = _role_label(role, attempt)
-    console.print(f"[cyan][multi-agent][/cyan] {_role_progress_label(role, attempt)}...")
+    progress_label = _role_progress_label(role, attempt)
+    if on_progress:
+        on_progress(progress_label)
+    else:
+        console.print(f"[cyan][multi-agent][/cyan] {progress_label}...")
     try:
-        result = run_subagent(
-            role,
-            task_prompt,
-            selection,
-            config,
-            attempt=attempt,
-        )
+        kwargs = {"attempt": attempt}
+        if on_progress:
+            kwargs["on_progress"] = on_progress
+        result = run_subagent(role, task_prompt, selection, config, **kwargs)
     except Exception:
-        console.print(f"[red][multi-agent][/red] failed {label}")
+        if on_progress:
+            on_progress("")
+        else:
+            console.print(f"[red][multi-agent][/red] failed {label}")
         raise
-    console.print(f"[green][multi-agent][/green] completed {label}")
+    if not on_progress:
+        console.print(f"[green][multi-agent][/green] completed {label}")
     return result
 
 
@@ -545,6 +516,7 @@ def _execute_phase(
     config: AgentConfig,
     *,
     attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
     try:
         result = _run_subagent_stage(
@@ -553,6 +525,7 @@ def _execute_phase(
             selection,
             config,
             attempt=attempt,
+            on_progress=on_progress,
         )
     except Exception as exc:
         state.failed_phase = role.value
@@ -573,7 +546,9 @@ def _execute_phase(
     return result
 
 
-def choose_coder_role(plan: SubAgentResult, research: SubAgentResult) -> AgentRole:
+def choose_coder_role(
+    plan: SubAgentResult | None, research: SubAgentResult | None
+) -> AgentRole:
     """Choose an implementation role from planner/researcher evidence."""
     text = _combined_output(plan, research).lower()
     if any(marker in text for marker in ("readme", ".md", "docs/", "documentacion")):
@@ -730,8 +705,15 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
         "Follow the planner's execution plan. Only perform the research/context "
         "gathering assigned to the researcher role. Do not take over coding, "
         "validation, or review responsibilities, and do not modify files.\n\n"
+        "Your report is the ONLY context the implementer receives — it cannot see "
+        "your tool results, only what you write. So when the task refers to "
+        "specific content (a document, an exercise, a section, a function), quote "
+        "the exact relevant text VERBATIM in your report. Do not just summarize "
+        "it or say where it is. If you read a document to find instructions, "
+        "include those instructions in full.\n\n"
         "Report:\n"
         "- which planner-assigned researcher tasks you completed\n"
+        "- the verbatim content the implementer will need (quoted in full)\n"
         "- relevant files, APIs, constraints, and risks\n"
         "- any missing dependency as `BLOCKED:` if the plan cannot continue\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}"
@@ -740,18 +722,33 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
 
 def _build_implementation_prompt(
     user_prompt: str,
-    plan: SubAgentResult,
-    research: SubAgentResult,
+    plan: SubAgentResult | None,
+    research: SubAgentResult | None,
 ) -> str:
+    # A document task runs no planner, so `plan` may be absent — fall back to the
+    # user task directly rather than failing.
+    plan_text = plan.output if plan is not None else (
+        "No separate plan was produced; follow the user task directly."
+    )
+    research_text = research.output if research is not None else (
+        "No research output was produced."
+    )
     return (
-        "Follow the planner's execution plan and the researcher findings. "
+        "Follow the execution plan and the researcher findings. "
         "Implement only the tasks assigned to your implementer role. Do not "
         "take over validation, review, security review, or unrelated role "
-        "responsibilities. Do not touch files or areas outside the planner's "
+        "responsibilities. Do not touch files or areas outside the stated "
         "boundaries unless the research context proves they are required; if "
         "that happens, explain why.\n\n"
-        "If a dependency from the plan or research is missing, return `BLOCKED:` "
-        "with the exact missing dependency instead of guessing.\n\n"
+        "If the research findings do not include a specific detail you need "
+        "(the exact instructions, the exact text of a document, the contents of "
+        "a file), READ THE SOURCE DIRECTLY with your read tools before "
+        "implementing — you have read_document and read_file. Never write a "
+        "placeholder or a 'not found' stub when the source is available to read; "
+        "read it and use the real content.\n\n"
+        "Only return `BLOCKED:` with the exact missing dependency if the source "
+        "genuinely cannot be read or does not exist — not merely because the "
+        "research summary was thin.\n\n"
         "Apply every filesystem change through your real tools: use `write_file` "
         "to create or overwrite a file and `edit_file`/`apply_patch` to modify "
         "one. Do NOT answer with a Python (or shell) script that performs the "
@@ -759,8 +756,8 @@ def _build_implementation_prompt(
         '`open(path, "w")`. Code returned as text is never executed, leaves no '
         "tool evidence, and will be treated as no change at all. After writing, "
         "read the file back with `read_file` so the content can be verified.\n\n"
-        f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
-        f"Research:\n{research.output}"
+        f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
+        f"Research:\n{research_text}"
     )
 
 
@@ -865,7 +862,16 @@ def _build_security_review_prompt(run: MultiAgentRun) -> str:
 
 def synthesize_final_answer(run: MultiAgentRun) -> str:
     """Create a concise final answer from orchestrator state."""
-    blocked = next((result for result in run.results if subagent_blocked(result)), None)
+    # A blocked planner is not fatal — it is advisory and the load-bearing roles
+    # (researcher, coder) run after it — so it must not mark the whole run blocked.
+    blocked = next(
+        (
+            result
+            for result in run.results
+            if subagent_blocked(result) and result.role != AgentRole.PLANNER
+        ),
+        None,
+    )
     if blocked:
         return (
             "Multi-agent run finished with status: blocked\n"
@@ -936,6 +942,7 @@ def run_multi_agent(
     *,
     config: AgentConfig | None = None,
     max_repair_attempts: int = 2,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
     """Run the first sequential multi-agent flow."""
     cfg = config or AgentConfig(cwd=".")
@@ -950,10 +957,13 @@ def run_multi_agent(
     state.intent_reason = decision.reason
     state.intent_confidence = decision.confidence
     state.planned_phases = planned_phases
-    console.print(
-        f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
-        f"requires_write={decision.requires_write} phases={planned_phases}"
-    )
+    if on_progress:
+        on_progress("Preparing the multi-agent workflow...")
+    else:
+        console.print(
+            f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
+            f"requires_write={decision.requires_write} phases={planned_phases}"
+        )
 
     started_at = datetime.now(timezone.utc)
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
@@ -971,10 +981,21 @@ def run_multi_agent(
                 plan_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(plan):
-                state.final_answer = synthesize_final_answer(state)
-                return state.final_answer
+                # The planner is advisory and has no tools; a weak model may flail
+                # trying to act and burn its round cap. That must NOT abort the run
+                # — the researcher (read tools) and coder (write tools) do the real
+                # work. Keep the partial plan and continue.
+                if on_progress is None:
+                    console.print(
+                        "[yellow][multi-agent][/yellow] planner did not finish "
+                        "cleanly; continuing with the available plan."
+                    )
+                plan.status = "partial"
+                state.failed_phase = None
+                state.error = None
 
         research: SubAgentResult | None = None
         if "researcher" in planned_phases:
@@ -985,6 +1006,7 @@ def run_multi_agent(
                 research_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(research):
                 state.final_answer = synthesize_final_answer(state)
@@ -1002,6 +1024,7 @@ def run_multi_agent(
                 implementation_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(implementation):
                 state.final_answer = synthesize_final_answer(state)
@@ -1017,6 +1040,7 @@ def run_multi_agent(
                     validation_prompt,
                     selection,
                     cfg,
+                    on_progress=on_progress,
                 )
                 if subagent_blocked(validation):
                     state.final_answer = synthesize_final_answer(state)
@@ -1039,6 +1063,7 @@ def run_multi_agent(
                         selection,
                         cfg,
                         attempt=repair_attempt + 1,
+                        on_progress=on_progress,
                     )
                     if subagent_blocked(implementation):
                         state.final_answer = synthesize_final_answer(state)
@@ -1057,6 +1082,7 @@ def run_multi_agent(
                         selection,
                         cfg,
                         attempt=repair_attempt + 1,
+                        on_progress=on_progress,
                     )
                     if subagent_blocked(validation):
                         state.final_answer = synthesize_final_answer(state)
@@ -1070,6 +1096,7 @@ def run_multi_agent(
                 review_prompt,
                 selection,
                 cfg,
+                on_progress=on_progress,
             )
             if subagent_blocked(review):
                 state.final_answer = synthesize_final_answer(state)
@@ -1083,6 +1110,7 @@ def run_multi_agent(
                     security_prompt,
                     selection,
                     cfg,
+                    on_progress=on_progress,
                 )
                 if subagent_blocked(security_review):
                     state.final_answer = synthesize_final_answer(state)
@@ -1106,6 +1134,8 @@ def run_multi_agent(
             state.failed_phase = state.results[-1].role.value if state.results else None
         raise
     finally:
+        if on_progress:
+            on_progress("")
         ended_at = datetime.now(timezone.utc)
         if run_log and run_log.run_dir is not None:
             run_log.write_json_artifact(

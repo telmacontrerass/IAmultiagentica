@@ -1,7 +1,7 @@
 {
   "id": "003_find_function",
-  "name": "Buscar función con grep o glob+read_file",
-  "prompt": "Encuentra dónde está definida la función main en este proyecto.",
+  "name": "Find a function with grep or glob+read_file",
+  "prompt": "Find where the main function is defined in this project.",
   "workspace_setup": {
     "files": {
       "sample.py": "def helper():\n    pass\n\ndef main():\n    return 42\n"
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "content": "main está definida en sample.py.",
+      "content": "main is defined in sample.py.",
       "tool_calls": []
     }
   ]

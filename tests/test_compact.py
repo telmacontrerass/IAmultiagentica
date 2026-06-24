@@ -1,4 +1,4 @@
-"""Tests de compactación de contexto (micro-compact + resumen)."""
+"""Context compaction tests (micro-compact + summary)."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ def test_micro_compact_does_not_mutate_input():
 # ---------- should_compact ----------
 
 def test_should_compact_threshold():
-    small = [{"role": "user", "content": "hola"}]
+    small = [{"role": "user", "content": "hi"}]
     assert not should_compact(small, context_length=8192)
 
     big = [{"role": "user", "content": "x" * 40_000}]
@@ -133,7 +133,7 @@ def test_summarize_history_replaces_old_with_summary():
     assert out[0]["role"] == "system"
     assert out[1]["content"].startswith(SUMMARY_PREFIX)
     assert "did things to wordle.py" in out[1]["content"]
-    # El tail reciente se conserva literal.
+    # The recent tail is kept verbatim.
     assert out[-1]["content"] == history[-1]["content"]
     assert conservative_estimate(out) < conservative_estimate(history)
 
@@ -150,7 +150,7 @@ def test_summarize_history_tail_does_not_start_with_orphan_tool():
 
     assert out is not None
     non_system = [m for m in out if m["role"] != "system"]
-    # tras el resumen, el primer mensaje del tail nunca es un tool huérfano
+    # after the summary, the first message of the tail is never an orphan tool
     first_tool_idx = next(
         (i for i, m in enumerate(non_system) if m["role"] == "tool"), None
     )
@@ -166,7 +166,7 @@ def test_summarize_history_returns_none_on_failure():
 def test_summarize_history_returns_none_when_nothing_old():
     short = [
         {"role": "system", "content": "sys"},
-        {"role": "user", "content": "hola"},
+        {"role": "user", "content": "hi"},
     ]
     assert summarize_history(FakeClient(), short, context_length=8192) is None
 
@@ -183,7 +183,7 @@ def test_summarize_history_rejects_tool_call_response():
 # ---------- manage_context ----------
 
 def test_manage_context_noop_below_threshold():
-    history = [{"role": "user", "content": "hola"}]
+    history = [{"role": "user", "content": "hi"}]
     out, failures, events = manage_context(history, FakeClient(), 8192)
     assert out is history
     assert failures == 0
@@ -192,7 +192,7 @@ def test_manage_context_noop_below_threshold():
 
 def test_manage_context_micro_compact_first():
     msgs = [{"role": "system", "content": "sys"}]
-    # Muchos resultados de tool enormes => micro-compact basta sin LLM.
+    # Many huge tool results => micro-compact is enough without the LLM.
     for i in range(20):
         msgs.append(_assistant_call(f"c{i}", "read_file"))
         msgs.append(_tool_msg(f"c{i}", "x" * 2000))
@@ -202,7 +202,7 @@ def test_manage_context_micro_compact_first():
 
     assert failures == 0
     assert any("micro-compact" in e for e in events)
-    # Si micro-compact bajó del umbral, no se llamó al LLM.
+    # If micro-compact dropped below the threshold, the LLM was not called.
     assert client.calls == []
     stubbed = [m for m in out if m.get("content") == TOOL_RESULT_STUB]
     assert stubbed

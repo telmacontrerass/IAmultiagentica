@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from ci2lab.harness.token_usage import TokenUsageState
 
 if TYPE_CHECKING:
+    from ci2lab.contracts.types import ModelSelection
     from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
     from ci2lab.settings import ToolSettings
 
@@ -48,6 +49,9 @@ class AgentConfig:
     session_id: str | None = None
     """If set, persists the history at the end of each turn."""
 
+    project_id: str | None = None
+    """Optional UI knowledge-project identifier associated with the session."""
+
     confirm_callback: Callable[[str, str], bool] | None = None
 
     run_log_enabled: bool = True
@@ -65,6 +69,12 @@ class AgentConfig:
     require_diff_preview: bool = True
     """If True, write/edit always show a diff and ask for confirmation (--yes does not skip)."""
 
+    verify_completion: bool = False
+    """If True, after the agent reports a task done AND effectful work happened
+    this turn, a fresh read-only subagent verifies the result against the
+    original request; on failure the agent is asked to fix it. Opt-in: on weak
+    local models the verifier can false-reject, so it stays off by default."""
+
     security_profile: str = "standard"
     """Security profile (strict, standard, dev, audit)."""
 
@@ -80,6 +90,17 @@ class AgentConfig:
     role_anchor: str | None = None
     """English role-discipline anchor reinjected for subagents after tool rounds."""
 
+    selection: ModelSelection | None = None
+    """Active model selection. Set by run_agent so tools (e.g. `delegate`) can
+    spawn a subagent with the same model. Not part of the persisted config."""
+
+    delegation_depth: int = 0
+    """How deep this run is in the delegate-subagent chain. 0 = top-level agent.
+    Bounds recursion: a subagent at the max depth cannot delegate again."""
+
+    cancellation_event: Any | None = None
+    """Optional threading.Event-like object used to stop an in-flight run."""
+
     last_run_dir: str | None = None
     """Latest run directory produced by RunLogger for this config instance."""
 
@@ -89,3 +110,18 @@ class AgentConfig:
 
     token_usage: TokenUsageState = field(default_factory=TokenUsageState)
     """Token counters for the current turn and session."""
+
+    vision_model: str = ""
+    """Ollama tag of the fallback vision model (e.g. 'llava', 'qwen3-vl').
+    Empty = use the main model when it is vision-capable; otherwise image
+    analysis is unavailable unless the agent calls analyze_image explicitly."""
+
+    vision_enabled: bool = True
+    """If False, image_paths are ignored and analyze_image tool returns a
+    disabled message."""
+
+    image_paths: list[str] = field(default_factory=list)
+    """Image files to attach to the first user message.  Forwarded natively as
+    base64 image_url blocks when the main model is vision-capable; otherwise
+    each image is described by the fallback vision_model and the description is
+    injected into the prompt text."""

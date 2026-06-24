@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ci2lab.harness import run_agent
+from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.tools.filesystem import read_document, read_file
 from ci2lab.hardware import scan_hardware
 from ci2lab.pipeline import build_agent_config, prepare_session
@@ -14,6 +15,7 @@ from ci2lab.router.recommend import (
 )
 from ci2lab.ui.server_parts.agent import (
     chat as _chat,
+    chat_cancel as _chat_cancel,
     chat_start as _chat_start,
     save_completed_session as _save_completed_session,
     save_pending_session as _save_pending_session,
@@ -71,6 +73,17 @@ from ci2lab.ui.server_parts.uploads import (
     unique_upload_path as _unique_upload_path,
     upload_file as _upload_file,
 )
+from ci2lab.ui.projects import (
+    add_project_source as _add_project_source,
+    create_project as _create_project,
+    delete_project as _delete_project,
+    delete_project_source as _delete_project_source,
+    get_project as _get_project,
+    list_project_sources as _list_project_sources,
+    list_projects as _list_projects,
+    project_prompt as _project_prompt,
+    rename_project as _rename_project,
+)
 
 __all__ = [
     "DOCUMENT_UPLOAD_SUFFIXES",
@@ -81,4 +94,3 @@ __all__ = [
     "UPLOAD_DIR_NAME",
     "run_ui",
 ]
-

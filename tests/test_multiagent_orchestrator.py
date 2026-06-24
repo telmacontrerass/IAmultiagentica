@@ -52,7 +52,7 @@ def test_should_skip_implementation_for_read_only_pdf_task():
     research = _result(AgentRole.RESEARCHER, "Relevant document: paper.pdf")
 
     assert should_skip_implementation(
-        "accede al contenido del pdf y resumelo",
+        "read the contents of the pdf and summarize it",
         plan,
         research,
     )
@@ -63,7 +63,7 @@ def test_should_not_skip_implementation_for_document_edit_task():
     research = _result(AgentRole.RESEARCHER, "Relevant document: README.md")
 
     assert not should_skip_implementation(
-        "actualiza el README con un ejemplo nuevo",
+        "update the README with a new example",
         plan,
         research,
     )
@@ -78,7 +78,7 @@ def test_validation_failed_detects_failure_and_pass():
 def test_subagent_blocked_detects_explicit_and_round_limit_blocks():
     assert subagent_blocked(_result(AgentRole.RESEARCHER, "BLOCKED: missing file"))
     assert subagent_blocked(
-        _result(AgentRole.RESEARCHER, "Se alcanzó el límite de rondas sin respuesta final.")
+        _result(AgentRole.RESEARCHER, "Reached the max rounds limit without a final answer.")
     )
     assert not subagent_blocked(_result(AgentRole.RESEARCHER, "Found the context."))
 
@@ -122,7 +122,8 @@ def test_downstream_prompts_require_following_planner_contract():
     assert "Follow the planner's execution plan" in research_prompt
     assert "Only perform the research/context gathering assigned" in research_prompt
     assert "Implement only the tasks assigned" in implementation_prompt
-    assert "outside the planner's boundaries" in implementation_prompt
+    # Wording is plan-source-agnostic: a document task runs no planner.
+    assert "outside the stated boundaries" in implementation_prompt
     assert "planner's validation expectations" in validation_prompt
     assert "did not follow the plan" in validation_prompt
     assert "against the planner's execution plan" in review_prompt
@@ -284,7 +285,7 @@ def test_run_multi_agent_skips_coder_for_read_only_pdf_task(monkeypatch):
     )
 
     result = run_multi_agent(
-        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        "access the contents of the pdf test.pdf and tell me what it is about",
         default_selection("test:1b"),
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
@@ -306,7 +307,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
         if role == AgentRole.PLANNER:
             return _result(role, "Plan: inspect the requested PDF.")
         if role == AgentRole.RESEARCHER:
-            return _result(role, "BLOCKED: prueba.pdf was not found.")
+            return _result(role, "BLOCKED: test.pdf was not found.")
         raise AssertionError(f"Unexpected role after blocked researcher: {role}")
 
     monkeypatch.setattr(
@@ -315,7 +316,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     )
 
     result = run_multi_agent(
-        "accede al contenido del pdf prueba.pdf y dime de que trata",
+        "access the contents of the pdf test.pdf and tell me what it is about",
         default_selection("test:1b"),
         config=AgentConfig(cwd=".", run_log_enabled=False),
     )
@@ -323,7 +324,7 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     assert calls == [AgentRole.PLANNER, AgentRole.RESEARCHER]
     assert "status: blocked" in result
     assert "Blocked role: researcher" in result
-    assert "prueba.pdf was not found" in result
+    assert "test.pdf was not found" in result
 
 
 def test_run_multi_agent_prints_subagent_progress(monkeypatch):
@@ -360,6 +361,28 @@ def test_run_multi_agent_prints_subagent_progress(monkeypatch):
     assert any("completed python_coder" in message for message in printed)
     assert any("Checking the result" in message for message in printed)
     assert any("completed reviewer" in message for message in printed)
+
+
+def test_all_multiagent_role_progress_labels_are_english():
+    from ci2lab.harness.multiagent.orchestrator import _role_progress_label
+
+    expected = {
+        AgentRole.PLANNER: "Planning the work",
+        AgentRole.RESEARCHER: "Gathering the needed context",
+        AgentRole.PYTHON_CODER: "Applying Python changes",
+        AgentRole.FRONTEND_CODER: "Applying interface changes",
+        AgentRole.TEST_CODER: "Updating tests",
+        AgentRole.DOCS_CODER: "Updating documentation",
+        AgentRole.GENERALIST_CODER: "Applying the requested changes",
+        AgentRole.VALIDATOR: "Checking the result",
+        AgentRole.REVIEWER: "Reviewing the outcome",
+        AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+    }
+
+    assert {
+        role: _role_progress_label(role, 1)
+        for role in AgentRole
+    } == expected
 
 
 def test_run_multi_agent_repairs_with_same_coder(monkeypatch):

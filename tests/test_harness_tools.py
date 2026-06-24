@@ -20,7 +20,7 @@ def test_resolve_path_blocks_traversal():
     with tempfile.TemporaryDirectory() as tmp:
         try:
             resolve_path("..", tmp)
-            assert False, "debería fallar"
+            assert False, "should fail"
         except PathViolationError:
             pass
 
@@ -32,11 +32,11 @@ def test_read_file_null_offset_limit(tmp_path):
 
 
 def test_read_file_still_reads_code_files(tmp_path):
-    (tmp_path / "main.py").write_text("print('hola')\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("print('hello')\n", encoding="utf-8")
 
     text = read_file(str(tmp_path), "main.py")
 
-    assert "print('hola')" in text
+    assert "print('hello')" in text
 
 
 def test_read_file_pdf_extracts_text(tmp_path, monkeypatch):
@@ -50,7 +50,7 @@ def test_read_file_pdf_extracts_text(tmp_path, monkeypatch):
     class FakeReader:
         def __init__(self, path):
             self.path = path
-            self.pages = [FakePage("primer parrafo"), FakePage("segundo parrafo")]
+            self.pages = [FakePage("first paragraph"), FakePage("second paragraph")]
 
     fake_pypdf = types.SimpleNamespace(PdfReader=FakeReader)
     monkeypatch.setitem(sys.modules, "pypdf", fake_pypdf)
@@ -59,14 +59,14 @@ def test_read_file_pdf_extracts_text(tmp_path, monkeypatch):
     text = read_file(str(tmp_path), "doc.pdf")
 
     assert "[PDF page 1/2]" in text
-    assert "primer parrafo" in text
-    assert "segundo parrafo" in text
+    assert "first paragraph" in text
+    assert "second paragraph" in text
 
 
 def test_grep_search_finds_text_inside_pdf(tmp_path, monkeypatch):
     class FakePage:
         def extract_text(self):
-            return "formal register\ninformal mate"
+            return "formal register\ninformal note"
 
     class FakeReader:
         def __init__(self, path):
@@ -104,14 +104,14 @@ def test_read_file_pdf_without_text_reports_ocr_needed(tmp_path, monkeypatch):
 
 
 def test_read_document_plain_text_adds_metadata(tmp_path):
-    (tmp_path / "apuntes.md").write_text("# Tema 1\nContenido", encoding="utf-8")
+    (tmp_path / "notes.md").write_text("# Topic 1\nContent", encoding="utf-8")
 
-    text = read_document(str(tmp_path), "apuntes.md")
+    text = read_document(str(tmp_path), "notes.md")
 
-    assert "Document: apuntes.md" in text
+    assert "Document: notes.md" in text
     assert "Type: md" in text
     assert "Extracted text:" in text
-    assert "# Tema 1" in text
+    assert "# Topic 1" in text
 
 
 def test_read_document_docx_extracts_paragraphs_and_tables(tmp_path, monkeypatch):
@@ -128,36 +128,36 @@ def test_read_document_docx_extracts_paragraphs_and_tables(tmp_path, monkeypatch
             self.text = text
 
     class FakeRow:
-        cells = [FakeCell("Criterio"), FakeCell("Puntos")]
+        cells = [FakeCell("Criterion"), FakeCell("Points")]
 
     class FakeTable:
         rows = [FakeRow()]
 
     class FakeDocument:
         paragraphs = [
-            FakeParagraph("Rubrica de evaluacion", FakeStyle()),
-            FakeParagraph("Claridad conceptual"),
+            FakeParagraph("Evaluation rubric", FakeStyle()),
+            FakeParagraph("Conceptual clarity"),
         ]
         tables = [FakeTable()]
 
     fake_docx = types.SimpleNamespace(Document=lambda path: FakeDocument())
     monkeypatch.setitem(sys.modules, "docx", fake_docx)
-    (tmp_path / "rubrica.docx").write_bytes(b"fake docx")
+    (tmp_path / "rubric.docx").write_bytes(b"fake docx")
 
-    text = read_document(str(tmp_path), "rubrica.docx")
+    text = read_document(str(tmp_path), "rubric.docx")
 
     assert "Type: docx" in text
-    assert "[Heading 1] Rubrica de evaluacion" in text
-    assert "Criterio | Puntos" in text
+    assert "[Heading 1] Evaluation rubric" in text
+    assert "Criterion | Points" in text
 
 
 def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
     class FakeSheet:
-        title = "Notas"
+        title = "Grades"
 
         def iter_rows(self, **kwargs):
             return iter([
-                ("Alumno", "Examen", None, None),
+                ("Student", "Exam", None, None),
                 ("A1", 8.5, None, None),
                 (None, None, None, None),
             ])
@@ -172,30 +172,30 @@ def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
         load_workbook=lambda path, read_only, data_only: FakeWorkbook()
     )
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
-    (tmp_path / "notas.xlsx").write_bytes(b"fake xlsx")
+    (tmp_path / "grades.xlsx").write_bytes(b"fake xlsx")
 
-    text = read_document(str(tmp_path), "notas.xlsx")
+    text = read_document(str(tmp_path), "grades.xlsx")
 
     assert "Type: xlsx" in text
-    assert "[Sheet: Notas]" in text
-    assert "Alumno | Examen" in text
+    assert "[Sheet: Grades]" in text
+    assert "Student | Exam" in text
     assert "A1 | 8.5" in text
     assert "A1 | 8.5 |" not in text
 
 
 def test_grep_search_finds_text_inside_docx(tmp_path, monkeypatch):
     class FakeDocument:
-        paragraphs = [types.SimpleNamespace(text="feedback docente", style=None)]
+        paragraphs = [types.SimpleNamespace(text="teacher feedback", style=None)]
         tables = []
 
     fake_docx = types.SimpleNamespace(Document=lambda path: FakeDocument())
     monkeypatch.setitem(sys.modules, "docx", fake_docx)
-    (tmp_path / "comentarios.docx").write_bytes(b"fake docx")
+    (tmp_path / "comments.docx").write_bytes(b"fake docx")
 
-    text = grep_search(str(tmp_path), "docente", glob_pattern="*.docx")
+    text = grep_search(str(tmp_path), "teacher", glob_pattern="*.docx")
 
-    assert "comentarios.docx" in text
-    assert "feedback docente" in text
+    assert "comments.docx" in text
+    assert "teacher feedback" in text
 
 
 def test_execute_read_file_strips_null_optional_args(tmp_path):

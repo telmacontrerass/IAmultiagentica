@@ -1,8 +1,7 @@
 """Workspace-policy violation detection and tool-call signatures.
 
-The phrase lists below are matched against tool *output* and accept both English
-and (legacy) Spanish, so detection keeps working regardless of the language a
-tool emits its block message in.
+The phrase lists below are matched against tool *output* so detection keeps
+working regardless of how a tool phrases its block message.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 from ci2lab.harness.types import ToolCall, ToolResult
 
 POLICY_ERROR_PHRASES = (
-    # English
     "path outside the project",
     "path outside the workspace",
     "blocked by policy",
@@ -18,11 +16,6 @@ POLICY_ERROR_PHRASES = (
     "blocked_by_policy",
     "blocked_by_workspace",
     "policy_secret_file_blocked",
-    # Legacy Spanish (still tolerated)
-    "ruta fuera del proyecto",
-    "ruta fuera del workspace",
-    "bloqueado por politica",
-    "comando bloqueado: intenta acceder",
 )
 
 POLICY_NUDGE_MESSAGE = (
@@ -70,12 +63,8 @@ def outcome_for_tool_output(content: str) -> str | None:
     if any(
         phrase in lower
         for phrase in (
-            # English
             "outside the workspace",
             "blocked command: tries to access",
-            # Legacy Spanish
-            "fuera del workspace",
-            "comando bloqueado: intenta acceder",
         )
     ):
         return "blocked_by_workspace"

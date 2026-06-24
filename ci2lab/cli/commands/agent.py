@@ -49,6 +49,21 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
     console.print(f"[bold]Model:[/bold] {selection.ollama_tag}")
     console.print(f"[bold]Tool mode:[/bold] {selection.tool_mode}")
     console.print(f"[bold]CWD:[/bold] {config.cwd}\n")
+
+    if config.image_paths:
+        from ci2lab.harness.vision import is_vision_model
+        n = len(config.image_paths)
+        label = "image" if n == 1 else "images"
+        console.print(f"[bold]Images:[/bold] {n} {label} attached")
+        if not is_vision_model(selection.ollama_tag) and not config.vision_model:
+            console.print(
+                "[yellow]Warning:[/yellow] the selected model is not vision-capable "
+                "and no vision_model fallback is configured. "
+                "Images will be ignored.\n"
+                "[dim]Tip: use a vision model (e.g. --model qwen2.5vl:7b) "
+                "or set vision_model in ~/.ci2lab/settings.json.[/dim]"
+            )
+
     _workspace_startup_hint(args, config.cwd)
 
     try:

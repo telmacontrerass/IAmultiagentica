@@ -67,7 +67,7 @@ def test_docx_to_pdf_missing_source(tmp_path: Path) -> None:
 
 def test_docx_to_pdf_creates_file(pandoc_skip, tmp_path: Path) -> None:
     docx = tmp_path / "input.docx"
-    _make_docx(docx, "# Test\n\nContenido de prueba.\n")
+    _make_docx(docx, "# Test\n\nTest content.\n")
     result = docx_to_pdf(str(tmp_path), "input.docx", "output.pdf")
     if result.startswith("Error:") and "PDF engine" in result:
         pytest.skip("No PDF engine installed for pandoc")

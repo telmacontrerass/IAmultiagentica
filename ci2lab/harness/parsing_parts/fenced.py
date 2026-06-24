@@ -198,6 +198,12 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return json.loads(body)
         except json.JSONDecodeError:
             return {"question": body}
+    if tool == "delegate":
+        try:
+            data = json.loads(body)
+            return data if isinstance(data, dict) else {"task": body}
+        except json.JSONDecodeError:
+            return {"task": body}
     if tool == "todo_write":
         try:
             return json.loads(body)

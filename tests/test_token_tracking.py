@@ -1,5 +1,5 @@
 """
-Tests del contador de tokens: captura desde Ollama → LLMResponse → loop → RunLogger.
+Token counter tests: capture from Ollama → LLMResponse → loop → RunLogger.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from ci2lab.harness.types import AgentConfig
 
 
 # ---------------------------------------------------------------------------
-# Fixture compartida
+# Shared fixture
 # ---------------------------------------------------------------------------
 
 def _selection() -> ModelSelection:
@@ -32,11 +32,11 @@ def _selection() -> ModelSelection:
 
 
 # ---------------------------------------------------------------------------
-# 1. LLMClient.chat() captura usage
+# 1. LLMClient.chat() captures usage
 # ---------------------------------------------------------------------------
 
 class _FakeChatClient:
-    """Mock httpx.Client para modo no-streaming con usage en la respuesta."""
+    """Mock httpx.Client for non-streaming mode with usage in the response."""
 
     def __init__(self, timeout):
         self.timeout = timeout
@@ -49,31 +49,34 @@ class _FakeChatClient:
 
     def post(self, url, json):
         request = httpx.Request("POST", url)
+        # Native Ollama (/api/chat) reports usage at the top level.
         return httpx.Response(
             200,
             json={
-                "choices": [{"message": {"content": "Cuatro"}}],
-                "usage": {"prompt_tokens": 42, "completion_tokens": 3, "total_tokens": 45},
+                "message": {"role": "assistant", "content": "Four"},
+                "done": True,
+                "prompt_eval_count": 42,
+                "eval_count": 3,
             },
             request=request,
         )
 
 
-def test_chat_captura_usage(monkeypatch):
+def test_chat_captures_usage(monkeypatch):
     monkeypatch.setattr(httpx, "Client", _FakeChatClient)
     client = LLMClient(_selection())
     resp = client.chat([{"role": "user", "content": "2+2?"}])
 
     assert isinstance(resp, LLMResponse)
-    assert resp.content == "Cuatro"
+    assert resp.content == "Four"
     assert resp.usage is not None
     assert resp.usage.prompt_tokens == 42
     assert resp.usage.completion_tokens == 3
     assert resp.usage.total_tokens == 45
 
 
-def test_chat_usage_vacio_cuando_ollama_no_lo_devuelve(monkeypatch):
-    """Compatibilidad con backends que no devuelven usage."""
+def test_chat_usage_empty_when_ollama_does_not_return_it(monkeypatch):
+    """Compatibility with backends that do not return usage."""
 
     class _FakeNoUsage:
         def __init__(self, timeout):
@@ -89,18 +92,19 @@ def test_chat_usage_vacio_cuando_ollama_no_lo_devuelve(monkeypatch):
             request = httpx.Request("POST", url)
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"content": "ok"}}]},
+                json={"message": {"content": "ok"}, "done": True},
                 request=request,
             )
 
     monkeypatch.setattr(httpx, "Client", _FakeNoUsage)
     client = LLMClient(_selection())
     resp = client.chat([{"role": "user", "content": "hi"}])
+    assert resp.content == "ok"
     assert resp.usage is None
 
 
 # ---------------------------------------------------------------------------
-# 2. LLMClient.stream_chat() captura usage del chunk final
+# 2. LLMClient.stream_chat() captures usage from the final chunk
 # ---------------------------------------------------------------------------
 
 class _StreamContext:
@@ -124,12 +128,17 @@ class _FakeStreamResponse:
         return None
 
     def iter_lines(self):
-        # Chunks de contenido
-        yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Cua'}}]})}"
-        yield f"data: {json.dumps({'choices': [{'delta': {'content': 'tro'}}]})}"
-        # Chunk final con usage (antes de [DONE])
-        yield f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 55, 'completion_tokens': 7, 'total_tokens': 62}})}"
-        yield "data: [DONE]"
+        # Native streaming: newline-delimited JSON; usage rides the done chunk.
+        yield json.dumps({"message": {"content": "Fo"}, "done": False})
+        yield json.dumps({"message": {"content": "ur"}, "done": False})
+        yield json.dumps(
+            {
+                "message": {"content": ""},
+                "done": True,
+                "prompt_eval_count": 55,
+                "eval_count": 7,
+            }
+        )
 
 
 class _FakeStreamClient:
@@ -146,7 +155,7 @@ class _FakeStreamClient:
         return _StreamContext(_FakeStreamResponse())
 
 
-def test_stream_chat_captura_usage(monkeypatch):
+def test_stream_chat_captures_usage(monkeypatch):
     monkeypatch.setattr(httpx, "Client", _FakeStreamClient)
     client = LLMClient(_selection())
     events = list(client.stream_chat([{"role": "user", "content": "2+2?"}]))
@@ -154,18 +163,18 @@ def test_stream_chat_captura_usage(monkeypatch):
     stream_tokens = [e for e in events if isinstance(e, StreamToken)]
     final = next(e for e in events if isinstance(e, LLMResponse))
 
-    assert "".join(t.text for t in stream_tokens) == "Cuatro"
-    assert final.content == "Cuatro"
+    assert "".join(t.text for t in stream_tokens) == "Four"
+    assert final.content == "Four"
     assert final.usage is not None
     assert final.usage.prompt_tokens == 55
     assert final.usage.completion_tokens == 7
     assert final.usage.total_tokens == 62
 
 
-def test_stream_chat_usage_en_chunk_separado(monkeypatch):
-    """Ollama a veces emite el usage en un chunk con choices vacío."""
+def test_stream_chat_usage_in_separate_chunk(monkeypatch):
+    """Native streaming reports usage on the final done chunk (empty content)."""
 
-    class _FakeResponseUsageVacio:
+    class _FakeResponseUsageEmpty:
         is_error = False
 
         def read(self):
@@ -175,13 +184,18 @@ def test_stream_chat_usage_en_chunk_separado(monkeypatch):
             return None
 
         def iter_lines(self):
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': 'Ok'}}]})}"
-            yield f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'stop'}]})}"
-            # Chunk separado solo con usage, choices vacío
-            yield f"data: {json.dumps({'choices': [], 'usage': {'prompt_tokens': 10, 'completion_tokens': 2, 'total_tokens': 12}})}"
-            yield "data: [DONE]"
+            yield json.dumps({"message": {"content": "Ok"}, "done": False})
+            # Final chunk: no new content, only the usage counts.
+            yield json.dumps(
+                {
+                    "message": {"content": ""},
+                    "done": True,
+                    "prompt_eval_count": 10,
+                    "eval_count": 2,
+                }
+            )
 
-    class _FakeClientUsageVacio:
+    class _FakeClientUsageEmpty:
         def __init__(self, timeout):
             self.timeout = timeout
 
@@ -192,9 +206,9 @@ def test_stream_chat_usage_en_chunk_separado(monkeypatch):
             return False
 
         def stream(self, method, url, json):
-            return _StreamContext(_FakeResponseUsageVacio())
+            return _StreamContext(_FakeResponseUsageEmpty())
 
-    monkeypatch.setattr(httpx, "Client", _FakeClientUsageVacio)
+    monkeypatch.setattr(httpx, "Client", _FakeClientUsageEmpty)
     client = LLMClient(_selection())
     events = list(client.stream_chat([{"role": "user", "content": "hi"}]))
     final = next(e for e in events if isinstance(e, LLMResponse))
@@ -204,7 +218,7 @@ def test_stream_chat_usage_en_chunk_separado(monkeypatch):
     assert final.usage.total_tokens == 12
 
 
-def test_build_payload_incluye_stream_options_solo_en_streaming():
+def test_build_payload_includes_stream_options_only_in_streaming():
     client = LLMClient(_selection())
     payload_stream = client._build_payload([], tools=None, stream=True)
     payload_no_stream = client._build_payload([], tools=None, stream=False)
@@ -214,7 +228,7 @@ def test_build_payload_incluye_stream_options_solo_en_streaming():
 
 
 # ---------------------------------------------------------------------------
-# 3. RunLogger.record_token_stats() y run_summary.json
+# 3. RunLogger.record_token_stats() and run_summary.json
 # ---------------------------------------------------------------------------
 
 def _make_logger(tmp_path: Path) -> RunLogger:
@@ -235,7 +249,7 @@ def _make_logger(tmp_path: Path) -> RunLogger:
     )
 
 
-def test_run_summary_incluye_tokens(tmp_path):
+def test_run_summary_includes_tokens(tmp_path):
     logger = _make_logger(tmp_path)
     logger.start()
 
@@ -247,7 +261,7 @@ def test_run_summary_incluye_tokens(tmp_path):
     logger.finalize(status="success", final_answer="ok", conversation=[], error=None)
 
     summaries = list((tmp_path / "runs").rglob("run_summary.json"))
-    assert summaries, "No se creó run_summary.json"
+    assert summaries, "run_summary.json was not created"
 
     data = json.loads(summaries[0].read_text(encoding="utf-8"))
     tokens = data["tokens"]
@@ -260,11 +274,11 @@ def test_run_summary_incluye_tokens(tmp_path):
     assert tokens["context_used_pct"] == round(1800 / 32768 * 100, 1)
 
 
-def test_run_summary_tokens_no_disponibles(tmp_path):
-    """Si Ollama no devolvió usage, available=False y valores a 0."""
+def test_run_summary_tokens_not_available(tmp_path):
+    """If Ollama did not return usage, available=False and values at 0."""
     logger = _make_logger(tmp_path)
     logger.start()
-    # No llamamos a record_token_stats: simula que Ollama no devolvió usage
+    # We do not call record_token_stats: simulates Ollama not returning usage
     logger.finalize(status="success", final_answer="ok", conversation=[], error=None)
 
     summaries = list((tmp_path / "runs").rglob("run_summary.json"))

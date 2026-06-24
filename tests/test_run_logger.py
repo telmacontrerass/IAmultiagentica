@@ -38,7 +38,7 @@ def test_run_logger_creates_run_folder(tmp_path):
         selection=selection,
         agent_config=AgentConfig(cwd=str(tmp_path), runs_dir=str(runs)),
         config_snapshot={"model": "test:1b"},
-        user_prompt="hola",
+        user_prompt="hi",
     )
     run_dir = logger.start()
     assert run_dir is not None
@@ -55,21 +55,21 @@ def test_run_summary_written_on_finalize(tmp_path):
         selection=selection,
         agent_config=agent,
         config_snapshot={"model": "test:1b"},
-        user_prompt="lista archivos",
+        user_prompt="list files",
     )
     run_dir = logger.start()
     logger.set_rounds_completed(2)
     logger.finalize(
         status="success",
-        final_answer="Listo.",
-        conversation=[{"role": "user", "content": "lista"}],
+        final_answer="Done.",
+        conversation=[{"role": "user", "content": "list"}],
     )
     summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
     assert summary["status"] == "success"
     assert summary["model"] == "test:1b"
     assert summary["workspace"] == str(tmp_path)
     assert summary["rounds"] == 2
-    assert (run_dir / "final_answer.md").read_text(encoding="utf-8") == "Listo."
+    assert (run_dir / "final_answer.md").read_text(encoding="utf-8") == "Done."
 
 
 def test_tool_call_logged_to_jsonl(tmp_path):
@@ -149,12 +149,12 @@ def test_run_agent_writes_run_artifacts(tmp_path):
             "function": {"name": "ls", "arguments": '{"path": "."}'},
         }],
     )
-    final = LLMResponse(content="Hay archivos.", tool_calls=[])
+    final = LLMResponse(content="There are files.", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [with_tool, final]
-        run_agent("lista archivos", selection, config=config)
+        run_agent("list files", selection, config=config)
 
     runs = list((tmp_path / "runs").iterdir())
     assert len(runs) == 1
@@ -172,7 +172,7 @@ def test_no_log_skips_run_folder(tmp_path):
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
-        run_agent("hola", selection, config=config)
+        run_agent("hi", selection, config=config)
 
     assert not (tmp_path / "runs").exists()
 
@@ -180,14 +180,14 @@ def test_no_log_skips_run_folder(tmp_path):
 def test_logger_failure_does_not_break_agent(tmp_path):
     selection = default_selection("test:1b")
     config = _agent_config(tmp_path)
-    mock_response = LLMResponse(content="respuesta final", tool_calls=[])
+    mock_response = LLMResponse(content="final answer", tool_calls=[])
 
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         MockClient.return_value.chat.return_value = mock_response
         with patch.object(Path, "mkdir", side_effect=OSError("permission denied")):
-            result = run_agent("hola", selection, config=config)
+            result = run_agent("hi", selection, config=config)
 
-    assert "respuesta final" in result.lower()
+    assert "final answer" in result.lower()
 
 
 def test_merge_cli_no_log(monkeypatch, tmp_path):

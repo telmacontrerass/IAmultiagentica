@@ -37,7 +37,8 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
                 "description": (
                     "Fetch a specific public http(s) URL and return its text (HTML is stripped). "
                     "Only use when you already have a confirmed URL. "
-                    "If you do not have a URL, use web_search first."
+                    "If you do not have a URL, use web_search first. "
+                    "For news or sports results, use max_chars=8000 to keep the response concise."
                 ),
                 "parameters": {
                     "type": "object",
@@ -45,7 +46,7 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
                         "url": {"type": "string"},
                         "max_chars": {
                             "type": "integer",
-                            "description": "Max characters to return (default 80000)",
+                            "description": "Max characters to return (default 12000 for web pages; up to 80000 for docs)",
                         },
                     },
                     "required": ["url"],
@@ -108,6 +109,39 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
                         },
                     },
                     "required": ["skill_name"],
+                },
+            },
+        },
+    {
+            "type": "function",
+            "function": {
+                "name": "analyze_image",
+                "description": (
+                    "Analyze a local image file and return a detailed text description. "
+                    "Use when the task involves understanding, describing, or extracting "
+                    "information from an image (screenshots, diagrams, photos, charts). "
+                    "Requires a vision-capable model to be available — either the active "
+                    "model or the configured vision_model fallback."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Absolute or workspace-relative path to the image file "
+                                "(JPEG, PNG, GIF, WEBP, BMP supported)"
+                            ),
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": (
+                                "Optional: Ollama vision model tag to use for this call "
+                                "(e.g. 'llava', 'qwen3-vl'). Overrides vision_model in settings."
+                            ),
+                        },
+                    },
+                    "required": ["path"],
                 },
             },
         },

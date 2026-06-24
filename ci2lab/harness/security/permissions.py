@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ci2lab.console import active_progress
+
 CONFIRM_TOOLS = frozenset({
     "bash",
     "write_file",
@@ -21,10 +23,12 @@ CONFIRM_TOOLS = frozenset({
 def default_confirm(tool_name: str, summary: str) -> bool:
     prompt = f"\nRun {tool_name}? {summary}\n[y/N] "
     try:
-        answer = input(prompt).strip().lower()  # noqa: T201
+        # Pause the "thinking" spinner so it doesn't hide this prompt.
+        with active_progress.suspended():
+            answer = input(prompt).strip().lower()  # noqa: T201
     except EOFError:
         return False
-    return answer in {"s", "si", "sí", "y", "yes"}
+    return answer in {"y", "yes"}
 
 
 def check_permission(

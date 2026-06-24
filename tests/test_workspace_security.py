@@ -1,4 +1,4 @@
-"""Tests de confinamiento al workspace y anti-bypass."""
+"""Tests for workspace confinement and anti-bypass."""
 
 from __future__ import annotations
 
@@ -164,6 +164,10 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
     ws = tmp_path / "workspace"
     ws.mkdir()
     selection = default_selection("test:1b")
+    # Large window so context summarization (which consumes a mocked chat
+    # response) never fires and shifts the scripted call sequence; this test is
+    # about not repeating a blocked read, not about context management.
+    selection.context_length = 1_000_000
     config = AgentConfig(
         cwd=str(ws),
         stream=False,
@@ -182,7 +186,7 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
         ],
     )
     final = LLMResponse(
-        content="No puedo leer archivos fuera del workspace.",
+        content="I cannot read files outside the workspace.",
         tool_calls=[],
     )
 
@@ -192,7 +196,7 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
         with patch(
             "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
         ) as execute_mock:
-            result = run_agent("lee el secreto externo", selection, config=config)
+            result = run_agent("read the external secret", selection, config=config)
 
     assert execute_mock.call_count == 1
     assert "workspace" in result.lower()

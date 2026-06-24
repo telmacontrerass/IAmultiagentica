@@ -7,7 +7,7 @@ from ci2lab.harness.tools.ask_user import ask_user
 from ci2lab.harness.tools.git_tools import git_diff, git_status
 from ci2lab.harness.tools.notebook import notebook_edit
 from ci2lab.harness.tools.registry import execute_tool
-from ci2lab.harness.tools.todo import todo_read, todo_write
+from ci2lab.harness.tools.todo import open_todos, todo_read, todo_write
 from ci2lab.harness.tools.web import web_fetch
 from ci2lab.harness.types import AgentConfig, ToolCall
 
@@ -28,6 +28,47 @@ def test_todo_write_and_read(tmp_path):
 
 def test_todo_write_rejects_empty(tmp_path):
     assert todo_write(str(tmp_path), []).startswith("Error:")
+
+
+def test_todo_write_result_points_at_next_step(tmp_path):
+    out = todo_write(
+        str(tmp_path),
+        [
+            {"id": "1", "content": "read the file", "status": "in_progress"},
+            {"id": "2", "content": "write the change", "status": "pending"},
+        ],
+    )
+    # The result must drive the model on instead of reading like a stop point.
+    assert "read the file" in out
+    assert "2 step(s) remain" in out
+    assert "do not stop" in out.lower()
+
+
+def test_todo_write_result_prompts_final_answer_when_all_done(tmp_path):
+    out = todo_write(
+        str(tmp_path),
+        [{"id": "1", "content": "do it", "status": "completed"}],
+    )
+    assert "All steps are completed" in out
+    assert "final result" in out.lower()
+
+
+def test_open_todos_returns_only_unfinished(tmp_path):
+    todo_write(
+        str(tmp_path),
+        [
+            {"id": "1", "content": "a", "status": "completed"},
+            {"id": "2", "content": "b", "status": "pending"},
+            {"id": "3", "content": "c", "status": "in_progress"},
+            {"id": "4", "content": "d", "status": "cancelled"},
+        ],
+    )
+    open_items = open_todos(str(tmp_path))
+    assert [t["content"] for t in open_items] == ["b", "c"]
+
+
+def test_open_todos_empty_when_no_file(tmp_path):
+    assert open_todos(str(tmp_path)) == []
 
 
 def test_ask_user_free_text(monkeypatch):

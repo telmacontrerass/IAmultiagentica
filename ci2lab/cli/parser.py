@@ -13,6 +13,7 @@ _CLI_COMMANDS = frozenset(
         "hardware",
         "models",
         "evals",
+        "skills",
         "permissions",
         "ui",
         "tools",
@@ -42,10 +43,12 @@ def _print_global_help() -> None:
         "Main commands:",
         '  ci2lab agent "request"            One task and exit',
         "  ci2lab chat                       Interactive mode (REPL)",
+        "  ci2lab menu                       Open the interactive launcher",
         "  ci2lab --multi-agent chat         REPL with subagent orchestrator",
         "  ci2lab tools qwen:1.8b            Simple chat with tools",
         "  ci2lab qwen:1.8b tools            Same thing, short form",
         "  ci2lab sessions [--json]          List saved sessions",
+        "  ci2lab skills [--json]            List available built-in/user/workspace skills",
         "  ci2lab doctor                     Check Python, Ollama and models",
         "  ci2lab hardware [--json]          RAM, GPU, memory budget",
         "  ci2lab models recommend [query]",
@@ -70,6 +73,9 @@ def _print_global_help() -> None:
         "  --session ID                      Resume session in chat/agent",
         "  --runs-dir PATH                   Logs directory (default: runs)",
         "  --no-log                          Do not save artifacts in runs/",
+        "  --image PATH                      Attach an image (PNG/JPG/WEBP/BMP).",
+        "                                    Repeat for multiple images.",
+        "                                    Requires a vision model (e.g. qwen2.5vl:7b).",
         "",
         "Important: agent flags go BEFORE the subcommand:",
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
@@ -156,6 +162,20 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Do not save run artifacts in runs/",
     )
+    p.add_argument(
+        "--image",
+        action="append",
+        dest="images",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Image or scanned-PDF file to attach. "
+            "Only image-only (scanned) PDFs are rendered to pages; "
+            "text PDFs should be read via read_document in the prompt. "
+            "Repeat to attach multiple files. "
+            "Requires a vision-capable model (e.g. --model qwen2.5vl:7b)."
+        ),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -172,9 +192,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_agent_flags(agent_p)
 
     sub.add_parser("chat", help="Interactive REPL mode").set_defaults(command="chat")
+    sub.add_parser("menu", help="Open the interactive launcher").set_defaults(command="menu")
 
     sessions_p = sub.add_parser("sessions", help="List saved sessions")
     sessions_p.add_argument("--json", action="store_true")
+
+    skills_p = sub.add_parser("skills", help="List available skills")
+    skills_p.add_argument("--json", action="store_true")
 
     sub.add_parser("doctor", help="Check environment")
 

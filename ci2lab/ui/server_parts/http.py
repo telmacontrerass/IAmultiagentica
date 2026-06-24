@@ -23,6 +23,8 @@ class UIState:
         self.pull_tasks: dict[str, dict[str, Any]] = {}
         self.delete_lock = threading.Lock()
         self.delete_tasks: dict[str, dict[str, Any]] = {}
+        self.chat_lock = threading.Lock()
+        self.chat_cancellations: dict[str, threading.Event] = {}
 
     @property
     def ollama_base_url(self) -> str:
@@ -30,6 +32,33 @@ class UIState:
 
     def list_installed_models(self) -> tuple[list[dict[str, Any]], str | None]:
         return fetch_installed_models(self.runtime.backend_url)
+
+    def begin_chat_request(self, request_id: str) -> threading.Event | None:
+        request_id = request_id.strip()
+        if not request_id:
+            return None
+        with self.chat_lock:
+            event = threading.Event()
+            self.chat_cancellations[request_id] = event
+            return event
+
+    def cancel_chat_request(self, request_id: str) -> bool:
+        request_id = request_id.strip()
+        if not request_id:
+            return False
+        with self.chat_lock:
+            event = self.chat_cancellations.get(request_id)
+            if not event:
+                return False
+            event.set()
+            return True
+
+    def finish_chat_request(self, request_id: str) -> None:
+        request_id = request_id.strip()
+        if not request_id:
+            return
+        with self.chat_lock:
+            self.chat_cancellations.pop(request_id, None)
 
 
 def run_ui(
@@ -84,6 +113,22 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/tools":
                 self._json(facade._tools_payload(state))
                 return
+            if parsed.path == "/api/projects":
+                self._json({"ok": True, "projects": facade._list_projects()})
+                return
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
+                project_id = unquote(parsed.path.split("/")[-2]).strip()
+                payload = facade._list_project_sources(project_id)
+                self._json(payload, status=200 if payload.get("ok") else 404)
+                return
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                project = facade._get_project(project_id)
+                self._json(
+                    {"ok": bool(project), "project": project, "error": None if project else "Project not found."},
+                    status=200 if project else 404,
+                )
+                return
             if parsed.path.startswith("/api/models/pull/"):
                 task_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = facade._pull_task_payload(state, task_id)
@@ -114,6 +159,9 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/chat/start":
                 self._json(facade._chat_start(state, payload))
                 return
+            if parsed.path == "/api/chat/cancel":
+                self._json(facade._chat_cancel(state, payload))
+                return
             if parsed.path == "/api/chat":
                 self._json(facade._chat(state, payload))
                 return
@@ -126,6 +174,26 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/files/upload":
                 self._json(facade._upload_file(state, payload))
                 return
+            if parsed.path == "/api/projects":
+                result = facade._create_project(str(payload.get("name") or ""))
+                self._json(result, status=201 if result.get("ok") else 400)
+                return
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
+                project_id = unquote(parsed.path.split("/")[-2]).strip()
+                result = facade._add_project_source(project_id, payload)
+                self._json(result, status=201 if result.get("ok") else 400)
+                return
+            self._json({"error": "Not found"}, status=404)
+
+        def do_PATCH(self) -> None:  # noqa: N802
+            facade = _facade()
+            parsed = urlparse(self.path)
+            payload = self._read_json()
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._rename_project(project_id, str(payload.get("name") or ""))
+                self._json(result, status=200 if result.get("ok") else 400)
+                return
             self._json({"error": "Not found"}, status=404)
 
         def do_DELETE(self) -> None:  # noqa: N802
@@ -135,6 +203,19 @@ def handler_factory(state: UIState):
                 session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = facade._delete_session_payload(session_id)
                 self._json(payload, status=status)
+                return
+            if parsed.path.startswith("/api/projects/") and "/sources/" in parsed.path:
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) == 5:
+                    project_id = unquote(parts[2]).strip()
+                    source_id = unquote(parts[4]).strip()
+                    result = facade._delete_project_source(project_id, source_id)
+                    self._json(result, status=200 if result.get("ok") else 404)
+                    return
+            if parsed.path.startswith("/api/projects/"):
+                project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._delete_project(project_id)
+                self._json(result, status=200 if result.get("ok") else 404)
                 return
             self._json({"error": "Not found"}, status=404)
 
@@ -154,12 +235,15 @@ def handler_factory(state: UIState):
 
         def _json(self, payload: dict[str, Any], *, status: int = 200) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                return
 
         def _serve_static(self, name: str) -> None:
             clean = name.strip("/").replace("\\", "/")

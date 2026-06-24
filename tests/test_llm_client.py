@@ -1,17 +1,23 @@
 import json
+import threading
+import time
 
 import httpx
+import pytest
 
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.llm_errors import LLMCancelledError
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 
 
-def _selection() -> ModelSelection:
-    return ModelSelection(
+def _selection(**overrides) -> ModelSelection:
+    base = dict(
         model_id="qwen2.5-coder-1.5b",
         ollama_tag="qwen2.5-coder:1.5b",
         display_name="Qwen2.5 Coder 1.5B",
     )
+    base.update(overrides)
+    return ModelSelection(**base)
 
 
 def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
@@ -36,15 +42,14 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
                     json={"error": "model qwen2.5-coder:1.5b not found"},
                     request=request,
                 )
+            # Native Ollama (/api/chat) response shape.
             return httpx.Response(
                 200,
                 json={
-                    "choices": [{"message": {"content": "ok"}}],
-                    "usage": {
-                        "prompt_tokens": 7,
-                        "completion_tokens": 2,
-                        "total_tokens": 9,
-                    },
+                    "message": {"role": "assistant", "content": "ok"},
+                    "done": True,
+                    "prompt_eval_count": 7,
+                    "eval_count": 2,
                 },
                 request=request,
             )
@@ -62,6 +67,134 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
     assert result.usage.total_tokens == 9
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+
+
+def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"message": {"content": "hi"}, "done": True},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection(context_length=65536, max_tokens=4096))
+    client.chat([{"role": "user", "content": "x"}])
+
+    # Hits the native endpoint and asks for the full window the harness assumes.
+    assert captured["url"].endswith("/api/chat")
+    assert captured["payload"]["options"]["num_ctx"] == 65536
+    assert captured["payload"]["options"]["num_predict"] == 4096
+    # The OpenAI-only fields must not leak into the native request.
+    assert "max_tokens" not in captured["payload"]
+
+def test_chat_cancel_event_closes_blocking_client(monkeypatch):
+    cancel_event = threading.Event()
+    closed_clients = []
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+            self.closed = False
+            closed_clients.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def close(self):
+            self.closed = True
+
+        def post(self, url, json):
+            cancel_event.set()
+            deadline = time.time() + 2
+            while not self.closed and time.time() < deadline:
+                time.sleep(0.01)
+            raise httpx.ReadError("closed", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection())
+    with pytest.raises(LLMCancelledError):
+        client.chat([{"role": "user", "content": "hola"}], cancel_event=cancel_event)
+
+    assert closed_clients
+    assert closed_clients[0].closed is True
+
+
+def test_native_payload_converts_openai_tool_history(monkeypatch):
+    # Regression: the history stores tool calls OpenAI-style (arguments as a
+    # JSON string, tool results with tool_call_id). Ollama's native endpoint
+    # rejects that and only accepts arguments-as-object + bare tool messages.
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"message": {"content": "done"}, "done": True},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    history = [
+        {"role": "user", "content": "search it"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_0",
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "arguments": '{"query": "Spain vs Saudi Arabia", "max_results": 5}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_0", "content": "Spain won 4-0"},
+    ]
+
+    client = LLMClient(_selection())
+    client.chat(history)
+
+    sent = captured["payload"]["messages"]
+    # Assistant tool-call arguments are now an object, not a string.
+    assistant = next(m for m in sent if m.get("tool_calls"))
+    args = assistant["tool_calls"][0]["function"]["arguments"]
+    assert args == {"query": "Spain vs Saudi Arabia", "max_results": 5}
+    # Tool result is reduced to the native shape (no tool_call_id).
+    tool_msg = next(m for m in sent if m.get("role") == "tool")
+    assert tool_msg == {"role": "tool", "content": "Spain won 4-0"}
 
 
 def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
@@ -87,18 +220,16 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
             return None
 
         def iter_lines(self):
-            chunk = {"choices": [{"delta": {"content": "ok"}}]}
-            yield f"data: {json.dumps(chunk)}"
-            usage = {
-                "choices": [],
-                "usage": {
-                    "prompt_tokens": 3,
-                    "completion_tokens": 1,
-                    "total_tokens": 4,
-                },
-            }
-            yield f"data: {json.dumps(usage)}"
-            yield "data: [DONE]"
+            # Native streaming: newline-delimited JSON objects, no `data:` frame.
+            yield json.dumps({"message": {"content": "ok"}, "done": False})
+            yield json.dumps(
+                {
+                    "message": {"content": ""},
+                    "done": True,
+                    "prompt_eval_count": 3,
+                    "eval_count": 1,
+                }
+            )
 
     class FakeClient:
         def __init__(self, timeout):
@@ -136,3 +267,97 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
     assert events[-1].usage.total_tokens == 4
     assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
     assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+
+
+def test_native_stream_collects_tool_calls(monkeypatch):
+    class StreamContext:
+        def __init__(self, response):
+            self.response = response
+
+        def __enter__(self):
+            return self.response
+
+        def __exit__(self, *args):
+            return False
+
+    class StreamResponse:
+        is_error = False
+
+        def read(self):
+            return b""
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            # Ollama emits the whole tool call in one message (args as an object).
+            yield json.dumps(
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "ls", "arguments": {"path": "."}}}
+                        ],
+                    },
+                    "done": True,
+                    "prompt_eval_count": 5,
+                    "eval_count": 4,
+                }
+            )
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, url, json):
+            return StreamContext(StreamResponse())
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(_selection())
+    events = list(client.stream_chat([{"role": "user", "content": "list files"}]))
+
+    final = events[-1]
+    assert isinstance(final, LLMResponse)
+    assert final.tool_calls == [
+        {"function": {"name": "ls", "arguments": {"path": "."}}}
+    ]
+
+
+def test_openai_backend_still_uses_v1_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}]},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    # A non-Ollama backend keeps the OpenAI-compatible path untouched.
+    client = LLMClient(_selection(backend="openai", backend_url="http://vllm:8000/v1"))
+    client.chat([{"role": "user", "content": "x"}])
+
+    assert captured["url"].endswith("/v1/chat/completions")
+    assert "options" not in captured["payload"]
+    assert captured["payload"]["max_tokens"] == 4096

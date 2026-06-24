@@ -38,8 +38,8 @@ def test_review_only_blockers_beat_implementation_words():
     assert decision.allowed_phases == ["planner", "researcher", "reviewer"]
 
 
-def test_review_only_spanish_negative_constraint():
-    decision = classify_multiagent_intent("Solo analiza el código, no cambies archivos.")
+def test_review_only_negative_constraint():
+    decision = classify_multiagent_intent("Only analyze the code, do not change files.")
     assert decision.intent is MultiAgentIntent.REVIEW_ONLY
     assert "coder" not in decision.allowed_phases
 
@@ -53,39 +53,41 @@ def test_conflict_negative_beats_positive():
 
 
 def test_document_summary_without_write():
-    decision = classify_multiagent_intent("Lee el PDF y resúmelo, por favor.")
+    decision = classify_multiagent_intent("Read the PDF and summarize it, please.")
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
     assert decision.allowed_phases == ["researcher", "reviewer"]
 
 
-def test_document_summary_with_explicit_save_requires_write_but_no_coder():
+def test_document_summary_with_explicit_save_includes_coder():
     decision = classify_multiagent_intent(
-        "Lee el PDF y guárdame el resumen en un .txt"
+        "Read the PDF and save the summary into a .txt"
     )
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
-    # P0: persisting a summary should not pull in the coder/validator phases.
-    assert "coder" not in decision.allowed_phases
+    # Persisting output requires an implementer that can write; a read-only flow
+    # could never produce the file. The validator is still not needed.
+    assert "coder" in decision.allowed_phases
+    assert "validator" not in decision.allowed_phases
 
 
 def test_document_transform_requires_full_flow():
-    decision = classify_multiagent_intent("Convertir docx a pdf y exportarlo.")
+    decision = classify_multiagent_intent("Convert docx to pdf and export it.")
     assert decision.intent is MultiAgentIntent.DOCUMENT_TRANSFORM
     assert decision.requires_write is True
     assert "coder" in decision.allowed_phases
 
 
 def test_read_only_answer():
-    decision = classify_multiagent_intent("Explícame qué significa esta función, sin editar.")
+    decision = classify_multiagent_intent("Explain what this function does, without editing.")
     assert decision.intent is MultiAgentIntent.READ_ONLY_ANSWER
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
 
 
 def test_code_change_includes_coder():
-    decision = classify_multiagent_intent("implementa un fix en orchestrator.py")
+    decision = classify_multiagent_intent("implement a fix in orchestrator.py")
     assert decision.intent is MultiAgentIntent.CODE_CHANGE
     assert decision.requires_write is True
     assert decision.allowed_phases == [
@@ -186,8 +188,10 @@ def test_p0_read_pdf_and_save_summary_is_document_summary_with_write():
     )
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
-    # Persisting a summary must not pull in the coder/validator phases.
-    assert "coder" not in decision.allowed_phases
+    # Persisting a summary needs a coder to create the output artifact, while the
+    # lightweight document flow still skips the validator phase.
+    assert "coder" in decision.allowed_phases
+    assert "validator" not in decision.allowed_phases
 
 
 # --- Rich OrchestrationDecision surface -----------------------------------
@@ -319,29 +323,69 @@ def test_review_only_orchestration_skips_coder(monkeypatch):
     assert calls == [AgentRole.PLANNER, AgentRole.RESEARCHER, AgentRole.REVIEWER]
 
 
-def test_spanish_review_only_skips_coder(monkeypatch):
-    calls = _run_with_capture(monkeypatch, "Solo analiza, no cambies archivos.")
+def test_negative_constraint_review_only_skips_coder(monkeypatch):
+    calls = _run_with_capture(monkeypatch, "Only analyze, do not change files.")
     assert AgentRole.GENERALIST_CODER not in calls
     assert AgentRole.VALIDATOR not in calls
 
 
 def test_document_summary_orchestration_skips_coder(monkeypatch):
-    calls = _run_with_capture(monkeypatch, "Lee el PDF y resúmelo.")
+    calls = _run_with_capture(monkeypatch, "Read the PDF and summarize it.")
     assert AgentRole.GENERALIST_CODER not in calls
     assert AgentRole.VALIDATOR not in calls
     assert calls == [AgentRole.RESEARCHER, AgentRole.REVIEWER]
 
 
-def test_document_summary_with_save_still_skips_coder(monkeypatch):
+def test_document_summary_with_save_runs_coder(monkeypatch):
+    # Saving the summary to a file needs a writer: a coder must run (so the file
+    # is actually produced), but no validator is required for a document task.
     calls = _run_with_capture(
-        monkeypatch, "Lee el PDF y guárdame el resumen en un .txt"
+        monkeypatch, "Read the PDF and save the summary into a .txt"
     )
-    assert AgentRole.GENERALIST_CODER not in calls
+    assert AgentRole.GENERALIST_CODER in calls
     assert AgentRole.VALIDATOR not in calls
 
 
+def test_complete_exercise_is_write_intent():
+    # Regression: "complete exercise 2" must route to a write flow with a coder.
+    # Before, "complete" matched no marker and the task fell to a read-only plan,
+    # so nothing was ever written.
+    decision = classify_multiagent_intent(
+        "read 'exam.pdf', find the instructions for exercise 2 and then complete exercise 2"
+    )
+    assert decision.requires_write is True
+    assert "coder" in decision.allowed_phases
+
+
+def test_blocked_planner_does_not_abort_run(monkeypatch):
+    # Regression: the toolless planner can flail and report "blocked"; that is
+    # advisory and must not abort the run — research and implementation still run.
+    calls: list[AgentRole] = []
+    outputs = _fake_outputs()
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        if role is AgentRole.PLANNER:
+            return _result(role, "I could not use any tools.", status="blocked")
+        return _result(role, outputs.get(role, "ok"), attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+    answer = run_multi_agent(
+        "complete exercise 2 from the notes",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert AgentRole.RESEARCHER in calls
+    assert AgentRole.GENERALIST_CODER in calls
+    assert "status: blocked" not in answer
+
+
 def test_code_change_orchestration_runs_coder(monkeypatch):
-    calls = _run_with_capture(monkeypatch, "implementa un fix en orchestrator.py")
+    calls = _run_with_capture(monkeypatch, "implement a fix in orchestrator.py")
     assert AgentRole.PLANNER in calls
     assert AgentRole.GENERALIST_CODER in calls
     assert AgentRole.VALIDATOR in calls

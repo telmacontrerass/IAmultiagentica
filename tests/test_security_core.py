@@ -1,4 +1,4 @@
-"""Tests de la capa central ci2lab.security."""
+"""Tests for the ci2lab.security core layer."""
 
 from __future__ import annotations
 
@@ -143,18 +143,18 @@ def test_symlink_outside_workspace(workspace: Path, outside_secret: Path):
         link.symlink_to(outside_secret)
     except OSError:
         if os.name == "nt":
-            pytest.skip("Windows sin privilegio para symlinks")
+            pytest.skip("Windows without privilege to create symlinks")
         raise
     if not link.exists() and not link.is_symlink():
-        pytest.skip("No se pudo crear symlink")
+        pytest.skip("Could not create symlink")
     decision = check_path_allowed(str(workspace), "escape_link")
-    # resolve() sigue el symlink; debe detectar salida del workspace o no filtrar
+    # resolve() follows the symlink; it must detect the workspace escape or not leak
     result = execute_tool(
         ToolCall("read_file", {"path": "escape_link"}, "t1"),
         AgentConfig(cwd=str(workspace)),
     )
     if "outside-secret" in result.content:
-        pytest.fail("Symlink permitió leer fuera del workspace")
+        pytest.fail("Symlink allowed reading outside the workspace")
     assert result.is_error or "outside-secret" not in result.content
 
 
