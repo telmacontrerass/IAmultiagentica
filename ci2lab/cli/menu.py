@@ -414,21 +414,16 @@ def _project_sessions(project_id: str) -> list[dict[str, str]]:
 
 
 def _select_project_session(project_id: str) -> dict[str, str] | None:
-    from ci2lab.harness.session import load_session
-    from ci2lab.ui.server_parts.serializers import session_title
-
     rows = _project_sessions(project_id)
     if not rows:
         console.print("[yellow]This project has no saved conversations yet.[/yellow]")
         return None
     options = []
     for row in rows:
-        data = load_session(row["id"])
-        title = session_title(data.get("messages", []) if data else [])
         options.append(
             MenuOption(
-                title,
-                f"{row['updated_at'][:19]} · {row['model']}",
+                row.get("title") or "Conversation",
+                f"{row['id']} · {row['updated_at'][:19]} · {row['model']}",
                 row["id"],
             )
         )
@@ -617,11 +612,11 @@ def select_session() -> dict[str, str] | None:
         return None
     options = [
         MenuOption(
-            label=(
-                f"{row['id']} | {row['model']} | "
-                f"{row['updated_at'][:19]} | {row['cwd'][:38]}"
+            label=row.get("title") or "Conversation",
+            description=(
+                f"{row['id']} · {row['model']} · "
+                f"{row['updated_at'][:19]}"
             ),
-            description="Saved session",
             value=row["id"],
         )
         for row in rows

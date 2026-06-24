@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,8 +101,10 @@ def list_sessions() -> list[dict[str, str]]:
     for path in sorted(sessions_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            messages = data.get("messages", [])
             rows.append({
                 "id": data.get("id", path.stem),
+                "title": session_title(messages if isinstance(messages, list) else []),
                 "model": data.get("model_tag", "?"),
                 "cwd": data.get("cwd", "?"),
                 "updated_at": data.get("updated_at", "?"),
@@ -110,3 +113,49 @@ def list_sessions() -> list[dict[str, str]]:
         except (json.JSONDecodeError, OSError):
             continue
     return rows
+
+
+def session_title(messages: list[dict[str, Any]]) -> str:
+    text = ""
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        text = message_text(message.get("content")).strip()
+        if text:
+            break
+    if not text:
+        return "Conversation"
+
+    words = re.findall(r"[A-Za-z0-9]+", text)
+    if not words:
+        return "Conversation"
+
+    stopwords = {
+        "a", "an", "and", "are", "can", "do", "for", "how", "i", "is", "it",
+        "me", "my", "of", "please", "read", "the", "this", "to", "what",
+        "where", "you",
+    }
+    keywords = [word for word in words if word.lower() not in stopwords]
+    chosen = (keywords or words)[:4]
+    title = " ".join(chosen).strip()
+    if len(title) > 48:
+        title = f"{title[:45].rstrip()}..."
+    return title[:1].upper() + title[1:] if title else "Conversation"
+
+
+def message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        return "\n".join(parts)
+    if content is None:
+        return ""
+    return str(content)

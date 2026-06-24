@@ -3,9 +3,11 @@ import json
 from ci2lab.harness.session import (
     delete_session,
     is_delete_session_request,
+    list_sessions,
     load_session,
     new_session_id,
     save_session,
+    session_title,
 )
 
 
@@ -60,3 +62,25 @@ def test_is_delete_session_request_accepts_natural_language():
     assert is_delete_session_request("remove the saved session")
     assert is_delete_session_request("/delete")
     assert not is_delete_session_request("delete the file test.pdf")
+
+
+def test_session_title_uses_first_user_message_keywords():
+    title = session_title([
+        {"role": "user", "content": "read P1_T1_IE.pdf and check the exercise"},
+    ])
+    assert title == "P1 T1 IE pdf"
+
+
+def test_list_sessions_includes_title(tmp_path, monkeypatch):
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    save_session(
+        "abc123",
+        messages=[{"role": "user", "content": "summarize drones paper"}],
+        model_tag="qwen2.5vl:7b",
+        cwd="/tmp",
+    )
+
+    rows = list_sessions()
+
+    assert rows[0]["title"] == "Summarize drones paper"
+    assert rows[0]["id"] == "abc123"

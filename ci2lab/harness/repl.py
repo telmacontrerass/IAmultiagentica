@@ -283,7 +283,8 @@ def run_repl(
             else:
                 for row in rows[:20]:
                     console.print(
-                        f"- [bold]{row['id']}[/bold] · {row['model']} · "
+                        f"- [bold]{row.get('title') or 'Conversation'}[/bold] "
+                        f"[dim]({row['id']})[/dim] · {row['model']} · "
                         f"{row['updated_at'][:19]} · {row['cwd']}"
                     )
             continue

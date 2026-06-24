@@ -6,6 +6,7 @@ from ci2lab.cli.menu import (
     ModelChoice,
     build_model_choices,
     open_session_json,
+    select_session,
     _parse_command_line,
     _run_doctor_with_ollama_install_option,
     _add_project_source_from_path,
@@ -316,3 +317,28 @@ def test_open_session_json_uses_session_file(tmp_path: Path, monkeypatch):
         assert open_session_json("abc123") == 0
 
     assert opened == [session_file]
+
+
+def test_select_session_uses_title_as_label(tmp_path: Path, monkeypatch):
+    from ci2lab.harness.session import save_session
+
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+    save_session(
+        "abc123",
+        messages=[{"role": "user", "content": "read P1_T1_IE.pdf"}],
+        model_tag="qwen2.5vl:7b",
+        cwd="/tmp",
+    )
+    captured: list[MenuOption] = []
+
+    def _capture(_title, options, **kwargs):
+        captured.extend(options)
+        return "abc123"
+
+    with patch("ci2lab.cli.menu.select_from_menu", side_effect=_capture):
+        row = select_session()
+
+    assert row is not None
+    assert row["id"] == "abc123"
+    assert captured[0].label == "P1 T1 IE pdf"
+    assert "abc123" in captured[0].description

@@ -21,11 +21,18 @@ def _cmd_sessions(args: argparse.Namespace) -> int:
         console.print("No saved sessions.")
         return 0
     table = Table(title="Sessions ~/.ci2lab/sessions")
+    table.add_column("Title")
     table.add_column("ID")
     table.add_column("Model")
     table.add_column("CWD")
     table.add_column("Updated")
     for row in rows:
-        table.add_row(row["id"], row["model"], row["cwd"][:40], row["updated_at"][:19])
+        table.add_row(
+            row.get("title") or "Conversation",
+            row["id"],
+            row["model"],
+            row["cwd"][:40],
+            row["updated_at"][:19],
+        )
     console.print(table)
     return 0

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 from typing import Any
 
-from ci2lab.harness.session import delete_session, list_sessions, load_session
+from ci2lab.harness.session import (
+    delete_session,
+    list_sessions,
+    load_session,
+    message_text,
+    session_title,
+)
 
 
 def disk_payload(workspace: str) -> dict[str, Any]:
@@ -45,11 +50,8 @@ def sessions_payload() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in list_sessions():
         session_id = str(row.get("id") or "")
-        data = load_session(session_id) if session_id else None
         enriched = dict(row)
         enriched["internal_tag"] = session_id
-        enriched["title"] = session_title(data.get("messages", []) if data else [])
-        enriched["project_id"] = data.get("project_id") if data else None
         rows.append(enriched)
     return rows
 
@@ -92,52 +94,6 @@ def delete_session_payload(session_id: str) -> tuple[dict[str, Any], int]:
     if not deleted:
         return {"ok": False, "error": "Session not found."}, 404
     return {"ok": True, "session_id": session_id}, 200
-
-
-def session_title(messages: list[dict[str, Any]]) -> str:
-    text = ""
-    for message in messages:
-        if not isinstance(message, dict) or message.get("role") != "user":
-            continue
-        text = message_text(message.get("content")).strip()
-        if text:
-            break
-    if not text:
-        return "Conversation"
-
-    words = re.findall(r"[A-Za-z0-9]+", text)
-    if not words:
-        return "Conversation"
-
-    stopwords = {
-        "a", "an", "and", "are", "can", "do", "for", "how", "i", "is", "it",
-        "me", "my", "of", "please", "read", "the", "this", "to", "what",
-        "where", "you",
-    }
-    keywords = [word for word in words if word.lower() not in stopwords]
-    chosen = (keywords or words)[:4]
-    title = " ".join(chosen).strip()
-    if len(title) > 48:
-        title = f"{title[:45].rstrip()}..."
-    return title[:1].upper() + title[1:] if title else "Conversation"
-
-
-def message_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict):
-                text = item.get("text") or item.get("content")
-                if text:
-                    parts.append(str(text))
-            elif item:
-                parts.append(str(item))
-        return "\n".join(parts)
-    if content is None:
-        return ""
-    return str(content)
 
 
 def public_pull_task(task: dict[str, Any]) -> dict[str, Any]:
