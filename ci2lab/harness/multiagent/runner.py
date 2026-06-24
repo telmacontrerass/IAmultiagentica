@@ -59,6 +59,21 @@ def _role_anchor_from_spec(spec: RoleSpec) -> str:
     )
 
 
+def _allowed_tools_line(config: AgentConfig, spec: RoleSpec) -> str:
+    """Concrete, comma-separated list of the tools this subagent may call.
+
+    Prefer the effective allow-list on the config (it already folds in any
+    parent skill restriction); fall back to the role's own set. Listing the
+    real names — not just a yes/no — keeps weaker local models from reaching
+    for a tool they were never granted, and counteracts the static fenced tool
+    catalog, which advertises every tool regardless of role.
+    """
+    tools = config.skill_allowed_tools
+    if tools is None:
+        tools = spec.allowed_tools
+    return ", ".join(sorted(tools)) if tools else "none (no tools — reason in prose only)"
+
+
 def build_subagent_system_prompt(
     role: AgentRole,
     selection: ModelSelection,
@@ -67,12 +82,35 @@ def build_subagent_system_prompt(
     """Build an isolated system prompt for a role-specific subagent."""
     spec = ROLE_SPECS[role]
     base_prompt = build_system_prompt(selection, config.cwd)
+    allowed_tools_line = _allowed_tools_line(config, spec)
+    # A read-only role has no way to hand a file to the next role, so it must be
+    # told to return its findings as text instead of trying to persist them —
+    # the failure mode where the researcher tried to write a scratch file the
+    # downstream roles then could not find.
+    if spec.can_write:
+        write_directive = (
+            "You CAN write files. Apply the change with your edit tools; do not "
+            "merely describe it."
+        )
+    else:
+        write_directive = (
+            "You CANNOT write files — no write tool is available to you. Never "
+            "attempt `write_file`/`edit_file`, and never plan to stash results in "
+            "a scratch file for another role. The ONLY thing the next role "
+            "receives is the text you return, so put every result, quote, and "
+            "finding the rest of the run needs directly in your final response."
+        )
     return (
         f"{base_prompt}\n\n"
         "## Subagent Role\n"
         f"- Role: {spec.role.value}\n"
         f"- Description: {spec.description}\n"
-        f"- Can write files: {'yes' if spec.can_write else 'no'}\n\n"
+        f"- Can write files: {'yes' if spec.can_write else 'no'}\n"
+        f"- Tools you may call: {allowed_tools_line}\n\n"
+        "## Tool Boundary\n"
+        f"{write_directive}\n"
+        "Calling a tool outside the list above is not possible and will be "
+        "rejected; stay within it.\n\n"
         "## Role Instructions\n"
         f"{spec.system_instructions}\n\n"
         "## Role Anchor\n"

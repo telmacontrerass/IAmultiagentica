@@ -88,6 +88,25 @@ def test_subagent_system_prompt_includes_english_role_purpose():
     assert "Your purpose in this phase is: Gather evidence" in prompt
     assert "Do not implement changes" in prompt
     assert "Expected output:" in prompt
+    # The read-only role must see its concrete tools and be told to return
+    # findings as text rather than try to write a scratch file.
+    tools_line = next(
+        line for line in prompt.splitlines() if line.startswith("- Tools you may call:")
+    )
+    assert "read_document" in tools_line
+    assert "write_file" not in tools_line  # not granted to a read-only role
+    assert "You CANNOT write files" in prompt
+
+
+def test_coder_subagent_prompt_grants_write():
+    selection = default_selection("test:1b")
+    prompt = build_subagent_system_prompt(
+        AgentRole.PYTHON_CODER,
+        selection,
+        AgentConfig(cwd="."),
+    )
+    assert "You CAN write files" in prompt
+    assert "write_file" in prompt
 
 
 def test_run_subagent_uses_isolated_system_context_and_role_tools():

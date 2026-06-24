@@ -5,12 +5,42 @@ from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.query.loop import (
+    _agent_can_write_files,
     _initial_progress_label,
     _model_progress_label,
     _prepend_missing_reads,
     _tool_progress_label,
 )
 from ci2lab.harness.types import ToolCall, ToolResult
+
+
+def test_agent_can_write_files_gates_on_effective_allowlist():
+    # Regression: read-only roles (researcher/reviewer/planner/validator) were
+    # nudged to "call write_file" they could not run, derailing the role. The
+    # gate must reflect the effective tool allow-list, not the prompt wording.
+    from ci2lab.harness.multiagent.roles import EDIT_TOOLS, READ_TOOLS, RUNTIME_TOOLS
+
+    # No skill/role restriction -> full tool set -> can write.
+    assert _agent_can_write_files(AgentConfig(cwd=".")) is True
+    # Coder roles carry the file-writing tools.
+    assert _agent_can_write_files(
+        AgentConfig(cwd=".", skill_allowed_tools=EDIT_TOOLS)
+    ) is True
+    # Read-only and runtime-only roles cannot write files.
+    assert _agent_can_write_files(
+        AgentConfig(cwd=".", skill_allowed_tools=READ_TOOLS)
+    ) is False
+    assert _agent_can_write_files(
+        AgentConfig(cwd=".", skill_allowed_tools=RUNTIME_TOOLS)
+    ) is False
+    # The toolless planner cannot write either.
+    assert _agent_can_write_files(
+        AgentConfig(cwd=".", skill_allowed_tools=frozenset())
+    ) is False
+    # Synonyms canonicalize, so an `edit` allow-list still counts as writable.
+    assert _agent_can_write_files(
+        AgentConfig(cwd=".", skill_allowed_tools=frozenset({"edit"}))
+    ) is True
 
 
 def test_initial_progress_label_describes_user_visible_work():
@@ -242,6 +272,34 @@ def test_run_agent_nudges_web_search_once_after_no_internet_reply():
         "You can use `web_search` for live info without a URL" in str(msg)
         for msg in nudge_messages
     ) == 1
+
+
+def test_run_agent_shows_model_reply_before_a_nudge():
+    # Insight: the model's prose must be visible even on rounds the loop nudges
+    # instead of finalizing — otherwise the user only sees the system nudge and
+    # never what the agent actually said.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    first = LLMResponse(
+        content="I do not have access to the internet right now.",
+        tool_calls=[],
+    )
+    second = LLMResponse(content="Got it, I will use web_search.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [first, second]
+        run_agent("give me a live result", selection, config=config)
+
+    printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+    # The first-round reply is surfaced as a "Model:" line before the nudge.
+    assert any(
+        "Model:" in text and "do not have access to the internet" in text
+        for text in printed_texts
+    )
 
 
 def test_run_agent_does_not_reuse_false_success_text_before_tool_result():

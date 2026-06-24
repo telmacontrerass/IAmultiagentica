@@ -48,6 +48,19 @@ _TEXT_TOOL_NAME_JSON_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A model sometimes writes a call as plain text in a key=value or call style —
+# `write_file path='f.txt' content='...'` or `write_file(path="f.txt", ...)` —
+# which none of the structured parsers accept. Match a known tool name at the
+# start of a line followed (optionally through `(`) by an `identifier=` so the
+# loop can nudge the model back to a real tool-call format instead of mistaking
+# the narration for a finished answer. The word boundary after the name keeps it
+# from firing on prose that merely embeds a tool name.
+_TEXT_TOOL_KV_RE = re.compile(
+    r"(?:^|\n)\s*(?:" + "|".join(re.escape(name) for name in sorted(TOOL_NAMES))
+    + r")\b\s*\(?\s*[A-Za-z_]\w*\s*=",
+    re.IGNORECASE,
+)
+
 
 def _parse_text_tool_name_plus_json(text: str) -> list[ToolCall]:
     calls: list[ToolCall] = []
@@ -114,6 +127,11 @@ def looks_like_unparsed_tool_attempt(text: str) -> bool:
     for tool in TOOL_NAMES:
         if re.search(rf"```(?:bash|sh|json)?\s*\n\s*{tool}\b", lowered):
             return True
+    # `write_file path='...'` / `read_file(path=...)` style — a tool call typed
+    # as prose. Checked against the original text (the patterns are
+    # case-insensitive via the tool names) so a key=value call is recovered.
+    if _TEXT_TOOL_KV_RE.search(text):
+        return True
     return False
 
 

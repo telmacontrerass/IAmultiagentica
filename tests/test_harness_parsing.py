@@ -251,3 +251,20 @@ def test_looks_like_unparsed_tool_attempt():
         '```json\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x"\n```'
     )
     assert not looks_like_unparsed_tool_attempt("just some explanation text")
+
+
+def test_unparsed_key_value_tool_attempt():
+    # Regression: a model emitted the write as `write_file path='...' content='...'`
+    # (key=value prose), no structured parser accepted it, and the loop mistook
+    # the narration for a finished answer. It must now be flagged so the model is
+    # nudged back to a real tool-call format.
+    assert looks_like_unparsed_tool_attempt(
+        "I will save it now.\n"
+        "write_file path='examen.txt' content='[PDF page 1/6]\nConvocatoria...'"
+    )
+    # Function-call style is the same mistake.
+    assert looks_like_unparsed_tool_attempt('read_file(path="examen.txt")')
+    # Merely naming a tool in prose is NOT an attempt — no key=value follows.
+    assert not looks_like_unparsed_tool_attempt(
+        "You can use write_file to persist the summary to disk."
+    )

@@ -39,6 +39,7 @@ from ci2lab.harness.parsing import (
     resolve_tool_calls,
     strip_tool_markup,
 )
+from ci2lab.harness.parsing_parts.common import map_name
 from ci2lab.harness.prompts import build_system_prompt
 from ci2lab.harness.vision import (
     analyze_image,
@@ -233,6 +234,33 @@ _WRITE_INTENT_RE = re.compile(
     r"\b(write|create|implement|add|edit|modify|fix)\w*",
     re.IGNORECASE,
 )
+# Tools that create or edit file content. An agent whose effective tool
+# allow-list contains none of these genuinely cannot apply a change, so any
+# write-oriented nudge must stay silent for it. `bash` is deliberately excluded:
+# a role with only `bash` (e.g. the validator) is not meant to author files, and
+# telling it to "call write_file" would push it outside its role.
+_WRITE_FILE_TOOLS = frozenset({
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "notebook_edit",
+})
+
+
+def _agent_can_write_files(cfg: AgentConfig) -> bool:
+    """True when this agent's effective tool allow-list can create/edit files.
+
+    With no skill/role allow-list active (`skill_allowed_tools is None`) the
+    agent has the full tool set and can write. Otherwise only an allow-list that
+    actually contains a file-writing tool counts — read-only roles (research,
+    review, planning, validation) must never be nudged to apply a change they
+    have no tool to make. Names are canonicalized so synonyms (`write`, `edit`)
+    are matched too.
+    """
+    allowed = cfg.skill_allowed_tools
+    if allowed is None:
+        return True
+    return any(map_name(name) in _WRITE_FILE_TOOLS for name in allowed)
 
 
 def _read_signature(call: ToolCall) -> str:
@@ -404,12 +432,20 @@ def _strip_anchors(history: list[dict[str, Any]]) -> None:
     history[:] = [m for m in history if not m.get("_anchor")]
 
 
-def _print_model_step(content: str, *, already_streamed: bool) -> None:
-    """Show non-tool text from a model round before executing tools."""
+def _print_model_step(content: str, *, already_streamed: bool) -> bool:
+    """Show the model's natural-language reply for a round before any tool runs.
+
+    Returns whether anything was printed so callers can avoid double-rendering
+    the same text (e.g. the finalize path) on rounds where the reply was already
+    surfaced. This is what gives both single- and multi-agent runs visibility
+    into how the agent reasons each round — not only the tools it ends up
+    calling — including rounds that the loop will nudge instead of finalize.
+    """
     display = strip_tool_markup(content).strip()
     if not display or already_streamed:
-        return
+        return False
     console.print(f"[dim]Model:[/dim] {display}")
+    return True
 
 
 _TEMPORAL_RE = re.compile(
@@ -654,6 +690,12 @@ def run_agent(
     todo_plan_active = False
     todo_continue_nudges = 0
     write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
+    # A read-only role/skill (researcher, reviewer, planner, validator) has no
+    # file-writing tool. Without this gate the "described but never written"
+    # nudge fired on those roles — their scaffolding prompt contains verbs like
+    # "implement"/"modify" — and pushed them to emit a write_file they could not
+    # run, derailing the role. Compute capability once; the nudge respects it.
+    can_write_files = _agent_can_write_files(cfg)
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -806,6 +848,7 @@ def run_agent(
                     and selection.supports_tools
                 ):
                     unparsed_tool_nudges += 1
+                    _print_model_step(content, already_streamed=streamed_this_round)
                     console.print(
                         "[yellow]Tool call detected as text but not executed; "
                         "asking the model to retry.[/yellow]"
@@ -828,6 +871,7 @@ def run_agent(
                     and _NO_INTERNET_RE.search(final_text)
                 ):
                     web_capability_nudge_sent = True
+                    _print_model_step(content, already_streamed=streamed_this_round)
                     append_assistant_turn(history, final_text or content)
                     history.append({"role": "user", "content": _WEB_CAPABILITY_NUDGE})
                     maybe_save_session(cfg, history, selection)
@@ -847,6 +891,7 @@ def run_agent(
                     open_steps = open_todos(cfg.cwd)
                     if open_steps:
                         todo_continue_nudges += 1
+                        _print_model_step(content, already_streamed=streamed_this_round)
                         console.print(
                             "[yellow]Task plan still has open steps; asking the "
                             "model to continue instead of stopping.[/yellow]"
@@ -868,12 +913,14 @@ def run_agent(
                 if (
                     final_text
                     and write_intent
+                    and can_write_files
                     and not attempted_write_this_turn
                     and not described_not_written_nudge_sent
                     and selection.supports_tools
                     and not stop_tools_requested
                 ):
                     described_not_written_nudge_sent = True
+                    _print_model_step(content, already_streamed=streamed_this_round)
                     console.print(
                         "[yellow]Change described but never written; asking the "
                         "model to apply it.[/yellow]"
@@ -897,6 +944,7 @@ def run_agent(
                     and not stop_tools_requested
                 ):
                     verifier_runs += 1
+                    _print_model_step(content, already_streamed=streamed_this_round)
                     _emit_progress("Verifying the result against the request...", on_progress)
                     issues = verify_completion(
                         cfg, selection, user_prompt, effectful_actions
