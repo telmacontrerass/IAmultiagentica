@@ -8,9 +8,10 @@ import re
 import shutil
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from ci2lab.harness.tools.filesystem import read_document, read_file
 from ci2lab.harness.tools.secret_files import is_sensitive_path
@@ -53,6 +54,16 @@ def _connect(path: Path) -> sqlite3.Connection:
     return connection
 
 
+@contextmanager
+def _database(path: Path) -> Iterator[sqlite3.Connection]:
+    connection = _connect(path)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
+
+
 def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
     """Tag legacy rows and make project ownership queryable inside each DB."""
     columns = {
@@ -69,7 +80,7 @@ def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
 
 def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    with _connect(path) as db:
+    with _database(path) as db:
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS project (
@@ -118,7 +129,7 @@ def get_project(project_id: str) -> dict[str, Any] | None:
     if path is None or not (path / "project.sqlite3").is_file():
         return None
     try:
-        with _connect(path / "project.sqlite3") as db:
+        with _database(path / "project.sqlite3") as db:
             row = db.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
             if row is None:
                 return None
@@ -163,7 +174,7 @@ def rename_project(project_id: str, name: str) -> dict[str, Any]:
     if not clean_name or len(clean_name) > 100:
         return {"ok": False, "error": "Use a project name between 1 and 100 characters."}
     now = datetime.now(timezone.utc).isoformat()
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         db.execute(
             "UPDATE project SET name = ?, updated_at = ? WHERE id = ?",
             (clean_name, now, project_id),
@@ -192,7 +203,7 @@ def list_project_sources(project_id: str) -> dict[str, Any]:
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         _ensure_source_ownership(db, project_id)
         rows = db.execute(
             """
@@ -241,7 +252,7 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
             "error": f"The file exceeds the {format_upload_size(MAX_UPLOAD_BYTES)} limit.",
         }
 
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         _ensure_source_ownership(db, project_id)
         count = db.execute(
             "SELECT COUNT(*) FROM sources WHERE project_id = ?", (project_id,)
@@ -266,7 +277,7 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
 
     source_id = f"src_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         db.execute(
             """
             INSERT INTO sources (
@@ -306,7 +317,7 @@ def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         _ensure_source_ownership(db, project_id)
         row = db.execute(
             """
@@ -364,7 +375,7 @@ def project_context(project_id: str, query: str) -> str:
         return ""
     query_terms = _terms(query)
     candidates: list[tuple[int, str, str]] = []
-    with _connect(path / "project.sqlite3") as db:
+    with _database(path / "project.sqlite3") as db:
         _ensure_source_ownership(db, project_id)
         rows = db.execute(
             "SELECT name, content FROM sources WHERE project_id = ?",
