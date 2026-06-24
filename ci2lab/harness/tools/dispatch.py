@@ -117,6 +117,10 @@ DISPATCH: dict[str, Callable[..., str]] = {
         cfg,
         model_override=a.get("model", ""),
     ),
+    "extract_visual_document": lambda cfg, a: vision_tool.extract_visual_document_tool(
+        a["path"],
+        cfg,
+    ),
 }
 
 

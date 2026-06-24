@@ -22,6 +22,7 @@ _PATH_ARG_TOOLS = frozenset({
     "file_info",
     "tree",
     "inspect_file",
+    "extract_visual_document",
 })
 
 _WRITE_TOOLS = frozenset(

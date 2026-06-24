@@ -148,6 +148,31 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
     {
             "type": "function",
             "function": {
+                "name": "extract_visual_document",
+                "description": (
+                    "Extract text and formulas from a local image or scanned/handwritten PDF. "
+                    "This tool is extraction-only and always uses qwen2.5vl:7b under the hood. "
+                    "Use it before reasoning/verification when the source is visual (handwriting, "
+                    "camera scans, rasterized exams)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Absolute or workspace-relative path to the source file "
+                                "(PDF, JPEG, PNG, GIF, WEBP, BMP, TIFF)"
+                            ),
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+    {
+            "type": "function",
+            "function": {
                 "name": "mcp_call",
                 "description": (
                     "Call a tool on a connected MCP server by server name and tool name. "

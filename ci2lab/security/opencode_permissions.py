@@ -16,6 +16,7 @@ PermissionValue = str  # allow | ask | deny
 
 _READ_TOOLS = frozenset({
     "read_file",
+    "extract_visual_document",
     "inspect_file",
     "file_info",
     "tree",

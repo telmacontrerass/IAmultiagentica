@@ -26,6 +26,7 @@ TOOL_NAMES = frozenset({
     "git_diff",
     "skill",
     "mcp_call",
+    "extract_visual_document",
     "docx_to_pdf",
     "pdf_to_docx",
     "delegate",
