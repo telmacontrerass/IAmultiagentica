@@ -265,3 +265,20 @@ class TestLoadSettings:
         )
         s = load_settings(str(tmp_path))
         assert not hasattr(s, "ask")
+
+    def test_loads_utf8_bom_settings_file(self, tmp_path, monkeypatch):
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        settings_path = fake_home / ".ci2lab" / "settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        # UTF-8 with BOM (common on Windows PowerShell).
+        settings_path.write_text(
+            json.dumps({"vision_enabled": True, "vision_model": "qwen2.5vl:7b"}),
+            encoding="utf-8-sig",
+        )
+
+        s = load_settings(str(tmp_path))
+        assert s.vision_enabled is True
+        assert s.vision_model == "qwen2.5vl:7b"

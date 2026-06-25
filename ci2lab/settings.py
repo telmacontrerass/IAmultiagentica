@@ -82,7 +82,9 @@ def _load_raw(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # Accept UTF-8 files both with and without BOM. Windows PowerShell's
+        # `Set-Content -Encoding UTF8` may emit a BOM.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except OSError as exc:
         logger.warning("settings.json: could not read %s: %s", path, exc)
         return None

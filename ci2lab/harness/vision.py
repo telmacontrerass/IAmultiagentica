@@ -58,7 +58,6 @@ _VISION_MODEL_KEYWORDS = (
     "gemma-3", "gemma3", "gemma-4", "gemma4",
     "llama-4", "llama4",
     "mistral-small-3.1", "mistral-small3.1", "mistral-small-3.2", "mistral-small3.2",
-    "phi-4", "phi4",
     # Zhipu / GLM vision variants
     "glm-4.5v", "glm-4.6v", "glm-5v",
     # Qwen3.5 and Qwen3.6 are vision-capable on Ollama but have no "vl" in
@@ -83,6 +82,15 @@ def is_vision_model(model_name: str | None) -> bool:
     never gets the image block produces a silently wrong answer.
     """
     m = (model_name or "").lower()
+
+    # Phi-4 naming is ambiguous across backends. Many local tags like `phi4:14b`
+    # are text-only; only treat Phi-4 as vision-capable when the tag explicitly
+    # signals multimodality.
+    if "phi-4" in m or "phi4" in m:
+        return any(tok in m for tok in ("vision", "multimodal", "-mm", "_mm")) or bool(
+            _VISION_VL_RE.search(m)
+        )
+
     if any(kw in m for kw in _VISION_MODEL_KEYWORDS):
         return True
     return bool(_VISION_VL_RE.search(m))

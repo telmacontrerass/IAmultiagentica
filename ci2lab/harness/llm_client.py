@@ -179,10 +179,16 @@ class LLMClient:
         return converted
 
     def _model_candidates(self) -> list[str]:
-        candidates = [
-            self.selection.ollama_tag,
-            self.selection.model_id,
-        ]
+        # Prefer concrete runtime tags (e.g. "phi4:14b"). Catalog ids are
+        # often slugified ("phi4-14b") and are not valid Ollama model names.
+        candidates = [self.selection.ollama_tag]
+        model_id = (self.selection.model_id or "").strip()
+        if (
+            model_id
+            and model_id != self.selection.ollama_tag
+            and ":" in model_id
+        ):
+            candidates.append(model_id)
         unique: list[str] = []
         for candidate in candidates:
             if candidate and candidate not in unique:
