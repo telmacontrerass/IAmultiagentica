@@ -409,6 +409,8 @@ def analyze_image(
     backend_url: str,
     model_tag: str,
     timeout: float = 600.0,
+    *,
+    prompt: str | None = None,
 ) -> str:
     """Call a vision-language model and return a text description of the image.
 
@@ -422,6 +424,10 @@ def analyze_image(
         Ollama tag of the vision model, e.g. ``llava`` or ``qwen3-vl``.
     timeout:
         HTTP timeout in seconds (default 600 — VL inference can be slow).
+    prompt:
+        Optional user message for the vision model. Defaults to a generic
+        description request; pass :data:`ci2lab.harness.vision_exercise.EXERCISE_TRANSCRIPTION_PROMPT`
+        for literal exercise transcription.
 
     Returns the model's description string, or a human-readable error string
     that the caller can inject into the prompt and continue.  Never raises.
@@ -451,7 +457,7 @@ def analyze_image(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "Describe this image in detail."},
+                {"type": "text", "text": prompt or "Describe this image in detail."},
                 {
                     "type": "image_url",
                     "image_url": {

@@ -152,8 +152,8 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
                 "description": (
                     "Extract text and formulas from a local image or scanned/handwritten PDF. "
                     "This tool is extraction-only and always uses qwen2.5vl:7b under the hood. "
-                    "Use it before reasoning/verification when the source is visual (handwriting, "
-                    "camera scans, rasterized exams)."
+                    "Use with the review_handwritten_exercise skill when the user asks to "
+                    "transcribe handwritten work and check calculations step by step."
                 ),
                 "parameters": {
                     "type": "object",

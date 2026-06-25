@@ -50,6 +50,11 @@ from ci2lab.harness.vision import (
     pdf_to_images,
     strip_vision_from_messages,
 )
+from ci2lab.harness.vision_exercise import (
+    EXERCISE_TRANSCRIPTION_PROMPT,
+    enrich_turn_content_with_exercise_skill,
+    is_exercise_review_request,
+)
 from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 from ci2lab.harness.query.llm_io import call_llm
 from ci2lab.harness.query.nudges import (
@@ -606,6 +611,11 @@ def run_agent(
                 _vision_tag = (cfg.vision_model or "").strip()
                 if _vision_tag:
                     _image_timeout = compute_llm_timeout(1, has_pdf=_vision_has_pdf)
+                    _vl_prompt = (
+                        EXERCISE_TRANSCRIPTION_PROMPT
+                        if is_exercise_review_request(user_prompt)
+                        else None
+                    )
                     _enriched = user_prompt
                     for _img in _expanded_paths:
                         _desc = analyze_image(
@@ -613,6 +623,7 @@ def run_agent(
                             selection.backend_url,
                             _vision_tag,
                             timeout=_image_timeout,
+                            prompt=_vl_prompt,
                         )
                         _enriched = (
                             f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
@@ -624,6 +635,15 @@ def run_agent(
             # build_vision_content has base64-encoded them.
             for _td in _pdf_temp_dirs:
                 _shutil.rmtree(_td, ignore_errors=True)
+
+    if cfg.image_paths and cfg.vision_enabled:
+        _user_content, _skill_allowed = enrich_turn_content_with_exercise_skill(
+            user_prompt,
+            _user_content,
+            cfg.cwd,
+        )
+        if _skill_allowed is not None:
+            cfg.skill_allowed_tools = _skill_allowed
 
     _timeout_images = _vision_image_count or _history_image_count
     _timeout_has_pdf = _vision_has_pdf or (
