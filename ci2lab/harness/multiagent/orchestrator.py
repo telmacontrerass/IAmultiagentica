@@ -93,7 +93,41 @@ _IMPLEMENTATION_TASK_MARKERS = (
     "change",
     "convert",
     "generate code",
+    "complete",
+    "solve",
+    "develop",
+    "build",
 )
+
+# The roles that actually produce the deliverable: the researcher (gathers the
+# only context the coder sees) plus every implementer (any role that can write).
+# Only a block from one of these marks the whole run blocked — the planner,
+# validator, reviewer, and security reviewer are advisory, so their confusion
+# (e.g. a validator that replies "BLOCKED: please provide a validation step")
+# must never abort a run whose researcher and coder already did real work.
+# Derived from ROLE_SPECS so adding a new implementer role can never silently
+# fall out of this set.
+_LOAD_BEARING_ROLES = frozenset(
+    {AgentRole.RESEARCHER}
+    | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
+)
+
+# A request is test-centric or docs-centric only when the USER asks for tests or
+# docs as the deliverable — matched against the user's own prompt, never against
+# planner/researcher evidence. An "implement/complete/solve" task that merely
+# mentions that unit tests are required (e.g. an exam statement) must not be
+# routed to the test-only coder, which would leave the actual program unwritten.
+_TEST_REQUEST_RE = re.compile(
+    r"\bunit tests?\b|\bpytest\b|\btest (case|suite|coverage|file)s?\b|"
+    r"\b(write|add|create|update|run|fix|implement|generate)\b[^.\n]{0,30}\btests?\b",
+    re.IGNORECASE,
+)
+_DOCS_REQUEST_RE = re.compile(
+    r"\breadme\b|\bchangelog\b|\bdocumentation\b|\bdocstrings?\b|\bdocs?\b|\.md\b",
+    re.IGNORECASE,
+)
+_FRONTEND_EVIDENCE = ("frontend", "javascript", ".js", ".html", ".css", "ui/static")
+_PYTHON_EVIDENCE = (".py", "python", "ci2lab/", "harness")
 
 
 def _combined_output(*results: SubAgentResult | None) -> str:
@@ -382,27 +416,44 @@ def _execute_phase(
         state.add_result(failed)
         raise
     state.add_result(result)
-    if subagent_blocked(result):
+    # Only a load-bearing role blocking is a real failure. An advisory role
+    # (validator/reviewer/security) that returns "BLOCKED" is confused, not a
+    # dependency block, and must not mark the whole run failed.
+    if subagent_blocked(result) and role in _LOAD_BEARING_ROLES:
         state.failed_phase = role.value
         state.error = result.output or result.error
     return result
 
 
 def choose_coder_role(
-    plan: SubAgentResult | None, research: SubAgentResult | None
+    plan: SubAgentResult | None,
+    research: SubAgentResult | None,
+    *,
+    user_prompt: str = "",
 ) -> AgentRole:
-    """Choose an implementation role from planner/researcher evidence."""
-    text = _combined_output(plan, research).lower()
-    if any(marker in text for marker in ("readme", ".md", "docs/", "documentacion")):
-        return AgentRole.DOCS_CODER
-    if any(marker in text for marker in ("pytest", "tests/", "test_", "unit test")):
+    """Choose an implementation role.
+
+    The USER's request decides the primary deliverable; planner/researcher text
+    only refines *which* implementer to use. A build/implement/complete/solve
+    request is an implementation job even when it also needs tests or touches
+    docs — so the test- and docs-only specialists are picked only when the user
+    actually asked for tests or docs, judged from their own prompt. Otherwise
+    route by the language signal in the prompt and evidence, defaulting to the
+    generalist implementer (which can write any file) rather than a specialist
+    that would write nothing.
+    """
+    prompt = (user_prompt or "").lower()
+    evidence = _combined_output(plan, research).lower()
+
+    if _TEST_REQUEST_RE.search(prompt):
         return AgentRole.TEST_CODER
-    if any(
-        marker in text
-        for marker in ("frontend", "javascript", ".js", ".html", ".css", "ui/static")
-    ):
+    if _DOCS_REQUEST_RE.search(prompt):
+        return AgentRole.DOCS_CODER
+
+    combined = f"{prompt}\n{evidence}"
+    if any(marker in combined for marker in _FRONTEND_EVIDENCE):
         return AgentRole.FRONTEND_CODER
-    if any(marker in text for marker in (".py", "python", "ci2lab/", "harness")):
+    if any(marker in combined for marker in _PYTHON_EVIDENCE):
         return AgentRole.PYTHON_CODER
     return AgentRole.GENERALIST_CODER
 
@@ -478,7 +529,11 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
         "specific content (a document, an exercise, a section, a function), quote "
         "the exact relevant text VERBATIM in your report. Do not just summarize "
         "it or say where it is. If you read a document to find instructions, "
-        "include those instructions in full.\n\n"
+        "include those instructions in full.\n"
+        "NEVER write a section heading and leave it empty (e.g. a title with no "
+        "text under it). Paste the full content you read; if you genuinely could "
+        "not obtain a piece of content, say so explicitly instead of leaving a "
+        "blank placeholder.\n\n"
         "Report:\n"
         "- which planner-assigned researcher tasks you completed\n"
         "- the verbatim content the implementer will need (quoted in full)\n"
@@ -517,6 +572,11 @@ def _build_implementation_prompt(
         "Only return `BLOCKED:` with the exact missing dependency if the source "
         "genuinely cannot be read or does not exist — not merely because the "
         "research summary was thin.\n\n"
+        "Your deliverable is the actual file(s) the task requires, WRITTEN TO "
+        "DISK with their real content — not a description and not empty code "
+        "blocks. Create every file the task calls for (the program/solution it "
+        "asks you to build, and any tests it explicitly requests), and do not "
+        "claim the task is complete until those files exist with real content.\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
         f"Research:\n{research_text}"
     )
@@ -594,13 +654,15 @@ def _build_security_review_prompt(run: MultiAgentRun) -> str:
 
 def synthesize_final_answer(run: MultiAgentRun) -> str:
     """Create a concise final answer from orchestrator state."""
-    # A blocked planner is not fatal — it is advisory and the load-bearing roles
-    # (researcher, coder) run after it — so it must not mark the whole run blocked.
+    # Only a blocked load-bearing role (researcher or coder) makes the run
+    # blocked. The planner, validator, reviewer, and security reviewer are
+    # advisory: a confused "BLOCKED" from any of them must not discard the real
+    # work the researcher and coder produced.
     blocked = next(
         (
             result
             for result in run.results
-            if subagent_blocked(result) and result.role != AgentRole.PLANNER
+            if subagent_blocked(result) and result.role in _LOAD_BEARING_ROLES
         ),
         None,
     )
@@ -732,7 +794,7 @@ def run_multi_agent(
 
         # Implementation + validation only run when the intent allows writes.
         if "coder" in planned_phases:
-            coder_role = choose_coder_role(plan, research)
+            coder_role = choose_coder_role(plan, research, user_prompt=user_prompt)
             state.selected_coder_role = coder_role
 
             implementation_prompt = _build_implementation_prompt(user_prompt, plan, research)
@@ -760,9 +822,10 @@ def run_multi_agent(
                     cfg,
                     on_progress=on_progress,
                 )
-                if subagent_blocked(validation):
-                    state.final_answer = synthesize_final_answer(state)
-                    return state.final_answer
+                # A blocked/confused validator is advisory — keep the run going
+                # to the reviewer and final synthesis instead of discarding the
+                # implementation. Only a genuine validation *failure* (below)
+                # triggers the repair loop.
 
                 repair_attempt = 0
                 while validation_failed(validation) and repair_attempt < max_repair_attempts:
@@ -803,8 +866,9 @@ def run_multi_agent(
                         on_progress=on_progress,
                     )
                     if subagent_blocked(validation):
-                        state.final_answer = synthesize_final_answer(state)
-                        return state.final_answer
+                        # Validator gave up mid-repair: stop retrying, but still
+                        # review and synthesize what the coder produced.
+                        break
 
         if "reviewer" in planned_phases:
             review_prompt = _build_review_prompt(state)

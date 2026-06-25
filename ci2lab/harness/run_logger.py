@@ -104,18 +104,26 @@ class RunLogger:
             self._run_dir.mkdir(parents=True, exist_ok=False)
             self.agent_config.last_run_dir = str(self._run_dir)
             self._write_json("config_snapshot.json", self.config_snapshot)
-            set_audit_persist_context(
-                AuditPersistContext(
-                    workspace=self.agent_config.cwd,
-                    runs_dir=self.agent_config.runs_dir,
-                    run_id=self._run_dir.name,
-                    run_subdir=self._run_dir.name,
-                    security_engine=self.agent_config.security_engine,
+            # Only the top-level run owns the audit context and permission
+            # session. A subagent (delegation_depth > 0) must NOT rebind them:
+            # doing so gives each subagent its own session key, so a user's
+            # "allow session" granted in one role never carries to the next, and
+            # the subagent's finalize would clear the parent's grants. Leaving
+            # the parent's context in place means every subagent in a multi-agent
+            # run shares one permission session (one prompt, not one per role).
+            if self.agent_config.delegation_depth == 0:
+                set_audit_persist_context(
+                    AuditPersistContext(
+                        workspace=self.agent_config.cwd,
+                        runs_dir=self.agent_config.runs_dir,
+                        run_id=self._run_dir.name,
+                        run_subdir=self._run_dir.name,
+                        security_engine=self.agent_config.security_engine,
+                    )
                 )
-            )
-            bind_active_session(
-                self.agent_config.session_id or self._run_dir.name
-            )
+                bind_active_session(
+                    self.agent_config.session_id or self._run_dir.name
+                )
             return self._run_dir
         except Exception as exc:  # noqa: BLE001
             self._deactivate(f"Could not create the run folder: {exc}")
@@ -274,13 +282,17 @@ class RunLogger:
         except Exception as exc:  # noqa: BLE001
             self._warn(f"Could not finalize the run log: {exc}")
         finally:
-            session_key = self.agent_config.session_id or (
-                self._run_dir.name if self._run_dir is not None else None
-            )
-            if session_key:
-                clear_session_permissions(session_key)
-            bind_active_session(None)
-            set_audit_persist_context(None)
+            # Mirror start(): only the top-level run tears down the shared
+            # permission session and audit context. A subagent clearing them
+            # would wipe approvals the rest of the multi-agent run still needs.
+            if self.agent_config.delegation_depth == 0:
+                session_key = self.agent_config.session_id or (
+                    self._run_dir.name if self._run_dir is not None else None
+                )
+                if session_key:
+                    clear_session_permissions(session_key)
+                bind_active_session(None)
+                set_audit_persist_context(None)
 
     def _write_json(self, name: str, data: Any) -> None:
         if self._run_dir is None:

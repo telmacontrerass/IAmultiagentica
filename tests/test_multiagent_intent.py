@@ -208,8 +208,10 @@ def test_blocked_planner_does_not_abort_run(monkeypatch):
 
 
 def test_code_change_orchestration_runs_coder(monkeypatch):
+    # A ".py" file in the request routes to the Python implementer (more precise
+    # than the generalist fallback).
     calls = _run_with_capture(monkeypatch, "implement a fix in orchestrator.py")
     assert AgentRole.PLANNER in calls
-    assert AgentRole.GENERALIST_CODER in calls
+    assert AgentRole.PYTHON_CODER in calls
     assert AgentRole.VALIDATOR in calls
     assert AgentRole.REVIEWER in calls

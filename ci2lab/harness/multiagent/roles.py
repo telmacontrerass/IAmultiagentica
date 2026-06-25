@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ci2lab.harness.multiagent.state import AgentRole
+from ci2lab.harness.tools.capabilities import FILE_WRITE_TOOLS
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,9 @@ class RoleSpec:
     can_write: bool = False
 
 
+# Local-filesystem read tools every role may use. This is intentionally narrower
+# than `capabilities.READ_ONLY_TOOLS` (which also covers web/cacheable lookups):
+# it is the permission base for a role, not the loop's cache-eligibility set.
 READ_TOOLS = frozenset({
     "ls",
     "glob",
@@ -29,11 +33,10 @@ READ_TOOLS = frozenset({
     "grep",
 })
 
-EDIT_TOOLS = READ_TOOLS | frozenset({
-    "edit_file",
-    "write_file",
-    "apply_patch",
-})
+# An implementer can read plus author any file type. Sharing the canonical
+# `FILE_WRITE_TOOLS` keeps "what counts as a write" identical to the loop's
+# write-intent gate, so a coder role is always recognized as write-capable.
+EDIT_TOOLS = READ_TOOLS | FILE_WRITE_TOOLS
 
 RUNTIME_TOOLS = READ_TOOLS | frozenset({
     "bash",
