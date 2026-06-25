@@ -580,6 +580,10 @@ def run_agent(
         import shutil as _shutil
 
         # Expand PDF paths into per-page PNG files.
+        # Exercise review needs to read small printed/handwritten digits
+        # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
+        _is_exercise_review = is_exercise_review_request(user_prompt)
+        _render_dpi = 170 if _is_exercise_review else 96
         _expanded_paths: list[str] = []
         _pdf_temp_dirs: list[Path] = []
         for _raw_path in cfg.image_paths:
@@ -592,7 +596,7 @@ def run_agent(
                     continue
                 _vision_has_pdf = True
                 try:
-                    _pages, _tmp = pdf_to_images(_raw_path)
+                    _pages, _tmp = pdf_to_images(_raw_path, dpi=_render_dpi)
                     _expanded_paths.extend(str(p) for p in _pages)
                     _pdf_temp_dirs.append(_tmp)
                 except Exception as _exc:
@@ -625,8 +629,17 @@ def run_agent(
                             timeout=_image_timeout,
                             prompt=_vl_prompt,
                         )
+                        # Surface the raw transcription so the user can see what
+                        # the vision model actually produced per page — makes a
+                        # missing/garbled page obvious instead of silently lost.
+                        _name = Path(_img).name
+                        console.print(
+                            f"[dim]── Vision transcription: {_name} "
+                            f"({len(_desc)} chars, model {_vision_tag}) ──[/dim]"
+                        )
+                        console.print(f"[dim]{_desc}[/dim]")
                         _enriched = (
-                            f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
+                            f"{_enriched}\n\n[Image: {_name}]\n{_desc}"
                         )
                     _user_content = _enriched
                 # if no vision_model configured, pass user_prompt unchanged

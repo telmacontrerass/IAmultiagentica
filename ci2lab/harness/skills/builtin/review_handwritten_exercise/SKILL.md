@@ -11,6 +11,11 @@ Review handwritten or scanned exercise work in three phases:
 2. Audit every step; classify whether each issue actually affects the final result.
 3. If any issue affects the result, solve the exercise correctly from the problem statement.
 
+# Coverage (read first — applies to every phase)
+- The document may span **multiple pages** and contain **multiple labelled sub-parts** (a, b, c, …). Process **every page** and **every sub-part** — never stop after the first one.
+- Each injected `[Image: …]` block is one page. Account for all of them; if a page's transcription is empty or sparse, say so explicitly rather than ignoring it.
+- Produce a separate Audit (and, when needed, Corrected solution) for **each** sub-part.
+
 # Phase 1 — Transcription
 - If page transcriptions are already in the message (from vision preprocessing), use them as the primary source.
 - Otherwise call `extract_visual_document` on the file path.
@@ -65,3 +70,6 @@ Markdown table with columns: Step | Seen | Likely source | Used later | Affects 
 - Never claim an error "does not matter" without checking whether the wrong value was reused downstream.
 - Never skip arithmetic — show the multiplication/addition that proves a step right or wrong.
 - If transcription is too ambiguous to audit a step, say so and call `extract_visual_document` again or flag `uncertain`.
+- **Do not invent author errors from OCR noise.** When `likely_source` is `transcription` and the value the student actually carries downstream is self-consistent and gives their stated result, treat it as a vision/OCR misread — set `affects_result: no` and do **not** "correct" the student. A printed reference value (e.g. a Cp from the given table) that the student copied correctly is not an author error just because the vision model misread it.
+- Before reworking, re-derive the student's final number with the values **they used**. If your independent calculation matches their answer, the student is correct — say so plainly instead of producing a near-identical "corrected" result.
+- Never skip a page or sub-part. If you only audited part (a), you are not done while part (b) exists.
