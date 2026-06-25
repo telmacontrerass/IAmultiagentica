@@ -67,6 +67,24 @@ def test_web_chat_transcript_is_not_auto_translated():
     assert "interface_language" not in app_js
 
 
+def test_web_ui_language_selector_supports_multiple_display_languages():
+    root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "app.js").read_text(encoding="utf-8")
+
+    assert 'class="language-trigger"' in index_html
+    assert 'class="language-menu"' in index_html
+    assert 'data-language="en">English</button>' in index_html
+    assert 'data-language="es">Español</button>' in index_html
+    assert 'data-language="fr">Français</button>' in index_html
+    assert 'data-language="pt">Português</button>' in index_html
+    assert 'const INTERNAL_LANGUAGE = "en";' in app_js
+    assert 'const SUPPORTED_LANGUAGES = ["en", "es", "fr", "pt"];' in app_js
+    assert "setDisplayLanguage" in app_js
+    assert "FRENCH_TRANSLATIONS" in app_js
+    assert "PORTUGUESE_TRANSLATIONS" in app_js
+
+
 def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
     root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
     index_html = (root / "index.html").read_text(encoding="utf-8")

@@ -55,6 +55,213 @@ _ANSI_RESET = "\x1b[0m"
 _ANSI_DIM = "\x1b[90m"
 _ANSI_GOLD = "\x1b[33;1m"
 _ANSI_BLUE = "\x1b[34;1m"
+INTERNAL_LANGUAGE = "en"
+SUPPORTED_DISPLAY_LANGUAGES = ("en", "es", "fr", "pt")
+LANGUAGE_NAMES = {
+    "en": "English",
+    "es": "Español",
+    "fr": "Français",
+    "pt": "Português",
+}
+_CURRENT_DISPLAY_LANGUAGE = INTERNAL_LANGUAGE
+
+CLI_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "es": {
+        "Open web interface": "Abrir interfaz web",
+        "Start the local browser UI.": "Inicia la UI local en el navegador.",
+        "Start chat with tools": "Iniciar chat con herramientas",
+        "Classic ci2lab chat with the selected model.": "Chat clásico de ci2lab con el modelo seleccionado.",
+        "My projects": "Mis proyectos",
+        "Open a project, manage its sources and continue its chats.": "Abre un proyecto, gestiona sus fuentes y continúa sus chats.",
+        "Start chat with agents": "Iniciar chat con agentes",
+        "Sequential planner/researcher/coder/validator/reviewer flow.": "Flujo secuencial de planificador/investigador/programador/validador/revisor.",
+        "Start simple tools chat": "Iniciar chat simple con herramientas",
+        "Fenced tool mode and no streaming, matching `ci2lab tools`.": "Modo de herramientas delimitado y sin streaming, como `ci2lab tools`.",
+        "Run one-shot agent task": "Ejecutar tarea única del agente",
+        "Write a prompt and run one agent turn.": "Escribe un prompt y ejecuta un turno del agente.",
+        "Check Ollama and environment": "Comprobar Ollama y entorno",
+        "Run `ci2lab doctor`.": "Ejecuta `ci2lab doctor`.",
+        "Check computer hardware": "Comprobar hardware del equipo",
+        "Show RAM/GPU/inference budget.": "Muestra RAM/GPU/capacidad de inferencia.",
+        "Recommend models for this computer": "Recomendar modelos para este equipo",
+        "General download plan based on local hardware.": "Plan general de descarga basado en el hardware local.",
+        "Recommend models for a task": "Recomendar modelos para una tarea",
+        "Describe the task and rank catalog models for it.": "Describe la tarea y ordena los modelos del catálogo.",
+        "Install/download a model": "Instalar/descargar un modelo",
+        "Pick a model and run `ollama pull`.": "Elige un modelo y ejecuta `ollama pull`.",
+        "Open direct Ollama chat": "Abrir chat directo de Ollama",
+        "Pick a model and run `ollama run`.": "Elige un modelo y ejecuta `ollama run`.",
+        "Sessions": "Sesiones",
+        "Open session JSON files or resume a saved chat.": "Abre archivos JSON de sesión o reanuda un chat guardado.",
+        "Permissions dashboard": "Panel de permisos",
+        "Audit permissions and session approvals.": "Audita permisos y aprobaciones de sesión.",
+        "Run evals": "Ejecutar evaluaciones",
+        "Run mock or live harness evaluations.": "Ejecuta evaluaciones simuladas o reales.",
+        "What is ci2lab?": "¿Qué es ci2lab?",
+        "Short explanation of this program.": "Explicación breve de este programa.",
+        "Show command help": "Mostrar ayuda de comandos",
+        "Print the classic command reference.": "Imprime la referencia clásica de comandos.",
+        "Work with commands": "Trabajar con comandos",
+        "Type and run ci2lab commands manually.": "Escribe y ejecuta comandos de ci2lab manualmente.",
+        "Change language": "Cambiar idioma",
+        "Choose the language used by this terminal menu only.": "Elige el idioma usado solo por este menú de terminal.",
+        "Exit": "Salir",
+        "Close this launcher.": "Cierra este lanzador.",
+        "ci2lab launcher": "Lanzador de ci2lab",
+        "Workspace:": "Workspace:",
+        "Bye.": "Adiós.",
+        "Language": "Idioma",
+        "Current language:": "Idioma actual:",
+        "Terminal language updated:": "Idioma de terminal actualizado:",
+        "Display language only. Internal prompts, tools and model messages remain in English.": "Solo idioma visual. Los prompts internos, herramientas y mensajes del modelo siguen en inglés.",
+        "Back": "Volver",
+        "Return to the main menu.": "Volver al menú principal.",
+        "Use Up/Down and Enter": "Usa Arriba/Abajo y Enter",
+        "Use Up/Down, Enter to select, Esc or q to go back.": "Usa Arriba/Abajo, Enter para seleccionar, Esc o q para volver.",
+        "Choose by number, or press Enter to go back.": "Elige por número o pulsa Enter para volver.",
+        "Choose a number, or press Enter to go back: ": "Elige un número o pulsa Enter para volver: ",
+        "Arrow selector unavailable because prompt_toolkit is not installed.": "El selector con flechas no está disponible porque prompt_toolkit no está instalado.",
+        "No options available.": "No hay opciones disponibles.",
+        "Press Enter to return to the menu...": "Pulsa Enter para volver al menú...",
+        "Select model": "Seleccionar modelo",
+        "Select session": "Seleccionar sesión",
+        "installed": "instalado",
+        "not installed": "no instalado",
+        "fits": "encaja",
+        "too large": "demasiado grande",
+        "external": "externo",
+    },
+    "fr": {
+        "Open web interface": "Ouvrir l'interface web",
+        "Start the local browser UI.": "Démarre l'interface locale dans le navigateur.",
+        "Start chat with tools": "Démarrer un chat avec outils",
+        "Classic ci2lab chat with the selected model.": "Chat ci2lab classique avec le modèle sélectionné.",
+        "My projects": "Mes projets",
+        "Open a project, manage its sources and continue its chats.": "Ouvrir un projet, gérer ses sources et continuer ses chats.",
+        "Start chat with agents": "Démarrer un chat avec agents",
+        "Sequential planner/researcher/coder/validator/reviewer flow.": "Flux séquentiel planificateur/chercheur/codeur/validateur/relecteur.",
+        "Start simple tools chat": "Démarrer un chat simple avec outils",
+        "Fenced tool mode and no streaming, matching `ci2lab tools`.": "Mode outils délimité sans streaming, comme `ci2lab tools`.",
+        "Run one-shot agent task": "Exécuter une tâche agent unique",
+        "Write a prompt and run one agent turn.": "Écrire un prompt et exécuter un tour d'agent.",
+        "Check Ollama and environment": "Vérifier Ollama et l'environnement",
+        "Run `ci2lab doctor`.": "Exécute `ci2lab doctor`.",
+        "Check computer hardware": "Vérifier le matériel",
+        "Show RAM/GPU/inference budget.": "Afficher RAM/GPU/budget d'inférence.",
+        "Recommend models for this computer": "Recommander des modèles pour cet ordinateur",
+        "General download plan based on local hardware.": "Plan général de téléchargement selon le matériel local.",
+        "Recommend models for a task": "Recommander des modèles pour une tâche",
+        "Describe the task and rank catalog models for it.": "Décrire la tâche et classer les modèles du catalogue.",
+        "Install/download a model": "Installer/télécharger un modèle",
+        "Pick a model and run `ollama pull`.": "Choisir un modèle et exécuter `ollama pull`.",
+        "Open direct Ollama chat": "Ouvrir un chat Ollama direct",
+        "Pick a model and run `ollama run`.": "Choisir un modèle et exécuter `ollama run`.",
+        "Sessions": "Sessions",
+        "Open session JSON files or resume a saved chat.": "Ouvrir des fichiers JSON de session ou reprendre un chat enregistré.",
+        "Permissions dashboard": "Tableau des permissions",
+        "Audit permissions and session approvals.": "Auditer les permissions et approbations de session.",
+        "Run evals": "Exécuter les évaluations",
+        "Run mock or live harness evaluations.": "Exécuter des évaluations simulées ou réelles.",
+        "What is ci2lab?": "Qu'est-ce que ci2lab ?",
+        "Short explanation of this program.": "Brève explication de ce programme.",
+        "Show command help": "Afficher l'aide des commandes",
+        "Print the classic command reference.": "Afficher la référence classique des commandes.",
+        "Work with commands": "Travailler avec des commandes",
+        "Type and run ci2lab commands manually.": "Saisir et exécuter des commandes ci2lab manuellement.",
+        "Change language": "Changer de langue",
+        "Choose the language used by this terminal menu only.": "Choisir la langue utilisée uniquement par ce menu terminal.",
+        "Exit": "Quitter",
+        "Close this launcher.": "Fermer ce lanceur.",
+        "ci2lab launcher": "Lanceur ci2lab",
+        "Workspace:": "Workspace :",
+        "Bye.": "Au revoir.",
+        "Language": "Langue",
+        "Current language:": "Langue actuelle :",
+        "Terminal language updated:": "Langue du terminal mise à jour :",
+        "Display language only. Internal prompts, tools and model messages remain in English.": "Langue d'affichage seulement. Les prompts internes, outils et messages du modèle restent en anglais.",
+        "Back": "Retour",
+        "Return to the main menu.": "Retour au menu principal.",
+        "Use Up/Down and Enter": "Utilisez Haut/Bas et Entrée",
+        "Use Up/Down, Enter to select, Esc or q to go back.": "Utilisez Haut/Bas, Entrée pour sélectionner, Esc ou q pour revenir.",
+        "Choose by number, or press Enter to go back.": "Choisissez par numéro ou appuyez sur Entrée pour revenir.",
+        "Choose a number, or press Enter to go back: ": "Choisissez un numéro ou appuyez sur Entrée pour revenir : ",
+        "Arrow selector unavailable because prompt_toolkit is not installed.": "Le sélecteur par flèches est indisponible car prompt_toolkit n'est pas installé.",
+        "No options available.": "Aucune option disponible.",
+        "Press Enter to return to the menu...": "Appuyez sur Entrée pour revenir au menu...",
+        "Select model": "Sélectionner un modèle",
+        "Select session": "Sélectionner une session",
+        "installed": "installé",
+        "not installed": "non installé",
+        "fits": "compatible",
+        "too large": "trop grand",
+        "external": "externe",
+    },
+    "pt": {
+        "Open web interface": "Abrir interface web",
+        "Start the local browser UI.": "Inicia a UI local no navegador.",
+        "Start chat with tools": "Iniciar chat com ferramentas",
+        "Classic ci2lab chat with the selected model.": "Chat clássico do ci2lab com o modelo selecionado.",
+        "My projects": "Os meus projetos",
+        "Open a project, manage its sources and continue its chats.": "Abrir um projeto, gerir as fontes e continuar os chats.",
+        "Start chat with agents": "Iniciar chat com agentes",
+        "Sequential planner/researcher/coder/validator/reviewer flow.": "Fluxo sequencial de planeador/investigador/programador/validador/revisor.",
+        "Start simple tools chat": "Iniciar chat simples com ferramentas",
+        "Fenced tool mode and no streaming, matching `ci2lab tools`.": "Modo de ferramentas delimitado e sem streaming, como `ci2lab tools`.",
+        "Run one-shot agent task": "Executar tarefa única do agente",
+        "Write a prompt and run one agent turn.": "Escrever um prompt e executar um turno do agente.",
+        "Check Ollama and environment": "Verificar Ollama e ambiente",
+        "Run `ci2lab doctor`.": "Executa `ci2lab doctor`.",
+        "Check computer hardware": "Verificar hardware do computador",
+        "Show RAM/GPU/inference budget.": "Mostrar RAM/GPU/capacidade de inferência.",
+        "Recommend models for this computer": "Recomendar modelos para este computador",
+        "General download plan based on local hardware.": "Plano geral de download baseado no hardware local.",
+        "Recommend models for a task": "Recomendar modelos para uma tarefa",
+        "Describe the task and rank catalog models for it.": "Descrever a tarefa e classificar modelos do catálogo.",
+        "Install/download a model": "Instalar/descarregar um modelo",
+        "Pick a model and run `ollama pull`.": "Escolher um modelo e executar `ollama pull`.",
+        "Open direct Ollama chat": "Abrir chat direto do Ollama",
+        "Pick a model and run `ollama run`.": "Escolher um modelo e executar `ollama run`.",
+        "Sessions": "Sessões",
+        "Open session JSON files or resume a saved chat.": "Abrir ficheiros JSON de sessão ou retomar um chat guardado.",
+        "Permissions dashboard": "Painel de permissões",
+        "Audit permissions and session approvals.": "Auditar permissões e aprovações de sessão.",
+        "Run evals": "Executar avaliações",
+        "Run mock or live harness evaluations.": "Executar avaliações simuladas ou reais.",
+        "What is ci2lab?": "O que é o ci2lab?",
+        "Short explanation of this program.": "Breve explicação deste programa.",
+        "Show command help": "Mostrar ajuda de comandos",
+        "Print the classic command reference.": "Imprimir a referência clássica de comandos.",
+        "Work with commands": "Trabalhar com comandos",
+        "Type and run ci2lab commands manually.": "Escrever e executar comandos ci2lab manualmente.",
+        "Change language": "Alterar idioma",
+        "Choose the language used by this terminal menu only.": "Escolher o idioma usado apenas por este menu do terminal.",
+        "Exit": "Sair",
+        "Close this launcher.": "Fechar este lançador.",
+        "ci2lab launcher": "Lançador ci2lab",
+        "Workspace:": "Workspace:",
+        "Bye.": "Adeus.",
+        "Language": "Idioma",
+        "Current language:": "Idioma atual:",
+        "Terminal language updated:": "Idioma do terminal atualizado:",
+        "Display language only. Internal prompts, tools and model messages remain in English.": "Apenas idioma visual. Prompts internos, ferramentas e mensagens do modelo continuam em inglês.",
+        "Back": "Voltar",
+        "Return to the main menu.": "Voltar ao menu principal.",
+        "Use Up/Down and Enter": "Use Cima/Baixo e Enter",
+        "Use Up/Down, Enter to select, Esc or q to go back.": "Use Cima/Baixo, Enter para selecionar, Esc ou q para voltar.",
+        "Choose by number, or press Enter to go back.": "Escolha por número ou prima Enter para voltar.",
+        "Choose a number, or press Enter to go back: ": "Escolha um número ou prima Enter para voltar: ",
+        "Arrow selector unavailable because prompt_toolkit is not installed.": "O seletor com setas não está disponível porque prompt_toolkit não está instalado.",
+        "No options available.": "Não há opções disponíveis.",
+        "Press Enter to return to the menu...": "Prima Enter para voltar ao menu...",
+        "Select model": "Selecionar modelo",
+        "Select session": "Selecionar sessão",
+        "installed": "instalado",
+        "not installed": "não instalado",
+        "fits": "compatível",
+        "too large": "demasiado grande",
+        "external": "externo",
+    },
+}
 
 
 MAIN_OPTIONS: tuple[MenuOption, ...] = (
@@ -100,7 +307,21 @@ MAIN_OPTIONS: tuple[MenuOption, ...] = (
         "Type and run ci2lab commands manually.",
         "command_mode",
     ),
+    MenuOption(
+        "Change language",
+        "Choose the language used by this terminal menu only.",
+        "language",
+    ),
     MenuOption("Exit", "Close this launcher.", "exit"),
+)
+
+
+LANGUAGE_OPTIONS: tuple[MenuOption, ...] = (
+    MenuOption("English", "Display language only. Internal prompts, tools and model messages remain in English.", "en"),
+    MenuOption("Español", "Display language only. Internal prompts, tools and model messages remain in English.", "es"),
+    MenuOption("Français", "Display language only. Internal prompts, tools and model messages remain in English.", "fr"),
+    MenuOption("Português", "Display language only. Internal prompts, tools and model messages remain in English.", "pt"),
+    MenuOption("Back", "Return to the main menu.", "back"),
 )
 
 
@@ -137,12 +358,91 @@ EVAL_OPTIONS: tuple[MenuOption, ...] = (
 )
 
 
+def _language_config_path() -> Path:
+    return Path(os.environ.get("CI2LAB_LANGUAGE_FILE", Path.home() / ".ci2lab" / "language.json"))
+
+
+def _t(text: str) -> str:
+    if _CURRENT_DISPLAY_LANGUAGE == INTERNAL_LANGUAGE:
+        return text
+    return CLI_TRANSLATIONS.get(_CURRENT_DISPLAY_LANGUAGE, {}).get(text, text)
+
+
+def _translated_menu_options(
+    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+) -> list[MenuOption] | list[ModelChoice]:
+    translated: list[MenuOption] | list[ModelChoice] = []
+    for option in options:
+        if isinstance(option, MenuOption):
+            translated.append(MenuOption(_t(option.label), _t(option.description), option.value))
+        else:
+            translated.append(option)
+    return translated
+
+
+def _translate_subtitle(subtitle: str | None) -> str | None:
+    if not subtitle:
+        return None
+    if subtitle.startswith("Workspace:"):
+        return subtitle.replace("Workspace:", _t("Workspace:"), 1)
+    return _t(subtitle)
+
+
+def _load_display_language() -> str:
+    global _CURRENT_DISPLAY_LANGUAGE
+    raw = os.environ.get("CI2LAB_DISPLAY_LANGUAGE", "")
+    if not raw:
+        try:
+            data = json.loads(_language_config_path().read_text(encoding="utf-8"))
+            raw = str(data.get("display_language") or "")
+        except (OSError, json.JSONDecodeError):
+            raw = ""
+    _CURRENT_DISPLAY_LANGUAGE = raw if raw in SUPPORTED_DISPLAY_LANGUAGES else INTERNAL_LANGUAGE
+    return _CURRENT_DISPLAY_LANGUAGE
+
+
+def _save_display_language(language: str) -> None:
+    if language not in SUPPORTED_DISPLAY_LANGUAGES:
+        return
+    global _CURRENT_DISPLAY_LANGUAGE
+    _CURRENT_DISPLAY_LANGUAGE = language
+    path = _language_config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"display_language": language, "internal_language": INTERNAL_LANGUAGE}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
+def _language_menu() -> int:
+    selected = select_from_menu(
+        "Language",
+        LANGUAGE_OPTIONS,
+        subtitle=(
+            f"{_t('Current language:')} {LANGUAGE_NAMES.get(_CURRENT_DISPLAY_LANGUAGE, 'English')} · "
+            f"{_t('Display language only. Internal prompts, tools and model messages remain in English.')}"
+        ),
+    )
+    if selected in {None, "back"}:
+        return 0
+    _save_display_language(selected)
+    console.print(
+        f"[green]{_t('Terminal language updated:')}[/green] "
+        f"{LANGUAGE_NAMES.get(selected, selected)}"
+    )
+    return 0
+
+
 def run_start_menu(
     runtime: Ci2LabConfig,
     *,
     command_runner: CommandRunner | None = None,
 ) -> int:
     """Show the interactive launcher until the user exits."""
+    _load_display_language()
     runner = command_runner or _default_command_runner
     while True:
         selected = select_from_menu(
@@ -151,7 +451,7 @@ def run_start_menu(
             subtitle=f"Workspace: {runtime.workspace or os.getcwd()}",
         )
         if selected is None or selected == "exit":
-            console.print("[dim]Bye.[/dim]")
+            console.print(f"[dim]{_t('Bye.')}[/dim]")
             return 0
         code = _handle_main_choice(selected, runtime, runner)
         if selected in {"chat", "multi_chat", "tools_chat", "ui"} and code:
@@ -223,6 +523,8 @@ def _handle_main_choice(
         return _run_command(["--help"], runner)
     if selected == "command_mode":
         return _command_mode(runner)
+    if selected == "language":
+        return _language_menu()
     return 0
 
 
@@ -569,8 +871,8 @@ def build_model_choices(
         installed_here = is_catalog_model_installed(model.ollama_tag, installed_names)
         fits_here = model_fits(model, profile)
         catalog_tags.add(model.ollama_tag.lower())
-        status = "installed" if installed_here else "not installed"
-        fit = "fits" if fits_here else "too large"
+        status = _t("installed" if installed_here else "not installed")
+        fit = _t("fits" if fits_here else "too large")
         choices.append(
             ModelChoice(
                 label=(
@@ -591,7 +893,7 @@ def build_model_choices(
             continue
         choices.append(
             ModelChoice(
-                label=f"{name} (installed, external)",
+                label=f"{name} ({_t('installed')}, {_t('external')})",
                 value=name,
                 catalog_id=None,
                 ollama_tag=name,
@@ -655,14 +957,17 @@ def select_from_menu(
 ) -> str | None:
     """Arrow-key selector. Returns the selected option value or None on Escape."""
     if not options:
-        console.print("[yellow]No options available.[/yellow]")
+        console.print(f"[yellow]{_t('No options available.')}[/yellow]")
         return None
+    display_options = _translated_menu_options(options)
+    display_title = _t(title)
+    display_subtitle = _translate_subtitle(subtitle)
     if sys.stdin.isatty():
         try:
-            return _select_from_menu_app(title, options, subtitle=subtitle)
+            return _select_from_menu_app(display_title, display_options, subtitle=display_subtitle)
         except ImportError:
-            return _select_from_menu_raw(title, options, subtitle=subtitle)
-    return _select_from_menu_numbered(title, options, subtitle=subtitle)
+            return _select_from_menu_raw(display_title, display_options, subtitle=display_subtitle)
+    return _select_from_menu_numbered(display_title, display_options, subtitle=display_subtitle)
 
 
 def _select_from_menu_app(
@@ -688,7 +993,7 @@ def _select_from_menu_app(
         items.append(("class:title", f"{title}\n"))
         if subtitle:
             items.append(("class:muted", f"{subtitle}\n"))
-        items.append(("class:muted", "Use Up/Down, Enter to select, Esc or q to go back.\n\n"))
+        items.append(("class:muted", f"{_t('Use Up/Down, Enter to select, Esc or q to go back.')}\n\n"))
 
         selected_index = int(state["index"] or 0)
         start, end = _visible_option_window(
@@ -774,9 +1079,9 @@ def _select_from_menu_numbered(
     if subtitle:
         console.print(f"[dim]{subtitle}[/dim]")
     console.print(
-        "[yellow]Arrow selector unavailable because prompt_toolkit is not installed.[/yellow]"
+        f"[yellow]{_t('Arrow selector unavailable because prompt_toolkit is not installed.')}[/yellow]"
     )
-    console.print("[dim]Choose by number, or press Enter to go back.[/dim]\n")
+    console.print(f"[dim]{_t('Choose by number, or press Enter to go back.')}[/dim]\n")
     label_width = _menu_label_width(options)
     for pos, option in enumerate(options, start=1):
         label = f"{pos:>2}. {option.label}"
@@ -784,7 +1089,7 @@ def _select_from_menu_numbered(
             console.print(f"{label:<{label_width + 4}} [dim]{option.description}[/dim]")
         else:
             console.print(label)
-    answer = _prompt_text("Choose a number, or press Enter to go back: ").strip()
+    answer = _prompt_text(_t("Choose a number, or press Enter to go back: ")).strip()
     if not answer:
         return None
     try:
@@ -838,7 +1143,7 @@ def _render_raw_menu(
     if subtitle:
         lines.append(subtitle)
     lines.extend([
-        "Use Up/Down, Enter to select, Esc or q to go back.",
+        _t("Use Up/Down, Enter to select, Esc or q to go back."),
         "",
     ])
     start, end = _visible_option_window(
@@ -888,7 +1193,7 @@ def _render_menu(
     console.print(f"[bold]{title}[/bold]")
     if subtitle:
         console.print(f"[dim]{subtitle}[/dim]")
-    console.print("[dim]Use Up/Down, Enter to select, Esc or q to go back.[/dim]\n")
+    console.print(f"[dim]{_t('Use Up/Down, Enter to select, Esc or q to go back.')}[/dim]\n")
     label_width = _menu_label_width(options)
     for pos, option in enumerate(options):
         pointer = ">" if pos == index else " "
@@ -1163,7 +1468,7 @@ def _ask_text(label: str) -> str:
 
 def _pause() -> None:
     try:
-        _prompt_text("\nPress Enter to return to the menu...")
+        _prompt_text(f"\n{_t('Press Enter to return to the menu...')}")
     except (EOFError, KeyboardInterrupt):
         return
 

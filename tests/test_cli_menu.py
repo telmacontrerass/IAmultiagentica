@@ -110,6 +110,40 @@ def test_main_menu_exposes_my_projects():
     assert project_option.label == "My projects"
 
 
+def test_main_menu_exposes_terminal_language_selector():
+    from ci2lab.cli.menu import MAIN_OPTIONS
+
+    language_option = next(option for option in MAIN_OPTIONS if option.value == "language")
+    assert language_option.label == "Change language"
+
+
+def test_terminal_language_change_is_display_only_for_chat(monkeypatch, tmp_path):
+    selected = ModelChoice(
+        label="Small Model (installed)",
+        value="small",
+        catalog_id="small",
+        ollama_tag="small:1b",
+        installed=True,
+    )
+    calls = []
+    language_file = tmp_path / "language.json"
+    monkeypatch.setenv("CI2LAB_LANGUAGE_FILE", str(language_file))
+    monkeypatch.delenv("CI2LAB_DISPLAY_LANGUAGE", raising=False)
+
+    with (
+        patch("ci2lab.cli.menu.select_from_menu", side_effect=["language", "pt", "chat", "exit"]),
+        patch("ci2lab.cli.menu.select_model", return_value=selected),
+        patch("ci2lab.cli.menu._pause"),
+    ):
+        result = run_start_menu(Ci2LabConfig(), command_runner=lambda args: calls.append(args) or 0)
+
+    assert result == 0
+    assert calls == [["--model", "small", "chat"]]
+    assert language_file.read_text(encoding="utf-8")
+    assert "--language" not in calls[0]
+    assert "pt" not in calls[0]
+
+
 def test_projects_menu_opens_selected_project(monkeypatch):
     project = {
         "id": "prj_123456789abc",
