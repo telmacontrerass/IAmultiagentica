@@ -46,6 +46,45 @@ def test_run_logger_creates_run_folder(tmp_path):
     assert (run_dir / "config_snapshot.json").is_file()
 
 
+def test_subagent_run_logger_preserves_parent_permission_session(tmp_path):
+    # A subagent (delegation_depth > 0) must not hijack or clear the shared
+    # permission session: that is what made "allow session" re-prompt for every
+    # role in a multi-agent run.
+    from ci2lab.security.session_permissions import (
+        bind_active_session,
+        get_active_session_id,
+    )
+
+    runs = tmp_path / "runs"
+    selection = default_selection("test:1b")
+    bind_active_session("parent-session")
+    try:
+        subagent_cfg = AgentConfig(
+            cwd=str(tmp_path), runs_dir=str(runs), delegation_depth=1
+        )
+        logger = RunLogger(
+            runs_dir=runs,
+            selection=selection,
+            agent_config=subagent_cfg,
+            config_snapshot={"model": "test:1b"},
+            user_prompt="subtask",
+        )
+        run_dir = logger.start()
+        # The subagent still gets its own run folder for artifacts...
+        assert run_dir is not None and run_dir.is_dir()
+        # ...but it did NOT rebind the active session to its own run id.
+        assert get_active_session_id() == "parent-session"
+        logger.finalize(
+            status="success",
+            final_answer="ok",
+            conversation=[{"role": "user", "content": "subtask"}],
+        )
+        # ...and finalizing the subagent did NOT clear the parent's session.
+        assert get_active_session_id() == "parent-session"
+    finally:
+        bind_active_session(None)
+
+
 def test_run_summary_written_on_finalize(tmp_path):
     runs = tmp_path / "runs"
     selection = default_selection("test:1b")
