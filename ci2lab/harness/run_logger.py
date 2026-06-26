@@ -270,7 +270,8 @@ class RunLogger:
                 final_answer or "",
                 encoding="utf-8",
             )
-            console.print(f"[dim]Run saved: {self._run_dir}[/dim]")
+            if not self.agent_config.suppress_run_saved_message:
+                console.print(f"[dim]Run saved: {self._run_dir}[/dim]")
         except Exception as exc:  # noqa: BLE001
             self._warn(f"Could not finalize the run log: {exc}")
         finally:

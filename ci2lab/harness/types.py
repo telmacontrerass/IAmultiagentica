@@ -65,6 +65,9 @@ class AgentConfig:
     run_log_enabled: bool = True
     """Persist run artifacts in runs/."""
 
+    suppress_run_saved_message: bool = False
+    """If True, persist run artifacts without printing the final run path."""
+
     runs_dir: str = "runs"
     """Base directory for run logs."""
 

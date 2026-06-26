@@ -621,6 +621,131 @@ def test_multiagent_trace_records_phase_sequence(tmp_path, monkeypatch):
     assert (run_dirs[0] / "multiagent_trace.json").is_file()
 
 
+def test_multiagent_parent_run_persists_workflow_artifacts(tmp_path, monkeypatch):
+    child_counter = 0
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        nonlocal child_counter
+        child_counter += 1
+        child_dir = tmp_path / "runs" / f"child_{child_counter:02d}_{role.value}"
+        child_dir.mkdir(parents=True)
+        (child_dir / "run_summary.json").write_text(
+            json.dumps({
+                "started_at": f"2026-06-26T00:00:0{child_counter}+00:00",
+                "ended_at": f"2026-06-26T00:00:1{child_counter}+00:00",
+                "model": selection.ollama_tag,
+            }),
+            encoding="utf-8",
+        )
+        (child_dir / "tool_calls.jsonl").write_text("", encoding="utf-8")
+        return _result(
+            role,
+            "pytest passed" if role == AgentRole.VALIDATOR else f"{role.value} output",
+            attempt=attempt,
+            subagent_run_dir=str(child_dir),
+            tool_calls=[
+                {
+                    "tool": "write_file" if role == AgentRole.GENERALIST_CODER else "read_file",
+                    "ok": True,
+                    "arguments": {"path": "x.py"},
+                    "output_preview": "ok",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    final = run_multi_agent(
+        "Make a Python change",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+        ),
+    )
+
+    parent_dirs = sorted((tmp_path / "runs").glob("*/run.json"))
+    assert parent_dirs, "parent run.json was not created"
+    parent_dir = parent_dirs[0].parent
+    run_json = json.loads((parent_dir / "run.json").read_text(encoding="utf-8"))
+    summary = json.loads((parent_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert (parent_dir / "final_answer.md").read_text(encoding="utf-8") == final
+    assert (parent_dir / "trace.jsonl").is_file()
+    assert (parent_dir / "multiagent_trace.json").is_file()
+    assert summary["final_status"] == "completed"
+    assert summary["selected_implementer"] == "generalist_coder"
+    assert summary["phases_executed"][:5] == [
+        "planner",
+        "researcher",
+        "generalist_coder",
+        "validator",
+        "reviewer",
+    ]
+    assert run_json["prompt"] == "Make a Python change"
+    assert run_json["parent_run_id"] == parent_dir.name
+    assert run_json["child_runs"]
+    assert all("child_run_id" in child for child in run_json["child_runs"])
+    assert all(phase["status"] and phase["output"] for phase in run_json["phases"])
+    phase_run = parent_dir / "phases" / "01_planner" / "run.json"
+    assert phase_run.is_file()
+    assert (parent_dir / "phases" / "01_planner" / "output.md").is_file()
+    assert (parent_dir / "phases" / "01_planner" / "tool_calls.jsonl").is_file()
+
+
+def test_multiagent_parent_run_persists_failed_final_status(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PLANNER:
+            return _result(role, "Plan: implement x.py")
+        if role == AgentRole.RESEARCHER:
+            return _result(role, "Research: x.py is relevant")
+        if role == AgentRole.GENERALIST_CODER:
+            return _result(
+                role,
+                "Implemented x.py",
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {"path": "x.py"},
+                        "output_preview": "wrote",
+                    }
+                ],
+            )
+        if role == AgentRole.VALIDATOR:
+            return _result(role, "pytest passed")
+        return _result(
+            role,
+            "However, there is insufficient evidence to confirm completion.",
+        )
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    final = run_multi_agent(
+        "Make a Python change",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+        ),
+    )
+
+    parent_dir = next((tmp_path / "runs").glob("*/summary.json")).parent
+    summary = json.loads((parent_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert summary["final_status"] == "review_failed"
+    assert "status: review_failed" in final
+    assert (parent_dir / "final_answer.md").read_text(encoding="utf-8") == final
+
+
 def test_multiagent_trace_records_role_anchor_and_allowed_tools(tmp_path, monkeypatch):
     def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
         return _result(
