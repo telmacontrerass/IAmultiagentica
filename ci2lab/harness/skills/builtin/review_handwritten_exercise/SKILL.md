@@ -68,6 +68,15 @@ When at least one issue has `affects_result: yes`:
 If **all** issues have `affects_result: no`, skip Phase 3 and say clearly that mistakes were cosmetic/non-propagating.
 
 # Output format (use these headings in order)
+Write all mathematics as **plain text**, never LaTeX — the output is read in a terminal and a plain Markdown file, neither of which renders LaTeX. Use Unicode/ASCII operators (`×`, `÷`, `−`, `/`, `^`, `²`) and write each equation on one line, in the same form you pass to `calc`:
+
+```
+h_comb = 8×(-393520) + 9×(-241820) − (-249910) = -5074630 kJ/kmol
+Tca = 298 + 5074630 / (8×58.4 + 9×47.15 + 47×34.9) = 2302.32 K = 2029.32 °C
+```
+
+Do **not** use `\text{}`, `\frac{}`, `\(...\)`, `\[...\]`, `^\circ`, subscript braces, or any backslash command.
+
 ## Transcription summary
 Brief note on source (preprocessed pages vs `extract_visual_document`).
 
@@ -92,3 +101,4 @@ Markdown table with columns: Step | Seen | Likely source | Used later | Affects 
 - **A positive enthalpy of combustion or a flame temperature below the inlet temperature is impossible** — if either appears in your work, you have a sign/arithmetic error; fix it before reporting and never blame the student for it.
 - **Never silently fix a transcription garble** (e.g. `n7` → `47`): if you used the corrected value, log the misread as a cosmetic transcription row in the audit.
 - **Every displayed arithmetic line must come from `calc`.** A line whose left side does not evaluate to its stated right side is a hard error — recompute it with `calc` and copy the exact result.
+- **No LaTeX.** Output is read in a terminal and a plain `.md` file. Write math in plain Unicode/ASCII (`×`, `/`, `−`, `²`, `°C`); never emit `\text{}`, `\frac{}`, `\(...\)`, `\[...\]`, or any backslash command.
