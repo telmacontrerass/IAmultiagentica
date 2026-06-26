@@ -549,7 +549,9 @@ def run_agent(
         # Exercise review needs to read small printed/handwritten digits
         # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
         _is_exercise_review = is_exercise_review_request(user_prompt)
-        _render_dpi = 170 if _is_exercise_review else 96
+        # Exercise scans pack small digits (47 vs 4.7, 58.4 vs 58,19) that the 7B
+        # vision model misreads at low resolution, so render those pages sharply.
+        _render_dpi = 250 if _is_exercise_review else 96
         _expanded_paths: list[str] = []
         _pdf_temp_dirs: list[Path] = []
         for _raw_path in cfg.image_paths:
