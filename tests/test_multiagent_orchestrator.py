@@ -41,6 +41,52 @@ def test_choose_coder_role_prefers_specific_evidence():
     assert choose_coder_role(plan, research) == AgentRole.FRONTEND_CODER
 
 
+def test_complete_exercise_does_not_route_to_test_only_coder():
+    # Regression: an "implement/complete" task whose evidence merely mentions
+    # that unit tests are required must NOT be routed to the test-only coder,
+    # which would leave the actual program unwritten. The user prompt has no
+    # test request, so it routes to a real implementer.
+    plan = _result(AgentRole.PLANNER, "Solve Programa 2 PyRecommender in Python.")
+    research = _result(
+        AgentRole.RESEARCHER,
+        "The program must be developed in Python and include unit tests (pytest).",
+    )
+    role = choose_coder_role(
+        plan,
+        research,
+        user_prompt="read the exam pdf and complete exercise 2",
+    )
+    assert role == AgentRole.PYTHON_CODER
+    assert role != AgentRole.TEST_CODER
+
+
+def test_test_centric_user_request_routes_to_test_coder():
+    plan = _result(AgentRole.PLANNER, "Add coverage.")
+    research = _result(AgentRole.RESEARCHER, "Python module foo.py.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="write unit tests for foo")
+        == AgentRole.TEST_CODER
+    )
+
+
+def test_docs_centric_user_request_routes_to_docs_coder():
+    plan = _result(AgentRole.PLANNER, "Edit text.")
+    research = _result(AgentRole.RESEARCHER, "Project files.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="update the README with examples")
+        == AgentRole.DOCS_CODER
+    )
+
+
+def test_implementation_request_without_language_signal_uses_generalist():
+    plan = _result(AgentRole.PLANNER, "Make the requested change.")
+    research = _result(AgentRole.RESEARCHER, "No specific language detected.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="complete the task")
+        == AgentRole.GENERALIST_CODER
+    )
+
+
 def test_should_skip_implementation_for_read_only_pdf_task():
     plan = _result(AgentRole.PLANNER, "Read the PDF and summarize its contents.")
     research = _result(AgentRole.RESEARCHER, "Relevant document: paper.pdf")
@@ -233,6 +279,40 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     assert "test.pdf was not found" in result
 
 
+def test_blocked_validator_does_not_abort_run(monkeypatch):
+    # Regression: a confused validator that replies "BLOCKED: please provide a
+    # validation step" must not discard the coder's work. The reviewer still
+    # runs and the run finishes completed, not blocked.
+    calls: list[AgentRole] = []
+    outputs = {
+        AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
+        AgentRole.RESEARCHER: "Relevant Python file: ci2lab/harness/example.py",
+        AgentRole.PYTHON_CODER: "Implemented Python change.",
+        AgentRole.VALIDATOR: "BLOCKED: please provide a validation step.",
+        AgentRole.REVIEWER: "Implementation looks correct.",
+    }
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "complete exercise 2 in Python",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert AgentRole.REVIEWER in calls  # reviewer was not skipped
+    assert "status: blocked" not in result
+    assert "Blocked role: validator" not in result
+    assert "Implementation looks correct." in result
+
+
 def test_run_multi_agent_prints_subagent_progress(monkeypatch):
     outputs = {
         AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
@@ -411,11 +491,12 @@ def test_multiagent_trace_records_phase_sequence(tmp_path, monkeypatch):
     run_dirs = sorted((tmp_path / "runs").iterdir())
     trace = json.loads((run_dirs[0] / "multiagent_trace.json").read_text(encoding="utf-8"))
     assert trace["planned_phases"][:2] == ["planner", "researcher"]
-    assert trace["selected_coder_role"] == "generalist_coder"
+    # "Make a Python change" routes to the Python implementer.
+    assert trace["selected_coder_role"] == "python_coder"
     assert trace["executed_phases"][:5] == [
         "planner",
         "researcher",
-        "generalist_coder",
+        "python_coder",
         "validator",
         "reviewer",
     ]

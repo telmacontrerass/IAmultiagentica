@@ -857,6 +857,57 @@
     }
   },
   {
+    "id": "llama4-scout",
+    "display_name": "Llama 4 Scout",
+    "family": "llama",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "llama4:scout",
+    "vision": true,
+    "vram_min_gb": 40.0,
+    "ram_inference_gb": 67.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 10000000,
+    "tier": "enterprise",
+    "benchmark_score": {
+      "general": 0.86,
+      "coding": 0.72,
+      "reasoning": 0.78,
+      "edge": 0.05,
+      "vision": 0.85
+    }
+  },
+  {
+    "id": "llama4-maverick",
+    "display_name": "Llama 4 Maverick",
+    "family": "llama",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning",
+      "coding"
+    ],
+    "ollama_tag": "llama4:maverick",
+    "vision": true,
+    "vram_min_gb": 147.0,
+    "ram_inference_gb": 245.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 1048576,
+    "tier": "enterprise",
+    "benchmark_score": {
+      "general": 0.9,
+      "coding": 0.82,
+      "reasoning": 0.86,
+      "edge": 0.02,
+      "vision": 0.88
+    }
+  },
+  {
     "id": "qwen2-72b",
     "display_name": "Qwen2 72B",
     "family": "qwen",

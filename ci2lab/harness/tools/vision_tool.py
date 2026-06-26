@@ -104,6 +104,7 @@ def extract_visual_document_tool(
     """
     from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
     from ci2lab.harness.vision import analyze_image, compute_llm_timeout, pdf_to_images
+    from ci2lab.harness.vision_exercise import EXERCISE_TRANSCRIPTION_PROMPT
 
     if not cfg.vision_enabled:
         return (
@@ -151,6 +152,7 @@ def extract_visual_document_tool(
                     backend_url,
                     vision_tag,
                     timeout=timeout,
+                    prompt=EXERCISE_TRANSCRIPTION_PROMPT,
                 )
                 out.append(f"[Page {idx}]\n{desc}")
             return "\n\n".join(out)
@@ -160,7 +162,13 @@ def extract_visual_document_tool(
 
     if suffix in _SUPPORTED_IMAGE_EXTENSIONS:
         timeout = compute_llm_timeout(1, has_pdf=False)
-        desc = analyze_image(str(path), backend_url, vision_tag, timeout=timeout)
+        desc = analyze_image(
+            str(path),
+            backend_url,
+            vision_tag,
+            timeout=timeout,
+            prompt=EXERCISE_TRANSCRIPTION_PROMPT,
+        )
         return "\n\n".join([
             f"Document: {path.name}",
             f"Extractor model: {vision_tag}",

@@ -89,7 +89,7 @@ def _build_config(
         session_id=args.session,
         image_paths=resolved_images,
         tool_settings=tool_settings,
-        vision_model=tool_settings.vision_model or "",
+        vision_model=tool_settings.vision_model or "qwen2.5vl:7b",
         vision_enabled=tool_settings.vision_enabled if tool_settings.vision_enabled is not None else True,
     )
 

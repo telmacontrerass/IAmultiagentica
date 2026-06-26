@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from pathlib import Path
@@ -50,6 +51,11 @@ from ci2lab.harness.vision import (
     pdf_to_images,
     strip_vision_from_messages,
 )
+from ci2lab.harness.vision_exercise import (
+    EXERCISE_TRANSCRIPTION_PROMPT,
+    enrich_turn_content_with_exercise_skill,
+    is_exercise_review_request,
+)
 from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 from ci2lab.harness.query.llm_io import call_llm
 from ci2lab.harness.query.nudges import (
@@ -71,10 +77,17 @@ from ci2lab.harness.security.policy import (
     is_policy_error,
     tool_call_signature,
 )
+from ci2lab.harness.tools.capabilities import (
+    FILE_WRITE_TOOLS,
+    MUTATING_TOOLS,
+    READ_ONLY_TOOLS,
+)
 from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.tools.todo import open_todos, todo_read
 from ci2lab.harness.token_usage import format_token_usage_line
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
+
+logger = logging.getLogger(__name__)
 
 _EXPLICIT_URL_RE = re.compile(r"https?://\S+")
 
@@ -191,60 +204,18 @@ _TODO_INCOMPLETE_NUDGE = (
 # Max times per turn the loop will push the model back to an unfinished plan.
 TODO_CONTINUE_MAX_PER_TURN = 3
 
-# Read-only tools whose result for a given argument set does not change within a
-# turn unless a mutating tool runs. Re-calling them is pure waste and only bloats
-# the context, so the loop serves a cached note instead of re-executing.
-_READ_ONLY_TOOLS = frozenset({
-    "read_document",
-    "read_file",
-    "ls",
-    "tree",
-    "glob",
-    "grep",
-    "file_info",
-    "inspect_file",
-    # Web lookups are cached within a turn too: re-running the same search or
-    # fetch returns essentially the same results and only burns rounds. Weak
-    # models often re-issue an identical `web_search` instead of reading the
-    # results they already have — caching short-circuits that into a note that
-    # tells them to answer from what is above. See `_read_signature` for the
-    # query/url-normalized key that also catches near-duplicate repeats.
-    "web_search",
-    "web_fetch",
-})
-# Tools that can change the workspace; running any of them invalidates the
-# read-only cache so a later re-read reflects the new state.
-_MUTATING_TOOLS = frozenset({
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "notebook_edit",
-    "bash",
-    "write_docx",
-    "docx_to_pdf",
-    "pdf_to_docx",
-    # An "edit"-mode delegation can create or modify files via its subagent, so
-    # treat it as a mutation: it invalidates the read cache and is skipped after
-    # an upstream error in the same batch, like any other write.
-    "delegate",
-})
+# Tool capability categories live in one place (`tools.capabilities`) so the
+# loop's read cache and the multi-agent role allow-lists can never disagree
+# about what counts as a read, a file write, or a mutation. See `_read_signature`
+# for the query/url-normalized cache key that also collapses near-duplicate
+# web lookups.
+
 # The user's current prompt explicitly asks to create or change something. Used
 # only to nudge once when the model narrates a change without ever applying it.
 _WRITE_INTENT_RE = re.compile(
     r"\b(write|create|implement|add|edit|modify|fix)\w*",
     re.IGNORECASE,
 )
-# Tools that create or edit file content. An agent whose effective tool
-# allow-list contains none of these genuinely cannot apply a change, so any
-# write-oriented nudge must stay silent for it. `bash` is deliberately excluded:
-# a role with only `bash` (e.g. the validator) is not meant to author files, and
-# telling it to "call write_file" would push it outside its role.
-_WRITE_FILE_TOOLS = frozenset({
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "notebook_edit",
-})
 
 
 def _agent_can_write_files(cfg: AgentConfig) -> bool:
@@ -260,7 +231,7 @@ def _agent_can_write_files(cfg: AgentConfig) -> bool:
     allowed = cfg.skill_allowed_tools
     if allowed is None:
         return True
-    return any(map_name(name) in _WRITE_FILE_TOOLS for name in allowed)
+    return any(map_name(name) in FILE_WRITE_TOOLS for name in allowed)
 
 
 def _read_signature(call: ToolCall) -> str:
@@ -575,6 +546,10 @@ def run_agent(
         import shutil as _shutil
 
         # Expand PDF paths into per-page PNG files.
+        # Exercise review needs to read small printed/handwritten digits
+        # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
+        _is_exercise_review = is_exercise_review_request(user_prompt)
+        _render_dpi = 170 if _is_exercise_review else 96
         _expanded_paths: list[str] = []
         _pdf_temp_dirs: list[Path] = []
         for _raw_path in cfg.image_paths:
@@ -587,7 +562,7 @@ def run_agent(
                     continue
                 _vision_has_pdf = True
                 try:
-                    _pages, _tmp = pdf_to_images(_raw_path)
+                    _pages, _tmp = pdf_to_images(_raw_path, dpi=_render_dpi)
                     _expanded_paths.extend(str(p) for p in _pages)
                     _pdf_temp_dirs.append(_tmp)
                 except Exception as _exc:
@@ -606,6 +581,11 @@ def run_agent(
                 _vision_tag = (cfg.vision_model or "").strip()
                 if _vision_tag:
                     _image_timeout = compute_llm_timeout(1, has_pdf=_vision_has_pdf)
+                    _vl_prompt = (
+                        EXERCISE_TRANSCRIPTION_PROMPT
+                        if is_exercise_review_request(user_prompt)
+                        else None
+                    )
                     _enriched = user_prompt
                     for _img in _expanded_paths:
                         _desc = analyze_image(
@@ -613,9 +593,19 @@ def run_agent(
                             selection.backend_url,
                             _vision_tag,
                             timeout=_image_timeout,
+                            prompt=_vl_prompt,
                         )
+                        # Surface the raw transcription so the user can see what
+                        # the vision model actually produced per page — makes a
+                        # missing/garbled page obvious instead of silently lost.
+                        _name = Path(_img).name
+                        console.print(
+                            f"[dim]── Vision transcription: {_name} "
+                            f"({len(_desc)} chars, model {_vision_tag}) ──[/dim]"
+                        )
+                        console.print(f"[dim]{_desc}[/dim]")
                         _enriched = (
-                            f"{_enriched}\n\n[Image: {Path(_img).name}]\n{_desc}"
+                            f"{_enriched}\n\n[Image: {_name}]\n{_desc}"
                         )
                     _user_content = _enriched
                 # if no vision_model configured, pass user_prompt unchanged
@@ -624,6 +614,15 @@ def run_agent(
             # build_vision_content has base64-encoded them.
             for _td in _pdf_temp_dirs:
                 _shutil.rmtree(_td, ignore_errors=True)
+
+    if cfg.image_paths and cfg.vision_enabled:
+        _user_content, _skill_allowed = enrich_turn_content_with_exercise_skill(
+            user_prompt,
+            _user_content,
+            cfg.cwd,
+        )
+        if _skill_allowed is not None:
+            cfg.skill_allowed_tools = _skill_allowed
 
     _timeout_images = _vision_image_count or _history_image_count
     _timeout_has_pdf = _vision_has_pdf or (
@@ -1032,7 +1031,7 @@ def run_agent(
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
                 rsig = _read_signature(call)
-                if round_had_error and call.name in _MUTATING_TOOLS:
+                if round_had_error and call.name in MUTATING_TOOLS:
                     # An earlier call in this same batch failed. Do not commit a
                     # dependent write built on data that step never produced.
                     result = ToolResult(
@@ -1043,7 +1042,7 @@ def run_agent(
                         outcome="skipped_after_error",
                     )
                 elif (
-                    call.name in _READ_ONLY_TOOLS
+                    call.name in READ_ONLY_TOOLS
                     and rsig in satisfied_reads
                     and psig not in policy_blocked_sigs
                 ):
@@ -1096,7 +1095,7 @@ def run_agent(
                     console.print(f"[yellow]{warning}[/yellow]")
                 # Maintain the read-only cache: a successful mutation invalidates
                 # it; a successful read populates it.
-                if call.name in _MUTATING_TOOLS:
+                if call.name in MUTATING_TOOLS:
                     attempted_write_this_turn = True
                     if not result.is_error:
                         satisfied_reads.clear()
@@ -1104,7 +1103,7 @@ def run_agent(
                         effectful_actions.append(
                             f"{call.name} {summarize_args(call.arguments)}".strip()
                         )
-                if not result.is_error and call.name in _READ_ONLY_TOOLS:
+                if not result.is_error and call.name in READ_ONLY_TOOLS:
                     satisfied_reads.add(rsig)
                 if not result.is_error and call.name == "todo_write":
                     # From now on the model is working to a plan it authored; the

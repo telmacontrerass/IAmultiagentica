@@ -30,6 +30,10 @@ from ci2lab.harness.terminal_input import read_prompt_line
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
+from ci2lab.harness.vision_exercise import (
+    REVIEW_HANDWRITTEN_EXERCISE_SKILL,
+    is_exercise_review_request,
+)
 
 
 class _TransientProgress:
@@ -174,12 +178,12 @@ def _extract_inline_images(
             pdf_context_notes.append(
                 f"[Context: '{name}' has been rendered as page images and attached "
                 f"to this message. Do NOT call read_document or any file tool on "
-                f"'{name}' — the content is already visible in the attached images. "
-                f"Analyse the images directly to answer the user's request. "
-                f"When checking an exercise: verify every equation coefficient and "
-                f"numeric result step by step (e.g. N₂ on the product side should be "
-                f"12.5 × 3.76 = 47, not 4.7). Do not assume the work is correct — "
-                f"re-read all values from the images and show your arithmetic.]"
+                f"'{name}' — the content is already visible in the attached images "
+                f"or in the vision-model transcription injected below. "
+                f"The harness will load the `{REVIEW_HANDWRITTEN_EXERCISE_SKILL}` "
+                f"skill workflow when you ask to transcribe or check calculations. "
+                f"Follow that skill: classify whether each error affects the result, "
+                f"and rework the exercise when it does.]"
             )
         else:
             console.print(f"[dim]Image detected: {name}[/dim]")
@@ -450,6 +454,11 @@ def run_repl(
         # absolute paths and bare filenames relative to the workspace.
         prompt, detected_images = _extract_inline_images(line, config, selection)
 
+        if detected_images and is_exercise_review_request(line):
+            console.print(
+                f"[dim]Will apply skill: {REVIEW_HANDWRITTEN_EXERCISE_SKILL}[/dim]"
+            )
+
         # Re-attach the last PDF/images on follow-up turns so the model re-reads
         # the pages instead of relying on its earlier (possibly wrong) summary.
         if detected_images:
@@ -460,9 +469,10 @@ def run_repl(
             console.print(f"[dim]Re-attaching: {names}[/dim]")
             follow_note = (
                 "[Context: The document pages are re-attached to this message. "
-                "Re-read the images directly — do not rely on earlier summaries. "
-                "All values (coefficients, enthalpy, Cp, results) are visible "
-                "in the images. Re-check every number step by step.]"
+                "Re-read the transcription/images directly — do not rely on earlier "
+                "summaries. Follow the review_handwritten_exercise skill format: "
+                "audit with impact classification and provide a corrected solution "
+                "when errors affect the final answer.]"
             )
             prompt = follow_note + "\n\n" + prompt
 
@@ -527,6 +537,12 @@ def run_repl(
                     project_id=config.project_id,
                 )
             last_error_message = None
+            # Issue 4(A): deterministically save the review to a .md file so the
+            # audit/table/math survive outside the terminal (and can become a PDF
+            # later). Scoped to exercise-review turns to avoid writing a file for
+            # every chat message.
+            if final_text and detected_images and is_exercise_review_request(line):
+                _export_review_markdown(final_text, config.cwd, detected_images)
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
             last_error_message = exc.user_message
@@ -538,6 +554,40 @@ def run_repl(
         data = load_session(sid)
         if data:
             history = data.get("messages")
+
+
+def _export_review_markdown(
+    final_text: str,
+    cwd: str,
+    source_paths: list[str],
+) -> None:
+    """Save an exercise-review answer to ``<cwd>/reviews/<stem>_review_<ts>.md``.
+
+    Deterministic post-step: the harness writes the file itself, so it does not
+    depend on the model remembering to call a write tool. Failures are reported
+    but never abort the turn.
+    """
+    from datetime import datetime
+
+    stem = Path(source_paths[0]).stem if source_paths else "exercise"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sources = (
+        ", ".join(Path(p).name for p in source_paths) if source_paths else "(none)"
+    )
+    header = (
+        f"# Exercise review: {stem}\n\n"
+        f"- Source: {sources}\n"
+        f"- Generated: {ts}\n\n"
+        "---\n\n"
+    )
+    try:
+        out_dir = Path(cwd) / "reviews"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{stem}_review_{ts}.md"
+        out_path.write_text(header + final_text, encoding="utf-8")
+        console.print(f"[dim]Review exported: {out_path}[/dim]")
+    except OSError as exc:
+        console.print(f"[yellow]Could not export review markdown: {exc}[/yellow]")
 
 
 def _project_prompt(config: AgentConfig, prompt: str) -> str:

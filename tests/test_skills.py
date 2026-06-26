@@ -116,6 +116,7 @@ def test_builtin_research_skills_available() -> None:
     assert "research_web_doc_review" in skills
     assert "research_web_vs_repo" in skills
     assert "live_fact_lookup" in skills
+    assert "review_handwritten_exercise" in skills
 
 
 def test_live_fact_lookup_skill_contract() -> None:
