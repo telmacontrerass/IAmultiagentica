@@ -15,10 +15,12 @@ from ci2lab.harness.multiagent.orchestrator import (
     final_run_status,
     has_write_tool_evidence,
     looks_like_untraceable_fs_mutation,
+    research_discovered_write_requirement,
     run_multi_agent,
     should_run_security_review,
     should_skip_implementation,
     subagent_blocked,
+    synthesize_final_answer,
     validation_failed,
     write_task_lacks_evidence,
 )
@@ -343,6 +345,118 @@ def test_run_multi_agent_skips_coder_for_read_only_pdf_task(monkeypatch):
     ]
     assert "Selected implementer: none (read-only task)" in result
     assert "formal writing" in result
+
+
+def test_research_discovered_pdf_exercise_promotes_to_write_flow(monkeypatch):
+    calls: list[tuple[AgentRole, int]] = []
+    outputs = {
+        AgentRole.PLANNER: (
+            "Plan: read the PDF, identify Exercise 2, then perform_exercise_2: "
+            "Carry out the task specified in Exercise 2."
+        ),
+        AgentRole.RESEARCHER: (
+            "Exercise 2 is called Problema de programacion. The task involves "
+            "implementing a program in Python. Constraints: no use of the `in` "
+            "operator; only use of the append method for lists."
+        ),
+        AgentRole.PYTHON_CODER: "Implemented Exercise 2 in Python.",
+        AgentRole.VALIDATOR: "PASS: implementation satisfies the exercise.",
+        AgentRole.REVIEWER: "PASS: evidence confirms the task was completed.",
+    }
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append((role, attempt))
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "read '2025-26.-Examen Diciembre Programación iMAT.pdf' and follow "
+        "the instructions to do exercise 2 (called differently inside the document)",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert calls == [
+        (AgentRole.PLANNER, 1),
+        (AgentRole.RESEARCHER, 1),
+        (AgentRole.PYTHON_CODER, 1),
+        (AgentRole.VALIDATOR, 1),
+        (AgentRole.REVIEWER, 1),
+    ]
+    assert "Selected implementer: python_coder" in result
+    assert "Selected implementer: none" not in result
+
+
+def test_research_discovered_write_requirement_from_code_constraints():
+    plan = _result(AgentRole.PLANNER, "Plan: read PDF and perform exercise 2.")
+    research = _result(
+        AgentRole.RESEARCHER,
+        "The task involves implementing a program in Python. No use of the `in` "
+        "operator. Only use append for lists.",
+    )
+
+    assert research_discovered_write_requirement(
+        "read exam.pdf and follow the instructions to do exercise 2",
+        plan,
+        research,
+    )
+
+
+def test_reviewer_insufficient_evidence_blocks_completed_status():
+    run = MultiAgentRun(user_prompt="Implement the requested exercise.")
+    run.requires_write = True
+    run.selected_coder_role = AgentRole.PYTHON_CODER
+    run.add_result(_result(AgentRole.PYTHON_CODER, "Implemented.", tool_calls=[
+        {
+            "tool": "write_file",
+            "ok": True,
+            "arguments": {"path": "exercise.py"},
+            "output_preview": "wrote",
+        }
+    ]))
+    run.add_result(_result(
+        AgentRole.REVIEWER,
+        "However, there is insufficient evidence to confirm if the task "
+        "specified in Exercise 2 was completed.",
+    ))
+
+    assert final_run_status(run) == "review_failed"
+
+
+def test_security_fail_blocks_completed_status_and_final_answer():
+    run = MultiAgentRun(user_prompt="Implement the requested exercise.")
+    run.requires_write = True
+    run.selected_coder_role = AgentRole.PYTHON_CODER
+    run.add_result(_result(AgentRole.PYTHON_CODER, "Implemented.", tool_calls=[
+        {
+            "tool": "write_file",
+            "ok": True,
+            "arguments": {"path": "exercise.py"},
+            "output_preview": "wrote",
+        }
+    ]))
+    run.add_result(_result(
+        AgentRole.SECURITY_REVIEWER,
+        "FAIL: unresolved security/permission evidence gaps: git_status, git_diff",
+    ))
+
+    assert final_run_status(run) == "security_failed"
+    assert "status: completed" not in synthesize_final_answer(run)
+
+
+def test_write_required_without_implementer_is_not_completed():
+    run = MultiAgentRun(user_prompt="Implement exercise 2 from the PDF.")
+    run.requires_write = True
+    run.add_result(_result(AgentRole.RESEARCHER, "The task involves implementing Python."))
+
+    final = synthesize_final_answer(run)
+
+    assert "status: implementation_required_but_not_executed" in final
+    assert "Selected implementer: none (implementation required but not executed)" in final
 
 
 def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):

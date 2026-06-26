@@ -85,6 +85,7 @@ _PAPER_REVIEW_LENSES = (
 )
 
 _VALIDATION_FAILURE_MARKERS = (
+    "fail",
     "failed",
     "failure",
     "failing",
@@ -234,6 +235,36 @@ _IMPLEMENTATION_TASK_MARKERS = (
 # fall out of this set.
 _LOAD_BEARING_ROLES = frozenset(
     {AgentRole.RESEARCHER} | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
+)
+
+# Implementation language a researcher may surface when a "read this document"
+# task actually requires writing code (e.g. an exercise statement in a PDF).
+_RESEARCH_DISCOVERED_WRITE_MARKERS = (
+    "task involves implementing",
+    "involves implementing",
+    "implementing a program",
+    "implement a program",
+    "program in python",
+    "python program",
+    "write a program",
+    "create a program",
+    "modify files",
+    "write files",
+    "create files",
+    "execute the task",
+    "carry out the task",
+    "perform the exercise",
+    "complete the exercise",
+)
+
+_CODE_CONSTRAINT_MARKERS = (
+    "no use of",
+    "do not use",
+    "only use",
+    "append method",
+    "`append`",
+    "`in` operator",
+    "operator `in`",
 )
 
 _WRITE_EVIDENCE_TOOLS = frozenset(
@@ -1053,6 +1084,50 @@ def should_skip_implementation(
     )
 
 
+def research_discovered_write_requirement(
+    user_prompt: str,
+    plan: SubAgentResult | None,
+    research: SubAgentResult | None,
+) -> bool:
+    """Detect when document research reveals that a read-looking task needs code.
+
+    Some prompts start as "read this PDF", but the document instructions can
+    require implementing an exercise. Once the researcher finds strong
+    implementation language, the orchestrator must promote the run to the
+    write flow instead of finishing as a read-only answer.
+    """
+
+    text = _combined_output(plan, research).lower()
+    if not text:
+        return False
+    if any(marker in text for marker in _RESEARCH_DISCOVERED_WRITE_MARKERS):
+        return True
+    has_code_context = any(
+        marker in text
+        for marker in ("python", ".py", "programming", "programación", "codigo", "código")
+    )
+    has_constraints = any(marker in text for marker in _CODE_CONSTRAINT_MARKERS)
+    exercise_prompt = any(
+        marker in (user_prompt or "").lower()
+        for marker in ("exercise", "ejercicio", "examen", "follow the instructions")
+    )
+    return has_code_context and has_constraints and exercise_prompt
+
+
+def promote_to_write_flow(
+    run: MultiAgentRun,
+    planned_phases: list[str],
+) -> None:
+    """Mutate orchestration state after research discovers implementation work."""
+
+    run.requires_write = True
+    run.intent = "code_change"
+    for phase in ("coder", "validator", "reviewer", AgentRole.SECURITY_REVIEWER.value):
+        if phase not in planned_phases:
+            planned_phases.append(phase)
+    run.planned_phases = planned_phases
+
+
 def validation_failed(validation: SubAgentResult) -> bool:
     """Best-effort validation classifier for the first sequential version.
 
@@ -1159,6 +1234,14 @@ def final_run_status(run: MultiAgentRun) -> str:
     last_validation = run.latest_for(AgentRole.VALIDATOR)
     if last_validation and validation_failed(last_validation):
         return "validation_failed"
+    reviewer = run.latest_for(AgentRole.REVIEWER)
+    if reviewer and validation_failed(reviewer):
+        return "review_failed"
+    security_reviewer = run.latest_for(AgentRole.SECURITY_REVIEWER)
+    if security_reviewer and validation_failed(security_reviewer):
+        return "security_failed"
+    if run.requires_write and run.selected_coder_role is None:
+        return "implementation_required_but_not_executed"
     if write_task_lacks_evidence(run):
         return "insufficient_evidence"
     return "completed"
@@ -1332,6 +1415,20 @@ def _required_tools_satisfied(
     return set(required_tools) <= successful
 
 
+def _successful_tool_entries(
+    results: list[SubAgentResult],
+    required_tools: list[str] | tuple[str, ...] | set[str] | frozenset[str],
+) -> list[dict[str, object]]:
+    found: dict[str, dict[str, object]] = {}
+    required_set = set(required_tools)
+    for result in results:
+        for entry in result.tool_calls:
+            name = _tool_name(entry)
+            if name in required_set and _tool_ok(entry) and name not in found:
+                found[name] = dict(entry)
+    return [found[name] for name in required_tools if name in found]
+
+
 def _finalize_if_evidence_satisfied(
     result: SubAgentResult,
     *,
@@ -1353,28 +1450,35 @@ def _deterministic_scope_review_result(
     config: AgentConfig,
     *,
     verdict: str,
+    prior_results: list[SubAgentResult] | None = None,
 ) -> SubAgentResult:
     """Collect required scope evidence without relying on reviewer LLM behavior."""
 
     tool_entries: list[dict[str, object]] = []
-    # These deterministic scope checks are read-only and are part of the
-    # validator/reviewer contract itself. Avoid routing them through an
-    # interactive approval prompt, which would make non-interactive multi-agent
-    # runs hang after the evidence is already known to be required.
-    read_only_config = replace(config, auto_confirm=True)
-    for name in ("git_status", "git_diff"):
-        call = ToolCall(name=name, arguments={"path": "."})
-        result = execute_tool(call, read_only_config)
-        tool_entries.append(
-            {
-                "tool": name,
-                "ok": not result.is_error,
-                "outcome": result.outcome,
-                "arguments": call.arguments,
-                "output_preview": result.content[:600],
-                "error_preview": result.content[:600] if result.is_error else None,
-            }
-        )
+    required_tools = ("git_status", "git_diff")
+    prior_entries = _successful_tool_entries(prior_results or [], required_tools)
+    if {entry["tool"] for entry in prior_entries} >= set(required_tools):
+        tool_entries = prior_entries
+    else:
+        # These deterministic scope checks are read-only and are part of the
+        # validator/reviewer contract itself. Avoid routing them through an
+        # interactive approval prompt, which would make non-interactive
+        # multi-agent runs hang after the evidence is already known to be
+        # required.
+        read_only_config = replace(config, auto_confirm=True)
+        for name in ("git_status", "git_diff"):
+            call = ToolCall(name=name, arguments={"path": "."})
+            result = execute_tool(call, read_only_config)
+            tool_entries.append(
+                {
+                    "tool": name,
+                    "ok": not result.is_error,
+                    "outcome": result.outcome,
+                    "arguments": call.arguments,
+                    "output_preview": result.content[:600],
+                    "error_preview": result.content[:600] if result.is_error else None,
+                }
+            )
 
     if all(_tool_ok(entry) for entry in tool_entries):
         status = "completed"
@@ -1996,7 +2100,13 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     reviewer = run.latest_for(AgentRole.REVIEWER)
     security_reviewer = run.latest_for(AgentRole.SECURITY_REVIEWER)
     status = final_run_status(run)
-    coder = run.selected_coder_role.value if run.selected_coder_role else "none (read-only task)"
+    coder = (
+        run.selected_coder_role.value
+        if run.selected_coder_role
+        else "none (implementation required but not executed)"
+        if run.requires_write
+        else "none (read-only task)"
+    )
     evidence_note = ""
     if status == "insufficient_evidence":
         evidence_note = (
@@ -2046,7 +2156,7 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     if run.selected_coder_role is None:
         research_text = research.output if research else "No research output was produced."
         return (
-            f"Multi-agent run finished with status: completed\n"
+            f"Multi-agent run finished with status: {status}\n"
             f"Selected implementer: {coder}\n\n"
             f"Research:\n{research_text}\n\n"
             f"Review:\n{review_text}"
@@ -2505,6 +2615,15 @@ def run_multi_agent(
             if subagent_blocked(research):
                 state.final_answer = synthesize_final_answer(state)
                 return state.final_answer
+            if "coder" not in planned_phases and research_discovered_write_requirement(
+                user_prompt, plan, research
+            ):
+                promote_to_write_flow(state, planned_phases)
+                if on_progress is None:
+                    console.print(
+                        "[cyan][multi-agent][/cyan] research discovered an "
+                        "implementation requirement; promoting to coder + validator."
+                    )
 
         # Implementation + validation only run when the intent allows writes.
         if "coder" in planned_phases:
@@ -2716,6 +2835,7 @@ def run_multi_agent(
                     review_prompt,
                     review_config,
                     verdict=("PASS: required review scope evidence tools completed successfully."),
+                    prior_results=state.results,
                 )
                 state.add_result(review)
                 if not on_progress:
@@ -2768,6 +2888,7 @@ def run_multi_agent(
                         verdict=(
                             "PASS: required security scope evidence tools completed successfully."
                         ),
+                        prior_results=state.results,
                     )
                     state.add_result(security_review)
                     if not on_progress:
