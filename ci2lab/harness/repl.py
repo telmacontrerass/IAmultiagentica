@@ -537,6 +537,12 @@ def run_repl(
                     project_id=config.project_id,
                 )
             last_error_message = None
+            # Issue 4(A): deterministically save the review to a .md file so the
+            # audit/table/math survive outside the terminal (and can become a PDF
+            # later). Scoped to exercise-review turns to avoid writing a file for
+            # every chat message.
+            if final_text and detected_images and is_exercise_review_request(line):
+                _export_review_markdown(final_text, config.cwd, detected_images)
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
             last_error_message = exc.user_message
@@ -548,6 +554,40 @@ def run_repl(
         data = load_session(sid)
         if data:
             history = data.get("messages")
+
+
+def _export_review_markdown(
+    final_text: str,
+    cwd: str,
+    source_paths: list[str],
+) -> None:
+    """Save an exercise-review answer to ``<cwd>/reviews/<stem>_review_<ts>.md``.
+
+    Deterministic post-step: the harness writes the file itself, so it does not
+    depend on the model remembering to call a write tool. Failures are reported
+    but never abort the turn.
+    """
+    from datetime import datetime
+
+    stem = Path(source_paths[0]).stem if source_paths else "exercise"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sources = (
+        ", ".join(Path(p).name for p in source_paths) if source_paths else "(none)"
+    )
+    header = (
+        f"# Exercise review: {stem}\n\n"
+        f"- Source: {sources}\n"
+        f"- Generated: {ts}\n\n"
+        "---\n\n"
+    )
+    try:
+        out_dir = Path(cwd) / "reviews"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{stem}_review_{ts}.md"
+        out_path.write_text(header + final_text, encoding="utf-8")
+        console.print(f"[dim]Review exported: {out_path}[/dim]")
+    except OSError as exc:
+        console.print(f"[yellow]Could not export review markdown: {exc}[/yellow]")
 
 
 def _project_prompt(config: AgentConfig, prompt: str) -> str:
