@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from ci2lab.security.opencode_permissions import _TOOL_TO_OPENCODE
@@ -33,18 +34,34 @@ def canonical_opencode_tool(tool_name: str) -> str:
 
 
 def _normalize_slashes(text: str) -> str:
-    return text.replace("\\", "/")
+    normalized = text.replace("\\", "/").strip()
+    if normalized in {"", "./"}:
+        return "."
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    try:
+        posix = PurePosixPath(normalized)
+        normalized = str(posix)
+    except Exception:
+        pass
+    return normalized or "."
 
 
 def target_fingerprint(tool_name: str, args: dict[str, Any]) -> str:
     if tool_name in {"bash", "shell"}:
         cmd = re.sub(r"\s+", " ", str(args.get("command", "")).strip())
         return cmd
+    if tool_name == "git_status":
+        return _normalize_slashes(str(args.get("path", ".")))
+    if tool_name == "git_diff":
+        path = _normalize_slashes(str(args.get("path", ".")))
+        staged = bool(args.get("staged", False))
+        return f"{path}|staged={staged}"
     if tool_name in {"grep", "glob"}:
         path = _normalize_slashes(str(args.get("path", ".")))
         pattern = str(args.get("pattern", ""))
         return f"{path}|{pattern}"
-    return _normalize_slashes(str(args.get("path", args.get("command", ""))))
+    return _normalize_slashes(str(args.get("path", args.get("command", "."))))
 
 
 def build_approval_fingerprint(

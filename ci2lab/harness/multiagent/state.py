@@ -68,6 +68,10 @@ class MultiAgentRun:
     risk_level: str | None = None
     needs_confirmation: bool | None = None
     decision_reasons: list[str] = field(default_factory=list)
+    # Snapshot of `git status --short` captured before the run starts.
+    # Used by validation and review prompts to distinguish pre-existing WIP
+    # from changes introduced by the current run.
+    git_baseline: str | None = None
 
     def add_result(self, result: SubAgentResult) -> None:
         self.results.append(result)

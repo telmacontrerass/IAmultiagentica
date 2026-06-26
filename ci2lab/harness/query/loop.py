@@ -140,12 +140,18 @@ _CONTRACT_EXPECTED_CONTENT_RE = re.compile(
     r"\s*:\s*(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s.`\"']+))",
     re.IGNORECASE,
 )
+_CONTRACT_INLINE_CONTENT_RE = re.compile(
+    r"\bcon\s+exactamente\s+(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s.`\"']+))",
+    re.IGNORECASE,
+)
 
 
 def _contract_expected_from_prompt(user_prompt: str) -> tuple[str, str] | None:
     """Extract the narrow explicit file/content contract supported by the loop."""
     file_match = _CONTRACT_EXPECTED_FILE_RE.search(user_prompt or "")
     content_match = _CONTRACT_EXPECTED_CONTENT_RE.search(user_prompt or "")
+    if content_match is None:
+        content_match = _CONTRACT_INLINE_CONTENT_RE.search(user_prompt or "")
     if not file_match or not content_match:
         return None
     expected_file = next(group for group in file_match.groups() if group)
@@ -293,6 +299,13 @@ _MUTATING_TOOLS = frozenset({
     # treat it as a mutation: it invalidates the read cache and is skipped after
     # an upstream error in the same batch, like any other write.
     "delegate",
+})
+_DIRECT_WRITE_TOOLS = frozenset({
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "notebook_edit",
+    "write_docx",
 })
 # The user's current prompt explicitly asks to create or change something. Used
 # only to nudge once when the model narrates a change without ever applying it.
@@ -723,6 +736,10 @@ def run_agent(
     todo_plan_active = False
     todo_continue_nudges = 0
     write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
+    write_tools_available = (
+        cfg.skill_allowed_tools is None
+        or bool(_DIRECT_WRITE_TOOLS & cfg.skill_allowed_tools)
+    )
     completed_edits: set[EditSignature] = set()
     final_text = ""
     content = ""
@@ -736,6 +753,8 @@ def run_agent(
     contract_expected = _contract_expected_from_prompt(user_prompt)
     contract_write_seen = False
     contract_readback_seen = False
+    required_evidence_tools = set(cfg.required_evidence_tools or ())
+    required_evidence_seen: set[str] = set()
 
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
@@ -941,6 +960,7 @@ def run_agent(
                 if (
                     final_text
                     and write_intent
+                    and write_tools_available
                     and not attempted_write_this_turn
                     and not described_not_written_nudge_sent
                     and selection.supports_tools
@@ -1042,6 +1062,8 @@ def run_agent(
             round_had_error = False
             _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
+                if required_evidence_tools and required_evidence_tools <= required_evidence_seen:
+                    break
                 _raise_if_cancelled(cfg)
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(timezone.utc)
@@ -1131,6 +1153,12 @@ def run_agent(
                         )
                 if not result.is_error and call.name in _READ_ONLY_TOOLS:
                     satisfied_reads.add(rsig)
+                if (
+                    required_evidence_tools
+                    and not result.is_error
+                    and call.name in required_evidence_tools
+                ):
+                    required_evidence_seen.add(call.name)
                 if not result.is_error and call.name == "todo_write":
                     # From now on the model is working to a plan it authored; the
                     # finish guard will hold it to that plan's open steps.
@@ -1139,8 +1167,14 @@ def run_agent(
                     # Remember a real failure so a later call in this batch is not
                     # built on it. A skipped write is not itself a failed call, so
                     # it must not feed the retry-governor counters below.
-                    round_had_error = True
-                    if result.outcome not in ("blocked_by_policy", "skipped_after_error"):
+                    # A tool blocked by skill was never executed and produced no
+                    # side effects; subsequent independent calls (git_status, bash)
+                    # must not be skipped_after_error because of it.
+                    if result.outcome != "blocked_by_skill":
+                        round_had_error = True
+                    if result.outcome not in (
+                        "blocked_by_policy", "skipped_after_error", "blocked_by_skill"
+                    ):
                         failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
                         eclass = error_class_key(call, result)
                         error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
@@ -1186,6 +1220,15 @@ def run_agent(
                     append_assistant_turn(history, final_text)
                     maybe_save_session(cfg, history, selection)
                     break
+
+            if required_evidence_tools and required_evidence_tools <= required_evidence_seen:
+                final_text = cfg.evidence_completion_verdict or (
+                    "PASS: required evidence tools completed successfully."
+                )
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                maybe_save_session(cfg, history, selection)
+                break
 
             # Error-streak cutoff: even when arguments change each round (so the
             # signature detector does not see a loop), if every tool fails for

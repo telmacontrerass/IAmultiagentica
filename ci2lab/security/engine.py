@@ -280,7 +280,7 @@ def _permission_layer_gate(
         )
 
         session_key = resolve_session_key(
-            session_id=config.session_id,
+            session_id=config.approval_session_id or config.session_id,
             run_id=(
                 get_audit_persist_context().run_id
                 if get_audit_persist_context()

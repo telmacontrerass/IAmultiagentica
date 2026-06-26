@@ -18,6 +18,7 @@ from ci2lab.security.session_permissions import (
     clear_session_permissions,
     grant_session_approval,
     lookup_session_approval,
+    target_fingerprint,
 )
 
 
@@ -198,3 +199,75 @@ def test_fingerprint_distinguishes_targets(workspace: Path):
     grant_session_approval("sess-1", fp_a, "allow_session")
     assert lookup_session_approval("sess-1", fp_a) == "allow_session"
     assert lookup_session_approval("sess-1", fp_b) is None
+
+
+def test_fingerprint_normalizes_path_slashes_and_default_dot():
+    assert (
+        target_fingerprint("write_file", {"path": r"notes\a.txt"})
+        == "notes/a.txt"
+    )
+    assert target_fingerprint("git_status", {}) == "."
+    assert target_fingerprint("git_status", {"path": "."}) == "."
+
+
+def test_git_diff_fingerprint_includes_staged_flag():
+    unstaged = target_fingerprint("git_diff", {"path": "."})
+    staged = target_fingerprint("git_diff", {"path": ".", "staged": True})
+
+    assert unstaged == ".|staged=False"
+    assert staged == ".|staged=True"
+    assert unstaged != staged
+
+
+def test_approval_session_id_skips_ask_without_chat_session(workspace: Path):
+    rules = _ask_rules()
+    args = {"command": "echo run scoped"}
+    fp = build_approval_fingerprint(
+        engine="opencode_experimental",
+        tool_name="bash",
+        args=args,
+        matched_rule="bash:*",
+        external_directory=False,
+    )
+    grant_session_approval("multiagent-run-1", fp, "allow_session")
+    config = AgentConfig(
+        cwd=str(workspace),
+        security_engine="opencode_experimental",
+        opencode_permissions=rules,
+        approval_session_id="multiagent-run-1",
+        session_id=None,
+    )
+
+    gate = evaluate_tool_gate("bash", args, config)
+
+    assert gate.proceed
+    assert not gate.needs_confirm
+    assert gate.session_approval_used
+    assert gate.session_approval_scope == "allow_session"
+
+
+def test_approval_session_id_does_not_persist_between_runs(workspace: Path):
+    rules = _ask_rules()
+    args = {"command": "echo run scoped"}
+    fp = build_approval_fingerprint(
+        engine="opencode_experimental",
+        tool_name="bash",
+        args=args,
+        matched_rule="bash:*",
+        external_directory=False,
+    )
+    grant_session_approval("multiagent-run-1", fp, "allow_session")
+
+    gate = evaluate_tool_gate(
+        "bash",
+        args,
+        AgentConfig(
+            cwd=str(workspace),
+            security_engine="opencode_experimental",
+            opencode_permissions=rules,
+            approval_session_id="multiagent-run-2",
+        ),
+    )
+
+    assert gate.needs_confirm
+    assert not gate.session_approval_used
