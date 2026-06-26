@@ -25,6 +25,20 @@ def test_build_subagent_config_filters_tools_without_mutating_parent():
     assert "write_file" not in subagent.skill_allowed_tools
 
 
+def test_build_subagent_config_preserves_approval_scope_without_chat_session():
+    parent = AgentConfig(
+        cwd=".",
+        stream=True,
+        session_id="chat-session",
+        approval_session_id="multiagent-run",
+    )
+
+    subagent = build_subagent_config(AgentRole.VALIDATOR, parent)
+
+    assert subagent.session_id is None
+    assert subagent.approval_session_id == "multiagent-run"
+
+
 def test_build_subagent_config_applies_role_round_budget():
     parent = AgentConfig(cwd=".", max_rounds=25)
 

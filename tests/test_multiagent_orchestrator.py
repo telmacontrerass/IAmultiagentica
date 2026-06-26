@@ -688,6 +688,21 @@ _WRITE_READBACK_TOOL_CALLS = [
     },
 ]
 
+_SCOPE_TOOL_CALLS = [
+    {
+        "tool": "git_status",
+        "ok": True,
+        "arguments": {"path": "."},
+        "output_preview": "?? prueba_multiagente.txt",
+    },
+    {
+        "tool": "git_diff",
+        "ok": True,
+        "arguments": {"path": "."},
+        "output_preview": "(no tracked-file diff)",
+    },
+]
+
 
 def _force_code_change_intent(monkeypatch) -> None:
     """Pin the intent decision so these orchestrator tests exercise the evidence
@@ -864,7 +879,19 @@ def test_run_multi_agent_write_task_with_tool_evidence_completes(monkeypatch):
                 tool_calls=_WRITE_READBACK_TOOL_CALLS,
             )
         if role == AgentRole.VALIDATOR:
-            return _result(role, "Validation passed; content is correct.", attempt=attempt)
+            return _result(
+                role,
+                "Validation passed; content and scope are correct.",
+                attempt=attempt,
+                tool_calls=_SCOPE_TOOL_CALLS,
+            )
+        if role in {AgentRole.REVIEWER, AgentRole.SECURITY_REVIEWER}:
+            return _result(
+                role,
+                "Review complete with real status/diff evidence.",
+                attempt=attempt,
+                tool_calls=_SCOPE_TOOL_CALLS,
+            )
         return _result(role, "Review complete.", attempt=attempt)
 
     monkeypatch.setattr(

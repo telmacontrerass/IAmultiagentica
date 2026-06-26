@@ -142,6 +142,81 @@ _STOP_TOOLS_NUDGE = (
 _WEB_CAPABILITY_NUDGE = (
     "You can use `web_search` for live info without a URL, then `web_fetch` for selected sources."
 )
+_CONTRACT_EXPECTED_FILE_RE = re.compile(
+    r"(?:Expected file|archivo esperado)\s*:\s*`?([A-Za-z0-9_./\\-]+)`?"
+    r"|(?:archivo|file|fichero)\s+(?:llamado|named|called)\s+"
+    r"[`\"']?([A-Za-z0-9_./\\-]+)",
+    re.IGNORECASE,
+)
+_CONTRACT_EXPECTED_CONTENT_RE = re.compile(
+    r"(?:Expected exact content|contenido exacto esperado|exactamente este contenido)"
+    r"\s*:\s*(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s.`\"']+))",
+    re.IGNORECASE,
+)
+_CONTRACT_INLINE_CONTENT_RE = re.compile(
+    r"\bcon\s+exactamente\s+(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s.`\"']+))",
+    re.IGNORECASE,
+)
+
+
+def _contract_expected_from_prompt(user_prompt: str) -> tuple[str, str] | None:
+    """Extract the narrow explicit file/content contract supported by the loop."""
+    file_match = _CONTRACT_EXPECTED_FILE_RE.search(user_prompt or "")
+    content_match = _CONTRACT_EXPECTED_CONTENT_RE.search(user_prompt or "")
+    if content_match is None:
+        content_match = _CONTRACT_INLINE_CONTENT_RE.search(user_prompt or "")
+    if not file_match or not content_match:
+        return None
+    expected_file = next(group for group in file_match.groups() if group)
+    expected_content = next(group for group in content_match.groups() if group)
+    return expected_file, expected_content
+
+
+def _contract_path(path: object, cwd: str) -> Path | None:
+    """Normalize a tool-call path without relying on free-form tool output."""
+    raw = str(path or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = Path(cwd) / candidate
+    return candidate.resolve(strict=False)
+
+
+def _update_contract_evidence(
+    calls: list[ToolCall],
+    results: list[ToolResult],
+    *,
+    cwd: str,
+    expected_file: str,
+    expected_content: str,
+    write_seen: bool,
+    readback_seen: bool,
+) -> tuple[bool, bool]:
+    """Accumulate ordered, successful write/readback evidence for one contract."""
+    expected_path = _contract_path(expected_file, cwd)
+    for call, result in zip(calls, results, strict=False):
+        if result.is_error or result.outcome == "already_satisfied":
+            continue
+        if _contract_path(call.arguments.get("path"), cwd) != expected_path:
+            continue
+        if call.name == "write_file":
+            write_seen = True
+            # A later write makes any earlier readback stale.
+            readback_seen = False
+        elif call.name == "read_file" and write_seen:
+            readback_seen = expected_content in result.content
+    return write_seen, readback_seen
+
+
+def _contract_final_text(expected_file: str) -> str:
+    return (
+        f"Created {expected_file} with exact content.\n"
+        "Tool used: write_file\n"
+        "Verification tool used: read_file"
+    )
+
+
 _UNPARSED_FENCED_HINT = (
     "Your previous tool call was not executed. Use a fenced block with the tool "
     "name as the tag, e.g.\n"
@@ -794,6 +869,12 @@ def run_agent(
     tokens_prompt_peak: int = 0  # max prompt_tokens seen in any round
     tokens_completion_total: int = 0  # accumulated completion_tokens (real output)
 
+    contract_expected = _contract_expected_from_prompt(user_prompt)
+    contract_write_seen = False
+    contract_readback_seen = False
+    required_evidence_tools = set(cfg.required_evidence_tools or ())
+    required_evidence_seen: set[str] = set()
+
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
         run_log.start()
@@ -1102,6 +1183,8 @@ def run_agent(
             round_had_error = False
             _emit_progress(_tool_progress_label(calls), on_progress)
             for call in calls:
+                if required_evidence_tools and required_evidence_tools <= required_evidence_seen:
+                    break
                 _raise_if_cancelled(cfg)
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
                 started_at = datetime.now(UTC)
@@ -1191,6 +1274,12 @@ def run_agent(
                         )
                 if not result.is_error and call.name in READ_ONLY_TOOLS:
                     satisfied_reads.add(rsig)
+                if (
+                    required_evidence_tools
+                    and not result.is_error
+                    and call.name in required_evidence_tools
+                ):
+                    required_evidence_seen.add(call.name)
                 if not result.is_error and call.name == "todo_write":
                     # From now on the model is working to a plan it authored; the
                     # finish guard will hold it to that plan's open steps.
@@ -1199,8 +1288,16 @@ def run_agent(
                     # Remember a real failure so a later call in this batch is not
                     # built on it. A skipped write is not itself a failed call, so
                     # it must not feed the retry-governor counters below.
-                    round_had_error = True
-                    if result.outcome not in ("blocked_by_policy", "skipped_after_error"):
+                    # A tool blocked by skill was never executed and produced no
+                    # side effects; subsequent independent calls (git_status, bash)
+                    # must not be skipped_after_error because of it.
+                    if result.outcome != "blocked_by_skill":
+                        round_had_error = True
+                    if result.outcome not in (
+                        "blocked_by_policy",
+                        "skipped_after_error",
+                        "blocked_by_skill",
+                    ):
                         failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
                         eclass = error_class_key(call, result)
                         error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
@@ -1228,6 +1325,33 @@ def run_agent(
             if cfg.role_anchor:
                 history.append(_role_anchor_message(cfg.role_anchor))
             history.append(_current_request_anchor(user_prompt, cfg.cwd))
+
+            if contract_expected is not None:
+                expected_file, expected_content = contract_expected
+                contract_write_seen, contract_readback_seen = _update_contract_evidence(
+                    calls,
+                    results,
+                    cwd=cfg.cwd,
+                    expected_file=expected_file,
+                    expected_content=expected_content,
+                    write_seen=contract_write_seen,
+                    readback_seen=contract_readback_seen,
+                )
+                if contract_write_seen and contract_readback_seen:
+                    final_text = _contract_final_text(expected_file)
+                    console.print(final_text)
+                    append_assistant_turn(history, final_text)
+                    maybe_save_session(cfg, history, selection)
+                    break
+
+            if required_evidence_tools and required_evidence_tools <= required_evidence_seen:
+                final_text = cfg.evidence_completion_verdict or (
+                    "PASS: required evidence tools completed successfully."
+                )
+                console.print(final_text)
+                append_assistant_turn(history, final_text)
+                maybe_save_session(cfg, history, selection)
+                break
 
             # Error-streak cutoff: even when arguments change each round (so the
             # signature detector does not see a loop), if every tool fails for
