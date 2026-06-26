@@ -2,7 +2,7 @@
 name: review_handwritten_exercise
 description: Transcribe handwritten or scanned exercise work, audit calculations with impact analysis, and rework problems when errors change the answer.
 when_to_use: User provides a handwritten/scanned PDF or image and asks to transcribe, check calculations, or find mistakes step by step.
-allowed-tools: todo_write extract_visual_document
+allowed-tools: todo_write extract_visual_document calc
 disable-model-invocation: false
 ---
 # Goal
@@ -43,10 +43,17 @@ For **each** suspected issue, record a row with these fields:
 
 Use `todo_write` to track: Transcription → Audit table → Corrected solution (if needed).
 
+# Phase 2a — Compute with the `calc` tool, never by hand
+Do **not** evaluate multi-term arithmetic in your head — a wrong intermediate makes you flag a correct student. For every numeric line (each enthalpy sum, each denominator, each final temperature), call `calc` and copy its result verbatim.
+
+- Example: `calc("8*(-393520) + 9*(-241820) - (-249910)")` → use the returned value as `h_comb`.
+- Example: `calc("298 + 5074630 / (8*58.4 + 9*47.15 + 47*34.9)")` → use the returned value as `Tca`.
+- **Every `expr = value` line you display must be a line `calc` actually returned.** Do not write an expression whose left side does not evaluate to the right side. If `calc` disagrees with what you were about to write, your expression was wrong — fix the expression, not the value.
+
 # Phase 2b — Physical sanity checks (do BEFORE declaring any error)
 Before you flag the student wrong or report a "corrected" number, check your **own** result against physics. A failed check almost always means *your* sign or arithmetic slip, not the student's.
 
-- **Sign convention for reaction enthalpy.** `h_comb = Σ(n·h_f)_products − Σ(n·h_f)_reactants`. The `h_f` values here are **already negative**, so a handwritten `-8×393520` means `8×(-393520) = -3,148,160` — it is **not** `-8×(-393520)`. Do not negate an already-negative `h_f` a second time.
+- **Sign convention for reaction enthalpy.** `h_comb = Σ(n·h_f)_products − Σ(n·h_f)_reactants`. The `h_f` values here are **already negative**, so a handwritten `-8×393520` means `8×(-393520) = -3,148,160` — it is **not** `-8×(-393520)`. Do not negate an already-negative `h_f` a second time. Feed the correct form to `calc`: `calc("8*(-393520) + 9*(-241820) - (-249910)")`.
 - **Combustion is exothermic:** `h_comb` MUST be **negative**. If you compute a positive `h_comb` (e.g. `+5,574,450`), you made a sign error — stop and redo it before writing anything.
 - **Flame temperature plausibility:** the adiabatic temperature must be **above** the inlet (298 K) and on the order of a few thousand K. A result below 298 K, or one that swings wildly when you "correct" a value the student copied right, signals an error on your side.
 - **Self-doubt rule:** if your independent recomputation disagrees with the student's internally-consistent result, re-examine YOUR arithmetic and signs first. Only declare the student wrong once your value passes every check above.
@@ -84,3 +91,4 @@ Markdown table with columns: Step | Seen | Likely source | Used later | Affects 
 - Never skip a page or sub-part. If you only audited part (a), you are not done while part (b) exists.
 - **A positive enthalpy of combustion or a flame temperature below the inlet temperature is impossible** — if either appears in your work, you have a sign/arithmetic error; fix it before reporting and never blame the student for it.
 - **Never silently fix a transcription garble** (e.g. `n7` → `47`): if you used the corrected value, log the misread as a cosmetic transcription row in the audit.
+- **Every displayed arithmetic line must come from `calc`.** A line whose left side does not evaluate to its stated right side is a hard error — recompute it with `calc` and copy the exact result.

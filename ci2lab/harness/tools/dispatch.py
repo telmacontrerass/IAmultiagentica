@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from ci2lab.harness.tools import ask_user as ask_user_tool
 from ci2lab.harness.tools import bash as bash_tool
+from ci2lab.harness.tools import calc as calc_tool
 from ci2lab.harness.tools import convert as convert_tool
 from ci2lab.harness.tools import docx as docx_tool
 from ci2lab.harness.tools import filesystem as fs
@@ -121,6 +122,7 @@ DISPATCH: dict[str, Callable[..., str]] = {
         a["path"],
         cfg,
     ),
+    "calc": lambda cfg, a: calc_tool.calc(a["expression"]),
 }
 
 

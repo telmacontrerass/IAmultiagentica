@@ -4,6 +4,7 @@ from __future__ import annotations
 
 TOOL_NAMES = frozenset({
     "bash",
+    "calc",
     "read_file",
     "read_document",
     "ls",
