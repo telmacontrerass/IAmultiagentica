@@ -1,11 +1,11 @@
 from ci2lab.hardware.profile import build_cpu_profile_for_testing
-from ci2lab.runtime.ollama import is_catalog_model_installed
 from ci2lab.router.recommend import (
     _score_for_category,
     build_display_recommendations,
     recommend_download_plan,
     score_recommendations,
 )
+from ci2lab.runtime.ollama import is_catalog_model_installed
 
 
 def test_is_catalog_model_installed_matches_exact_and_variant_tags():
@@ -69,5 +69,6 @@ def test_download_plan_keeps_separate_rows_per_use_case():
     assert all(len(item.use_cases) == 1 for item in plan)
     download_rows = [item for item in plan if not item.installed]
     from ci2lab.router.recommend import USE_CASES
+
     assert len(download_rows) == len(USE_CASES)
     assert len({item.use_cases[0] for item in download_rows}) == len(USE_CASES)

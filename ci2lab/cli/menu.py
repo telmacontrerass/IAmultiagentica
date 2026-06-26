@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
-import base64
 import shlex
 import shutil
 import subprocess
 import sys
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.console import console
@@ -30,6 +30,8 @@ CommandRunner = Callable[[list[str]], int]
 
 @dataclass(frozen=True)
 class MenuOption:
+    """A selectable menu entry with a label, description and return value."""
+
     label: str
     description: str
     value: str
@@ -37,6 +39,8 @@ class MenuOption:
 
 @dataclass(frozen=True)
 class ModelChoice:
+    """A selectable model entry, carrying its Ollama tag and install/fit status."""
+
     label: str
     value: str
     ollama_tag: str
@@ -317,10 +321,26 @@ MAIN_OPTIONS: tuple[MenuOption, ...] = (
 
 
 LANGUAGE_OPTIONS: tuple[MenuOption, ...] = (
-    MenuOption("English", "Display language only. Internal prompts, tools and model messages remain in English.", "en"),
-    MenuOption("Español", "Display language only. Internal prompts, tools and model messages remain in English.", "es"),
-    MenuOption("Français", "Display language only. Internal prompts, tools and model messages remain in English.", "fr"),
-    MenuOption("Português", "Display language only. Internal prompts, tools and model messages remain in English.", "pt"),
+    MenuOption(
+        "English",
+        "Display language only. Internal prompts, tools and model messages remain in English.",
+        "en",
+    ),
+    MenuOption(
+        "Español",
+        "Display language only. Internal prompts, tools and model messages remain in English.",
+        "es",
+    ),
+    MenuOption(
+        "Français",
+        "Display language only. Internal prompts, tools and model messages remain in English.",
+        "fr",
+    ),
+    MenuOption(
+        "Português",
+        "Display language only. Internal prompts, tools and model messages remain in English.",
+        "pt",
+    ),
     MenuOption("Back", "Return to the main menu.", "back"),
 )
 
@@ -359,10 +379,12 @@ EVAL_OPTIONS: tuple[MenuOption, ...] = (
 
 
 def _language_config_path() -> Path:
+    """Return the path of the persisted display-language preference file."""
     return Path(os.environ.get("CI2LAB_LANGUAGE_FILE", Path.home() / ".ci2lab" / "language.json"))
 
 
 def _t(text: str) -> str:
+    """Translate a UI string into the current display language (identity for English)."""
     if _CURRENT_DISPLAY_LANGUAGE == INTERNAL_LANGUAGE:
         return text
     return CLI_TRANSLATIONS.get(_CURRENT_DISPLAY_LANGUAGE, {}).get(text, text)
@@ -371,6 +393,11 @@ def _t(text: str) -> str:
 def _translated_menu_options(
     options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
 ) -> list[MenuOption] | list[ModelChoice]:
+    """Return a copy of the options with menu labels/descriptions translated.
+
+    :class:`ModelChoice` entries are passed through unchanged since their labels
+    are built from live data.
+    """
     translated: list[MenuOption] | list[ModelChoice] = []
     for option in options:
         if isinstance(option, MenuOption):
@@ -381,6 +408,7 @@ def _translated_menu_options(
 
 
 def _translate_subtitle(subtitle: str | None) -> str | None:
+    """Translate a menu subtitle, preserving the workspace path after the label."""
     if not subtitle:
         return None
     if subtitle.startswith("Workspace:"):
@@ -389,6 +417,10 @@ def _translate_subtitle(subtitle: str | None) -> str | None:
 
 
 def _load_display_language() -> str:
+    """Load the display language from env or the config file, defaulting to English.
+
+    Updates the module-level current language and returns the resolved value.
+    """
     global _CURRENT_DISPLAY_LANGUAGE
     raw = os.environ.get("CI2LAB_DISPLAY_LANGUAGE", "")
     if not raw:
@@ -402,6 +434,10 @@ def _load_display_language() -> str:
 
 
 def _save_display_language(language: str) -> None:
+    """Persist a supported display language, updating the current value.
+
+    Unsupported languages and filesystem errors are ignored silently.
+    """
     if language not in SUPPORTED_DISPLAY_LANGUAGES:
         return
     global _CURRENT_DISPLAY_LANGUAGE
@@ -410,7 +446,9 @@ def _save_display_language(language: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({"display_language": language, "internal_language": INTERNAL_LANGUAGE}, indent=2),
+            json.dumps(
+                {"display_language": language, "internal_language": INTERNAL_LANGUAGE}, indent=2
+            ),
             encoding="utf-8",
         )
     except OSError:
@@ -418,6 +456,7 @@ def _save_display_language(language: str) -> None:
 
 
 def _language_menu() -> int:
+    """Show the language picker and persist the chosen display language."""
     selected = select_from_menu(
         "Language",
         LANGUAGE_OPTIONS,
@@ -441,7 +480,18 @@ def run_start_menu(
     *,
     command_runner: CommandRunner | None = None,
 ) -> int:
-    """Show the interactive launcher until the user exits."""
+    """Show the interactive launcher until the user exits.
+
+    Args:
+        runtime: The merged runtime configuration (used for the workspace label
+            and to drive chat/model commands).
+        command_runner: Callable used to execute ``ci2lab`` subcommands; defaults
+            to dispatching back into :func:`ci2lab.cli.main.main`. Injectable for
+            tests.
+
+    Returns:
+        Process exit code; non-zero when a chat/ui command fails, ``0`` otherwise.
+    """
     _load_display_language()
     runner = command_runner or _default_command_runner
     while True:
@@ -465,6 +515,16 @@ def _handle_main_choice(
     runtime: Ci2LabConfig,
     runner: CommandRunner,
 ) -> int:
+    """Dispatch a main-menu selection to the matching action.
+
+    Args:
+        selected: The ``value`` of the chosen :class:`MenuOption`.
+        runtime: The merged runtime configuration.
+        runner: Callable used to execute ``ci2lab`` subcommands.
+
+    Returns:
+        Process exit code from the dispatched action.
+    """
     if selected == "ui":
         return _run_command(["ui"], runner)
     if selected == "chat":
@@ -533,6 +593,7 @@ def _run_chat_command(
     runner: CommandRunner,
     base_args: list[str],
 ) -> int:
+    """Pick and ensure a model, then run a chat command with ``--model`` prepended."""
     choice = select_model(runtime)
     if choice is None or not _ensure_model_installed(choice):
         return 0
@@ -540,6 +601,7 @@ def _run_chat_command(
 
 
 def _projects_menu(runtime: Ci2LabConfig) -> int:
+    """Show the projects list, allowing creation and opening of a project."""
     from ci2lab.ui.projects import create_project, list_projects
 
     while True:
@@ -587,6 +649,7 @@ def _projects_menu(runtime: Ci2LabConfig) -> int:
 
 
 def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
+    """Show actions for a single project (chat, sources, delete) until Back."""
     from ci2lab.ui.projects import delete_project, get_project
 
     while True:
@@ -627,10 +690,7 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
         selected = select_from_menu(
             project["name"],
             options,
-            subtitle=(
-                f"{project['source_count']} sources · "
-                f"{len(conversations)} conversations"
-            ),
+            subtitle=(f"{project['source_count']} sources · {len(conversations)} conversations"),
         )
         if selected in {None, "back"}:
             return 0
@@ -652,9 +712,7 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
         elif selected == "sources":
             _project_sources_menu(project_id)
         elif selected == "delete":
-            if _confirm(
-                f"Delete project '{project['name']}' and all its sources/chats? [y/N] "
-            ):
+            if _confirm(f"Delete project '{project['name']}' and all its sources/chats? [y/N] "):
                 result = delete_project(project_id)
                 if result.get("ok"):
                     console.print("[green]Project deleted.[/green]")
@@ -669,6 +727,17 @@ def _run_project_chat(
     session_id: str | None = None,
     multi_agent: bool = False,
 ) -> int:
+    """Open a chat REPL scoped to a project's workspace and sources.
+
+    Args:
+        runtime: The merged runtime configuration.
+        project_id: Identifier of the project to chat within.
+        session_id: Optional saved session to resume.
+        multi_agent: When True, use the multi-agent orchestrator.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` if the project is missing.
+    """
     from ci2lab.harness.repl import run_repl
     from ci2lab.pipeline import build_agent_config, prepare_session
     from ci2lab.ui.projects import get_project
@@ -683,6 +752,7 @@ def _run_project_chat(
     _, selection = prepare_session(
         "",
         force_model=choice.ollama_tag,
+        backend=runtime.backend,
         backend_url=runtime.backend_url,
         pull=False,
     )
@@ -694,8 +764,7 @@ def _run_project_chat(
     )
     config.project_id = project_id
     console.print(
-        f"[bold]Project:[/bold] {project['name']} "
-        f"[dim]({project['source_count']} sources)[/dim]"
+        f"[bold]Project:[/bold] {project['name']} [dim]({project['source_count']} sources)[/dim]"
     )
     run_repl(
         selection,
@@ -707,15 +776,19 @@ def _run_project_chat(
 
 
 def _project_sessions(project_id: str) -> list[dict[str, str]]:
+    """Return the saved session rows that belong to the given project."""
     from ci2lab.harness.session import list_sessions
 
-    return [
-        row for row in list_sessions()
-        if str(row.get("project_id") or "") == project_id
-    ]
+    return [row for row in list_sessions() if str(row.get("project_id") or "") == project_id]
 
 
 def _select_project_session(project_id: str) -> dict[str, str] | None:
+    """Prompt the user to pick one of a project's saved conversations.
+
+    Returns:
+        The selected session row, or ``None`` if there are none or the user
+        cancels.
+    """
     rows = _project_sessions(project_id)
     if not rows:
         console.print("[yellow]This project has no saved conversations yet.[/yellow]")
@@ -734,6 +807,11 @@ def _select_project_session(project_id: str) -> dict[str, str] | None:
 
 
 def _add_project_source_from_path(project_id: str) -> bool:
+    """Prompt for a file path and add it as a base64-encoded project source.
+
+    Returns:
+        ``True`` if the source was added, ``False`` on cancel or any error.
+    """
     from ci2lab.ui.projects import add_project_source
 
     raw_path = _ask_text("Path to source file")
@@ -763,6 +841,7 @@ def _add_project_source_from_path(project_id: str) -> bool:
 
 
 def _project_sources_menu(project_id: str) -> int:
+    """Show a project's sources, allowing adding and removing them until Back."""
     from ci2lab.ui.projects import delete_project_source, list_project_sources
 
     while True:
@@ -796,6 +875,7 @@ def _project_sources_menu(project_id: str) -> int:
 
 
 def _sessions_menu(runner: CommandRunner) -> int:
+    """Show the sessions submenu (open JSON, resume, list)."""
     selected = select_from_menu("Sessions", SESSION_OPTIONS)
     if selected in {None, "back"}:
         return 0
@@ -816,6 +896,7 @@ def _sessions_menu(runner: CommandRunner) -> int:
 
 
 def _permissions_menu(runner: CommandRunner) -> int:
+    """Show the permissions submenu and run the chosen ``permissions`` subcommand."""
     selected = select_from_menu("Permissions dashboard", PERMISSIONS_OPTIONS)
     if selected in {None, "back"}:
         return 0
@@ -829,6 +910,7 @@ def _permissions_menu(runner: CommandRunner) -> int:
 
 
 def _evals_menu(runtime: Ci2LabConfig, runner: CommandRunner) -> int:
+    """Show the evals submenu and run mock or live evaluations."""
     selected = select_from_menu("Evals", EVAL_OPTIONS)
     if selected in {None, "back"}:
         return 0
@@ -844,6 +926,14 @@ def _evals_menu(runtime: Ci2LabConfig, runner: CommandRunner) -> int:
 
 
 def select_model(runtime: Ci2LabConfig | None = None) -> ModelChoice | None:
+    """Prompt the user to pick a model from the catalog and installed models.
+
+    Args:
+        runtime: Optional runtime configuration providing the backend URL.
+
+    Returns:
+        The selected :class:`ModelChoice`, or ``None`` if the user cancels.
+    """
     choices, error = build_model_choices(runtime)
     subtitle = "Use Up/Down and Enter"
     if error:
@@ -857,6 +947,19 @@ def select_model(runtime: Ci2LabConfig | None = None) -> ModelChoice | None:
 def build_model_choices(
     runtime: Ci2LabConfig | None = None,
 ) -> tuple[list[ModelChoice], str | None]:
+    """Build the model picker entries from the catalog and installed models.
+
+    Catalog models are annotated with install and fit status; installed models
+    not present in the catalog are appended as "external". The list is sorted so
+    installed models come first.
+
+    Args:
+        runtime: Optional runtime configuration providing the backend URL.
+
+    Returns:
+        A tuple ``(choices, error)`` where ``error`` is the Ollama query error
+        message (or ``None`` on success).
+    """
     backend_url = runtime.backend_url if runtime else None
     if backend_url:
         installed, error = fetch_installed_models(backend_url)
@@ -875,10 +978,7 @@ def build_model_choices(
         fit = _t("fits" if fits_here else "too large")
         choices.append(
             ModelChoice(
-                label=(
-                    f"{model.display_name} | {model.ollama_tag} "
-                    f"({status}, {fit})"
-                ),
+                label=(f"{model.display_name} | {model.ollama_tag} ({status}, {fit})"),
                 value=model.id,
                 catalog_id=model.id,
                 ollama_tag=model.ollama_tag,
@@ -906,6 +1006,12 @@ def build_model_choices(
 
 
 def select_session() -> dict[str, str] | None:
+    """Prompt the user to pick one of the saved sessions.
+
+    Returns:
+        The selected session row, or ``None`` if there are none or the user
+        cancels.
+    """
     from ci2lab.harness.session import list_sessions
 
     rows = list_sessions()
@@ -915,10 +1021,7 @@ def select_session() -> dict[str, str] | None:
     options = [
         MenuOption(
             label=row.get("title") or "Conversation",
-            description=(
-                f"{row['id']} · {row['model']} · "
-                f"{row['updated_at'][:19]}"
-            ),
+            description=(f"{row['id']} · {row['model']} · {row['updated_at'][:19]}"),
             value=row["id"],
         )
         for row in rows
@@ -930,6 +1033,15 @@ def select_session() -> dict[str, str] | None:
 
 
 def open_session_json(session_id: str) -> int:
+    """Open the saved session JSON file, falling back to printing its contents.
+
+    Args:
+        session_id: Identifier of the session whose JSON file to open.
+
+    Returns:
+        Process exit code: ``0`` if the file opened, ``1`` if it is missing or
+        could not be opened automatically.
+    """
     from ci2lab.harness.session import sessions_dir
 
     path = sessions_dir() / f"{session_id}.json"
@@ -940,7 +1052,7 @@ def open_session_json(session_id: str) -> int:
     try:
         _open_path(path)
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         console.print(f"[yellow]Could not open the file automatically: {exc}[/yellow]")
         try:
             console.print_json(path.read_text(encoding="utf-8"))
@@ -976,6 +1088,12 @@ def _select_from_menu_app(
     *,
     subtitle: str | None,
 ) -> str | None:
+    """Full-screen prompt_toolkit selector; returns the chosen value or None.
+
+    Raises:
+        ImportError: If prompt_toolkit is not installed (callers fall back to the
+            raw selector).
+    """
     from prompt_toolkit.application import Application
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import Layout
@@ -993,7 +1111,9 @@ def _select_from_menu_app(
         items.append(("class:title", f"{title}\n"))
         if subtitle:
             items.append(("class:muted", f"{subtitle}\n"))
-        items.append(("class:muted", f"{_t('Use Up/Down, Enter to select, Esc or q to go back.')}\n\n"))
+        items.append(
+            ("class:muted", f"{_t('Use Up/Down, Enter to select, Esc or q to go back.')}\n\n")
+        )
 
         selected_index = int(state["index"] or 0)
         start, end = _visible_option_window(
@@ -1026,34 +1146,36 @@ def _select_from_menu_app(
     @bindings.add("up")
     @bindings.add("k")
     @bindings.add("w")
-    def _up(_event) -> None:  # noqa: ANN001
+    def _up(_event: object) -> None:
         move(-1)
 
     @bindings.add("down")
     @bindings.add("j")
     @bindings.add("s")
-    def _down(_event) -> None:  # noqa: ANN001
+    def _down(_event: object) -> None:
         move(1)
 
     @bindings.add("enter")
-    def _enter(_event) -> None:  # noqa: ANN001
+    def _enter(_event: object) -> None:
         state["value"] = options[int(state["index"] or 0)].value
         app.exit()
 
     @bindings.add("escape")
     @bindings.add("q")
     @bindings.add("c-c")
-    def _cancel(_event) -> None:  # noqa: ANN001
+    def _cancel(_event: object) -> None:
         state["value"] = None
         app.exit()
 
-    style = Style.from_dict({
-        "art.gear": "bold ansiblue",
-        "art.name": "bold ansiyellow",
-        "title": "bold",
-        "muted": "ansibrightblack",
-        "selected": "bold ansiyellow",
-    })
+    style = Style.from_dict(
+        {
+            "art.gear": "bold ansiblue",
+            "art.name": "bold ansiyellow",
+            "title": "bold",
+            "muted": "ansibrightblack",
+            "selected": "bold ansiyellow",
+        }
+    )
     app = Application(
         layout=Layout(Window(content=control, always_hide_cursor=True)),
         key_bindings=bindings,
@@ -1133,6 +1255,7 @@ def _render_raw_menu(
     *,
     subtitle: str | None,
 ) -> None:
+    """Render one frame of the raw ANSI menu to stdout."""
     label_width = _menu_label_width(options)
     lines = [
         "\x1b[H\x1b[2J",
@@ -1142,10 +1265,12 @@ def _render_raw_menu(
     ]
     if subtitle:
         lines.append(subtitle)
-    lines.extend([
-        _t("Use Up/Down, Enter to select, Esc or q to go back."),
-        "",
-    ])
+    lines.extend(
+        [
+            _t("Use Up/Down, Enter to select, Esc or q to go back."),
+            "",
+        ]
+    )
     start, end = _visible_option_window(
         total=len(options),
         selected_index=index,
@@ -1172,11 +1297,13 @@ def _render_raw_menu(
 
 
 def _enter_alternate_screen() -> None:
+    """Switch the terminal to the alternate screen buffer and hide the cursor."""
     sys.stdout.write("\x1b[?1049h\x1b[?25l")
     sys.stdout.flush()
 
 
 def _exit_alternate_screen() -> None:
+    """Restore the main screen buffer and show the cursor again."""
     sys.stdout.write("\x1b[?25h\x1b[?1049l")
     sys.stdout.flush()
 
@@ -1188,6 +1315,7 @@ def _render_menu(
     *,
     subtitle: str | None,
 ) -> None:
+    """Render the menu via the Rich console (used by the Rich-based selector path)."""
     console.clear()
     _print_art()
     console.print(f"[bold]{title}[/bold]")
@@ -1211,6 +1339,7 @@ def _render_menu(
 def _menu_label_width(
     options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
 ) -> int:
+    """Return the padded label column width (capped) for aligning descriptions."""
     labels = [option.label for option in options]
     return min(max((len(label) for label in labels), default=0) + 4, 42)
 
@@ -1221,6 +1350,16 @@ def _visible_option_window(
     selected_index: int,
     subtitle: str | None,
 ) -> tuple[int, int]:
+    """Compute the ``(start, end)`` slice of options that fits on screen.
+
+    Args:
+        total: Total number of options.
+        selected_index: Index of the currently highlighted option.
+        subtitle: Subtitle line, if any (consumes one extra row).
+
+    Returns:
+        A half-open ``(start, end)`` range scrolled to keep the selection visible.
+    """
     terminal_height = shutil.get_terminal_size((100, 30)).lines
     fixed_lines = len(WELCOME_ART.splitlines()) + 6
     if subtitle:
@@ -1235,6 +1374,7 @@ def _visible_option_window(
 
 
 def _art_fragments() -> list[tuple[str, str]]:
+    """Return the welcome art as ``(style_class, text)`` prompt_toolkit fragments."""
     fragments: list[tuple[str, str]] = []
     for line in WELCOME_ART.splitlines():
         style = "class:art.name" if "C I 2 L A B" in line else "class:art.gear"
@@ -1243,12 +1383,14 @@ def _art_fragments() -> list[tuple[str, str]]:
 
 
 def _print_art() -> None:
+    """Print the welcome art via the Rich console."""
     for line in WELCOME_ART.splitlines():
         style = "bold yellow" if "C I 2 L A B" in line else "bold blue"
         console.print(line, style=style)
 
 
 def _ansi_art() -> str:
+    """Return the welcome art as a raw ANSI-colored multi-line string."""
     lines = []
     for line in WELCOME_ART.splitlines():
         color = _ANSI_GOLD if "C I 2 L A B" in line else _ANSI_BLUE
@@ -1257,6 +1399,7 @@ def _ansi_art() -> str:
 
 
 def _read_key() -> str:
+    """Read a single normalized key press (``up``/``down``/``enter``/``escape``/``q``)."""
     if os.name == "nt":
         import msvcrt
 
@@ -1269,6 +1412,7 @@ def _read_key() -> str:
 
 
 def _read_posix_key() -> str:
+    """Read one normalized key press from a POSIX terminal in raw mode."""
     import select
     import termios
     import tty
@@ -1293,6 +1437,7 @@ def _read_posix_key() -> str:
 
 
 def _normalize_key(key: str) -> str:
+    """Map a raw character to a normalized key name, or ``""`` if unrecognized."""
     if key in ("\r", "\n"):
         return "enter"
     if key == "\x1b":
@@ -1307,6 +1452,15 @@ def _normalize_key(key: str) -> str:
 
 
 def _ensure_model_installed(choice: ModelChoice) -> bool:
+    """Ensure a model is installed, optionally pulling it after confirmation.
+
+    Args:
+        choice: The selected model.
+
+    Returns:
+        ``True`` if the model is already installed or was pulled successfully,
+        ``False`` if the user declined or the pull failed.
+    """
     if choice.installed:
         return True
     console.print(f"[yellow]Model not installed:[/yellow] {choice.ollama_tag}")
@@ -1321,6 +1475,7 @@ def _ensure_model_installed(choice: ModelChoice) -> bool:
 
 
 def _pull_model(ollama_tag: str) -> int:
+    """Run ``ollama pull`` for a tag, returning its exit code (``1`` if missing)."""
     console.print(f"[bold]$[/bold] ollama pull {ollama_tag}")
     try:
         completed = subprocess.run(["ollama", "pull", ollama_tag], check=False)
@@ -1333,6 +1488,7 @@ def _pull_model(ollama_tag: str) -> int:
 
 
 def _run_direct_ollama(ollama_tag: str) -> int:
+    """Run ``ollama run`` for a tag, returning its exit code (``1`` if missing)."""
     console.print(f"[bold]$[/bold] ollama run {ollama_tag}")
     try:
         completed = subprocess.run(["ollama", "run", ollama_tag], check=False)
@@ -1345,6 +1501,7 @@ def _run_direct_ollama(ollama_tag: str) -> int:
 
 
 def _run_command(args: list[str], runner: CommandRunner) -> int:
+    """Echo and run a ``ci2lab`` command via ``runner``, then print a divider."""
     console.print(f"\n[bold]$[/bold] ci2lab {_format_args(args)}\n")
     try:
         return runner(args)
@@ -1353,6 +1510,12 @@ def _run_command(args: list[str], runner: CommandRunner) -> int:
 
 
 def _run_doctor_with_ollama_install_option(runner: CommandRunner) -> int:
+    """Run ``doctor`` and, if Ollama is missing, offer to install it.
+
+    Returns:
+        The doctor exit code, the installer exit code, or ``1`` if the installer
+        command could not be found.
+    """
     code = _run_command(["doctor"], runner)
     if _ollama_executable_found():
         return code
@@ -1383,10 +1546,15 @@ def _run_doctor_with_ollama_install_option(runner: CommandRunner) -> int:
 
 
 def _ollama_executable_found() -> bool:
+    """Return True if an Ollama executable can be located on this machine."""
     return bool(ollama_install_info().get("executable"))
 
 
 def _ollama_install_action() -> tuple[str, list[str]] | None:
+    """Return a ``(label, command)`` to install Ollama, or None if unsupported.
+
+    Picks ``winget`` on Windows or Homebrew on macOS when available.
+    """
     if os.name == "nt" and shutil.which("winget"):
         return (
             "Windows Package Manager",
@@ -1398,10 +1566,11 @@ def _ollama_install_action() -> tuple[str, list[str]] | None:
 
 
 def _open_ollama_download_page() -> int:
+    """Open the Ollama download page in a browser, printing the URL on failure."""
     try:
         webbrowser.open("https://ollama.com/download")
         return 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         console.print(f"[yellow]Could not open the browser: {exc}[/yellow]")
         console.print("Download Ollama from: https://ollama.com/download")
         return 1
@@ -1410,14 +1579,17 @@ def _open_ollama_download_page() -> int:
 
 
 def _confirm(message: str) -> bool:
+    """Prompt with ``message`` and return True only for a yes/y answer."""
     return _prompt_text(message).strip().lower() in {"y", "yes"}
 
 
 def _print_divider() -> None:
+    """Print a dim horizontal rule to visually separate command output."""
     console.rule(style="dim")
 
 
 def _command_mode(runner: CommandRunner) -> int:
+    """Prompt for a raw ``ci2lab`` command line and run it via ``runner``."""
     console.clear()
     _print_art()
     console.print("[bold]Work with commands[/bold]")
@@ -1438,6 +1610,7 @@ def _command_mode(runner: CommandRunner) -> int:
 
 
 def _parse_command_line(line: str) -> list[str]:
+    """Split a command line into args (Windows-style), stripping outer quotes."""
     try:
         parts = shlex.split(line, posix=False)
     except ValueError as exc:
@@ -1447,26 +1620,31 @@ def _parse_command_line(line: str) -> list[str]:
 
 
 def _strip_outer_quotes(text: str) -> str:
+    """Strip a single matching pair of surrounding single or double quotes."""
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         return text[1:-1]
     return text
 
 
 def _format_args(args: list[str]) -> str:
+    """Format an argv list as a shell-like string, quoting args with spaces."""
     return " ".join(_quote_arg(arg) for arg in args)
 
 
 def _quote_arg(arg: str) -> str:
+    """Wrap an argument in double quotes (escaping inner quotes) if needed."""
     if not arg or any(char.isspace() for char in arg):
         return '"' + arg.replace('"', '\\"') + '"'
     return arg
 
 
 def _ask_text(label: str) -> str:
+    """Prompt for a line of input labeled ``label`` and return it stripped."""
     return _prompt_text(f"{label}: ").strip()
 
 
 def _pause() -> None:
+    """Wait for the user to press Enter; ignore EOF/interrupt."""
     try:
         _prompt_text(f"\n{_t('Press Enter to return to the menu...')}")
     except (EOFError, KeyboardInterrupt):
@@ -1474,6 +1652,7 @@ def _pause() -> None:
 
 
 def _prompt_text(message: str) -> str:
+    """Read a line of input, preferring prompt_toolkit and falling back to ``input``."""
     try:
         from prompt_toolkit import prompt
     except ImportError:
@@ -1482,12 +1661,18 @@ def _prompt_text(message: str) -> str:
 
 
 def _default_command_runner(args: list[str]) -> int:
+    """Default :data:`CommandRunner` that dispatches back into the CLI ``main``."""
     from ci2lab.cli.main import main
 
     return main(args)
 
 
 def _open_path(path: Path) -> None:
+    """Open a file with the platform's default application.
+
+    Raises:
+        Exception: Propagates any OS error from the underlying open call.
+    """
     if os.name == "nt":
         os.startfile(path)  # type: ignore[attr-defined]
         return
@@ -1496,6 +1681,7 @@ def _open_path(path: Path) -> None:
 
 
 def _print_about() -> None:
+    """Print a short description of what ci2lab is and how its chat modes differ."""
     console.print("[bold]What is ci2lab?[/bold]\n")
     console.print(
         "ci2lab is a local CLI and web UI for running Ollama models as an "

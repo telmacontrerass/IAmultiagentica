@@ -78,10 +78,12 @@ class DisplayRecommendation:
 
     @property
     def installation_label(self) -> str:
+        """Return a human-readable label for the model's install state."""
         return "Already installed" if self.installed else "To download"
 
 
 def recommendation_pool_size(limit: int) -> int:
+    """Return the candidate pool size to score for a given display limit."""
     return max(limit * 4, 20)
 
 
@@ -165,6 +167,16 @@ def recommend_models(
     profile: HardwareProfile | None = None,
     limit: int = 5,
 ) -> list[tuple[ModelSpec, str]]:
+    """Recommend models for a prompt as (model, reason) pairs.
+
+    Args:
+        user_prompt: Prompt used to infer the intent category.
+        profile: Hardware profile to score against; scanned if omitted.
+        limit: Maximum number of recommendations to return.
+
+    Returns:
+        A list of ``(ModelSpec, reason)`` tuples ordered best-first.
+    """
     scored = score_recommendations(user_prompt, profile=profile, limit=limit)
     return [(item.model, item.reason) for item in scored]
 
@@ -175,6 +187,16 @@ def score_recommendations(
     profile: HardwareProfile | None = None,
     limit: int = 5,
 ) -> list[ScoredRecommendation]:
+    """Score and rank model recommendations for a prompt.
+
+    Args:
+        user_prompt: Prompt used to infer the intent category.
+        profile: Hardware profile to score against; scanned if omitted.
+        limit: Maximum number of recommendations to return.
+
+    Returns:
+        Scored recommendations ordered by total score, best-first.
+    """
     profile = profile or scan_hardware()
     intent = classify_intent(user_prompt)
     return _score_for_category(intent.category, profile=profile, limit=limit)
@@ -198,6 +220,16 @@ def recommend_download_plan(
     use_cases: tuple[IntentCategory, ...] = USE_CASES,
     installed_names: set[str] | None = None,
 ) -> list[DownloadPlanItem]:
+    """Build a per-use-case download plan of recommended models.
+
+    Args:
+        profile: Hardware profile to score against; scanned if omitted.
+        use_cases: Intent categories to plan a model for.
+        installed_names: Names of already-installed models; empty if omitted.
+
+    Returns:
+        Download plan items, one or two per use case, in display order.
+    """
     profile = profile or scan_hardware()
     installed_names = installed_names or set()
     entries: list[DownloadPlanItem] = []
@@ -220,8 +252,7 @@ def recommend_download_plan(
             )
 
         if download_pick is not None and (
-            installed_match is None
-            or download_pick.model.id != installed_match.model.id
+            installed_match is None or download_pick.model.id != installed_match.model.id
         ):
             entries.append(
                 DownloadPlanItem(
@@ -267,6 +298,15 @@ def classify_model_memory(
     required_gb: float,
     profile: HardwareProfile,
 ) -> ModelMemoryClassification:
+    """Classify whether a model's memory need fits the hardware budget.
+
+    Args:
+        required_gb: Memory the model requires to run.
+        profile: Hardware profile providing the available/theoretical budgets.
+
+    Returns:
+        A :class:`ModelMemoryClassification` describing fit and cleanup status.
+    """
     theoretical_gb = _effective_theoretical_budget(profile)
     available_gb = _effective_available_budget(profile)
     theoretical_fit = required_gb <= theoretical_gb
@@ -350,10 +390,7 @@ def _score_recommendation(
     memory_usage_percent = (required_gb / budget_gb * 100) if budget_gb > 0 else 0.0
 
     total_score = (
-        quality_score * 0.42
-        + speed_score * 0.22
-        + fit_score * 0.24
-        + context_score * 0.12
+        quality_score * 0.42 + speed_score * 0.22 + fit_score * 0.24 + context_score * 0.12
     )
 
     return ScoredRecommendation(

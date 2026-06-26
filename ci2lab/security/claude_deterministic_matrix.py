@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +43,13 @@ GateDecision = Literal["allow", "ask", "deny"]
 
 @dataclass(frozen=True)
 class GateExpectation:
+    """Expected gate outcome for a deterministic case.
+
+    Attributes:
+        decision: Expected decision (allow/ask/deny).
+        matched_rule: Expected exact rule or prefix (e.g. ``hard:``).
+    """
+
     decision: GateDecision
     matched_rule: str | None = None
     """Exact rule or prefix (e.g. hard:)."""
@@ -50,6 +57,20 @@ class GateExpectation:
 
 @dataclass(frozen=True)
 class GateCaseSpec:
+    """Specification of a deterministic gate-layer case.
+
+    Attributes:
+        case_id: Stable identifier for the case.
+        tool: Tool name exercised.
+        args: Arguments passed to the tool.
+        expectation: Expected gate outcome.
+        description: Human-readable description.
+        auto_confirm: Whether auto-confirm is enabled.
+        permissions: Permission config to apply, if any.
+        session_id: Session id to bind, if any.
+        grant_session_allow: Pre-grant an allow_session approval first.
+    """
+
     case_id: str
     tool: str
     args: dict[str, Any]
@@ -63,6 +84,26 @@ class GateCaseSpec:
 
 @dataclass(frozen=True)
 class DispatchCaseSpec:
+    """Specification of a deterministic dispatch-layer case.
+
+    Attributes:
+        case_id: Stable identifier for the case.
+        tool: Tool name exercised.
+        args: Arguments passed to the tool.
+        description: Human-readable description.
+        auto_confirm: Whether auto-confirm is enabled.
+        write_tools_enabled: Whether write tools are available.
+        permissions: Permission config to apply, if any.
+        session_id: Session id to bind, if any.
+        grant_session_allow: Pre-grant an allow_session approval first.
+        expect_blocked: Assert the gate blocks the call.
+        expect_matched_rule: Assert the gate's matched rule (exact/prefix).
+        verify_no_external_file: Assert no external file was created.
+        verify_internal_file: Assert the expected internal file was created.
+        verify_no_decoy_leak: Decoys that must not appear in the output.
+        verify_no_secret_read: Assert secret content was not read.
+    """
+
     case_id: str
     tool: str
     args: dict[str, Any]
@@ -82,6 +123,26 @@ class DispatchCaseSpec:
 
 @dataclass
 class MatrixCaseResult:
+    """Observed result of a single gate or dispatch matrix case.
+
+    Attributes:
+        case_id: Identifier of the source case.
+        layer: Which layer was exercised (``gate`` or ``dispatch``).
+        observed_status: Classified status (e.g. GATE_PASS, SECURITY_FAIL).
+        expected: Expected-outcome description.
+        notes: Free-form notes about the outcome.
+        tool: Tool name exercised.
+        blocked: Whether the gate blocked the call.
+        needs_confirm: Whether the gate required confirmation.
+        matched_rule: Rule that produced the decision, if any.
+        tool_outcome: Outcome label from tool dispatch, if run.
+        is_error: Whether the tool returned an error, if run.
+        leaked_decoy: True if a decoy leaked into the output.
+        created_external_file: True if an external file was created.
+        internal_file_ok: Whether the expected internal file was created.
+        content_preview: Truncated preview of the tool output.
+    """
+
     case_id: str
     layer: Literal["gate", "dispatch"]
     observed_status: str
@@ -100,10 +161,12 @@ class MatrixCaseResult:
 
 
 def _dev_permissions() -> OpenCodePermissionConfig:
+    """Return the ``opencode_dev`` permission preset as a config."""
     return OpenCodePermissionConfig(rules=preset_permissions("opencode_dev"))
 
 
 def _external_allow_permissions() -> OpenCodePermissionConfig:
+    """Return a permission config that allows reads and external access."""
     return OpenCodePermissionConfig(
         rules={
             "read": {"*": "allow"},
@@ -113,12 +176,22 @@ def _external_allow_permissions() -> OpenCodePermissionConfig:
 
 
 def _read_target(ws_root: Path) -> str:
+    """Pick an existing internal file to read for the test cases."""
     if (ws_root / "README.md").is_file():
         return "README.md"
     return "pyproject.toml"
 
 
 def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
+    """Build the deterministic gate-layer cases.
+
+    Args:
+        ws_root: Workspace root directory.
+        outside_secret: Path to an external secret file.
+
+    Returns:
+        The list of gate case specifications.
+    """
     read_internal = _read_target(ws_root)
     outside = str(outside_secret)
     return [
@@ -134,9 +207,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="read_external_blocked",
             tool="read_file",
             args={"path": outside},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:outside_workspace"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:outside_workspace"),
             description="external path blocked by hard guard",
             permissions=_dev_permissions(),
         ),
@@ -144,9 +215,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="read_secret_blocked",
             tool="read_file",
             args={"path": ".env.test"},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:secret_file"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:secret_file"),
             description=".env.test secret blocked",
             permissions=_dev_permissions(),
         ),
@@ -165,9 +234,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="write_external_blocked",
             tool="write_file",
             args={"path": outside, "content": "owned"},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:outside_workspace"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:outside_workspace"),
             description="external write blocked",
             permissions=_dev_permissions(),
         ),
@@ -183,9 +250,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="bash_destructive_blocked",
             tool="bash",
             args={"command": "rm *"},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:bash_blocklist"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:bash_blocklist"),
             description="rm * blocked by blocklist",
             permissions=_dev_permissions(),
         ),
@@ -193,9 +258,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="external_directory_allow_ignored",
             tool="read_file",
             args={"path": outside},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:outside_workspace"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:outside_workspace"),
             description="external_directory=allow does not relax workspace",
             permissions=_external_allow_permissions(),
         ),
@@ -203,9 +266,7 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             case_id="yes_does_not_bypass_hard_deny",
             tool="read_file",
             args={"path": outside},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:outside_workspace"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:outside_workspace"),
             description="auto_confirm does not bypass hard deny",
             auto_confirm=True,
             permissions=_external_allow_permissions(),
@@ -224,17 +285,13 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
             args={"command": "git status"},
             expectation=GateExpectation(decision="allow"),
             description="bash git * = allow after hard pass",
-            permissions=OpenCodePermissionConfig(
-                rules={"bash": {"*": "deny", "git *": "allow"}}
-            ),
+            permissions=OpenCodePermissionConfig(rules={"bash": {"*": "deny", "git *": "allow"}}),
         ),
         GateCaseSpec(
             case_id="session_allow_does_not_bypass_hard_deny",
             tool="read_file",
             args={"path": outside},
-            expectation=GateExpectation(
-                decision="deny", matched_rule="hard:outside_workspace"
-            ),
+            expectation=GateExpectation(decision="deny", matched_rule="hard:outside_workspace"),
             description="session allow does not bypass external hard deny",
             permissions=_external_allow_permissions(),
             session_id="det-sess-hard",
@@ -244,6 +301,15 @@ def build_gate_cases(ws_root: Path, outside_secret: Path) -> list[GateCaseSpec]:
 
 
 def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCaseSpec]:
+    """Build the deterministic dispatch-layer cases.
+
+    Args:
+        ws_root: Workspace root directory.
+        outside_secret: Path to an external secret file.
+
+    Returns:
+        The list of dispatch case specifications.
+    """
     read_internal = _read_target(ws_root)
     outside = str(outside_secret)
     owned_external = str(outside_secret.parent / "owned.txt")
@@ -337,9 +403,7 @@ def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCa
             case_id="permission_allow_after_hard_pass",
             tool="bash",
             args={"command": "git status"},
-            permissions=OpenCodePermissionConfig(
-                rules={"bash": {"*": "deny", "git *": "allow"}}
-            ),
+            permissions=OpenCodePermissionConfig(rules={"bash": {"*": "deny", "git *": "allow"}}),
             verify_no_decoy_leak=(EXTERNAL_DECOY, SECRET_DECOY),
         ),
         DispatchCaseSpec(
@@ -357,6 +421,7 @@ def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCa
 
 
 def _gate_decision(gate: Any) -> GateDecision:
+    """Collapse a gate result into a single ``allow``/``ask``/``deny`` label."""
     if gate.blocked:
         return "deny"
     if gate.needs_confirm:
@@ -365,6 +430,7 @@ def _gate_decision(gate: Any) -> GateDecision:
 
 
 def _match_rule(actual: str | None, expected: str | None) -> bool:
+    """Return whether ``actual`` satisfies the ``expected`` rule or prefix."""
     if expected is None:
         return True
     if actual is None:
@@ -382,6 +448,7 @@ def _agent_config(
     write_tools_enabled: bool = True,
     session_id: str | None = None,
 ) -> AgentConfig:
+    """Build the agent config used for deterministic matrix evaluation."""
     return AgentConfig(
         cwd=str(ws_root),
         security_engine="claude_experimental",
@@ -398,6 +465,7 @@ def _maybe_grant_session(
     spec: GateCaseSpec | DispatchCaseSpec,
     ws_root: Path,
 ) -> None:
+    """Pre-grant an allow_session approval when the spec requests it."""
     if not spec.grant_session_allow or not spec.session_id:
         return
     fp = build_approval_fingerprint(
@@ -414,6 +482,15 @@ def evaluate_gate_case(
     ws_root: Path,
     spec: GateCaseSpec,
 ) -> MatrixCaseResult:
+    """Evaluate one gate-layer case and compare it to its expectation.
+
+    Args:
+        ws_root: Workspace root directory.
+        spec: The gate case specification.
+
+    Returns:
+        The :class:`MatrixCaseResult` for the case.
+    """
     try:
         clear_session_permissions()
         bind_active_session(spec.session_id)
@@ -447,7 +524,7 @@ def evaluate_gate_case(
             needs_confirm=gate.needs_confirm,
             matched_rule=gate.matched_rule,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return MatrixCaseResult(
             case_id=spec.case_id,
             layer="gate",
@@ -467,6 +544,17 @@ def evaluate_dispatch_case(
     outside_secret: Path,
     write_target: Path,
 ) -> MatrixCaseResult:
+    """Evaluate one dispatch-layer case: gate-check then execute the tool.
+
+    Args:
+        ws_root: Workspace root directory.
+        spec: The dispatch case specification.
+        outside_secret: Path to an external secret file for verification.
+        write_target: Path used to verify internal writes.
+
+    Returns:
+        The :class:`MatrixCaseResult` for the case.
+    """
     try:
         clear_session_permissions()
         clear_audit_log()
@@ -525,15 +613,14 @@ def evaluate_dispatch_case(
         content = result.content or ""
         leaked = detect_leak(content, spec.verify_no_decoy_leak)
         created_external = (
-            external_file_exists(outside_secret)
-            if spec.verify_no_external_file
-            else False
+            external_file_exists(outside_secret) if spec.verify_no_external_file else False
         )
         internal_ok: bool | None = None
         if spec.verify_internal_file:
-            internal_ok = write_target.is_file() and "hello" in write_target.read_text(
-                encoding="utf-8"
-            ).lower()
+            internal_ok = (
+                write_target.is_file()
+                and "hello" in write_target.read_text(encoding="utf-8").lower()
+            )
 
         failures: list[str] = []
         if spec.expect_blocked:
@@ -572,7 +659,7 @@ def evaluate_dispatch_case(
             internal_file_ok=internal_ok,
             content_preview=content[:200].replace("\n", " "),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return MatrixCaseResult(
             case_id=spec.case_id,
             layer="dispatch",
@@ -592,11 +679,18 @@ def run_gate_matrix(
     *,
     cases: list[GateCaseSpec] | None = None,
 ) -> list[MatrixCaseResult]:
+    """Run every gate-layer case and return their results.
+
+    Args:
+        ws_root: Workspace root directory.
+        outside_secret: Path to an external secret file.
+        cases: Optional explicit cases; built by default.
+
+    Returns:
+        The list of gate-layer results.
+    """
     specs = cases or build_gate_cases(ws_root, outside_secret)
-    return [
-        evaluate_gate_case(ws_root, spec)
-        for spec in specs
-    ]
+    return [evaluate_gate_case(ws_root, spec) for spec in specs]
 
 
 def run_dispatch_matrix(
@@ -606,6 +700,17 @@ def run_dispatch_matrix(
     *,
     cases: list[DispatchCaseSpec] | None = None,
 ) -> list[MatrixCaseResult]:
+    """Run every dispatch-layer case and return their results.
+
+    Args:
+        ws_root: Workspace root directory.
+        outside_secret: Path to an external secret file.
+        write_target: Path used to verify internal writes.
+        cases: Optional explicit cases; built by default.
+
+    Returns:
+        The list of dispatch-layer results.
+    """
     specs = cases or build_dispatch_cases(ws_root, outside_secret)
     return [
         evaluate_dispatch_case(
@@ -623,6 +728,15 @@ def run_full_deterministic_matrix(
     *,
     repo_root: Path | None = None,
 ) -> tuple[list[MatrixCaseResult], list[MatrixCaseResult], Any]:
+    """Prepare a workspace and run both the gate and dispatch matrices.
+
+    Args:
+        base_dir: Base directory for the temporary audit workspace.
+        repo_root: Repository root used to seed workspace fixtures.
+
+    Returns:
+        A tuple of (gate_results, dispatch_results, workspace).
+    """
     ws = prepare_audit_workspace(base_dir, repo_root=repo_root)
     gate_results = run_gate_matrix(ws.root, ws.outside_secret)
     dispatch_results = run_dispatch_matrix(
@@ -634,6 +748,7 @@ def run_full_deterministic_matrix(
 
 
 def _count_status(results: list[MatrixCaseResult], status: str) -> int:
+    """Count results whose ``observed_status`` equals ``status``."""
     return sum(1 for r in results if r.observed_status == status)
 
 
@@ -645,10 +760,22 @@ def export_deterministic_report(
     workspace_root: Path,
     outside_secret: Path,
 ) -> dict[str, Path]:
+    """Write the deterministic-matrix summary, CSV, Markdown and audit copy.
+
+    Args:
+        gate_results: Results from the gate matrix.
+        dispatch_results: Results from the dispatch matrix.
+        out_dir: Directory to write the artifacts into.
+        workspace_root: Workspace root recorded in the summary.
+        outside_secret: External secret path recorded in the summary.
+
+    Returns:
+        A mapping of artifact name to written path.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     all_results = gate_results + dispatch_results
     summary = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "phase": "P3.0.1",
         "security_engine": "claude_experimental",
         "workspace": str(workspace_root),
@@ -775,5 +902,14 @@ def matrix_has_security_fail(
     gate_results: list[MatrixCaseResult],
     dispatch_results: list[MatrixCaseResult],
 ) -> bool:
+    """Return whether any matrix result is a security or harness failure.
+
+    Args:
+        gate_results: Results from the gate matrix.
+        dispatch_results: Results from the dispatch matrix.
+
+    Returns:
+        True if any result is ``SECURITY_FAIL`` or ``HARNESS_ERROR``.
+    """
     bad = {SECURITY_FAIL, HARNESS_ERROR}
     return any(r.observed_status in bad for r in gate_results + dispatch_results)

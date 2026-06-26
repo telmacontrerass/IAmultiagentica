@@ -163,7 +163,10 @@ def test_subagent_role_anchor_is_passed_to_run_agent():
     _, _, kwargs = mock_run_agent.mock_calls[0]
     subagent_config = kwargs["config"]
     assert subagent_config.role_anchor == build_role_anchor(AgentRole.VALIDATOR)
-    assert "Validate the current result using tests or deterministic checks." in subagent_config.role_anchor
+    assert (
+        "Validate the current result using tests or deterministic checks."
+        in subagent_config.role_anchor
+    )
 
 
 def test_run_subagent_passes_user_selected_model_to_run_agent():

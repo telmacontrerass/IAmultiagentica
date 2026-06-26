@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
-from ci2lab.security.opencode_permissions import OpenCodePermissionConfig, parse_opencode_permissions
+from ci2lab.security.opencode_permissions import (
+    OpenCodePermissionConfig,
+    parse_opencode_permissions,
+)
 
 SECURITY_PROFILE_BLOCKED_OUTCOME = "blocked_by_security_profile"
 
@@ -30,12 +34,35 @@ _PROFILE_LIMIT_DEFAULTS: dict[str, tuple[int, int]] = {
 
 @dataclass(frozen=True)
 class SecurityLimits:
+    """Resolved runtime limits for a security profile.
+
+    Attributes:
+        bash_timeout_seconds: Maximum wall-clock time allowed for a bash tool
+            call, in seconds.
+        max_tool_output_chars: Maximum number of characters retained from a
+            tool's output before truncation.
+    """
+
     bash_timeout_seconds: int
     max_tool_output_chars: int
 
 
 @dataclass(frozen=True)
 class SecurityConfig:
+    """Parsed security configuration for a run.
+
+    Attributes:
+        profile: Active security profile name (one of ``VALID_PROFILES``).
+        engine: Security engine identifier driving permission evaluation.
+        bash_timeout_seconds: Optional override for the bash timeout; when
+            ``None`` the profile default is used.
+        max_tool_output_chars: Optional override for the tool-output cap; when
+            ``None`` the profile default is used.
+        permission: OpenCode-style permission mapping declared under
+            ``security.permission``.
+        permission_preset: Optional OpenCode preset name.
+    """
+
     profile: str = DEFAULT_PROFILE
     engine: str = "claude_experimental"
     bash_timeout_seconds: int | None = None
@@ -45,6 +72,12 @@ class SecurityConfig:
     """OpenCode preset (opencode_experimental / claude_experimental)."""
 
     def resolved_limits(self) -> SecurityLimits:
+        """Resolve effective limits, applying profile defaults where unset.
+
+        Returns:
+            A :class:`SecurityLimits` with explicit overrides taking precedence
+            over the profile's default timeout and output cap.
+        """
         default_timeout, default_output = _PROFILE_LIMIT_DEFAULTS[self.profile]
         return SecurityLimits(
             bash_timeout_seconds=(
@@ -65,17 +98,40 @@ class UnknownSecurityProfileError(ValueError):
 
 
 def validate_profile(profile: str) -> str:
+    """Normalize and validate a security profile name.
+
+    Args:
+        profile: Raw profile name (case and surrounding whitespace insensitive).
+
+    Returns:
+        The normalized (stripped, lower-cased) profile name.
+
+    Raises:
+        UnknownSecurityProfileError: If the name is not in ``VALID_PROFILES``.
+    """
     normalized = profile.strip().lower()
     if normalized not in VALID_PROFILES:
         names = ", ".join(sorted(VALID_PROFILES))
         raise UnknownSecurityProfileError(
-            f"Unknown security profile: {profile!r}. "
-            f"Valid values: {names}."
+            f"Unknown security profile: {profile!r}. Valid values: {names}."
         )
     return normalized
 
 
 def parse_security_config(raw: Mapping[str, Any] | None) -> SecurityConfig:
+    """Build a :class:`SecurityConfig` from a raw mapping.
+
+    Args:
+        raw: Parsed ``security`` section from configuration, or ``None``.
+
+    Returns:
+        A :class:`SecurityConfig`; the default config when ``raw`` is falsy.
+
+    Raises:
+        ValueError: If ``raw`` or any nested section (``permission``,
+            ``limits``) is not an object of the expected type.
+        UnknownSecurityProfileError: If the configured profile is invalid.
+    """
     if not raw:
         return SecurityConfig()
     if not isinstance(raw, dict):
@@ -126,6 +182,7 @@ def _merge_permission_layer(
     base: dict[str, Any],
     layer: Mapping[str, Any],
 ) -> dict[str, Any]:
+    """Overlay ``layer`` onto ``base``, shallow-merging nested dict values."""
     merged = dict(base)
     for key, value in layer.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -157,6 +214,18 @@ def resolved_opencode_permissions(
     *,
     root_permission: Mapping[str, Any] | None = None,
 ) -> OpenCodePermissionConfig:
+    """Resolve the effective OpenCode permission config for ``config``.
+
+    Args:
+        config: The security configuration whose preset and permission layer
+            contribute to the result.
+        root_permission: Optional root-level permission mapping merged between
+            the preset and ``config.permission``.
+
+    Returns:
+        The parsed :class:`OpenCodePermissionConfig`; the default experimental
+        config when no layers contribute any permissions.
+    """
     from ci2lab.security.opencode_presets import preset_permissions
 
     preset_layer: dict[str, Any] | None = None
@@ -173,12 +242,27 @@ def resolved_opencode_permissions(
 
 
 def is_tool_blocked_by_profile(profile: str, tool_name: str) -> bool:
+    """Return ``True`` if ``tool_name`` is disabled by ``profile``.
+
+    Args:
+        profile: The active security profile name.
+        tool_name: The tool whose availability is being checked.
+
+    Returns:
+        ``True`` if the profile blocks the tool, ``False`` otherwise.
+    """
     blocked = _PROFILE_BLOCKED_TOOLS.get(profile, frozenset())
     return tool_name in blocked
 
 
 def profile_block_message(tool_name: str, profile: str) -> str:
-    return (
-        f"Error: TOOL_BLOCKED_BY_SECURITY_PROFILE: {tool_name} is disabled "
-        f"in {profile} mode"
-    )
+    """Build the error message shown when a profile blocks a tool.
+
+    Args:
+        tool_name: The blocked tool's name.
+        profile: The profile that blocked it.
+
+    Returns:
+        A human-readable error string describing the block.
+    """
+    return f"Error: TOOL_BLOCKED_BY_SECURITY_PROFILE: {tool_name} is disabled in {profile} mode"

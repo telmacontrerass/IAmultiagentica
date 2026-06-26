@@ -43,6 +43,7 @@ def _make_docx(path: Path, markdown: str) -> None:
 # docx_to_pdf — extension validation (no pandoc needed)
 # ---------------------------------------------------------------------------
 
+
 def test_docx_to_pdf_rejects_non_docx_source(tmp_path: Path) -> None:
     result = docx_to_pdf(str(tmp_path), "file.pdf", "out.pdf")
     assert result.startswith("Error:")
@@ -64,6 +65,7 @@ def test_docx_to_pdf_missing_source(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # docx_to_pdf — success path (pandoc required)
 # ---------------------------------------------------------------------------
+
 
 def test_docx_to_pdf_creates_file(pandoc_skip, tmp_path: Path) -> None:
     docx = tmp_path / "input.docx"
@@ -91,6 +93,7 @@ def test_docx_to_pdf_overwrite(pandoc_skip, tmp_path: Path) -> None:
 # pdf_to_docx — extension validation (no pdf2docx needed)
 # ---------------------------------------------------------------------------
 
+
 def test_pdf_to_docx_rejects_non_pdf_source(tmp_path: Path) -> None:
     result = pdf_to_docx(str(tmp_path), "file.docx", "out.docx")
     assert result.startswith("Error:")
@@ -113,8 +116,10 @@ def test_pdf_to_docx_missing_source(tmp_path: Path) -> None:
 # pdf_to_docx — missing dependency message
 # ---------------------------------------------------------------------------
 
+
 def test_pdf_to_docx_missing_dep_message(tmp_path: Path, monkeypatch) -> None:
     import builtins
+
     real_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
@@ -133,6 +138,7 @@ def test_pdf_to_docx_missing_dep_message(tmp_path: Path, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 # Preview functions
 # ---------------------------------------------------------------------------
+
 
 def test_preview_docx_to_pdf_valid(tmp_path: Path) -> None:
     src = tmp_path / "report.docx"
@@ -178,6 +184,7 @@ def test_preview_pdf_to_docx_overwrite_note(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Full tool execution via registry (write_tools_enabled + auto_confirm)
 # ---------------------------------------------------------------------------
+
 
 def test_execute_docx_to_pdf_via_registry(pandoc_skip, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(

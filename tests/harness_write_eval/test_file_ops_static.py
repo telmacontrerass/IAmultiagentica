@@ -93,9 +93,7 @@ def test_static_create_nested_file(tmp_path: Path):
 
 def test_static_edit_json_valid(tmp_path: Path):
     original = {"enabled": False, "threshold": 3}
-    (tmp_path / "config.json").write_text(
-        json.dumps(original, indent=2) + "\n", encoding="utf-8"
-    )
+    (tmp_path / "config.json").write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
     result = _edit(
         "e2",
         "config.json",
@@ -113,12 +111,16 @@ def test_static_block_outside_workspace(tmp_path: Path):
     outside.mkdir(exist_ok=True)
     result = _write("w3", "../outside.txt", "should_not_exist", tmp_path)
     assert result.is_error
-    assert result.outcome in {
-        "blocked_by_workspace",
-        "blocked",
-        "denied",
-        None,
-    } or "workspace" in (result.content or "").lower()
+    assert (
+        result.outcome
+        in {
+            "blocked_by_workspace",
+            "blocked",
+            "denied",
+            None,
+        }
+        or "workspace" in (result.content or "").lower()
+    )
     ok, detail = oracle_outside_workspace_block(tmp_path, outside)
     assert ok, detail
 

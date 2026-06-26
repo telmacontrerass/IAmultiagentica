@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, type-check and test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package (with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: python -m ruff check ci2lab tests
+
+      - name: Ruff format check
+        run: python -m ruff format --check ci2lab tests
+
+      - name: Mypy (strict-checked packages)
+        # The strict bar is enforced for the packages listed under
+        # [[tool.mypy.overrides]] in pyproject.toml; this list mirrors that set
+        # and grows as more of the codebase is brought up to standard.
+        run: >
+          python -m mypy
+          ci2lab/contracts ci2lab/config.py ci2lab/console.py ci2lab/router
+          ci2lab/hardware ci2lab/runtime ci2lab/pipeline.py ci2lab/harness/backends
+          ci2lab/harness/context ci2lab/harness/skills
+          ci2lab/harness/token_usage.py ci2lab/harness/messages.py
+
+      - name: Pytest
+        run: python -m pytest -q

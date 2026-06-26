@@ -172,6 +172,7 @@ _WRITE_REQUEST_MARKERS = (
 
 
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    """Return ``True`` if any marker in ``markers`` is a substring of ``text``."""
     return any(marker in text for marker in markers)
 
 

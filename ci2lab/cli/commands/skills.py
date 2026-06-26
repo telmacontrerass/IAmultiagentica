@@ -7,12 +7,22 @@ import json
 
 from rich.table import Table
 
-from ci2lab.console import console
 from ci2lab.config import Ci2LabConfig
+from ci2lab.console import console
 from ci2lab.harness.skills.loader import load_skills
 
 
 def _cmd_skills(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
+    """List the skills discovered for the effective workspace as a table or JSON.
+
+    Args:
+        args: Parsed CLI arguments (optional ``workspace`` and ``--json``).
+        runtime: The merged runtime configuration, used for the default
+            workspace.
+
+    Returns:
+        Process exit code (always ``0``).
+    """
     cwd = str(getattr(args, "workspace", None) or runtime.workspace or ".")
     rows = [
         {

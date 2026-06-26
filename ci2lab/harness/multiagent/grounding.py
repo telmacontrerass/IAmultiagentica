@@ -47,8 +47,21 @@ STATUS_QUARANTINED = "quarantined"
 # (figures, tables, equations). An unfindable quote here is likely an extraction
 # gap, not a hallucination, so it goes to "needs manual check", not quarantine.
 _NON_TEXT_MARKERS = (
-    "figure", "fig.", "fig ", "table", "equation", "eq.", "eq ", "formula",
-    "chart", "plot", "diagram", "graph", "subfigure", "listing", "algorithm",
+    "figure",
+    "fig.",
+    "fig ",
+    "table",
+    "equation",
+    "eq.",
+    "eq ",
+    "formula",
+    "chart",
+    "plot",
+    "diagram",
+    "graph",
+    "subfigure",
+    "listing",
+    "algorithm",
 )
 
 
@@ -72,6 +85,7 @@ class Finding:
     matched_anchor: str | None = None
 
     def to_public(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict of this finding's public fields."""
         return {
             "lens": self.lens,
             "claim": self.claim,
@@ -87,6 +101,7 @@ class Finding:
 
 
 def _references_non_text(finding: Finding) -> bool:
+    """True if the finding refers to a figure/table/equation (likely an extraction gap)."""
     haystack = f"{finding.claim} {finding.evidence_quote} {finding.reviewer_judgment}".lower()
     return any(marker in haystack for marker in _NON_TEXT_MARKERS)
 
@@ -100,13 +115,15 @@ class VerificationBuckets:
     refuted: list[Finding] = field(default_factory=list)
     quarantined: list[Finding] = field(default_factory=list)
 
-    def merge(self, other: "VerificationBuckets") -> None:
+    def merge(self, other: VerificationBuckets) -> None:
+        """Extend each disposition list with the corresponding list from ``other``."""
         self.verified.extend(other.verified)
         self.needs_check.extend(other.needs_check)
         self.refuted.extend(other.refuted)
         self.quarantined.extend(other.quarantined)
 
     def add(self, finding: Finding) -> None:
+        """Append ``finding`` to the bucket matching its status (quarantine by default)."""
         {
             STATUS_VERIFIED: self.verified,
             STATUS_NEEDS_CHECK: self.needs_check,
@@ -119,6 +136,7 @@ class VerificationBuckets:
 
 
 def _as_list(value: Any) -> list[str]:
+    """Coerce a string (split on ``;``/``,``) or sequence into a list of trimmed strings."""
     if isinstance(value, str):
         return [part.strip() for part in re.split(r"[;,]", value) if part.strip()]
     if isinstance(value, (list, tuple)):
@@ -127,6 +145,7 @@ def _as_list(value: Any) -> list[str]:
 
 
 def _first(mapping: dict[str, Any], *keys: str) -> Any:
+    """Return the first non-empty value among ``keys`` in ``mapping`` (else ``""``)."""
     for key in keys:
         if key in mapping and mapping[key] not in (None, ""):
             return mapping[key]
@@ -134,6 +153,15 @@ def _first(mapping: dict[str, Any], *keys: str) -> Any:
 
 
 def _finding_from_dict(raw: dict[str, Any], *, default_lens: str = "") -> Finding | None:
+    """Build a :class:`Finding` from a raw dict, inferring the evidence type if absent.
+
+    Args:
+        raw: A single parsed finding object from a reviewer's output.
+        default_lens: Lens name to assign when the dict does not name one.
+
+    Returns:
+        The constructed :class:`Finding`, or ``None`` when it has no usable claim.
+    """
     claim = str(_first(raw, "claim", "issue", "finding", "concern")).strip()
     if not claim:
         return None
@@ -155,11 +183,14 @@ def _finding_from_dict(raw: dict[str, Any], *, default_lens: str = "") -> Findin
         absence_terms=_as_list(_first(raw, "absence_terms", "terms", "missing_terms")),
         external_url=str(_first(raw, "external_url", "url", "source_url")).strip(),
         severity=(str(_first(raw, "severity", "priority")).strip().lower() or "minor"),
-        reviewer_judgment=str(_first(raw, "reviewer_judgment", "judgment", "assessment", "comment")).strip(),
+        reviewer_judgment=str(
+            _first(raw, "reviewer_judgment", "judgment", "assessment", "comment")
+        ).strip(),
     )
 
 
 def _try_load(text: str) -> list[dict[str, Any]]:
+    """Parse JSON and return its finding dicts, tolerating wrappers and single objects."""
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -176,6 +207,7 @@ def _try_load(text: str) -> list[dict[str, Any]]:
 
 
 def _scan_objects(text: str) -> list[dict[str, Any]]:
+    """Extract findings by scanning ``text`` for balanced top-level ``{...}`` objects."""
     objects: list[dict[str, Any]] = []
     depth = 0
     start = -1
@@ -228,6 +260,7 @@ def parse_findings(text: str, *, default_lens: str = "") -> list[Finding]:
 
 
 def _normalize_url(url: str) -> str:
+    """Normalize a URL for comparison: lowercased, fragment-stripped, no trailing slash."""
     url = str(url or "").strip().lower()
     url = re.sub(r"#.*$", "", url)
     url = re.sub(r"/+$", "", url)
@@ -241,16 +274,51 @@ def classify_fetch_failure(text: str) -> tuple[str, str]:
     the paper's fault, so the cited reference may still be perfectly valid.
     """
     low = str(text or "").lower()
-    if any(token in low for token in ("401", "403", "paywall", "subscribe", "subscription", "login", "sign in", "sign-in")):
-        return "paywalled_or_login", "Behind a paywall or login — could not read it. The citation may be valid; verify manually."
-    if any(token in low for token in ("404", "410", "not found", "no such host", "name resolution", "dns")):
-        return "dead_or_moved", "The link is dead or moved. The work may still exist under another URL/DOI; check it."
+    if any(
+        token in low
+        for token in (
+            "401",
+            "403",
+            "paywall",
+            "subscribe",
+            "subscription",
+            "login",
+            "sign in",
+            "sign-in",
+        )
+    ):
+        return (
+            "paywalled_or_login",
+            "Behind a paywall or login — could not read it. The citation may be valid; verify manually.",
+        )
+    if any(
+        token in low
+        for token in ("404", "410", "not found", "no such host", "name resolution", "dns")
+    ):
+        return (
+            "dead_or_moved",
+            "The link is dead or moved. The work may still exist under another URL/DOI; check it.",
+        )
     if "429" in low or "rate limit" in low or "too many requests" in low:
         return "rate_limited", "The source rate-limited the fetch. Retry or verify manually."
     if any(token in low for token in ("robot", "captcha", "forbidden by", "blocked")):
         return "blocked", "The source blocked automated access. Verify manually."
-    if any(token in low for token in ("timeout", "timed out", "connection", "network", "unreachable", "offline", "no internet")):
-        return "timeout_or_network", "Could not reach the source (timeout/offline). Not a paper issue; verify when online."
+    if any(
+        token in low
+        for token in (
+            "timeout",
+            "timed out",
+            "connection",
+            "network",
+            "unreachable",
+            "offline",
+            "no internet",
+        )
+    ):
+        return (
+            "timeout_or_network",
+            "Could not reach the source (timeout/offline). Not a paper issue; verify when online.",
+        )
     return "fetch_failed", "Could not fetch the source. The citation may be valid; verify manually."
 
 
@@ -284,9 +352,7 @@ def extract_fetch_attempts(tool_calls: list[dict[str, Any]]) -> dict[str, dict[s
 
 def extract_fetched_urls(tool_calls: list[dict[str, Any]]) -> set[str]:
     """Backward-compatible helper: the set of successfully fetched URLs."""
-    return {
-        url for url, info in extract_fetch_attempts(tool_calls).items() if info.get("ok")
-    }
+    return {url for url, info in extract_fetch_attempts(tool_calls).items() if info.get("ok")}
 
 
 def _normalize_attempts(fetched: Any) -> dict[str, dict[str, Any]]:
@@ -352,9 +418,8 @@ def verify_finding(
         if present:
             # The model was wrong and the paper is fine: refute, don't criticize.
             finding.status = STATUS_REFUTED
-            finding.reason = (
-                "Claimed missing, but the manuscript contains: "
-                + ", ".join(sorted(set(present)))
+            finding.reason = "Claimed missing, but the manuscript contains: " + ", ".join(
+                sorted(set(present))
             )
         else:
             finding.status = STATUS_VERIFIED
@@ -391,6 +456,7 @@ def verify_finding(
 
 
 def _anchor_eq(a: str, b: str) -> bool:
+    """True if two anchors share the same (non-empty) digit sequence."""
     norm = lambda s: re.sub(r"[^0-9]", "", str(s or ""))  # noqa: E731
     return norm(a) == norm(b) and norm(a) != ""
 

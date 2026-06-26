@@ -72,9 +72,18 @@ class ManuscriptIndex:
 
     @property
     def readable(self) -> bool:
+        """Whether the manuscript yielded at least one usable segment."""
         return self.segment_count > 0
 
     def segment_for(self, anchor: str) -> Segment | None:
+        """Return the segment carrying ``anchor``, or ``None`` if absent.
+
+        Args:
+            anchor: An anchor label (e.g. ``"A12"``); canonicalized before lookup.
+
+        Returns:
+            The matching :class:`Segment`, or ``None`` when no segment uses it.
+        """
         anchor = _canonical_anchor(anchor)
         for segment in self.segments:
             if segment.anchor == anchor:
@@ -83,6 +92,7 @@ class ManuscriptIndex:
 
 
 def strip_accents(text: str) -> str:
+    """Return ``text`` with combining accent marks removed (NFKD-decomposed)."""
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
@@ -100,15 +110,18 @@ def normalize_for_match(text: str) -> str:
 
 
 def _collapse_ws(text: str) -> str:
+    """Collapse runs of whitespace in ``text`` to single spaces and strip ends."""
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _dehyphenate(raw: str) -> str:
+    """Join words split across a line break: ``"exam-\\nple"`` -> ``"example"``."""
     # Join words split across a line break: "exam-\nple" -> "example".
     return re.sub(r"-\s*\n\s*", "", raw)
 
 
 def _split_paragraphs(raw: str) -> list[str]:
+    """Split raw text into paragraph strings, falling back to lines/word chunks."""
     cleaned = _dehyphenate(raw)
     parts = re.split(r"\n\s*\n", cleaned)
     paragraphs = [_collapse_ws(part) for part in parts]
@@ -126,16 +139,15 @@ def _split_paragraphs(raw: str) -> list[str]:
 
 
 def _chunk_words(text: str, words_per_chunk: int = 90) -> list[str]:
+    """Split ``text`` into chunks of at most ``words_per_chunk`` words each."""
     words = text.split()
     if not words:
         return []
-    return [
-        " ".join(words[i : i + words_per_chunk])
-        for i in range(0, len(words), words_per_chunk)
-    ]
+    return [" ".join(words[i : i + words_per_chunk]) for i in range(0, len(words), words_per_chunk)]
 
 
 def _split_long_segment(text: str) -> list[str]:
+    """Split a long segment at sentence boundaries (then word chunks) to fit the cap."""
     if len(text) <= MAX_SEGMENT_CHARS:
         return [text]
     # Prefer sentence boundaries; fall back to word chunks.
@@ -162,6 +174,7 @@ def _split_long_segment(text: str) -> list[str]:
 
 
 def _canonical_anchor(anchor: str) -> str:
+    """Normalize an anchor label to canonical ``A<n>`` form (e.g. ``"a012"`` -> ``"A12"``)."""
     raw = str(anchor or "").strip().upper()
     match = re.search(r"A?\s*0*(\d+)", raw)
     if not match:
@@ -174,7 +187,17 @@ def build_index(
     *,
     anchored_char_budget: int = DEFAULT_ANCHORED_CHAR_BUDGET,
 ) -> ManuscriptIndex:
-    """Segment, anchor, and normalize a manuscript for grounded review."""
+    """Segment, anchor, and normalize a manuscript for grounded review.
+
+    Args:
+        raw_text: The raw extracted manuscript text.
+        anchored_char_budget: Maximum number of characters of anchored text to
+            include in the shown ``anchored_text`` (the full segment list is
+            always retained for verification).
+
+    Returns:
+        A :class:`ManuscriptIndex` with segmented, anchored, and normalized text.
+    """
     paragraphs: list[str] = []
     for paragraph in _split_paragraphs(raw_text or ""):
         paragraphs.extend(_split_long_segment(paragraph))
@@ -187,9 +210,7 @@ def build_index(
         if not norm:
             continue
         anchor = f"A{index}"
-        segments.append(
-            Segment(anchor=anchor, display=display, norm=norm, norm_start=cursor)
-        )
+        segments.append(Segment(anchor=anchor, display=display, norm=norm, norm_start=cursor))
         norm_parts.append(norm)
         cursor += len(norm) + 1  # +1 for the space joiner used in full_norm
 
@@ -219,6 +240,7 @@ def build_index(
 
 
 def _anchor_at_offset(index: ManuscriptIndex, offset: int) -> str | None:
+    """Return the anchor of the segment that contains ``offset`` in ``full_norm``."""
     chosen: str | None = None
     for segment in index.segments:
         if segment.norm_start <= offset:

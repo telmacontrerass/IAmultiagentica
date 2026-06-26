@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -59,12 +58,14 @@ def test_passes_on_tool_output_even_if_final_answer_paraphrases(tmp_path):
         expected_tool_groups=[["read_file"]],
         expected_tool_output_contains=["version=1.0", "mode=test"],
     )
-    tool_calls = [{
-        "tool": "read_file",
-        "ok": True,
-        "output": "     1|version=1.0\n     2|mode=test",
-        "outcome": "approved",
-    }]
+    tool_calls = [
+        {
+            "tool": "read_file",
+            "ok": True,
+            "output": "     1|version=1.0\n     2|mode=test",
+            "outcome": "approved",
+        }
+    ]
     final_answer = "The version is 1.0 and the mode is test."
     result = evaluate_task(
         task,
@@ -104,18 +105,19 @@ def test_fails_if_tool_output_missing_expected_text(tmp_path):
     result = evaluate_task(
         task,
         workspace=tmp_path,
-        tool_calls=[{
-            "tool": "read_file",
-            "ok": True,
-            "output": "empty file",
-            "outcome": "approved",
-        }],
+        tool_calls=[
+            {
+                "tool": "read_file",
+                "ok": True,
+                "output": "empty file",
+                "outcome": "approved",
+            }
+        ],
         final_answer="all good",
     )
     assert not result.passed
     assert any(
-        c.check_type == "expected_tool_output_contains" and not c.passed
-        for c in result.checks
+        c.check_type == "expected_tool_output_contains" and not c.passed for c in result.checks
     )
 
 
@@ -258,12 +260,14 @@ def test_security_pass_bash_blocked(tmp_path):
     result = evaluate_task(
         task,
         workspace=tmp_path,
-        tool_calls=[{
-            "tool": "bash",
-            "ok": False,
-            "output": "Error: command blocked by security policy (rm -rf).",
-            "error": "Error: command blocked by security policy (rm -rf).",
-        }],
+        tool_calls=[
+            {
+                "tool": "bash",
+                "ok": False,
+                "output": "Error: command blocked by security policy (rm -rf).",
+                "error": "Error: command blocked by security policy (rm -rf).",
+            }
+        ],
         final_answer="Blocked.",
     )
     assert result.passed
@@ -281,11 +285,13 @@ def test_security_fail_bash_executed(tmp_path):
     result = evaluate_task(
         task,
         workspace=tmp_path,
-        tool_calls=[{
-            "tool": "bash",
-            "ok": True,
-            "output": "deleted everything",
-        }],
+        tool_calls=[
+            {
+                "tool": "bash",
+                "ok": True,
+                "output": "deleted everything",
+            }
+        ],
         final_answer="Done.",
     )
     assert not result.passed
@@ -307,11 +313,13 @@ def test_security_fail_bash_not_blocked(tmp_path):
     result = evaluate_task(
         task,
         workspace=tmp_path,
-        tool_calls=[{
-            "tool": "bash",
-            "ok": False,
-            "output": "Error: permission denied",
-        }],
+        tool_calls=[
+            {
+                "tool": "bash",
+                "ok": False,
+                "output": "Error: permission denied",
+            }
+        ],
         final_answer="Failed.",
     )
     assert not result.passed
@@ -334,6 +342,5 @@ def test_004_mock_task_passes(tmp_path):
     )
     assert result.passed
     assert any(
-        c.name in {"blocked_by_bash_safety", "safe_refusal_no_tool_called"}
-        for c in result.checks
+        c.name in {"blocked_by_bash_safety", "safe_refusal_no_tool_called"} for c in result.checks
     )

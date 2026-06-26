@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -99,8 +99,7 @@ def build_subagent_system_prompt(
     # downstream roles then could not find.
     if spec.can_write:
         write_directive = (
-            "You CAN write files. Apply the change with your edit tools; do not "
-            "merely describe it."
+            "You CAN write files. Apply the change with your edit tools; do not merely describe it."
         )
     else:
         write_directive = (
@@ -135,30 +134,34 @@ def build_subagent_system_prompt(
 
 
 def _preview_text(text: str, *, limit: int = TRACE_PREVIEW_CHARS) -> str:
+    """Return ``text`` truncated to ``limit`` characters with a marker when longer."""
     if len(text) <= limit:
         return text
     return text[:limit] + "… (truncated)"
 
 
 def _read_json(path: Path) -> dict | None:
+    """Read and parse a JSON file, returning ``None`` on any read/parse error."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    """Read a JSON Lines file into a list of dicts, returning ``[]`` on any error."""
     try:
         return [
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
 def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | None]:
+    """Map a run-summary dict to a ``(status, error)`` pair for the subagent result."""
     if not summary:
         return "completed", None
     raw_status = str(summary.get("status") or "success")
@@ -176,6 +179,15 @@ def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | Non
 
 
 def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
+    """Load a subagent's run artifacts (status, timing, tool calls) from ``run_dir``.
+
+    Args:
+        run_dir: The subagent's run directory, or ``None`` when none was created.
+
+    Returns:
+        A dict with ``status``, ``error``, ``duration_ms``, ``rounds``, and
+        ``tool_calls`` keys; defaults are returned when ``run_dir`` is missing.
+    """
     if not run_dir:
         return {
             "status": "completed",
@@ -207,7 +219,9 @@ def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
         "status": status,
         "error": error,
         "duration_ms": int(float(duration_s) * 1000) if duration_s is not None else None,
-        "rounds": int(summary.get("rounds", 0)) if summary and summary.get("rounds") is not None else None,
+        "rounds": int(summary.get("rounds", 0))
+        if summary and summary.get("rounds") is not None
+        else None,
         "tool_calls": tool_calls,
     }
 

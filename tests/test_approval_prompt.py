@@ -16,7 +16,7 @@ from ci2lab.security.approval_prompt import (
     parse_approval_choice,
     prompt_opencode_approval,
 )
-from ci2lab.security.engine import ToolGateResult, evaluate_tool_gate
+from ci2lab.security.engine import evaluate_tool_gate
 from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
 from ci2lab.security.session_permissions import clear_session_permissions
 
@@ -83,6 +83,7 @@ def test_prompt_suspends_thinking_spinner_during_input():
     fake = _FakeStatus()
     active_progress.set(fake)
     try:
+
         def _input(_: str) -> str:
             # The spinner must already be stopped by the time we read input.
             events.append("input")

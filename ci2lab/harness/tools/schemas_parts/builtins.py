@@ -1,4 +1,11 @@
-"""Built-in OpenAI-compatible function schemas."""
+"""Aggregation of the built-in OpenAI-compatible function schemas.
+
+Concatenates the per-category schema lists (runtime, explore, edit, workflow,
+integrations) into :data:`FUNCTION_SCHEMAS` and exposes
+:func:`get_function_schemas`, which merges in dynamic MCP tools and applies any
+active skill's tool allow-list. Also re-exports :data:`TOOL_NAMES` and
+:func:`is_known_tool` from the registry for convenience.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +18,7 @@ from ci2lab.harness.tools.schemas_parts.registry import TOOL_NAMES, is_known_too
 from ci2lab.harness.tools.schemas_parts.runtime import RUNTIME_SCHEMAS
 from ci2lab.harness.tools.schemas_parts.workflow import WORKFLOW_SCHEMAS
 
+#: All built-in OpenAI-compatible function schemas, in tool-category order.
 FUNCTION_SCHEMAS: list[dict[str, Any]] = [
     *RUNTIME_SCHEMAS,
     *EXPLORE_SCHEMAS,
@@ -21,7 +29,23 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
 
 
 def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
-    """Built-in tools plus dynamic MCP tools, optionally filtered by an active skill."""
+    """Build the OpenAI function schema list for the current run.
+
+    Combines the static built-in tool schemas with any dynamic MCP tools
+    discovered for ``config.cwd``. When a skill restricts the allowed tools,
+    the result is filtered down to that allow-list (canonicalising synonyms so
+    a differently named entry still resolves to the correct schema).
+
+    Args:
+        config: Optional run configuration. When ``None``, only the built-in
+            :data:`FUNCTION_SCHEMAS` are returned. Otherwise it supplies the
+            workspace ``cwd`` used to connect to MCP servers and the optional
+            ``skill_allowed_tools`` allow-list.
+
+    Returns:
+        A list of OpenAI-compatible function schema dictionaries, possibly
+        filtered to the active skill's allowed tools.
+    """
     schemas: list[dict[str, Any]] = list(FUNCTION_SCHEMAS)
     if config is not None:
         from ci2lab.harness.mcp.session import get_mcp_manager

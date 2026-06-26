@@ -31,30 +31,51 @@ _ERROR_CLASS_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("path_outside", ("outside the workspace", "outside the project", "path outside")),
     (
         "blocked_by_policy",
-        ("blocked by workspace policy", "blocked by security policy",
-         "policy_secret_file_blocked", "command blocked by security policy"),
+        (
+            "blocked by workspace policy",
+            "blocked by security policy",
+            "policy_secret_file_blocked",
+            "command blocked by security policy",
+        ),
     ),
     (
         "source_not_found",
-        ("file does not exist", "source file not found", "not a directory",
-         "no such file"),
+        ("file does not exist", "source file not found", "not a directory", "no such file"),
     ),
     (
         "invalid_source",
-        ("is not a valid .docx", "is corrupt", "could not parse", "couldn't parse",
-         "no extractable text", "not a valid word document"),
+        (
+            "is not a valid .docx",
+            "is corrupt",
+            "could not parse",
+            "couldn't parse",
+            "no extractable text",
+            "not a valid word document",
+        ),
     ),
     ("no_pdf_engine", ("valid pdf engine is missing", "no conversion engine available")),
     (
         "edit_mismatch",
-        ("old_string not found", "old_string and new_string are identical",
-         "patch context not found", "old_string appears"),
+        (
+            "old_string not found",
+            "old_string and new_string are identical",
+            "patch context not found",
+            "old_string appears",
+        ),
     ),
 )
 
 
 def normalize_error_class(result: ToolResult) -> str:
-    """Map a tool result to a small, stable error-class label."""
+    """Map a tool result to a small, stable error-class label.
+
+    Args:
+        result: The tool result to classify.
+
+    Returns:
+        A coarse error-class label (e.g. ``"no_pdf_engine"``), ``"tool_error"``
+        for an unrecognized error, or ``"none"`` when the result is not an error.
+    """
     if not result.is_error:
         return "none"
     outcome = (result.outcome or "").lower()
@@ -70,10 +91,28 @@ def normalize_error_class(result: ToolResult) -> str:
 
 
 def tool_error_signature(call: ToolCall, result: ToolResult) -> str:
-    """Signature combining the exact call and its error class."""
+    """Signature combining the exact call and its error class.
+
+    Args:
+        call: The tool call that produced the result.
+        result: The tool result for ``call``.
+
+    Returns:
+        A signature uniquely keying the exact call (tool plus arguments)
+        together with its normalized error class.
+    """
     return f"{tool_call_signature(call)}::{normalize_error_class(result)}"
 
 
 def error_class_key(call: ToolCall, result: ToolResult) -> str:
-    """Coarse key (tool + error class) ignoring arguments."""
+    """Coarse key (tool + error class) ignoring arguments.
+
+    Args:
+        call: The tool call that produced the result.
+        result: The tool result for ``call``.
+
+    Returns:
+        A key combining the tool name and its normalized error class, ignoring
+        the call's arguments.
+    """
     return f"{call.name}::{normalize_error_class(result)}"

@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
@@ -152,17 +151,21 @@ def test_logging_records_write_outcome(tmp_path):
     selection = default_selection("test:1b")
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {
-                "name": "edit_file",
-                "arguments": json.dumps({
-                    "path": "a.txt",
-                    "old_string": "old",
-                    "new_string": "new",
-                }),
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "edit_file",
+                    "arguments": json.dumps(
+                        {
+                            "path": "a.txt",
+                            "old_string": "old",
+                            "new_string": "new",
+                        }
+                    ),
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Done.", tool_calls=[])
 

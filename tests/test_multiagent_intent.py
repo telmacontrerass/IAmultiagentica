@@ -55,9 +55,7 @@ def test_document_summary_without_write():
 
 
 def test_document_summary_with_explicit_save_includes_coder():
-    decision = classify_multiagent_intent(
-        "Read the PDF and save the summary into a .txt"
-    )
+    decision = classify_multiagent_intent("Read the PDF and save the summary into a .txt")
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
     # Persisting output requires an implementer that can write; a read-only flow
@@ -180,9 +178,7 @@ def test_document_summary_orchestration_skips_coder(monkeypatch):
 def test_document_summary_with_save_runs_coder(monkeypatch):
     # Saving the summary to a file needs a writer: a coder must run (so the file
     # is actually produced), but no validator is required for a document task.
-    calls = _run_with_capture(
-        monkeypatch, "Read the PDF and save the summary into a .txt"
-    )
+    calls = _run_with_capture(monkeypatch, "Read the PDF and save the summary into a .txt")
     assert AgentRole.GENERALIST_CODER in calls
     assert AgentRole.VALIDATOR not in calls
 

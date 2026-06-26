@@ -56,13 +56,15 @@ _TEXT_TOOL_NAME_JSON_RE = re.compile(
 # the narration for a finished answer. The word boundary after the name keeps it
 # from firing on prose that merely embeds a tool name.
 _TEXT_TOOL_KV_RE = re.compile(
-    r"(?:^|\n)\s*(?:" + "|".join(re.escape(name) for name in sorted(TOOL_NAMES))
+    r"(?:^|\n)\s*(?:"
+    + "|".join(re.escape(name) for name in sorted(TOOL_NAMES))
     + r")\b\s*\(?\s*[A-Za-z_]\w*\s*=",
     re.IGNORECASE,
 )
 
 
 def _parse_text_tool_name_plus_json(text: str) -> list[ToolCall]:
+    """Parse calls written as a bare tool name on one line then a JSON body."""
     calls: list[ToolCall] = []
     seen: set[tuple[str, str]] = set()
     for match in _TEXT_TOOL_NAME_JSON_RE.finditer(text):
@@ -86,8 +88,24 @@ def resolve_tool_calls(
     text: str,
     native_calls: list[dict[str, Any]] | None,
     *,
-    tool_mode: str,  # noqa: ARG001
+    tool_mode: str,
 ) -> list[ToolCall]:
+    """Resolve tool calls from a model turn, trying each parsing strategy in turn.
+
+    Native provider calls take priority; when absent (or unparseable) the text is
+    run through the XML, fenced-block, JSON-object, text-name-plus-JSON and
+    generic-fenced parsers in order, returning the first non-empty result.
+
+    Args:
+        text: The model's textual output for the turn.
+        native_calls: Provider-native tool-call payloads, or ``None``/empty when
+            the provider returned none.
+        tool_mode: The active tool-calling mode (e.g. ``"native"``); accepted for
+            caller context and forward compatibility.
+
+    Returns:
+        The resolved tool calls, or an empty list when none are found.
+    """
     if native_calls:
         parsed = native_to_tool_calls(native_calls)
         if parsed:
@@ -108,7 +126,20 @@ def resolve_tool_calls(
 
 
 def looks_like_unparsed_tool_attempt(text: str) -> bool:
-    """True when the model probably meant to call a tool but nothing was parsed."""
+    """True when the model probably meant to call a tool but nothing was parsed.
+
+    Used by the loop to nudge the model back to a valid tool-call format instead
+    of treating malformed-but-tool-shaped narration as a finished answer. Returns
+    ``False`` immediately if a real tool call can be resolved; otherwise looks for
+    JSON fences, name/command literals naming known tools, fenced shell blocks, or
+    ``tool path='...'`` key=value prose.
+
+    Args:
+        text: The model's textual output to inspect.
+
+    Returns:
+        ``True`` if the text resembles an unparsed tool-call attempt.
+    """
     if resolve_tool_calls(text, [], tool_mode="native"):
         return False
     lowered = text.lower()
@@ -136,7 +167,19 @@ def looks_like_unparsed_tool_attempt(text: str) -> bool:
 
 
 def strip_tool_markup(text: str) -> str:
-    """Strips fences, JSON tool blocks and XML from the text shown to the user."""
+    """Strip fences, JSON tool blocks and XML from the text shown to the user.
+
+    Removes tool-call markup (tool/generic/JSON fences, XML tool-call and invoke
+    tags, and any bare JSON objects that parse to a tool call) so only the
+    user-facing prose remains.
+
+    Args:
+        text: The model's raw output.
+
+    Returns:
+        The text with tool-call markup removed and surrounding whitespace
+        stripped.
+    """
     text = FENCED_RE.sub("", text)
     text = JSON_FENCED_RE.sub("", text)
     text = GENERIC_FENCED_RE.sub("", text)
@@ -180,4 +223,3 @@ __all__ = [
     "resolve_tool_calls",
     "strip_tool_markup",
 ]
-

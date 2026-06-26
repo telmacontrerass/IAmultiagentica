@@ -18,6 +18,16 @@ from ci2lab.evals.task import default_tasks_dir
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the harness evaluation suite from the command line.
+
+    Args:
+        argv: Optional command-line arguments. When ``None`` the process
+            arguments (``sys.argv``) are used.
+
+    Returns:
+        A process exit code: ``0`` when every task passed (and the tasks
+        directory was found), ``1`` otherwise.
+    """
     parser = argparse.ArgumentParser(
         prog="ci2lab.evals.run",
         description="Practical evaluation of the Ci2Lab harness (repeatable tasks)",
@@ -69,13 +79,9 @@ def main(argv: list[str] | None = None) -> int:
         f"{'[cyan]mock[/cyan]' if use_mock else '[yellow]live[/yellow]'}"
     )
     if use_mock:
-        console.print(
-            "[dim]No Ollama. Use --live to evaluate against the real model.[/dim]\n"
-        )
+        console.print("[dim]No Ollama. Use --live to evaluate against the real model.[/dim]\n")
     else:
-        console.print(
-            "[dim]Requires Ollama running. Real prompts may vary.[/dim]\n"
-        )
+        console.print("[dim]Requires Ollama running. Real prompts may vary.[/dim]\n")
 
     try:
         summary, results = run_eval_suite(
@@ -89,9 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print_summary_table(results)
-    console.print(
-        f"\n[bold]Summary:[/bold] {summary.passed}/{summary.total} PASS"
-    )
+    console.print(f"\n[bold]Summary:[/bold] {summary.passed}/{summary.total} PASS")
     console.print(f"[dim]Results: {summary.results_dir}[/dim]")
 
     return 0 if summary.failed == 0 else 1

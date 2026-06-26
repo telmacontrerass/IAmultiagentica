@@ -73,9 +73,18 @@ class MultiAgentRun:
     intent_confidence: str | None = None
 
     def add_result(self, result: SubAgentResult) -> None:
+        """Append a subagent result to the run's ordered result list."""
         self.results.append(result)
 
     def latest_for(self, role: AgentRole) -> SubAgentResult | None:
+        """Return the most recent result for ``role``, or ``None`` if it never ran.
+
+        Args:
+            role: The subagent role to look up.
+
+        Returns:
+            The latest :class:`SubAgentResult` produced by ``role``, or ``None``.
+        """
         for result in reversed(self.results):
             if result.role == role:
                 return result

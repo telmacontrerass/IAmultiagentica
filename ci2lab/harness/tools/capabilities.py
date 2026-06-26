@@ -24,20 +24,22 @@ from ci2lab.harness.tools.schemas_parts.registry import TOOL_NAMES
 # may serve a repeat call from its per-turn cache instead of re-executing. Web
 # lookups are included: re-issuing the same search/fetch returns essentially the
 # same result and only burns rounds (weak models often repeat them).
-READ_ONLY_TOOLS = frozenset({
-    "read_file",
-    "read_document",
-    "ls",
-    "tree",
-    "glob",
-    "grep",
-    "file_info",
-    "inspect_file",
-    "git_status",
-    "git_diff",
-    "web_search",
-    "web_fetch",
-})
+READ_ONLY_TOOLS = frozenset(
+    {
+        "read_file",
+        "read_document",
+        "ls",
+        "tree",
+        "glob",
+        "grep",
+        "file_info",
+        "inspect_file",
+        "git_status",
+        "git_diff",
+        "web_search",
+        "web_fetch",
+    }
+)
 
 # Tools that create or edit FILE CONTENT directly. An agent whose effective
 # allow-list contains none of these genuinely cannot author a file, so a
@@ -45,32 +47,34 @@ READ_ONLY_TOOLS = frozenset({
 # silent for it. `bash` is deliberately excluded: a role with only `bash` is not
 # meant to author files, and telling it to "call write_file" pushes it out of
 # its lane.
-FILE_WRITE_TOOLS = frozenset({
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "notebook_edit",
-    "write_docx",
-    "fill_docx_template",
-})
+FILE_WRITE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "notebook_edit",
+        "write_docx",
+        "fill_docx_template",
+    }
+)
 
 # Everything that can change workspace state: file writers plus shell, document
 # conversions, and an "edit"-mode `delegate` (its subagent can write files).
 # Running any of these invalidates the read-only cache so a later re-read
 # reflects the new state, and marks that a write was attempted this turn.
-MUTATING_TOOLS = FILE_WRITE_TOOLS | frozenset({
-    "bash",
-    "docx_to_pdf",
-    "pdf_to_docx",
-    "delegate",
-})
+MUTATING_TOOLS = FILE_WRITE_TOOLS | frozenset(
+    {
+        "bash",
+        "docx_to_pdf",
+        "pdf_to_docx",
+        "delegate",
+    }
+)
 
 # Fail fast if a category references a tool that no longer exists: this keeps the
 # categories honest when tools are renamed or removed.
 _UNKNOWN = (READ_ONLY_TOOLS | MUTATING_TOOLS) - TOOL_NAMES
 if _UNKNOWN:  # pragma: no cover - guards against developer error
-    raise RuntimeError(
-        f"tool capability sets reference unknown tools: {sorted(_UNKNOWN)}"
-    )
+    raise RuntimeError(f"tool capability sets reference unknown tools: {sorted(_UNKNOWN)}")
 
-__all__ = ["READ_ONLY_TOOLS", "FILE_WRITE_TOOLS", "MUTATING_TOOLS"]
+__all__ = ["FILE_WRITE_TOOLS", "MUTATING_TOOLS", "READ_ONLY_TOOLS"]

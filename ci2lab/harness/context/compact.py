@@ -24,11 +24,13 @@ SUMMARY_PREFIX = "[Summary of earlier conversation]"
 # the model is expected to act on it directly (a re-read would lose the plan).
 # Inverting the rule this way means new/rare tools (read_document, web_search,
 # tree, inspect_file, mcp__*, …) are covered automatically instead of leaking.
-NON_COMPACTABLE_TOOLS = frozenset({
-    "todo_write",
-    "todo_read",
-    "ask_user",
-})
+NON_COMPACTABLE_TOOLS = frozenset(
+    {
+        "todo_write",
+        "todo_read",
+        "ask_user",
+    }
+)
 
 MIN_STUB_CHARS = 200
 KEEP_RECENT_TOOL_RESULTS = 3
@@ -47,6 +49,7 @@ _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
 def conservative_estimate(messages: list[dict[str, Any]]) -> int:
+    """Return a deliberately high token estimate (4/3 of the base) to fire compaction early."""
     return math.ceil(estimate_tokens(messages) * 4 / 3)
 
 
@@ -57,11 +60,23 @@ def should_compact(
     reserve_output: int = 1024,
     threshold_pct: float = COMPACT_THRESHOLD_PCT,
 ) -> bool:
+    """Return ``True`` when the conservative token estimate exceeds the compaction threshold.
+
+    Args:
+        messages: The conversation history to measure.
+        context_length: The model's context window in tokens.
+        reserve_output: Tokens held back for the model's output.
+        threshold_pct: Fraction of the usable window that triggers compaction.
+
+    Returns:
+        ``True`` if compaction should run for this history.
+    """
     threshold = max(512, int((context_length - reserve_output) * threshold_pct))
     return conservative_estimate(messages) > threshold
 
 
 def _tool_names_by_call_id(messages: list[dict[str, Any]]) -> dict[str, str]:
+    """Map each assistant tool-call id to the tool name it invoked."""
     names: dict[str, str] = {}
     for msg in messages:
         for tc in msg.get("tool_calls") or []:
@@ -77,8 +92,19 @@ def micro_compact(
     *,
     keep_recent: int = KEEP_RECENT_TOOL_RESULTS,
 ) -> tuple[list[dict[str, Any]], int]:
+    """Replace old, large tool results with a stub, keeping the most recent ones.
+
+    Args:
+        messages: The conversation history.
+        keep_recent: Number of most-recent tool results to leave untouched.
+
+    Returns:
+        A ``(messages, stubbed)`` pair: the (possibly new) history and the count
+        of tool results that were replaced with a stub.
+    """
     tool_indexes = [
-        i for i, m in enumerate(messages)
+        i
+        for i, m in enumerate(messages)
         if m.get("role") == "tool" and isinstance(m.get("content"), str)
     ]
     candidates = tool_indexes[:-keep_recent] if keep_recent > 0 else tool_indexes
@@ -105,12 +131,14 @@ def micro_compact(
 # read of that path appears (e.g. the file was re-read after an edit), so the
 # older one is safe to drop. Search/listing tools are excluded — their key is
 # the query, not a single path, and dropping them is riskier.
-SUPERSEDABLE_READ_TOOLS = frozenset({
-    "read_file",
-    "read_document",
-    "inspect_file",
-    "file_info",
-})
+SUPERSEDABLE_READ_TOOLS = frozenset(
+    {
+        "read_file",
+        "read_document",
+        "inspect_file",
+        "file_info",
+    }
+)
 SUPERSEDED_READ_STUB = (
     "[Earlier read of {path} cleared — a newer read of it appears later in the "
     "conversation. Re-read it if you need this older version.]"
@@ -120,7 +148,7 @@ SUPERSEDED_READ_STUB = (
 def _tool_meta_by_call_id(
     messages: list[dict[str, Any]],
 ) -> dict[str, tuple[str, dict[str, Any]]]:
-    """Map each tool_call_id to its (tool_name, parsed-arguments)."""
+    """Map each tool_call_id to its ``(tool_name, parsed-arguments)``."""
     meta: dict[str, tuple[str, dict[str, Any]]] = {}
     for msg in messages:
         for tc in msg.get("tool_calls") or []:
@@ -180,6 +208,7 @@ def prune_superseded_reads(
 
 
 def _render_transcript(messages: list[dict[str, Any]], max_chars: int) -> str:
+    """Render messages as a plain-text transcript, truncating the oldest part to ``max_chars``."""
     lines: list[str] = []
     for msg in messages:
         role = msg.get("role", "")
@@ -208,6 +237,18 @@ def _split_for_summary(
     *,
     keep_recent_messages: int = KEEP_RECENT_MESSAGES,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split messages into ``(system, old, tail)`` for summarization.
+
+    The split point is nudged back past any leading tool messages so a tool
+    result is never separated from the assistant turn that requested it.
+
+    Args:
+        messages: The conversation history.
+        keep_recent_messages: How many trailing messages to keep verbatim.
+
+    Returns:
+        A ``(system_msgs, old, tail)`` triple of message lists.
+    """
     system_msgs = [m for m in messages if m.get("role") == "system"]
     rest = [m for m in messages if m.get("role") != "system"]
 
@@ -224,9 +265,19 @@ def summarize_history(
     *,
     keep_recent_messages: int = KEEP_RECENT_MESSAGES,
 ) -> list[dict[str, Any]] | None:
-    system_msgs, old, tail = _split_for_summary(
-        messages, keep_recent_messages=keep_recent_messages
-    )
+    """Replace old turns with a single LLM-generated summary message.
+
+    Args:
+        client: An LLM client exposing a ``chat`` method.
+        messages: The conversation history.
+        context_length: The model's context window in tokens.
+        keep_recent_messages: How many trailing messages to keep verbatim.
+
+    Returns:
+        A new history (system + summary + recent tail), or ``None`` if there is
+        nothing old to summarize or the summary call failed/produced no text.
+    """
+    system_msgs, old, tail = _split_for_summary(messages, keep_recent_messages=keep_recent_messages)
     if not old:
         return None
 
@@ -249,7 +300,7 @@ def summarize_history(
             ],
             tools=None,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
     summary = (getattr(response, "content", "") or "").strip()
@@ -270,6 +321,23 @@ def manage_context(
     *,
     summary_failures: int = 0,
 ) -> tuple[list[dict[str, Any]], int, list[str]]:
+    """Manage context pressure: prune stale reads, micro-compact, then summarize.
+
+    Applies the cheapest effective layer first and only escalates to the costly
+    LLM summary once the cheaper passes leave the history near the real ceiling.
+
+    Args:
+        history: The conversation history.
+        client: An LLM client used for the optional summary step.
+        context_length: The model's context window in tokens.
+        summary_failures: Count of prior consecutive summary failures (used to
+            stop retrying the LLM summary once it keeps failing).
+
+    Returns:
+        A ``(history, summary_failures, events)`` triple: the managed history,
+        the updated failure count, and human-readable event strings describing
+        what was done.
+    """
     events: list[str] = []
 
     # Always drop stale duplicate reads first — cheap, lossless, and it keeps a
@@ -278,13 +346,9 @@ def manage_context(
     pruned_history, superseded = prune_superseded_reads(history)
     if superseded:
         history = pruned_history
-        events.append(
-            f"Context: cleared {superseded} superseded read(s) of re-read file(s)."
-        )
+        events.append(f"Context: cleared {superseded} superseded read(s) of re-read file(s).")
 
-    if not should_compact(
-        history, context_length, threshold_pct=MICRO_COMPACT_THRESHOLD_PCT
-    ):
+    if not should_compact(history, context_length, threshold_pct=MICRO_COMPACT_THRESHOLD_PCT):
         return history, summary_failures, events
 
     history, stubbed = micro_compact(history)
@@ -293,9 +357,7 @@ def manage_context(
 
     # Only reach for the expensive LLM summary once the cheaper pass leaves us
     # near the real ceiling — not at the proactive micro-compact threshold.
-    if not should_compact(
-        history, context_length, threshold_pct=SUMMARY_COMPACT_THRESHOLD_PCT
-    ):
+    if not should_compact(history, context_length, threshold_pct=SUMMARY_COMPACT_THRESHOLD_PCT):
         return history, summary_failures, events
 
     if summary_failures >= MAX_SUMMARY_FAILURES:
@@ -304,14 +366,10 @@ def manage_context(
     summarized = summarize_history(client, history, context_length)
     if summarized is None:
         summary_failures += 1
-        events.append(
-            "Context: automatic summary failed; mechanical trimming will be used."
-        )
+        events.append("Context: automatic summary failed; mechanical trimming will be used.")
         return history, summary_failures, events
 
     before = conservative_estimate(history)
     after = conservative_estimate(summarized)
-    events.append(
-        f"Context: history summarized (~{before} → ~{after} estimated tokens)."
-    )
+    events.append(f"Context: history summarized (~{before} → ~{after} estimated tokens).")
     return summarized, 0, events

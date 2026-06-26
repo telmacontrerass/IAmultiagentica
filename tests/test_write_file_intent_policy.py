@@ -120,9 +120,7 @@ def test_run_agent_explicit_create_calls_write_file(workspace: Path):
                 "id": "c1",
                 "function": {
                     "name": "write_file",
-                    "arguments": json.dumps(
-                        {"path": "docs/hello.md", "content": "# Hello\n"}
-                    ),
+                    "arguments": json.dumps({"path": "docs/hello.md", "content": "# Hello\n"}),
                 },
             }
         ],
@@ -141,17 +139,13 @@ def test_run_agent_explicit_create_calls_write_file(workspace: Path):
                     selection,
                     config=config,
                 )
-            write_calls = [
-                c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
-            ]
+            write_calls = [c for c in execute_mock.call_args_list if c[0][0].name == "write_file"]
 
     assert len(write_calls) == 1
     assert (workspace / "docs" / "hello.md").read_text(encoding="utf-8") == "# Hello\n"
 
 
-def test_run_agent_blocked_read_without_spontaneous_error_file(
-    workspace: Path, tmp_path: Path
-):
+def test_run_agent_blocked_read_without_spontaneous_error_file(workspace: Path, tmp_path: Path):
     outside = tmp_path / "outside" / "secret.txt"
     outside.parent.mkdir(parents=True)
     outside.write_text("decoy", encoding="utf-8")
@@ -191,17 +185,15 @@ def test_run_agent_blocked_read_without_spontaneous_error_file(
                 "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
             ) as execute_mock:
                 run_agent("Read the external secret", selection, config=config)
-            write_calls = [
-                c for c in execute_mock.call_args_list if c[0][0].name == "write_file"
-            ]
+            write_calls = [c for c in execute_mock.call_args_list if c[0][0].name == "write_file"]
 
     assert len(write_calls) == 0
     assert not (workspace / "ci2lab_error.txt").exists()
 
 
 def test_system_prompt_allows_explicit_write_and_discourages_error_files():
-    from ci2lab.harness.prompts import build_system_prompt
     from ci2lab.harness import default_selection
+    from ci2lab.harness.prompts import build_system_prompt
 
     text = build_system_prompt(default_selection("test:1b"), ".")
     assert "write_file" in text

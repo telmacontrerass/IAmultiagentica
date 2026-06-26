@@ -10,19 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.multiagent.grounding import (
-    Finding,
-    VerificationBuckets,
-    extract_fetch_attempts,
-    parse_findings,
-    regroundable,
-    verify_findings,
-)
 from ci2lab.harness.multiagent.context_budget import (
     assess_feasibility,
     chunk_anchored_text,
@@ -30,6 +22,14 @@ from ci2lab.harness.multiagent.context_budget import (
     plan_chunks,
     recommended_context_for,
     total_manuscript_chars,
+)
+from ci2lab.harness.multiagent.grounding import (
+    Finding,
+    VerificationBuckets,
+    extract_fetch_attempts,
+    parse_findings,
+    regroundable,
+    verify_findings,
 )
 from ci2lab.harness.multiagent.intent import MultiAgentIntent, classify_multiagent_intent
 from ci2lab.harness.multiagent.paper_review import (
@@ -148,8 +148,7 @@ _IMPLEMENTATION_TASK_MARKERS = (
 # Derived from ROLE_SPECS so adding a new implementer role can never silently
 # fall out of this set.
 _LOAD_BEARING_ROLES = frozenset(
-    {AgentRole.RESEARCHER}
-    | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
+    {AgentRole.RESEARCHER} | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
 )
 
 # A request is test-centric or docs-centric only when the USER asks for tests or
@@ -171,24 +170,23 @@ _PYTHON_EVIDENCE = (".py", "python", "ci2lab/", "harness")
 
 
 def _combined_output(*results: SubAgentResult | None) -> str:
-    return "\n\n".join(
-        result.output for result in results if result is not None and result.output
-    )
+    """Join the non-empty outputs of the given results with blank-line separators."""
+    return "\n\n".join(result.output for result in results if result is not None and result.output)
 
 
 def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
-    return any(
-        re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text)
-        for marker in markers
-    )
+    """True if any marker appears in ``text`` as a whole word (word-boundary match)."""
+    return any(re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) for marker in markers)
 
 
 def _role_label(role: AgentRole, attempt: int) -> str:
+    """Build a short trace label for a role, appending the attempt number when > 1."""
     suffix = f" attempt {attempt}" if attempt > 1 else ""
     return f"{role.value}{suffix}"
 
 
 def _role_progress_label(role: AgentRole, attempt: int) -> str:
+    """Build a human-friendly progress label for a role and attempt number."""
     labels = {
         AgentRole.PLANNER: "Planning the work",
         AgentRole.RESEARCHER: "Gathering the needed context",
@@ -217,14 +215,11 @@ def _role_progress_label(role: AgentRole, attempt: int) -> str:
 def subagent_blocked(result: SubAgentResult) -> bool:
     """Detect explicit subagent stop conditions."""
     text = result.output.strip().lower()
-    return (
-        result.status == "blocked"
-        or text.startswith("blocked:")
-        or "max rounds" in text
-    )
+    return result.status == "blocked" or text.startswith("blocked:") or "max rounds" in text
 
 
 def _preview_text(text: str | None, *, limit: int) -> str:
+    """Return ``text`` truncated to ``limit`` characters with a marker when longer."""
     value = text or ""
     if len(value) <= limit:
         return value
@@ -232,12 +227,14 @@ def _preview_text(text: str | None, *, limit: int) -> str:
 
 
 def _hash_text(text: str | None) -> str | None:
+    """Return the SHA-256 hex digest of ``text``, or ``None`` when it is ``None``."""
     if text is None:
         return None
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _failure_status(exc: Exception) -> str:
+    """Classify an exception as ``"timeout"`` or ``"failed"`` from its message."""
     if "timeout" in str(exc).lower():
         return "timeout"
     return "failed"
@@ -251,6 +248,7 @@ def _failed_result(
     attempt: int,
     error: str,
 ) -> SubAgentResult:
+    """Build a placeholder result for a phase that raised before producing output."""
     stage_config = build_subagent_config(role, config)
     spec = ROLE_SPECS[role]
     return SubAgentResult(
@@ -274,6 +272,7 @@ def _skipped_result(
     *,
     reason: str,
 ) -> SubAgentResult:
+    """Build a placeholder result for a phase that was deliberately skipped."""
     stage_config = build_subagent_config(role, config)
     spec = ROLE_SPECS[role]
     return SubAgentResult(
@@ -292,6 +291,7 @@ def _skipped_result(
 
 
 def _phase_trace(result: SubAgentResult) -> dict[str, object]:
+    """Build the JSON-serializable trace record for a single executed phase."""
     tool_calls = [
         {
             "tool": entry.get("tool"),
@@ -346,6 +346,7 @@ def _trace_payload(
     started_at: datetime,
     ended_at: datetime,
 ) -> dict[str, object]:
+    """Build the full multi-agent trace payload written to ``multiagent_trace.json``."""
     phases = [_phase_trace(result) for result in run.results]
     planned_phases: list[str] = list(run.planned_phases) or [
         AgentRole.PLANNER.value,
@@ -364,7 +365,11 @@ def _trace_payload(
         planned_phases.append(AgentRole.SECURITY_REVIEWER.value)
     executed_phases = [result.role.value for result in run.results if result.status != "skipped"]
     failed_phase = next(
-        (result.role.value for result in run.results if result.status in {"failed", "timeout", "blocked"}),
+        (
+            result.role.value
+            for result in run.results
+            if result.status in {"failed", "timeout", "blocked"}
+        ),
         run.failed_phase,
     )
     if failed_phase is None:
@@ -411,6 +416,7 @@ def _run_subagent_stage(
     attempt: int = 1,
     on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
+    """Run one subagent stage with progress/console reporting around the call."""
     label = _role_label(role, attempt)
     progress_label = _role_progress_label(role, attempt)
     if on_progress:
@@ -443,6 +449,11 @@ def _execute_phase(
     attempt: int = 1,
     on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
+    """Run a phase, record its result on ``state``, and flag load-bearing blocks.
+
+    Re-raises any exception from the stage after recording a failed result on the
+    run state.
+    """
     try:
         result = _run_subagent_stage(
             role,
@@ -524,9 +535,8 @@ def should_skip_implementation(
     evidence = _combined_output(plan, research).lower()
     if _contains_marker(evidence, _IMPLEMENTATION_TASK_MARKERS):
         return False
-    return (
-        _contains_marker(evidence, _READ_ONLY_TASK_MARKERS)
-        and _contains_marker(evidence, _DOCUMENT_TASK_MARKERS)
+    return _contains_marker(evidence, _READ_ONLY_TASK_MARKERS) and _contains_marker(
+        evidence, _DOCUMENT_TASK_MARKERS
     )
 
 
@@ -542,14 +552,12 @@ def validation_failed(validation: SubAgentResult) -> bool:
 
 def should_run_security_review(run: MultiAgentRun) -> bool:
     """Decide whether the optional security reviewer should run."""
-    text = "\n\n".join(
-        [run.user_prompt]
-        + [result.output for result in run.results]
-    ).lower()
+    text = "\n\n".join([run.user_prompt] + [result.output for result in run.results]).lower()
     return any(marker in text for marker in _SECURITY_REVIEW_MARKERS)
 
 
 def _build_planner_prompt(user_prompt: str) -> str:
+    """Build the planner subagent's task prompt for ``user_prompt``."""
     return (
         "Create the authoritative execution plan for this task. The rest of "
         "the subagents must follow your plan, so make the delegation explicit.\n\n"
@@ -568,6 +576,7 @@ def _build_planner_prompt(user_prompt: str) -> str:
 
 
 def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str:
+    """Build the researcher subagent's task prompt, embedding the planner's plan."""
     plan_text = plan.output if plan else "No explicit plan was produced for this task."
     return (
         "Follow the planner's execution plan. Only perform the research/context "
@@ -597,13 +606,16 @@ def _build_implementation_prompt(
     plan: SubAgentResult | None,
     research: SubAgentResult | None,
 ) -> str:
+    """Build the implementer subagent's task prompt from the plan and research findings."""
     # A document task runs no planner, so `plan` may be absent — fall back to the
     # user task directly rather than failing.
-    plan_text = plan.output if plan is not None else (
-        "No separate plan was produced; follow the user task directly."
+    plan_text = (
+        plan.output
+        if plan is not None
+        else ("No separate plan was produced; follow the user task directly.")
     )
-    research_text = research.output if research is not None else (
-        "No research output was produced."
+    research_text = (
+        research.output if research is not None else ("No research output was produced.")
     )
     return (
         "Follow the execution plan and the researcher findings. "
@@ -637,6 +649,7 @@ def _build_validation_prompt(
     research: SubAgentResult,
     implementation: SubAgentResult,
 ) -> str:
+    """Build the validator subagent's task prompt from the plan, research, and implementation."""
     return (
         "Follow the planner's validation expectations. Validate only the "
         "implemented work against the plan, research findings, and success "
@@ -657,6 +670,7 @@ def _build_repair_prompt(
     previous_implementation: SubAgentResult,
     validation: SubAgentResult,
 ) -> str:
+    """Build the repair prompt that asks the implementer to fix a validation failure."""
     return (
         "The validator reported a failure. Repair the implementation while "
         "staying within the same implementer role and the planner's assigned "
@@ -672,9 +686,9 @@ def _build_repair_prompt(
 
 
 def _build_review_prompt(run: MultiAgentRun) -> str:
+    """Build the reviewer subagent's prompt from the full run's accumulated evidence."""
     evidence = "\n\n".join(
-        f"[{result.role.value} attempt {result.attempt}]\n{result.output}"
-        for result in run.results
+        f"[{result.role.value} attempt {result.attempt}]\n{result.output}" for result in run.results
     )
     return (
         "Review the completed multi-agent run against the planner's execution "
@@ -687,9 +701,9 @@ def _build_review_prompt(run: MultiAgentRun) -> str:
 
 
 def _build_security_review_prompt(run: MultiAgentRun) -> str:
+    """Build the security reviewer subagent's prompt from the run's accumulated evidence."""
     evidence = "\n\n".join(
-        f"[{result.role.value} attempt {result.attempt}]\n{result.output}"
-        for result in run.results
+        f"[{result.role.value} attempt {result.attempt}]\n{result.output}" for result in run.results
     )
     return (
         "Review the completed multi-agent run specifically for security and "
@@ -731,24 +745,14 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
         if last_validation and validation_failed(last_validation)
         else "completed"
     )
-    coder = (
-        run.selected_coder_role.value
-        if run.selected_coder_role
-        else "none (read-only task)"
-    )
+    coder = run.selected_coder_role.value if run.selected_coder_role else "none (read-only task)"
     review_text = reviewer.output if reviewer else "No reviewer output was produced."
-    security_text = (
-        f"\n\nSecurity review:\n{security_reviewer.output}"
-        if security_reviewer
-        else ""
-    )
+    security_text = f"\n\nSecurity review:\n{security_reviewer.output}" if security_reviewer else ""
     validation_text = (
         last_validation.output if last_validation else "No validation output was produced."
     )
     if run.selected_coder_role is None:
-        research_text = (
-            research.output if research else "No research output was produced."
-        )
+        research_text = research.output if research else "No research output was produced."
         return (
             f"Multi-agent run finished with status: completed\n"
             f"Selected implementer: {coder}\n\n"
@@ -769,6 +773,7 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
 
 
 def _paper_review_phases() -> list[str]:
+    """Return the ordered phase names of the grounded paper-review pipeline."""
     return (
         [AgentRole.INTAKE_REVIEWER.value]
         + [role.value for role in _PAPER_REVIEW_LENSES]
@@ -789,10 +794,15 @@ def _safe_execute(
     """Run a review phase resiliently: one failing lens never aborts the review."""
     try:
         result = _execute_phase(
-            state, role, task_prompt, selection, config,
-            attempt=attempt, on_progress=on_progress,
+            state,
+            role,
+            task_prompt,
+            selection,
+            config,
+            attempt=attempt,
+            on_progress=on_progress,
         )
-    except Exception:  # noqa: BLE001 — a failed lens is recorded, not fatal here.
+    except Exception:
         state.failed_phase = None
         state.error = None
         return state.results[-1] if state.results else None
@@ -837,9 +847,13 @@ def _verify_lens_output(
     to_reground = regroundable(buckets.quarantined)
     if to_reground:
         regrounded = _safe_execute(
-            state, role,
+            state,
+            role,
             build_reground_prompt(ctx, to_reground, chunk_text=chunk_text, part_label=part_label),
-            selection, config, attempt=2, on_progress=on_progress,
+            selection,
+            config,
+            attempt=2,
+            on_progress=on_progress,
         )
         _absorb_fetched(ctx, regrounded)
         if regrounded is not None and regrounded.output:
@@ -852,6 +866,7 @@ def _verify_lens_output(
 
 
 def _loads_any(text: str) -> list:
+    """Parse JSON into a list of verdict objects, tolerating wrappers and single objects."""
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -867,6 +882,7 @@ def _loads_any(text: str) -> list:
 
 
 def _parse_support_verdicts(text: str) -> dict[int, bool]:
+    """Parse the groundedness verifier's output into ``{finding_index: supported}``."""
     text = text or ""
     objects: list = []
     for block in re.findall(r"```(?:json)?\s*(.*?)```", text, re.S):
@@ -890,7 +906,13 @@ def _parse_support_verdicts(text: str) -> dict[int, bool]:
         if isinstance(supported, bool):
             verdicts[index] = supported
         else:
-            verdicts[index] = str(supported).strip().lower() in {"true", "yes", "y", "1", "supported"}
+            verdicts[index] = str(supported).strip().lower() in {
+                "true",
+                "yes",
+                "y",
+                "1",
+                "supported",
+            }
     return verdicts
 
 
@@ -906,8 +928,11 @@ def _groundedness_pass(
     if not verified:
         return verified, []
     result = _safe_execute(
-        state, AgentRole.GROUNDEDNESS_VERIFIER,
-        build_groundedness_prompt(ctx, verified), selection, config,
+        state,
+        AgentRole.GROUNDEDNESS_VERIFIER,
+        build_groundedness_prompt(ctx, verified),
+        selection,
+        config,
         on_progress=on_progress,
     )
     if result is None or not result.output:
@@ -948,9 +973,7 @@ def _run_paper_review(
     # recommend a larger-context model instead of producing an incomplete review.
     feasibility = assess_feasibility(ctx.index, context_length)
     if not feasibility.feasible:
-        return infeasible_message(
-            feasibility, model_name=model_name, context_length=context_length
-        )
+        return infeasible_message(feasibility, model_name=model_name, context_length=context_length)
 
     chunks = plan_chunks(ctx.index.segments, feasibility.budget_chars)
     n_chunks = len(chunks)
@@ -966,16 +989,26 @@ def _run_paper_review(
     for i, chunk in enumerate(chunks):
         chunk_text = chunk_anchored_text(chunk)
         intake = _safe_execute(
-            state, AgentRole.INTAKE_REVIEWER,
+            state,
+            AgentRole.INTAKE_REVIEWER,
             build_intake_prompt(ctx, chunk_text=chunk_text, part_label=part_label(i)),
-            selection, config, on_progress=on_progress,
+            selection,
+            config,
+            on_progress=on_progress,
         )
         signals.note_lens_run(intake.output if intake else "")
         _absorb_fetched(ctx, intake)
         buckets.merge(
             _verify_lens_output(
-                state, AgentRole.INTAKE_REVIEWER, intake, ctx, selection, config,
-                on_progress, chunk_text=chunk_text, part_label=part_label(i),
+                state,
+                AgentRole.INTAKE_REVIEWER,
+                intake,
+                ctx,
+                selection,
+                config,
+                on_progress,
+                chunk_text=chunk_text,
+                part_label=part_label(i),
             )
         )
         if intake and intake.output:
@@ -990,29 +1023,47 @@ def _run_paper_review(
         for i, chunk in enumerate(chunks):
             chunk_text = chunk_anchored_text(chunk)
             result = _safe_execute(
-                state, role,
-                build_lens_prompt(role.value, ctx, intake_text, chunk_text=chunk_text, part_label=part_label(i)),
-                selection, config, on_progress=on_progress,
+                state,
+                role,
+                build_lens_prompt(
+                    role.value, ctx, intake_text, chunk_text=chunk_text, part_label=part_label(i)
+                ),
+                selection,
+                config,
+                on_progress=on_progress,
             )
             signals.note_lens_run(result.output if result else "")
             _absorb_fetched(ctx, result)
             buckets.merge(
                 _verify_lens_output(
-                    state, role, result, ctx, selection, config, on_progress,
-                    chunk_text=chunk_text, part_label=part_label(i),
+                    state,
+                    role,
+                    result,
+                    ctx,
+                    selection,
+                    config,
+                    on_progress,
+                    chunk_text=chunk_text,
+                    part_label=part_label(i),
                 )
             )
 
     if AgentRole.GROUNDEDNESS_VERIFIER.value in state.planned_phases:
-        kept, dropped = _groundedness_pass(state, buckets.verified, ctx, selection, config, on_progress)
+        kept, dropped = _groundedness_pass(
+            state, buckets.verified, ctx, selection, config, on_progress
+        )
         buckets.verified = kept
         buckets.quarantined.extend(dropped)
 
     planner_output = ""
     if AgentRole.REVISION_PLANNER.value in state.planned_phases:
         planner = _safe_execute(
-            state, AgentRole.REVISION_PLANNER, build_revision_plan_prompt(ctx, buckets.verified),
-            selection, config, on_progress=on_progress,
+            state,
+            AgentRole.REVISION_PLANNER,
+            build_revision_plan_prompt(ctx, buckets.verified),
+            selection,
+            config,
+            on_progress=on_progress,
         )
         planner_output = planner.output if planner else ""
 
@@ -1040,12 +1091,11 @@ def _run_paper_review(
 def _fill_quality_signals(
     signals: QualitySignals, buckets: VerificationBuckets, planner_output: str
 ) -> None:
+    """Populate ``signals`` from the verification buckets and planner output for the gate."""
     signals.verified = len(buckets.verified)
     signals.needs_check = len(buckets.needs_check)
     signals.refuted = len(buckets.refuted)
-    all_findings = (
-        buckets.verified + buckets.needs_check + buckets.refuted + buckets.quarantined
-    )
+    all_findings = buckets.verified + buckets.needs_check + buckets.refuted + buckets.quarantined
     for finding in all_findings:
         if finding.evidence_type == "manuscript":
             signals.manuscript_findings += 1
@@ -1074,8 +1124,7 @@ def run_multi_agent(
     # Decide which phases are allowed *before* building or executing any phase.
     decision = classify_multiagent_intent(user_prompt)
     is_paper_review = (
-        cfg.multiagent_flow == "paper_review"
-        or decision.intent == MultiAgentIntent.PAPER_REVIEW
+        cfg.multiagent_flow == "paper_review" or decision.intent == MultiAgentIntent.PAPER_REVIEW
     )
     if is_paper_review:
         planned_phases = _paper_review_phases()
@@ -1102,7 +1151,7 @@ def run_multi_agent(
             f"requires_write={state.requires_write} phases={planned_phases}"
         )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
         run_log.start()
@@ -1281,7 +1330,7 @@ def run_multi_agent(
     finally:
         if on_progress:
             on_progress("")
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         if run_log and run_log.run_dir is not None:
             run_log.write_json_artifact(
                 "multiagent_trace.json",

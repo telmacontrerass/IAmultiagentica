@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMError
@@ -27,6 +28,24 @@ class ChatCancelled(RuntimeError):
 
 
 def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a chat turn and return the assistant's answer plus run metadata.
+
+    Resolves the selected model and (optional) project/researcher context,
+    augments the prompt with attachments and project sources, then dispatches to
+    either the single-agent or multi-agent (paper-review) flow. The session is
+    persisted before and after the turn, and cancellation/LLM errors are mapped
+    to structured error payloads.
+
+    Args:
+        state: The UI server state (runtime config, chat cancellation registry).
+        payload: Chat request payload (message, model, project/researcher ids,
+            attachments, mode and flags).
+
+    Returns:
+        ``{"ok": True, "answer": ..., ...}`` on success, otherwise an
+        ``{"ok": False, "error": ...}`` payload (with ``cancelled`` set when the
+        user stopped the request).
+    """
     prompt = str(payload.get("message") or "").strip()
     if not prompt:
         return {"ok": False, "error": "Type a message before sending."}
@@ -87,6 +106,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     progress_events: list[str] = []
 
     def record_progress(message: str) -> None:
+        """Append a progress message, raising :class:`ChatCancelled` if stopped."""
         if cancellation_event and cancellation_event.is_set():
             raise ChatCancelled()
         message = str(message or "").strip()
@@ -123,6 +143,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             prompt_for_model,
             force_model=model,
             tool_mode_override=None,
+            backend=state.runtime.backend,
             backend_url=state.runtime.backend_url,
             pull=False,
         )
@@ -142,9 +163,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         if multi_agent:
             # Only forward review_context on the paper-review path so the generic
             # multi-agent call signature stays unchanged for everything else.
-            review_kwargs = (
-                {"review_context": review_context} if review_context is not None else {}
-            )
+            review_kwargs = {"review_context": review_context} if review_context is not None else {}
             answer = _call_with_optional_progress(
                 run_multi_agent,
                 prompt_for_model,
@@ -213,7 +232,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "session_id": session_id,
             "process_log": progress_events,
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {
             "ok": False,
             "error": str(exc),
@@ -226,6 +245,12 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def chat_cancel(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Request cancellation of an in-flight chat by its ``request_id``.
+
+    Returns:
+        ``{"ok": True, "cancelled": bool}`` (false when no such request), or an
+        error dict when the request id is missing.
+    """
     request_id = str(payload.get("request_id") or "").strip()
     if not request_id:
         return {"ok": False, "error": "Missing request id."}
@@ -233,6 +258,20 @@ def chat_cancel(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Resolve session/model settings for a new chat without running it.
+
+    Validates the selected model and project, derives the effective mode
+    (single vs. multi-agent / paper-review) and returns the initial UI state
+    (session id, model display data, security profile, warnings).
+
+    Args:
+        state: The UI server state (runtime config).
+        payload: Chat-start request payload.
+
+    Returns:
+        ``{"ok": True, ...}`` describing the prepared session, or an error dict
+        when the model is missing/uninstalled or the project no longer exists.
+    """
     model_result = resolve_selected_installed_model(state, payload)
     if not model_result["ok"]:
         return model_result
@@ -261,6 +300,7 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "",
             force_model=model,
             tool_mode_override=None,
+            backend=state.runtime.backend,
             backend_url=state.runtime.backend_url,
             pull=False,
         )
@@ -268,7 +308,7 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         display_name = selection.display_name
         tool_mode = selection.tool_mode
         warnings = list(selection.warnings)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         display_name = model
         tool_mode = state.runtime.tool_mode
         warnings = [str(exc)]
@@ -303,6 +343,20 @@ def save_pending_session(
     token_usage: dict[str, Any] | None = None,
     project_id: str | None = None,
 ) -> None:
+    """Persist the session with the user turn appended, before the answer exists.
+
+    Ensures the latest user prompt is recorded so an interrupted run still leaves
+    a recoverable session. Any persistence error is swallowed.
+
+    Args:
+        session_id: Identifier of the session to save.
+        messages: Existing conversation history, if any.
+        prompt: The user's prompt for this turn.
+        model_tag: Model tag to record on the session.
+        cwd: Working directory associated with the session.
+        token_usage: Optional token-usage snapshot to persist.
+        project_id: Optional owning project id.
+    """
     try:
         history = list(messages or [])
         if not history or history[-1].get("role") != "user" or history[-1].get("content") != prompt:
@@ -315,7 +369,7 @@ def save_pending_session(
             token_usage=token_usage,
             project_id=project_id,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         return
 
 
@@ -330,6 +384,20 @@ def save_completed_session(
     token_usage: dict[str, Any] | None = None,
     project_id: str | None = None,
 ) -> None:
+    """Persist the session with both the user turn and assistant answer appended.
+
+    Any persistence error is swallowed so a failed save never breaks the reply.
+
+    Args:
+        session_id: Identifier of the session to save.
+        messages: Existing conversation history, if any.
+        prompt: The user's prompt for this turn.
+        answer: The assistant's answer to record.
+        model_tag: Model tag to record on the session.
+        cwd: Working directory associated with the session.
+        token_usage: Optional token-usage snapshot to persist.
+        project_id: Optional owning project id.
+    """
     try:
         history = list(messages or [])
         if not history or history[-1].get("role") != "user" or history[-1].get("content") != prompt:
@@ -343,11 +411,17 @@ def save_completed_session(
             token_usage=token_usage,
             project_id=project_id,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         return
 
 
-def _agent_dependencies():
+def _agent_dependencies() -> tuple[Callable[..., Any], ...]:
+    """Return the agent helpers from the server facade, imported lazily.
+
+    Returns:
+        A tuple of ``(prepare_session, build_agent_config, run_agent,
+        run_multi_agent)`` callables.
+    """
     from ci2lab.ui import server as facade
 
     return (
@@ -359,6 +433,11 @@ def _agent_dependencies():
 
 
 def _call_with_optional_progress(func: Any, *args: Any, on_progress: Any, **kwargs: Any) -> Any:
+    """Call ``func`` with an ``on_progress`` callback, retrying without it.
+
+    Some runners do not accept ``on_progress``; if the call raises a ``TypeError``
+    naming that parameter, it is retried without progress reporting.
+    """
     try:
         return func(*args, on_progress=on_progress, **kwargs)
     except TypeError as exc:
@@ -368,6 +447,20 @@ def _call_with_optional_progress(func: Any, *args: Any, on_progress: Any, **kwar
 
 
 def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate the payload's selected model and confirm it is installed.
+
+    Resolves the model tag and display name from the catalog (falling back to the
+    raw value), then checks the Ollama backend for installation.
+
+    Args:
+        state: The UI server state used to query installed models.
+        payload: Request payload carrying the selected ``"model"``.
+
+    Returns:
+        ``{"ok": True, "model": ..., "display_name": ...}`` when installed,
+        otherwise an ``{"ok": False, "error": ...}`` payload (with token-usage
+        defaults) describing the problem.
+    """
     selected = str(payload.get("model") or "").strip()
     if not selected:
         return {

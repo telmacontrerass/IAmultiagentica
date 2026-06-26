@@ -26,24 +26,67 @@ XML_PARAM_RE = re.compile(
 
 
 def normalize_dsml(text: str) -> str:
+    """Rewrite DeepSeek DSML tool-call markup into standard XML tool tags.
+
+    DeepSeek models wrap tool calls in ``<｜DSML｜tool_calls>`` style tags using
+    full-width pipe characters. This converts those tags (and the matching
+    ``invoke``/``parameter`` tags) into the plain ``<tool_call>``/``<invoke>``/
+    ``<parameter>`` forms the XML parser understands. The text is returned
+    unchanged when it contains no ``DSML`` marker.
+
+    Args:
+        text: Raw model output that may contain DSML markup.
+
+    Returns:
+        The text with any DSML tool-call tags normalized to standard XML.
+    """
     if "DSML" not in text:
         return text
     t = text
-    t = re.sub(rf"<\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*tool_calls\s*>", "<tool_call>", t, flags=re.I)
-    t = re.sub(rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*tool_calls\s*>", "</tool_call>", t, flags=re.I)
-    t = re.sub(rf"<\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*invoke\s+name=", "<invoke name=", t, flags=re.I)
-    t = re.sub(rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*invoke\s*>", "</invoke>", t, flags=re.I)
+    t = re.sub(
+        rf"<\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*tool_calls\s*>", "<tool_call>", t, flags=re.I
+    )
+    t = re.sub(
+        rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*tool_calls\s*>",
+        "</tool_call>",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(
+        rf"<\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*invoke\s+name=", "<invoke name=", t, flags=re.I
+    )
+    t = re.sub(
+        rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*invoke\s*>", "</invoke>", t, flags=re.I
+    )
     t = re.sub(
         rf'<\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*parameter\s+name=(["\'][^"\']+["\'])[^>]*>',
         r"<parameter name=\1>",
         t,
         flags=re.I,
     )
-    t = re.sub(rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*parameter\s*>", "</parameter>", t, flags=re.I)
+    t = re.sub(
+        rf"<\s*/\s*{DSML_PIPES}\s*DSML\s*{DSML_PIPES}\s*parameter\s*>",
+        "</parameter>",
+        t,
+        flags=re.I,
+    )
     return t
 
 
 def invoke_to_call(tool_name: str, body: str) -> ToolCall | None:
+    """Build a tool call from an ``<invoke>`` tool name and its inner body.
+
+    Extracts ``<parameter name=...>`` values from ``body`` as the call's
+    arguments.
+
+    Args:
+        tool_name: Tool name from the ``<invoke name=...>`` tag.
+        body: Inner XML of the ``<invoke>`` element holding ``<parameter>`` tags.
+
+    Returns:
+        A :class:`ToolCall` for a known tool with at least one parameter,
+        otherwise ``None``.
+    """
     tool_name = map_name(tool_name)
     if not is_known_tool(tool_name):
         return None
@@ -56,6 +99,18 @@ def invoke_to_call(tool_name: str, body: str) -> ToolCall | None:
 
 
 def parse_xml_blocks(text: str) -> list[ToolCall]:
+    """Parse tool calls from XML/DSML ``<invoke>`` markup in model text.
+
+    Normalizes DSML markup first, then extracts ``<invoke>`` elements both inside
+    ``<tool_call>``/``<function_call>`` wrappers and at the top level, skipping
+    duplicates discovered by the second pass.
+
+    Args:
+        text: Model output that may contain XML or DSML tool-call markup.
+
+    Returns:
+        The tool calls parsed from the markup, in discovery order.
+    """
     text = normalize_dsml(text)
     calls: list[ToolCall] = []
     for block in XML_TOOL_CALL_RE.finditer(text):
@@ -69,4 +124,3 @@ def parse_xml_blocks(text: str) -> list[ToolCall]:
         if call and call not in calls:
             calls.append(call)
     return calls
-

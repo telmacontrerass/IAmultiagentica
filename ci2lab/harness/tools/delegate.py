@@ -24,9 +24,10 @@ from ci2lab.harness.types import AgentConfig
 
 # Top-level agent is depth 0; a single level of delegation (depth 1) is allowed.
 # Deeper nesting tends to amplify weak-model errors and burn rounds, so stop there.
-MAX_DELEGATION_DEPTH = 1
+MAX_DELEGATION_DEPTH: int = 1
 
-_MODE_ROLES = {
+#: Maps a user-facing delegate ``mode`` to the subagent role used to run it.
+_MODE_ROLES: dict[str, str] = {
     "explore": "RESEARCHER",
     "research": "RESEARCHER",
     "read": "RESEARCHER",
@@ -37,7 +38,28 @@ _MODE_ROLES = {
 
 
 def run_delegation(config: AgentConfig, task: str, mode: str = "explore") -> str:
-    """Run `task` in an isolated subagent and return only its final result."""
+    """Run ``task`` in an isolated subagent and return only its final result.
+
+    A fresh subagent is built with role-restricted tools (chosen from ``mode``)
+    and its own message history, so heavy exploration or a contained edit step
+    runs off to the side without bloating the parent context. Delegation is
+    refused when already inside a delegated subagent (depth guard) or when no
+    model selection is bound to the run.
+
+    Args:
+        config: Active agent configuration; provides the model selection,
+            current delegation depth and token-usage state.
+        task: Self-contained description of the subtask to run. Leading and
+            trailing whitespace is stripped; an empty task is rejected.
+        mode: Delegation mode. ``"explore"``/``"research"``/``"read"`` map to a
+            read-only researcher role; ``"edit"``/``"code"``/``"implement"`` map
+            to an implementation role that may write files.
+
+    Returns:
+        The subagent's final output on success, or a human-readable ``Error:``
+        string describing why delegation could not run or did not complete. The
+        function never raises for these expected failures.
+    """
     task = (task or "").strip()
     if not task:
         return "Error: delegate requires a non-empty `task` describing the subtask."

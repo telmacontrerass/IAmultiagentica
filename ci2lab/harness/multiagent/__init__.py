@@ -17,11 +17,11 @@ from ci2lab.harness.multiagent.state import (
 )
 
 __all__ = [
+    "ROLE_SPECS",
     "AgentRole",
     "MultiAgentIntent",
     "MultiAgentIntentDecision",
     "MultiAgentRun",
-    "ROLE_SPECS",
     "RoleSpec",
     "SubAgentResult",
     "classify_multiagent_intent",

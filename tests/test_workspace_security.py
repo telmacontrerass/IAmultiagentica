@@ -10,7 +10,6 @@ import pytest
 
 from ci2lab.harness import default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
-
 from ci2lab.harness.security.policy import (
     POLICY_REPEAT_MESSAGE,
     is_policy_error,
@@ -96,9 +95,7 @@ def test_run_bash_inside_workspace_executes(workspace: Path):
     run.assert_called_once()
 
 
-def test_execute_tool_bash_blocked_without_confirmation(
-    workspace: Path, outside_secret: Path
-):
+def test_execute_tool_bash_blocked_without_confirmation(workspace: Path, outside_secret: Path):
     config = AgentConfig(cwd=str(workspace), auto_confirm=True)
     call = ToolCall(
         name="bash",
@@ -193,9 +190,7 @@ def test_run_agent_does_not_repeat_blocked_read_file(tmp_path: Path, outside_sec
     with patch("ci2lab.harness.query.loop.LLMClient") as mock_client_cls:
         client = mock_client_cls.return_value
         client.chat.side_effect = [read_call, read_call, final]
-        with patch(
-            "ci2lab.harness.query.loop.execute_tool", wraps=execute_tool
-        ) as execute_mock:
+        with patch("ci2lab.harness.query.loop.execute_tool", wraps=execute_tool) as execute_mock:
             result = run_agent("read the external secret", selection, config=config)
 
     assert execute_mock.call_count == 1

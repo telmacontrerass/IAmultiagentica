@@ -7,6 +7,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from types import ModuleType
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -17,7 +18,14 @@ STATIC_PACKAGE = "ci2lab.ui.static"
 
 
 class UIState:
+    """Shared, thread-safe state for the local UI server.
+
+    Holds the runtime configuration plus the locks and registries that track
+    in-flight model pull/delete background tasks and cancellable chat requests.
+    """
+
     def __init__(self, *, runtime: Ci2LabConfig) -> None:
+        """Initialise the state with a runtime config and empty task registries."""
         self.runtime = runtime
         self.pull_lock = threading.Lock()
         self.pull_tasks: dict[str, dict[str, Any]] = {}
@@ -28,12 +36,23 @@ class UIState:
 
     @property
     def ollama_base_url(self) -> str:
+        """Return the resolved Ollama base URL for the configured backend."""
         return ollama_base_url(self.runtime.backend_url)
 
     def list_installed_models(self) -> tuple[list[dict[str, Any]], str | None]:
+        """Return ``(installed_models, error)`` from the Ollama backend."""
         return fetch_installed_models(self.runtime.backend_url)
 
     def begin_chat_request(self, request_id: str) -> threading.Event | None:
+        """Register a cancellable chat request and return its cancel event.
+
+        Args:
+            request_id: Client-supplied request identifier.
+
+        Returns:
+            A fresh :class:`threading.Event` to signal cancellation, or ``None``
+            when ``request_id`` is blank.
+        """
         request_id = request_id.strip()
         if not request_id:
             return None
@@ -43,6 +62,11 @@ class UIState:
             return event
 
     def cancel_chat_request(self, request_id: str) -> bool:
+        """Signal cancellation for a registered chat request.
+
+        Returns:
+            ``True`` if a matching in-flight request was signalled, else ``False``.
+        """
         request_id = request_id.strip()
         if not request_id:
             return False
@@ -54,6 +78,7 @@ class UIState:
             return True
 
     def finish_chat_request(self, request_id: str) -> None:
+        """Drop a chat request's cancellation event once the request completes."""
         request_id = request_id.strip()
         if not request_id:
             return
@@ -88,11 +113,24 @@ def run_ui(
     return 0
 
 
-def handler_factory(state: UIState):
+def handler_factory(state: UIState) -> type[BaseHTTPRequestHandler]:
+    """Build a request-handler class bound to a shared :class:`UIState`.
+
+    Args:
+        state: The server state the returned handler reads and mutates.
+
+    Returns:
+        A :class:`BaseHTTPRequestHandler` subclass routing the UI's REST API and
+        static assets.
+    """
+
     class UIRequestHandler(BaseHTTPRequestHandler):
+        """Per-request handler routing the UI's HTTP API and static files."""
+
         server_version = "Ci2LabUI/0.1"
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
+            """Route GET requests for static assets and read-only API endpoints."""
             facade = _facade()
             parsed = urlparse(self.path)
             if parsed.path == "/":
@@ -120,7 +158,11 @@ def handler_factory(state: UIState):
                 researcher_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 profile = facade._get_researcher(researcher_id)
                 self._json(
-                    {"ok": bool(profile), "researcher": profile, "error": None if profile else "Researcher not found."},
+                    {
+                        "ok": bool(profile),
+                        "researcher": profile,
+                        "error": None if profile else "Researcher not found.",
+                    },
                     status=200 if profile else 404,
                 )
                 return
@@ -137,7 +179,11 @@ def handler_factory(state: UIState):
                 project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 project = facade._get_project(project_id)
                 self._json(
-                    {"ok": bool(project), "project": project, "error": None if project else "Project not found."},
+                    {
+                        "ok": bool(project),
+                        "project": project,
+                        "error": None if project else "Project not found.",
+                    },
                     status=200 if project else 404,
                 )
                 return
@@ -164,7 +210,8 @@ def handler_factory(state: UIState):
                 return
             self._json({"error": "Not found"}, status=404)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
+            """Route POST requests for chat, model tasks, uploads and creation."""
             facade = _facade()
             parsed = urlparse(self.path)
             payload = self._read_json()
@@ -210,7 +257,8 @@ def handler_factory(state: UIState):
                 return
             self._json({"error": "Not found"}, status=404)
 
-        def do_PATCH(self) -> None:  # noqa: N802
+        def do_PATCH(self) -> None:
+            """Route PATCH requests that update researchers and project metadata."""
             facade = _facade()
             parsed = urlparse(self.path)
             payload = self._read_json()
@@ -226,7 +274,8 @@ def handler_factory(state: UIState):
                 return
             self._json({"error": "Not found"}, status=404)
 
-        def do_DELETE(self) -> None:  # noqa: N802
+        def do_DELETE(self) -> None:
+            """Route DELETE requests for sessions, researchers and project data."""
             facade = _facade()
             parsed = urlparse(self.path)
             if parsed.path.startswith("/api/sessions/"):
@@ -255,9 +304,11 @@ def handler_factory(state: UIState):
             self._json({"error": "Not found"}, status=404)
 
         def log_message(self, fmt: str, *args: Any) -> None:
+            """Suppress the default per-request stderr access logging."""
             return
 
         def _read_json(self) -> dict[str, Any]:
+            """Read and parse a JSON request body, returning ``{}`` on any error."""
             length = int(self.headers.get("Content-Length", "0"))
             if length <= 0:
                 return {}
@@ -269,6 +320,10 @@ def handler_factory(state: UIState):
             return loaded if isinstance(loaded, dict) else {}
 
         def _json(self, payload: dict[str, Any], *, status: int = 200) -> None:
+            """Serialise ``payload`` as a JSON response with the given status.
+
+            Broken-pipe and connection errors (client went away) are ignored.
+            """
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             try:
                 self.send_response(status)
@@ -281,6 +336,7 @@ def handler_factory(state: UIState):
                 return
 
         def _serve_static(self, name: str) -> None:
+            """Serve a packaged static asset, guarding against path traversal."""
             clean = name.strip("/").replace("\\", "/")
             if not clean:
                 clean = "index.html"
@@ -305,6 +361,7 @@ def handler_factory(state: UIState):
 
 
 def content_type_for(name: str) -> str:
+    """Return the HTTP ``Content-Type`` for a static asset file name."""
     if name.endswith(".html"):
         return "text/html; charset=utf-8"
     if name.endswith(".css"):
@@ -316,7 +373,8 @@ def content_type_for(name: str) -> str:
     return "application/octet-stream"
 
 
-def _facade():
+def _facade() -> ModuleType:
+    """Return the ``ci2lab.ui.server`` facade module (imported lazily)."""
     from ci2lab.ui import server as facade
 
     return facade

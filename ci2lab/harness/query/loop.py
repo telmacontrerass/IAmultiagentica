@@ -21,10 +21,11 @@ import json
 import logging
 import re
 import uuid
-from pathlib import Path
 from collections import deque
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from ci2lab.console import console
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
@@ -33,8 +34,8 @@ from ci2lab.harness.edit_followup import EditSignature, process_edit_round
 from ci2lab.harness.hooks import emit_hook_event
 from ci2lab.harness.llm_client import LLMClient
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMError, classify_request_error
-from ci2lab.harness.messages import append_assistant_turn, append_tool_results
 from ci2lab.harness.mcp.session import close_mcp_manager
+from ci2lab.harness.messages import append_assistant_turn, append_tool_results
 from ci2lab.harness.parsing import (
     looks_like_unparsed_tool_attempt,
     resolve_tool_calls,
@@ -42,6 +43,36 @@ from ci2lab.harness.parsing import (
 )
 from ci2lab.harness.parsing_parts.common import map_name
 from ci2lab.harness.prompts import build_system_prompt
+from ci2lab.harness.query.llm_io import call_llm
+from ci2lab.harness.query.nudges import (
+    summarize_args,
+    web_fetch_failed_nudge,
+)
+from ci2lab.harness.query.retry_governor import (
+    ERROR_CLASS_LIMIT,
+    MAX_SAME_CALL,
+    error_class_key,
+)
+from ci2lab.harness.query.session_hooks import maybe_save_session
+from ci2lab.harness.query.verifier import VERIFIER_MAX_PER_TURN, verify_completion
+from ci2lab.harness.run_logger import RunLogger
+from ci2lab.harness.security.policy import (
+    POLICY_NUDGE_MESSAGE,
+    POLICY_REPEAT_MESSAGE,
+    is_policy_error,
+    tool_call_signature,
+)
+from ci2lab.harness.session import delete_session, is_delete_session_request, load_session
+from ci2lab.harness.token_usage import format_token_usage_line
+from ci2lab.harness.tools.capabilities import (
+    FILE_WRITE_TOOLS,
+    MUTATING_TOOLS,
+    READ_ONLY_TOOLS,
+)
+from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
+from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
+from ci2lab.harness.tools.todo import open_todos, todo_read
+from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.harness.vision import (
     analyze_image,
     build_vision_content,
@@ -56,36 +87,6 @@ from ci2lab.harness.vision_exercise import (
     enrich_turn_content_with_exercise_skill,
     is_exercise_review_request,
 )
-from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
-from ci2lab.harness.query.llm_io import call_llm
-from ci2lab.harness.query.nudges import (
-    summarize_args,
-    web_fetch_failed_nudge,
-)
-from ci2lab.harness.query.retry_governor import (
-    ERROR_CLASS_LIMIT,
-    MAX_SAME_CALL,
-    error_class_key,
-)
-from ci2lab.harness.query.session_hooks import maybe_save_session
-from ci2lab.harness.query.verifier import VERIFIER_MAX_PER_TURN, verify_completion
-from ci2lab.harness.run_logger import RunLogger
-from ci2lab.harness.session import delete_session, is_delete_session_request, load_session
-from ci2lab.harness.security.policy import (
-    POLICY_NUDGE_MESSAGE,
-    POLICY_REPEAT_MESSAGE,
-    is_policy_error,
-    tool_call_signature,
-)
-from ci2lab.harness.tools.capabilities import (
-    FILE_WRITE_TOOLS,
-    MUTATING_TOOLS,
-    READ_ONLY_TOOLS,
-)
-from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
-from ci2lab.harness.tools.todo import open_todos, todo_read
-from ci2lab.harness.token_usage import format_token_usage_line
-from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +124,7 @@ _LOOP_GIVE_UP = (
     "path, or a format issue)."
 )
 _ERROR_STREAK_GIVE_UP = (
-    "I could not complete the task: the tools failed repeatedly. Last error: "
-    "{error}"
+    "I could not complete the task: the tools failed repeatedly. Last error: {error}"
 )
 _GOVERNOR_REPEAT_MESSAGE = (
     "This exact call already failed repeatedly. Do not run it again. Use a "
@@ -140,8 +140,7 @@ _STOP_TOOLS_NUDGE = (
     "some sources are missing."
 )
 _WEB_CAPABILITY_NUDGE = (
-    "You can use `web_search` for live info without a URL, then `web_fetch` for "
-    "selected sources."
+    "You can use `web_search` for live info without a URL, then `web_fetch` for selected sources."
 )
 _UNPARSED_FENCED_HINT = (
     "Your previous tool call was not executed. Use a fenced block with the tool "
@@ -253,6 +252,7 @@ def _read_signature(call: ToolCall) -> str:
 
 
 def _status(label: str) -> None:
+    """Print a dim, italic progress label to the console."""
     console.print(f"[dim italic cyan]{label}[/dim italic cyan]")
 
 
@@ -260,6 +260,14 @@ def _emit_progress(
     label: str,
     on_progress: Callable[[str], None] | None,
 ) -> None:
+    """Report a progress label via the callback, or print it if none is given.
+
+    Args:
+        label: The progress description to surface; an empty label is a no-op
+            when there is no callback.
+        on_progress: Optional sink for progress updates; when present it receives
+            ``label`` verbatim and the console fallback is skipped.
+    """
     if on_progress:
         on_progress(label)
         return
@@ -269,6 +277,11 @@ def _emit_progress(
 
 
 def _raise_if_cancelled(cfg: AgentConfig) -> None:
+    """Raise ``LLMCancelledError`` if the config's cancellation event is set.
+
+    Raises:
+        LLMCancelledError: When ``cfg.cancellation_event`` exists and is set.
+    """
     event = cfg.cancellation_event
     if event is not None and event.is_set():
         raise LLMCancelledError()
@@ -279,10 +292,7 @@ def _initial_progress_label(user_prompt: str) -> str:
     text = user_prompt.lower()
     if any(word in text for word in ("pdf", "docx", "document", "documento")):
         return "Preparing to read the document..."
-    if any(
-        word in text
-        for word in ("web", "internet", "latest", "current", "hoy", "actual")
-    ):
+    if any(word in text for word in ("web", "internet", "latest", "current", "hoy", "actual")):
         return "Checking what information is needed..."
     if re.search(
         r"\b(code|codigo|código|test|prueba|bug|fix|implement|implementa|"
@@ -307,6 +317,7 @@ def _model_progress_label(user_prompt: str, round_num: int) -> str:
 
 
 def _path_looks_like_pdf(path: Any) -> bool:
+    """True when ``path`` stringifies to a name ending in ``.pdf``."""
     return str(path or "").lower().endswith(".pdf")
 
 
@@ -365,6 +376,19 @@ def _todo_plan_snippet(cwd: str) -> str:
 
 
 def _current_request_anchor(user_prompt: str, cwd: str) -> dict[str, Any]:
+    """Build the synthetic user anchor that restates the request each round.
+
+    Re-injecting the prompt (plus a compact task-plan snippet when one exists)
+    after tool results keeps a long multi-step task oriented toward the current
+    request instead of drifting back to an earlier one.
+
+    Args:
+        user_prompt: The user's current request to restate.
+        cwd: Workspace directory used to read the current todo plan snippet.
+
+    Returns:
+        An anchor message dict (``_anchor`` flagged) ready to append to history.
+    """
     plan = _todo_plan_snippet(cwd)
     plan_block = f"\n\n{plan}" if plan else ""
     return {
@@ -391,6 +415,8 @@ def _role_anchor_message(role_anchor: str) -> dict[str, Any]:
             "available and do not switch responsibilities."
         ),
     }
+
+
 def _strip_anchors(history: list[dict[str, Any]]) -> None:
     """Remove every anchor message from history, in place.
 
@@ -428,7 +454,7 @@ _TEMPORAL_RE = re.compile(
 def _enrich_query(query: str) -> str:
     """Append today's date to queries that use relative time words."""
     if _TEMPORAL_RE.search(query):
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         return f"{query} (date: {today})"
     return query
 
@@ -502,16 +528,166 @@ def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[Tool
     return prefixed + calls
 
 
+def _prepare_turn_content(
+    user_prompt: str,
+    selection: ModelSelection,
+    cfg: AgentConfig,
+    messages: list[dict[str, Any]] | None,
+) -> tuple[str | list[Any], int, bool, int]:
+    """Resolve the user turn's content, expanding any attached images.
+
+    PDFs are rendered to per-page PNGs, then one of two paths is taken:
+
+    * **A — vision-capable main model:** images are attached directly as base64
+      ``image_url`` blocks so the model sees the pixels natively.
+    * **B — text-only main model:** the fallback ``vision_model`` describes each
+      image once and the descriptions are injected into the prompt text.
+
+    When images are present, the exercise-review skill may also be enabled,
+    which mutates ``cfg.skill_allowed_tools`` in place.
+
+    Args:
+        user_prompt: The raw user request for this turn.
+        selection: The active model selection (used for the vision-capability
+            check and the fallback backend URL).
+        cfg: The agent configuration; ``image_paths``, ``vision_enabled``,
+            ``vision_model`` and ``skill_allowed_tools`` are read/updated.
+        messages: Prior history, scanned to count images already in context.
+
+    Returns:
+        A tuple ``(user_content, vision_image_count, vision_has_pdf,
+        history_image_count)`` where ``user_content`` is either the plain prompt
+        string or a multimodal content list.
+    """
+    user_content: str | list[Any] = user_prompt
+    vision_image_count = 0
+    vision_has_pdf = False
+    history_image_count = count_vision_images_in_messages(messages or [])
+    if not (cfg.image_paths and cfg.vision_enabled):
+        return user_content, vision_image_count, vision_has_pdf, history_image_count
+
+    import shutil
+
+    # Exercise review needs to read small printed/handwritten digits
+    # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
+    render_dpi = 170 if is_exercise_review_request(user_prompt) else 96
+    expanded_paths: list[str] = []
+    pdf_temp_dirs: list[Path] = []
+    for raw_path in cfg.image_paths:
+        if Path(raw_path).suffix.lower() == ".pdf":
+            if not pdf_needs_vision(raw_path):
+                logger.info("Skipping vision for text PDF (use read_document): %s", raw_path)
+                continue
+            vision_has_pdf = True
+            try:
+                pages, tmp = pdf_to_images(raw_path, dpi=render_dpi)
+                expanded_paths.extend(str(p) for p in pages)
+                pdf_temp_dirs.append(tmp)
+            except Exception as exc:
+                logger.warning("PDF conversion failed for %s: %s", raw_path, exc)
+        else:
+            expanded_paths.append(raw_path)
+
+    vision_image_count = len(expanded_paths)
+
+    try:
+        if is_vision_model(selection.ollama_tag):
+            # Path A: native multimodal message.
+            user_content = build_vision_content(user_prompt, expanded_paths)
+        else:
+            # Path B: describe each image via the fallback vision model.
+            vision_tag = (cfg.vision_model or "").strip()
+            if vision_tag:
+                image_timeout = compute_llm_timeout(1, has_pdf=vision_has_pdf)
+                vl_prompt = (
+                    EXERCISE_TRANSCRIPTION_PROMPT
+                    if is_exercise_review_request(user_prompt)
+                    else None
+                )
+                enriched = user_prompt
+                for img in expanded_paths:
+                    desc = analyze_image(
+                        img,
+                        selection.backend_url,
+                        vision_tag,
+                        timeout=image_timeout,
+                        prompt=vl_prompt,
+                    )
+                    # Surface the raw transcription so a missing/garbled page is
+                    # obvious instead of silently lost.
+                    name = Path(img).name
+                    console.print(
+                        f"[dim]── Vision transcription: {name} "
+                        f"({len(desc)} chars, model {vision_tag}) ──[/dim]"
+                    )
+                    console.print(f"[dim]{desc}[/dim]")
+                    enriched = f"{enriched}\n\n[Image: {name}]\n{desc}"
+                user_content = enriched
+            # If no vision_model is configured, pass user_prompt unchanged.
+    finally:
+        # Temp PNGs from PDF rendering are no longer needed once
+        # build_vision_content has base64-encoded them.
+        for temp_dir in pdf_temp_dirs:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    user_content, skill_allowed = enrich_turn_content_with_exercise_skill(
+        user_prompt,
+        user_content,
+        cfg.cwd,
+    )
+    if skill_allowed is not None:
+        cfg.skill_allowed_tools = skill_allowed
+
+    return user_content, vision_image_count, vision_has_pdf, history_image_count
+
+
 def run_agent(
     user_prompt: str,
     selection: ModelSelection,
     *,
-    hardware: HardwareProfile | None = None,  # noqa: ARG001
+    hardware: HardwareProfile | None = None,
     config: AgentConfig | None = None,
     messages: list[dict[str, Any]] | None = None,
     on_round: Callable[[int, str], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> str:
+    """Run the ReAct query loop and return the agent's final answer.
+
+    This is the public entry point for one agent turn. Each round trims history
+    to the model's context window, calls the LLM (optionally streaming), parses
+    any tool calls (native, XML, or fenced), executes them, and appends their
+    results — repeating until the model produces a tool-free answer or the round
+    budget (``cfg.max_rounds``) is exhausted. Along the way a small set of
+    general, task-agnostic mechanisms keep multi-step work on track: loop and
+    error-streak detection, a retry governor, workspace-policy handling, edit
+    follow-ups, todo-plan continuation, an optional completion verifier, and a
+    handful of recovery nudges.
+
+    Args:
+        user_prompt: The user's request for this turn.
+        selection: The resolved model selection (backend, tag, context length,
+            tool support, tool mode).
+        hardware: Optional hardware profile; accepted for call-site symmetry.
+        config: The agent configuration; a default rooted at ``"."`` is created
+            when omitted. ``selection`` is bound onto it so subagent-spawning
+            tools reuse the same model.
+        messages: Optional prior conversation history to continue from; when
+            ``None`` a fresh system+user history is started.
+        on_round: Optional callback invoked as ``(round_num, content)`` after
+            each LLM response.
+        on_progress: Optional sink for user-facing progress labels; falls back to
+            console output when omitted.
+
+    Returns:
+        The final answer text. May be a wrap-up/handoff message when the round
+        limit is reached, or a give-up message when the loop or retry governor
+        stops on repeated failures.
+
+    Raises:
+        LLMCancelledError: If the configured cancellation event is set.
+        LLMError: If the LLM call fails with a classified error.
+        KeyboardInterrupt: Propagated after marking the run interrupted.
+    """
     cfg = config or AgentConfig(cwd=".")
     # Bind the model so tools that spawn a subagent (e.g. `delegate`) reuse it.
     cfg.selection = selection
@@ -532,102 +708,15 @@ def run_agent(
 
     system = build_system_prompt(selection, cfg.cwd)
 
-    # Vision pre-processing (adapted from Odysseus chat_handler.preprocess_message).
-    # PDFs are rendered to per-page PNGs first, then two paths:
-    #   A — main model is vision-capable: attach images directly as base64 image_url
-    #       blocks so the model sees the pixels natively.
-    #   B — main model is text-only: call the fallback vision_model once per image,
-    #       inject the description into the prompt text.
-    _user_content: str | list = user_prompt
-    _vision_image_count = 0
-    _vision_has_pdf = False
-    _history_image_count = count_vision_images_in_messages(messages or [])
-    if cfg.image_paths and cfg.vision_enabled:
-        import shutil as _shutil
-
-        # Expand PDF paths into per-page PNG files.
-        # Exercise review needs to read small printed/handwritten digits
-        # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
-        _is_exercise_review = is_exercise_review_request(user_prompt)
-        _render_dpi = 170 if _is_exercise_review else 96
-        _expanded_paths: list[str] = []
-        _pdf_temp_dirs: list[Path] = []
-        for _raw_path in cfg.image_paths:
-            if Path(_raw_path).suffix.lower() == ".pdf":
-                if not pdf_needs_vision(_raw_path):
-                    logger.info(
-                        "Skipping vision for text PDF (use read_document): %s",
-                        _raw_path,
-                    )
-                    continue
-                _vision_has_pdf = True
-                try:
-                    _pages, _tmp = pdf_to_images(_raw_path, dpi=_render_dpi)
-                    _expanded_paths.extend(str(p) for p in _pages)
-                    _pdf_temp_dirs.append(_tmp)
-                except Exception as _exc:
-                    logger.warning("PDF conversion failed for %s: %s", _raw_path, _exc)
-            else:
-                _expanded_paths.append(_raw_path)
-
-        _vision_image_count = len(_expanded_paths)
-
-        try:
-            if is_vision_model(selection.ollama_tag):
-                # Path A: native multimodal message
-                _user_content = build_vision_content(user_prompt, _expanded_paths)
-            else:
-                # Path B: describe each image via the fallback vision model
-                _vision_tag = (cfg.vision_model or "").strip()
-                if _vision_tag:
-                    _image_timeout = compute_llm_timeout(1, has_pdf=_vision_has_pdf)
-                    _vl_prompt = (
-                        EXERCISE_TRANSCRIPTION_PROMPT
-                        if is_exercise_review_request(user_prompt)
-                        else None
-                    )
-                    _enriched = user_prompt
-                    for _img in _expanded_paths:
-                        _desc = analyze_image(
-                            _img,
-                            selection.backend_url,
-                            _vision_tag,
-                            timeout=_image_timeout,
-                            prompt=_vl_prompt,
-                        )
-                        # Surface the raw transcription so the user can see what
-                        # the vision model actually produced per page — makes a
-                        # missing/garbled page obvious instead of silently lost.
-                        _name = Path(_img).name
-                        console.print(
-                            f"[dim]── Vision transcription: {_name} "
-                            f"({len(_desc)} chars, model {_vision_tag}) ──[/dim]"
-                        )
-                        console.print(f"[dim]{_desc}[/dim]")
-                        _enriched = (
-                            f"{_enriched}\n\n[Image: {_name}]\n{_desc}"
-                        )
-                    _user_content = _enriched
-                # if no vision_model configured, pass user_prompt unchanged
-        finally:
-            # Temp PNG files from PDF rendering are no longer needed once
-            # build_vision_content has base64-encoded them.
-            for _td in _pdf_temp_dirs:
-                _shutil.rmtree(_td, ignore_errors=True)
-
-    if cfg.image_paths and cfg.vision_enabled:
-        _user_content, _skill_allowed = enrich_turn_content_with_exercise_skill(
-            user_prompt,
-            _user_content,
-            cfg.cwd,
-        )
-        if _skill_allowed is not None:
-            cfg.skill_allowed_tools = _skill_allowed
+    (
+        _user_content,
+        _vision_image_count,
+        _vision_has_pdf,
+        _history_image_count,
+    ) = _prepare_turn_content(user_prompt, selection, cfg, messages)
 
     _timeout_images = _vision_image_count or _history_image_count
-    _timeout_has_pdf = _vision_has_pdf or (
-        _history_image_count > 0 and _vision_image_count == 0
-    )
+    _timeout_has_pdf = _vision_has_pdf or (_history_image_count > 0 and _vision_image_count == 0)
     client = LLMClient(
         selection,
         timeout=compute_llm_timeout(_timeout_images, has_pdf=_timeout_has_pdf),
@@ -658,9 +747,9 @@ def run_agent(
     recent_sigs: deque[str] = deque(maxlen=6)
     policy_blocked_sigs: set[str] = set()
     # Retry governor: bound repeated failures (Phase 2).
-    failed_call_sigs: dict[str, int] = {}      # exact call -> error count
-    error_class_counts: dict[str, int] = {}    # tool::error_class -> count
-    error_class_last: dict[str, str] = {}      # tool::error_class -> last error text
+    failed_call_sigs: dict[str, int] = {}  # exact call -> error count
+    error_class_counts: dict[str, int] = {}  # tool::error_class -> count
+    error_class_last: dict[str, str] = {}  # tool::error_class -> last error text
     policy_nudge_sent = False
     stuck_rounds = 0
     stuck_nudges = 0
@@ -701,8 +790,8 @@ def run_agent(
     status = "success"
     log_error: str | None = None
     # Real token counters (filled in by Ollama after each LLM call).
-    tokens_prompt_last: int = 0       # prompt_tokens from the last round
-    tokens_prompt_peak: int = 0       # max prompt_tokens seen in any round
+    tokens_prompt_last: int = 0  # prompt_tokens from the last round
+    tokens_prompt_peak: int = 0  # max prompt_tokens seen in any round
     tokens_completion_total: int = 0  # accumulated completion_tokens (real output)
 
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
@@ -744,11 +833,7 @@ def run_agent(
                 else None
             )
             web_search_available = bool(
-                tools
-                and any(
-                    (t.get("function") or {}).get("name") == "web_search"
-                    for t in tools
-                )
+                tools and any((t.get("function") or {}).get("name") == "web_search" for t in tools)
             )
             # Avoid leaking provisional model prose before tool execution.
             # When tools are available, parse first and only render final text.
@@ -772,10 +857,8 @@ def run_agent(
                 log_error = exc.user_message
                 maybe_save_session(cfg, history, selection)
                 raise
-            except Exception as exc:  # noqa: BLE001
-                err = classify_request_error(
-                    exc, model=selection.ollama_tag, url=client.chat_url
-                )
+            except Exception as exc:
+                err = classify_request_error(exc, model=selection.ollama_tag, url=client.chat_url)
                 console.print(f"[red]{err.user_message}[/red]")
                 status = "llm_error"
                 log_error = err.user_message
@@ -900,10 +983,12 @@ def run_agent(
                             for s in open_steps
                         )
                         append_assistant_turn(history, final_text or content)
-                        history.append({
-                            "role": "user",
-                            "content": _TODO_INCOMPLETE_NUDGE.format(open_steps=steps_text),
-                        })
+                        history.append(
+                            {
+                                "role": "user",
+                                "content": _TODO_INCOMPLETE_NUDGE.format(open_steps=steps_text),
+                            }
+                        )
                         maybe_save_session(cfg, history, selection)
                         continue
                 # The user asked to create/change something, the model is about to
@@ -925,9 +1010,7 @@ def run_agent(
                         "model to apply it.[/yellow]"
                     )
                     append_assistant_turn(history, final_text or content)
-                    history.append(
-                        {"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE}
-                    )
+                    history.append({"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
                 # Opt-in completion verification: the agent is about to report
@@ -945,19 +1028,19 @@ def run_agent(
                     verifier_runs += 1
                     _print_model_step(content, already_streamed=streamed_this_round)
                     _emit_progress("Verifying the result against the request...", on_progress)
-                    issues = verify_completion(
-                        cfg, selection, user_prompt, effectful_actions
-                    )
+                    issues = verify_completion(cfg, selection, user_prompt, effectful_actions)
                     if issues:
                         console.print(
                             "[yellow]Verifier found gaps; asking the model to "
                             "fix them before finishing.[/yellow]"
                         )
                         append_assistant_turn(history, final_text or content)
-                        history.append({
-                            "role": "user",
-                            "content": _VERIFIER_FIX_MESSAGE.format(issues=issues),
-                        })
+                        history.append(
+                            {
+                                "role": "user",
+                                "content": _VERIFIER_FIX_MESSAGE.format(issues=issues),
+                            }
+                        )
                         # The fix work invalidates this snapshot; rebuild it from
                         # the next round's real actions.
                         effectful_actions = []
@@ -974,8 +1057,7 @@ def run_agent(
                 break
 
             sig = "|".join(
-                f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}"
-                for c in calls
+                f"{c.name}:{hashlib.md5(str(c.arguments).encode()).hexdigest()[:8]}" for c in calls
             )
             if any(c.name == "web_search" for c in calls):
                 web_search_used = True
@@ -999,10 +1081,12 @@ def run_agent(
                     maybe_save_session(cfg, history, selection)
                     break
                 console.print("[yellow]Loop detected; asking for a final answer.[/yellow]")
-                history.append({
-                    "role": "user",
-                    "content": _LOOP_BREAK_NUDGE.format(user_prompt=user_prompt),
-                })
+                history.append(
+                    {
+                        "role": "user",
+                        "content": _LOOP_BREAK_NUDGE.format(user_prompt=user_prompt),
+                    }
+                )
                 continue
 
             append_assistant_turn(history, content, calls)
@@ -1018,7 +1102,7 @@ def run_agent(
             for call in calls:
                 _raise_if_cancelled(cfg)
                 console.print(f"[cyan]▶ {call.name}[/cyan] {summarize_args(call.arguments)}")
-                started_at = datetime.now(timezone.utc)
+                started_at = datetime.now(UTC)
                 psig = tool_call_signature(call)
                 for warning in emit_hook_event(
                     cfg,
@@ -1119,7 +1203,7 @@ def run_agent(
                         eclass = error_class_key(call, result)
                         error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
                         error_class_last[eclass] = result.content
-                ended_at = datetime.now(timezone.utc)
+                ended_at = datetime.now(UTC)
                 if run_log:
                     run_log.record_tool_call(
                         round_num=round_num,
@@ -1152,13 +1236,9 @@ def run_agent(
             else:
                 error_streak = 0
             if error_streak >= 4:
-                console.print(
-                    "[yellow]Tools failed repeatedly; stopping.[/yellow]"
-                )
+                console.print("[yellow]Tools failed repeatedly; stopping.[/yellow]")
                 status = "stuck"
-                last_error = next(
-                    (r.content for r in reversed(results) if r.is_error), ""
-                )
+                last_error = next((r.content for r in reversed(results) if r.is_error), "")
                 final_text = _ERROR_STREAK_GIVE_UP.format(error=last_error[:300])
                 console.print(final_text)
                 append_assistant_turn(history, final_text)
@@ -1170,9 +1250,7 @@ def run_agent(
             # blocker summary instead of burning the round budget.
             worst_class = max(error_class_counts, key=error_class_counts.get, default=None)
             if worst_class and error_class_counts[worst_class] >= ERROR_CLASS_LIMIT:
-                console.print(
-                    "[yellow]Repeated tool failure of the same kind; stopping.[/yellow]"
-                )
+                console.print("[yellow]Repeated tool failure of the same kind; stopping.[/yellow]")
                 status = "stuck"
                 tool_name, _, eclass = worst_class.partition("::")
                 final_text = _GOVERNOR_GIVE_UP.format(

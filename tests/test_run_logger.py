@@ -1,8 +1,7 @@
 import json
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
@@ -59,9 +58,7 @@ def test_subagent_run_logger_preserves_parent_permission_session(tmp_path):
     selection = default_selection("test:1b")
     bind_active_session("parent-session")
     try:
-        subagent_cfg = AgentConfig(
-            cwd=str(tmp_path), runs_dir=str(runs), delegation_depth=1
-        )
+        subagent_cfg = AgentConfig(cwd=str(tmp_path), runs_dir=str(runs), delegation_depth=1)
         logger = RunLogger(
             runs_dir=runs,
             selection=selection,
@@ -123,11 +120,11 @@ def test_tool_call_logged_to_jsonl(tmp_path):
         user_prompt="x",
     )
     run_dir = logger.start()
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     call = ToolCall(name="ls", arguments={"path": "."}, call_id="c1")
     result = execute_tool(call, agent)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     logger.record_tool_call(
         round_num=1,
         call=call,
@@ -183,10 +180,12 @@ def test_run_agent_writes_run_artifacts(tmp_path):
 
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "ls", "arguments": '{"path": "."}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            }
+        ],
     )
     final = LLMResponse(content="There are files.", tool_calls=[])
 

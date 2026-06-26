@@ -12,16 +12,15 @@ from ci2lab.harness.types import AgentConfig, ToolCall
 from ci2lab.security.audit import (
     AuditPersistContext,
     clear_audit_log,
-    get_audit_persist_context,
     resolve_audit_path_within_workspace,
     set_audit_persist_context,
 )
 from ci2lab.security.comparison import run_comparison
 from ci2lab.security.opencode_permissions import (
     OpenCodePermissionConfig,
-    evaluate_opencode_tool,
     _match_best_rule,
     _resolve_tool_permission,
+    evaluate_opencode_tool,
 )
 
 
@@ -145,11 +144,7 @@ def test_audit_jsonl_in_run_subdir(workspace: Path, outside_secret: Path):
 
 def test_comparator_external_path_difference(workspace: Path, outside_secret: Path):
     rows = run_comparison(workspace, outside_path=outside_secret)
-    ci2lab = next(
-        r
-        for r in rows
-        if r.case_id == "read_external_allow" and r.engine == "ci2lab"
-    )
+    ci2lab = next(r for r in rows if r.case_id == "read_external_allow" and r.engine == "ci2lab")
     opencode = next(
         r
         for r in rows
@@ -164,17 +159,19 @@ def test_comparator_external_path_difference(workspace: Path, outside_secret: Pa
 
 def test_yes_approves_ask_not_deny(workspace: Path):
     rows = run_comparison(workspace)
-    yes_ask = next(r for r in rows if r.case_id == "yes_approves_ask" and r.engine == "opencode_experimental")
-    yes_deny = next(r for r in rows if r.case_id == "yes_not_deny" and r.engine == "opencode_experimental")
+    yes_ask = next(
+        r for r in rows if r.case_id == "yes_approves_ask" and r.engine == "opencode_experimental"
+    )
+    yes_deny = next(
+        r for r in rows if r.case_id == "yes_not_deny" and r.engine == "opencode_experimental"
+    )
     assert yes_ask.actual_decision == "allow"
     assert yes_deny.actual_decision == "deny"
     assert yes_ask.passed and yes_deny.passed
 
 
 def test_specific_rule_beats_wildcard():
-    rules = OpenCodePermissionConfig(
-        rules={"bash": {"*": "allow", "rm *": "deny"}}
-    )
+    rules = OpenCodePermissionConfig(rules={"bash": {"*": "allow", "rm *": "deny"}})
     decision = evaluate_opencode_tool(
         "bash",
         {"command": "rm foo"},
@@ -234,9 +231,7 @@ def test_dotenv_matches_opencode_secret_rule(workspace: Path):
         ("subdir/nested.txt", "subdir\\nested.txt"),
     ],
 )
-def test_windows_unix_path_matching_same(
-    workspace: Path, unix_path: str, win_path: str
-):
+def test_windows_unix_path_matching_same(workspace: Path, unix_path: str, win_path: str):
     rules = OpenCodePermissionConfig(
         rules={
             "read": {"secret.txt": "deny", "*": "allow"},

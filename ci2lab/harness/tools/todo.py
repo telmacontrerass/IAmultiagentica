@@ -13,17 +13,30 @@ from typing import Any
 
 from ci2lab.harness.tools.paths import resolve_path
 
-TODO_REL_PATH = ".ci2lab/todos.json"
-_VALID_STATUSES = frozenset({"pending", "in_progress", "completed", "cancelled"})
+TODO_REL_PATH: str = ".ci2lab/todos.json"
+_VALID_STATUSES: frozenset[str] = frozenset({"pending", "in_progress", "completed", "cancelled"})
 # Statuses that still need work; a plan with any of these is not finished.
-_OPEN_STATUSES = frozenset({"pending", "in_progress"})
+_OPEN_STATUSES: frozenset[str] = frozenset({"pending", "in_progress"})
 
 
 def _todo_path(cwd: str) -> Path:
+    """Resolve the workspace-relative todo file path within ``cwd``."""
     return resolve_path(TODO_REL_PATH, cwd)
 
 
 def _normalize_todo(item: dict[str, Any], index: int) -> dict[str, str]:
+    """Validate and normalize one raw todo item into ``{id, content, status}``.
+
+    Args:
+        item: The raw todo mapping supplied by the caller.
+        index: 0-based position, used to derive a default id.
+
+    Returns:
+        A normalized todo with string ``id``, ``content`` and ``status``.
+
+    Raises:
+        ValueError: If ``content`` is empty or ``status`` is not recognised.
+    """
     todo_id = str(item.get("id") or index + 1)
     content = str(item.get("content") or "").strip()
     if not content:
@@ -38,7 +51,16 @@ def _normalize_todo(item: dict[str, Any], index: int) -> dict[str, str]:
 
 
 def todo_write(cwd: str, todos: list[dict[str, Any]]) -> str:
-    """Replace the workspace todo list with the given items."""
+    """Replace the workspace todo list with the given items.
+
+    Args:
+        cwd: The current working directory used to resolve the todo file.
+        todos: The new list of todo items; each is normalized and validated.
+
+    Returns:
+        A summary of the saved list plus a next-step hint, or an
+        ``"Error: ..."`` message if the input is empty or invalid.
+    """
     if not isinstance(todos, list):
         return "Error: todos must be a list of objects"
     if not todos:
@@ -67,7 +89,7 @@ def _next_step_hint(todos: list[dict[str, str]]) -> str:
     """One actionable line telling the model what to do right after planning."""
     in_progress = [t for t in todos if t["status"] == "in_progress"]
     pending = [t for t in todos if t["status"] == "pending"]
-    nxt = (in_progress + pending)
+    nxt = in_progress + pending
     if not nxt:
         return (
             "All steps are completed. Do NOT call todo_write again. "
@@ -78,7 +100,7 @@ def _next_step_hint(todos: list[dict[str, str]]) -> str:
     remaining = len(in_progress) + len(pending)
     return (
         f"Plan saved — this is not progress on the task by itself. Now DO the "
-        f"next step yourself, immediately, in this same turn: \"{step}\". "
+        f'next step yourself, immediately, in this same turn: "{step}". '
         f"{remaining} step(s) remain. Keep working step by step, marking each "
         f"completed as a tool result confirms it; do not stop or hand back to "
         f"the user until every step is done or you hit a real blocker."
