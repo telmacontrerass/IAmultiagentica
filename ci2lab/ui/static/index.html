@@ -37,6 +37,16 @@
           </div>
         </div>
 
+        <div class="researcher-switch">
+          <label for="researcherSelect">Researcher</label>
+          <select id="researcherSelect" aria-label="Researcher">
+            <option value="">No researcher</option>
+          </select>
+          <button id="openResearcherProfile" class="researcher-profile-link" type="button">
+            <span aria-hidden="true">⚙</span> Profile
+          </button>
+        </div>
+
         <nav class="side-nav" aria-label="Main navigation">
           <button class="nav-button active" type="button" data-view="homeView">
             <span>⌂</span> Home
@@ -199,6 +209,41 @@
                 <label for="projectNameInput">Project name</label>
                 <input id="projectNameInput" maxlength="100" placeholder="For example: Machine learning" />
               </div>
+              <div>
+                <label for="projectKindInput">Project type</label>
+                <select id="projectKindInput">
+                  <option value="knowledge">Knowledge space</option>
+                  <option value="paper_review">Paper to peer-review</option>
+                </select>
+              </div>
+              <div id="paperMetaFields" class="paper-meta-fields" hidden>
+                <p class="meta">Upload the manuscript as a source after creating the project. The peer review is grounded only in that manuscript.</p>
+                <div>
+                  <label for="paperTitleInput">Paper title (optional)</label>
+                  <input id="paperTitleInput" maxlength="300" placeholder="Manuscript title" />
+                </div>
+                <div>
+                  <label for="paperFieldInput">Field</label>
+                  <input id="paperFieldInput" maxlength="200" placeholder="e.g. multi-agent systems, software engineering" />
+                </div>
+                <div>
+                  <label for="paperVenueInput">Target journal / conference</label>
+                  <input id="paperVenueInput" maxlength="200" placeholder="e.g. IEEE TSE" />
+                </div>
+                <div>
+                  <label for="paperTypeInput">Article type</label>
+                  <select id="paperTypeInput">
+                    <option value="">(choose)</option>
+                    <option value="research article">Research article</option>
+                    <option value="methodology paper">Methodology paper</option>
+                    <option value="systems paper">Systems paper</option>
+                    <option value="review / survey">Review / survey</option>
+                    <option value="case study">Case study</option>
+                    <option value="short communication">Short communication</option>
+                    <option value="position paper">Position paper</option>
+                  </select>
+                </div>
+              </div>
               <div class="project-create-actions">
                 <button id="cancelProjectCreate" class="ghost-button" type="button">Cancel</button>
                 <button type="submit">Create project</button>
@@ -263,6 +308,60 @@
           </section>
         </section>
 
+        <section id="researcherView" class="view" hidden>
+          <section class="projects-page">
+            <div class="projects-page-heading">
+              <div>
+                <p class="eyebrow">Researcher profile</p>
+                <h2 id="researcherFormTitle">My profile</h2>
+                <p>Your details and reviewing preferences. The peer review adapts its field and style to this — it never invents content.</p>
+              </div>
+            </div>
+
+            <form id="researcherForm" class="project-detail-section researcher-form">
+              <div class="researcher-form-grid">
+                <div>
+                  <label for="researcherName">Name</label>
+                  <input id="researcherName" maxlength="100" placeholder="e.g. Dr Ada Lovelace" />
+                </div>
+                <div>
+                  <label for="researcherEmail">Email (optional)</label>
+                  <input id="researcherEmail" maxlength="200" placeholder="name@university.edu" />
+                </div>
+                <div>
+                  <label for="researcherFields">Field(s) of expertise</label>
+                  <input id="researcherFields" placeholder="multi-agent systems, software engineering" />
+                </div>
+                <div>
+                  <label for="researcherVenues">Default target venues</label>
+                  <input id="researcherVenues" placeholder="IEEE TSE, NeurIPS" />
+                </div>
+                <div class="researcher-form-wide">
+                  <label for="researcherStyle">Reviewing style</label>
+                  <textarea id="researcherStyle" rows="3" placeholder="e.g. tough on methodology, reviewer-2 oriented, values reproducibility"></textarea>
+                </div>
+                <div class="researcher-form-wide">
+                  <label for="researcherGuidelines">Preferred reporting guidelines / checklists</label>
+                  <input id="researcherGuidelines" placeholder="CONSORT, PRISMA, STROBE" />
+                </div>
+              </div>
+
+              <div class="researcher-lens-prefs">
+                <p class="eyebrow">Emphasis by review lens</p>
+                <div class="researcher-lens-grid" id="researcherLensGrid"></div>
+              </div>
+
+              <div class="researcher-form-actions">
+                <button type="button" id="deleteResearcher" class="danger-button">Delete</button>
+                <div class="researcher-form-actions-right">
+                  <button type="button" id="cancelResearcher" class="ghost-button">Cancel</button>
+                  <button type="submit" class="primary-action">Save profile</button>
+                </div>
+              </div>
+            </form>
+          </section>
+        </section>
+
         <section id="chatView" class="view" hidden>
           <section class="chat-panel">
             <div class="chat-topbar">
@@ -295,14 +394,6 @@
                 title="Start a clean conversation without mixing it with the current session"
               >
                 New
-              </button>
-              <button
-                id="chatRefreshButton"
-                class="strip-button"
-                type="button"
-                title="Refresh Ollama status, hardware, models and sessions"
-              >
-                Refresh
               </button>
               <button
                 id="toolsDrawerToggle"

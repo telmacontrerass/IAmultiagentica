@@ -31,6 +31,7 @@ class MultiAgentIntent(str, Enum):
     READ_ONLY_ANSWER = "read_only_answer"
     DOCUMENT_TRANSFORM = "document_transform"
     DOCUMENT_SUMMARY = "document_summary"
+    PAPER_REVIEW = "paper_review"
     UNKNOWN = "unknown"
 
 
@@ -56,6 +57,38 @@ _RESEARCH_REVIEW_FLOW = ["researcher", "reviewer"]
 # stalls on it.
 _RESEARCH_WRITE_FLOW = ["researcher", "coder", "reviewer"]
 
+# Scientific peer-review pipeline. Read-only, grounded lenses run in sequence and
+# the revision planner assembles only verified findings. Resolved and executed by
+# the orchestrator's paper-review branch, not the generic phase loop.
+_PAPER_REVIEW_FLOW = [
+    "intake_reviewer",
+    "scope_reviewer",
+    "novelty_reviewer",
+    "methodology_reviewer",
+    "field_expert_reviewer",
+    "adversarial_reviewer",
+    "format_reviewer",
+    "groundedness_verifier",
+    "revision_planner",
+]
+
+
+# Scientific peer-review requests. Checked first so a paper review is not
+# mis-routed to the generic code review-only / read-only plans.
+_PAPER_REVIEW_MARKERS = (
+    "peer review",
+    "peer-review",
+    "review this paper",
+    "review the paper",
+    "review this manuscript",
+    "review the manuscript",
+    "review my paper",
+    "review my manuscript",
+    "referee report",
+    "review for a journal",
+    "review for the journal",
+    "review for a conference",
+)
 
 # Explicit negative constraints / review-only blockers. These must beat any
 # positive implementation wording (e.g. "implement ... but do not edit").
@@ -147,16 +180,26 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     Priority order (highest first):
 
-    1. ``review_only``  - explicit "do not implement / edit" style blockers.
-    2. ``document_summary`` - read/summarize a PDF or document.
-    3. ``document_transform`` - convert/export a document.
-    4. ``read_only_answer`` - explanation/analysis without file changes.
-    5. ``code_change`` - implement/fix/modify code.
-    6. ``unknown`` - safe read-mostly fallback.
+    1. ``paper_review`` - scientific peer review of a manuscript.
+    2. ``review_only``  - explicit "do not implement / edit" style blockers.
+    3. ``document_summary`` - read/summarize a PDF or document.
+    4. ``document_transform`` - convert/export a document.
+    5. ``read_only_answer`` - explanation/analysis without file changes.
+    6. ``code_change`` - implement/fix/modify code.
+    7. ``unknown`` - safe read-mostly fallback.
 
     Explicit negative constraints always beat positive implementation words.
     """
     text = (user_prompt or "").lower()
+
+    if _contains_any(text, _PAPER_REVIEW_MARKERS):
+        return MultiAgentIntentDecision(
+            intent=MultiAgentIntent.PAPER_REVIEW,
+            requires_write=False,
+            allowed_phases=list(_PAPER_REVIEW_FLOW),
+            reason="Prompt asks for a scientific peer review of a manuscript.",
+            confidence="high",
+        )
 
     if _contains_any(text, _REVIEW_ONLY_MARKERS):
         return MultiAgentIntentDecision(

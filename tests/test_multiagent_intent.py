@@ -93,6 +93,24 @@ def test_code_change_includes_coder():
     ]
 
 
+def test_peer_review_routes_to_paper_review_flow():
+    decision = classify_multiagent_intent("Please peer review this manuscript for a journal.")
+    assert decision.intent is MultiAgentIntent.PAPER_REVIEW
+    assert decision.requires_write is False
+    assert decision.allowed_phases[0] == "intake_reviewer"
+    assert "revision_planner" in decision.allowed_phases
+    # The code flow's coder/validator must never appear in a review.
+    assert "coder" not in decision.allowed_phases
+    assert "validator" not in decision.allowed_phases
+
+
+def test_peer_review_beats_generic_review_only_markers():
+    # "review the paper" must route to the grounded paper flow, not the code
+    # review-only flow, even though it contains the word "review".
+    decision = classify_multiagent_intent("Review the paper and do not implement anything.")
+    assert decision.intent is MultiAgentIntent.PAPER_REVIEW
+
+
 def test_unknown_fallback_is_low_confidence_read_mostly():
     decision = classify_multiagent_intent("Tell me about the repo.")
     assert decision.intent is MultiAgentIntent.UNKNOWN

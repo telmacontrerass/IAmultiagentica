@@ -8,18 +8,58 @@ explicitly enabled by a later CLI/config integration.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from typing import Callable
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.multiagent.intent import classify_multiagent_intent
+from ci2lab.harness.multiagent.grounding import (
+    Finding,
+    VerificationBuckets,
+    extract_fetch_attempts,
+    parse_findings,
+    regroundable,
+    verify_findings,
+)
+from ci2lab.harness.multiagent.context_budget import (
+    assess_feasibility,
+    chunk_anchored_text,
+    infeasible_message,
+    plan_chunks,
+    recommended_context_for,
+    total_manuscript_chars,
+)
+from ci2lab.harness.multiagent.intent import MultiAgentIntent, classify_multiagent_intent
+from ci2lab.harness.multiagent.paper_review import (
+    REFUSAL_MESSAGE,
+    QualitySignals,
+    ReviewContext,
+    assemble_report,
+    assess_quality,
+    build_groundedness_prompt,
+    build_intake_prompt,
+    build_lens_prompt,
+    build_reground_prompt,
+    build_revision_plan_prompt,
+    quality_abort_message,
+)
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
 from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.types import AgentConfig
+
+# Ordered read-only lenses that run after intake in the grounded paper review.
+_PAPER_REVIEW_LENSES = (
+    AgentRole.SCOPE_REVIEWER,
+    AgentRole.NOVELTY_REVIEWER,
+    AgentRole.METHODOLOGY_REVIEWER,
+    AgentRole.FIELD_EXPERT_REVIEWER,
+    AgentRole.ADVERSARIAL_REVIEWER,
+    AgentRole.FORMAT_REVIEWER,
+)
 
 _VALIDATION_FAILURE_MARKERS = (
     "failed",
@@ -126,6 +166,15 @@ def _role_progress_label(role: AgentRole, attempt: int) -> str:
         AgentRole.VALIDATOR: "Checking the result",
         AgentRole.REVIEWER: "Reviewing the outcome",
         AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+        AgentRole.INTAKE_REVIEWER: "Diagnosing the manuscript",
+        AgentRole.SCOPE_REVIEWER: "Checking journal fit",
+        AgentRole.NOVELTY_REVIEWER: "Auditing the contribution",
+        AgentRole.METHODOLOGY_REVIEWER: "Reviewing the methodology",
+        AgentRole.FIELD_EXPERT_REVIEWER: "Applying field expectations",
+        AgentRole.ADVERSARIAL_REVIEWER: "Mounting Reviewer 2 objections",
+        AgentRole.FORMAT_REVIEWER: "Checking submission readiness",
+        AgentRole.GROUNDEDNESS_VERIFIER: "Verifying findings against the paper",
+        AgentRole.REVISION_PLANNER: "Assembling the review report",
     }
     label = labels[role]
     return f"{label} (attempt {attempt})" if attempt > 1 else label
@@ -654,6 +703,298 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     )
 
 
+# --- grounded paper-review flow -------------------------------------------
+
+
+def _paper_review_phases() -> list[str]:
+    return (
+        [AgentRole.INTAKE_REVIEWER.value]
+        + [role.value for role in _PAPER_REVIEW_LENSES]
+        + [AgentRole.GROUNDEDNESS_VERIFIER.value, AgentRole.REVISION_PLANNER.value]
+    )
+
+
+def _safe_execute(
+    state: MultiAgentRun,
+    role: AgentRole,
+    task_prompt: str,
+    selection: ModelSelection,
+    config: AgentConfig,
+    *,
+    attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
+) -> SubAgentResult | None:
+    """Run a review phase resiliently: one failing lens never aborts the review."""
+    try:
+        result = _execute_phase(
+            state, role, task_prompt, selection, config,
+            attempt=attempt, on_progress=on_progress,
+        )
+    except Exception:  # noqa: BLE001 — a failed lens is recorded, not fatal here.
+        state.failed_phase = None
+        state.error = None
+        return state.results[-1] if state.results else None
+    if subagent_blocked(result):
+        state.failed_phase = None
+        state.error = None
+    return result
+
+
+def _absorb_fetched(ctx: ReviewContext, result: SubAgentResult | None) -> None:
+    """Merge a subagent's web_fetch attempts into the review context.
+
+    A prior successful fetch of a URL is never downgraded by a later failure.
+    """
+    if result is None or not result.tool_calls:
+        return
+    for url, info in extract_fetch_attempts(result.tool_calls).items():
+        existing = ctx.fetch_attempts.get(url)
+        if existing and existing.get("ok"):
+            continue
+        ctx.fetch_attempts[url] = info
+
+
+def _verify_lens_output(
+    state: MultiAgentRun,
+    role: AgentRole,
+    result: SubAgentResult | None,
+    ctx: ReviewContext,
+    selection: ModelSelection,
+    config: AgentConfig,
+    on_progress: Callable[[str], None] | None,
+    *,
+    chunk_text: str | None = None,
+    part_label: str = "",
+) -> VerificationBuckets:
+    """Parse, deterministically verify, and re-ground a lens's findings once."""
+    if result is None or not result.output:
+        return VerificationBuckets()
+    findings = parse_findings(result.output, default_lens=role.value)
+    buckets = verify_findings(findings, ctx.index, ctx.fetch_attempts)
+
+    to_reground = regroundable(buckets.quarantined)
+    if to_reground:
+        regrounded = _safe_execute(
+            state, role,
+            build_reground_prompt(ctx, to_reground, chunk_text=chunk_text, part_label=part_label),
+            selection, config, attempt=2, on_progress=on_progress,
+        )
+        _absorb_fetched(ctx, regrounded)
+        if regrounded is not None and regrounded.output:
+            rg_findings = parse_findings(regrounded.output, default_lens=role.value)
+            rg = verify_findings(rg_findings, ctx.index, ctx.fetch_attempts)
+            reground_ids = {id(item) for item in to_reground}
+            buckets.quarantined = [q for q in buckets.quarantined if id(q) not in reground_ids]
+            buckets.merge(rg)
+    return buckets
+
+
+def _loads_any(text: str) -> list:
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("verdicts", "results", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return [data]
+    return []
+
+
+def _parse_support_verdicts(text: str) -> dict[int, bool]:
+    text = text or ""
+    objects: list = []
+    for block in re.findall(r"```(?:json)?\s*(.*?)```", text, re.S):
+        objects.extend(_loads_any(block.strip()))
+    if not objects:
+        objects.extend(_loads_any(text.strip()))
+    if not objects:
+        start, end = text.find("["), text.rfind("]")
+        if start != -1 and end > start:
+            objects.extend(_loads_any(text[start : end + 1]))
+
+    verdicts: dict[int, bool] = {}
+    for obj in objects:
+        if not isinstance(obj, dict) or "index" not in obj:
+            continue
+        try:
+            index = int(obj["index"])
+        except (TypeError, ValueError):
+            continue
+        supported = obj.get("supported")
+        if isinstance(supported, bool):
+            verdicts[index] = supported
+        else:
+            verdicts[index] = str(supported).strip().lower() in {"true", "yes", "y", "1", "supported"}
+    return verdicts
+
+
+def _groundedness_pass(
+    state: MultiAgentRun,
+    verified: list[Finding],
+    ctx: ReviewContext,
+    selection: ModelSelection,
+    config: AgentConfig,
+    on_progress: Callable[[str], None] | None,
+) -> tuple[list[Finding], list[Finding]]:
+    """Adversarial check that each verified quote actually supports its claim."""
+    if not verified:
+        return verified, []
+    result = _safe_execute(
+        state, AgentRole.GROUNDEDNESS_VERIFIER,
+        build_groundedness_prompt(ctx, verified), selection, config,
+        on_progress=on_progress,
+    )
+    if result is None or not result.output:
+        # No verdict available: keep the code-verified findings (quotes do exist).
+        return verified, []
+    verdicts = _parse_support_verdicts(result.output)
+    if not verdicts:
+        return verified, []
+    kept: list[Finding] = []
+    dropped: list[Finding] = []
+    for index, finding in enumerate(verified):
+        if verdicts.get(index, True):
+            kept.append(finding)
+        else:
+            finding.status = "quarantined"
+            finding.reason = "Groundedness verifier: the quote does not support the claim."
+            dropped.append(finding)
+    return kept, dropped
+
+
+def _run_paper_review(
+    state: MultiAgentRun,
+    selection: ModelSelection,
+    config: AgentConfig,
+    ctx: ReviewContext | None,
+    *,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """Run the grounded peer-review pipeline and return the assembled report."""
+    if ctx is None or not ctx.readable:
+        return REFUSAL_MESSAGE
+
+    model_name = selection.display_name or selection.ollama_tag
+    context_length = int(getattr(selection, "context_length", 0) or 0)
+
+    # Pre-flight: never grab more than the model can take. If even one usable
+    # chunk will not fit (or the paper would need too many chunks), abort and
+    # recommend a larger-context model instead of producing an incomplete review.
+    feasibility = assess_feasibility(ctx.index, context_length)
+    if not feasibility.feasible:
+        return infeasible_message(
+            feasibility, model_name=model_name, context_length=context_length
+        )
+
+    chunks = plan_chunks(ctx.index.segments, feasibility.budget_chars)
+    n_chunks = len(chunks)
+
+    def part_label(i: int) -> str:
+        return f"part {i + 1} of {n_chunks}" if n_chunks > 1 else ""
+
+    buckets = VerificationBuckets()
+    signals = QualitySignals()
+
+    # Intake mapped over chunks; its diagnoses become shared context for lenses.
+    intake_outputs: list[str] = []
+    for i, chunk in enumerate(chunks):
+        chunk_text = chunk_anchored_text(chunk)
+        intake = _safe_execute(
+            state, AgentRole.INTAKE_REVIEWER,
+            build_intake_prompt(ctx, chunk_text=chunk_text, part_label=part_label(i)),
+            selection, config, on_progress=on_progress,
+        )
+        signals.note_lens_run(intake.output if intake else "")
+        _absorb_fetched(ctx, intake)
+        buckets.merge(
+            _verify_lens_output(
+                state, AgentRole.INTAKE_REVIEWER, intake, ctx, selection, config,
+                on_progress, chunk_text=chunk_text, part_label=part_label(i),
+            )
+        )
+        if intake and intake.output:
+            intake_outputs.append(intake.output)
+    intake_text = "\n\n".join(intake_outputs)
+
+    # Each lens mapped over each chunk: the window is never exceeded, and the
+    # findings are merged across the whole manuscript (the divide-conquer phase).
+    for role in _PAPER_REVIEW_LENSES:
+        if role.value not in state.planned_phases:
+            continue
+        for i, chunk in enumerate(chunks):
+            chunk_text = chunk_anchored_text(chunk)
+            result = _safe_execute(
+                state, role,
+                build_lens_prompt(role.value, ctx, intake_text, chunk_text=chunk_text, part_label=part_label(i)),
+                selection, config, on_progress=on_progress,
+            )
+            signals.note_lens_run(result.output if result else "")
+            _absorb_fetched(ctx, result)
+            buckets.merge(
+                _verify_lens_output(
+                    state, role, result, ctx, selection, config, on_progress,
+                    chunk_text=chunk_text, part_label=part_label(i),
+                )
+            )
+
+    if AgentRole.GROUNDEDNESS_VERIFIER.value in state.planned_phases:
+        kept, dropped = _groundedness_pass(state, buckets.verified, ctx, selection, config, on_progress)
+        buckets.verified = kept
+        buckets.quarantined.extend(dropped)
+
+    planner_output = ""
+    if AgentRole.REVISION_PLANNER.value in state.planned_phases:
+        planner = _safe_execute(
+            state, AgentRole.REVISION_PLANNER, build_revision_plan_prompt(ctx, buckets.verified),
+            selection, config, on_progress=on_progress,
+        )
+        planner_output = planner.output if planner else ""
+
+    # Post-flight quality gate: if the model could not actually do the job, drop
+    # the result and recommend a stronger model rather than ship rubbish.
+    _fill_quality_signals(signals, buckets, planner_output)
+    ok, reason = assess_quality(signals)
+    if not ok:
+        return quality_abort_message(
+            reason,
+            model_name=model_name,
+            recommended_min_context=recommended_context_for(total_manuscript_chars(ctx.index)),
+        )
+
+    return assemble_report(
+        ctx,
+        planner_output,
+        buckets.verified,
+        buckets.needs_check,
+        buckets.refuted,
+        buckets.quarantined,
+    )
+
+
+def _fill_quality_signals(
+    signals: QualitySignals, buckets: VerificationBuckets, planner_output: str
+) -> None:
+    signals.verified = len(buckets.verified)
+    signals.needs_check = len(buckets.needs_check)
+    signals.refuted = len(buckets.refuted)
+    all_findings = (
+        buckets.verified + buckets.needs_check + buckets.refuted + buckets.quarantined
+    )
+    for finding in all_findings:
+        if finding.evidence_type == "manuscript":
+            signals.manuscript_findings += 1
+    for finding in buckets.quarantined:
+        if finding.evidence_type == "manuscript" and "not found" in finding.reason.lower():
+            signals.hallucinated += 1
+    signals.planner_report_ok = bool(
+        planner_output and "PAPER REVIEW REPORT" in planner_output.upper()
+    )
+
+
 def run_multi_agent(
     user_prompt: str,
     selection: ModelSelection,
@@ -661,26 +1002,42 @@ def run_multi_agent(
     config: AgentConfig | None = None,
     max_repair_attempts: int = 2,
     on_progress: Callable[[str], None] | None = None,
+    review_context: ReviewContext | None = None,
 ) -> str:
-    """Run the first sequential multi-agent flow."""
+    """Run the sequential multi-agent flow (code tasks or grounded paper review)."""
     cfg = config or AgentConfig(cwd=".")
     state = MultiAgentRun(user_prompt=user_prompt)
 
     # Deterministic pre-orchestration intent gate (NVIDIA-style intent routing).
     # Decide which phases are allowed *before* building or executing any phase.
     decision = classify_multiagent_intent(user_prompt)
-    planned_phases = list(decision.allowed_phases)
-    state.intent = decision.intent.value
-    state.requires_write = decision.requires_write
-    state.intent_reason = decision.reason
-    state.intent_confidence = decision.confidence
+    is_paper_review = (
+        cfg.multiagent_flow == "paper_review"
+        or decision.intent == MultiAgentIntent.PAPER_REVIEW
+    )
+    if is_paper_review:
+        planned_phases = _paper_review_phases()
+        state.intent = MultiAgentIntent.PAPER_REVIEW.value
+        state.requires_write = False
+        state.intent_reason = (
+            decision.reason
+            if decision.intent == MultiAgentIntent.PAPER_REVIEW
+            else "Paper-review flow selected explicitly."
+        )
+        state.intent_confidence = "high"
+    else:
+        planned_phases = list(decision.allowed_phases)
+        state.intent = decision.intent.value
+        state.requires_write = decision.requires_write
+        state.intent_reason = decision.reason
+        state.intent_confidence = decision.confidence
     state.planned_phases = planned_phases
     if on_progress:
         on_progress("Preparing the multi-agent workflow...")
     else:
         console.print(
-            f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
-            f"requires_write={decision.requires_write} phases={planned_phases}"
+            f"[cyan][multi-agent][/cyan] intent={state.intent} "
+            f"requires_write={state.requires_write} phases={planned_phases}"
         )
 
     started_at = datetime.now(timezone.utc)
@@ -690,6 +1047,12 @@ def run_multi_agent(
 
     final_status = "success"
     try:
+        if is_paper_review:
+            state.final_answer = _run_paper_review(
+                state, selection, cfg, review_context, on_progress=on_progress
+            )
+            return state.final_answer
+
         plan: SubAgentResult | None = None
         if "planner" in planned_phases:
             plan_prompt = _build_planner_prompt(user_prompt)

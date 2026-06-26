@@ -26,6 +26,24 @@ from ci2lab.ui.server_parts.uploads import (
 PROJECT_CONTEXT_CHARS = 24_000
 PROJECT_SOURCE_LIMIT = 100
 
+# Optional per-project metadata. Knowledge projects leave these empty; a
+# paper-review project ("kind" == "paper_review") uses them to center everything
+# on one manuscript and to route/adapt the peer-review flow.
+PROJECT_METADATA_COLUMNS: dict[str, str] = {
+    "owner_id": "TEXT",
+    "kind": "TEXT",
+    "paper_title": "TEXT",
+    "field": "TEXT",
+    "target_venue": "TEXT",
+    "article_type": "TEXT",
+    "reviewer_profile_id": "TEXT",
+    "manuscript_source_id": "TEXT",
+    "maturity": "TEXT",
+    "review_status": "TEXT",
+}
+
+PROJECT_KINDS = frozenset({"knowledge", "paper_review"})
+
 
 def projects_root() -> Path:
     root = Path.home() / ".ci2lab" / "projects"
@@ -78,6 +96,18 @@ def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
     )
 
 
+def _ensure_project_metadata(db: sqlite3.Connection) -> None:
+    """Add optional metadata columns to legacy ``project`` tables in place."""
+    columns = {
+        str(row["name"])
+        for row in db.execute("PRAGMA table_info(project)").fetchall()
+    }
+    for name, sqltype in PROJECT_METADATA_COLUMNS.items():
+        if name not in columns:
+            db.execute(f"ALTER TABLE project ADD COLUMN {name} {sqltype}")
+    db.execute("UPDATE project SET kind = 'knowledge' WHERE kind IS NULL OR kind = ''")
+
+
 def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _database(path) as db:
@@ -108,19 +138,84 @@ def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
             (project_id, name, project_id, now, now),
         )
         _ensure_source_ownership(db, project_id)
+        _ensure_project_metadata(db)
 
 
-def create_project(name: str) -> dict[str, Any]:
+def _clean_meta_value(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip()[:300]
+
+
+def create_project(
+    name: str,
+    *,
+    owner_id: str | None = None,
+    kind: str = "knowledge",
+    paper_title: str | None = None,
+    field: str | None = None,
+    target_venue: str | None = None,
+    article_type: str | None = None,
+    reviewer_profile_id: str | None = None,
+) -> dict[str, Any]:
     clean_name = " ".join(str(name or "").split()).strip()
     if not clean_name:
         return {"ok": False, "error": "Project name is required."}
     if len(clean_name) > 100:
         return {"ok": False, "error": "Project name must be 100 characters or fewer."}
+    kind = (kind or "knowledge").strip().lower()
+    if kind not in PROJECT_KINDS:
+        return {"ok": False, "error": "Unknown project kind."}
 
     project_id = f"prj_{uuid.uuid4().hex[:12]}"
     path = projects_root() / project_id
     (path / "sources").mkdir(parents=True)
     _initialize_database(path / "project.sqlite3", project_id=project_id, name=clean_name)
+    metadata = {
+        "owner_id": owner_id,
+        "kind": kind,
+        "paper_title": paper_title,
+        "field": field,
+        "target_venue": target_venue,
+        "article_type": article_type,
+        "reviewer_profile_id": reviewer_profile_id,
+    }
+    metadata = {key: value for key, value in metadata.items() if value not in (None, "")}
+    if metadata:
+        update_project_metadata(project_id, metadata)
+    return {"ok": True, "project": get_project(project_id)}
+
+
+def update_project_metadata(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Update name and/or paper-review metadata on a project."""
+    path = project_dir(project_id)
+    if path is None or not (path / "project.sqlite3").is_file():
+        return {"ok": False, "error": "Project not found."}
+
+    assignments: dict[str, Any] = {}
+    if "name" in payload:
+        clean_name = " ".join(str(payload.get("name") or "").split()).strip()
+        if not clean_name or len(clean_name) > 100:
+            return {"ok": False, "error": "Use a project name between 1 and 100 characters."}
+        assignments["name"] = clean_name
+    for column in PROJECT_METADATA_COLUMNS:
+        if column not in payload:
+            continue
+        value = _clean_meta_value(payload.get(column))
+        if column == "kind" and value and value.lower() not in PROJECT_KINDS:
+            return {"ok": False, "error": "Unknown project kind."}
+        assignments[column] = value.lower() if column == "kind" else value
+
+    if not assignments:
+        return {"ok": True, "project": get_project(project_id)}
+
+    now = datetime.now(timezone.utc).isoformat()
+    set_clause = ", ".join(f"{column} = ?" for column in assignments)
+    values = list(assignments.values())
+    with _database(path / "project.sqlite3") as db:
+        _ensure_project_metadata(db)
+        db.execute(
+            f"UPDATE project SET {set_clause}, updated_at = ? WHERE id = ?",
+            (*values, now, project_id),
+        )
     return {"ok": True, "project": get_project(project_id)}
 
 
@@ -130,10 +225,11 @@ def get_project(project_id: str) -> dict[str, Any] | None:
         return None
     try:
         with _database(path / "project.sqlite3") as db:
+            _ensure_project_metadata(db)
+            _ensure_source_ownership(db, project_id)
             row = db.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
             if row is None:
                 return None
-            _ensure_source_ownership(db, project_id)
             source_count = db.execute(
                 "SELECT COUNT(*) FROM sources WHERE project_id = ?", (project_id,)
             ).fetchone()[0]
@@ -143,7 +239,8 @@ def get_project(project_id: str) -> dict[str, Any] | None:
             ).fetchone()[0]
     except sqlite3.Error:
         return None
-    return {
+    keys = set(row.keys())
+    project = {
         "id": row["id"],
         "name": row["name"],
         "created_at": row["created_at"],
@@ -153,16 +250,32 @@ def get_project(project_id: str) -> dict[str, Any] | None:
         "source_size_label": format_upload_size(int(source_bytes)),
         "workspace": str(path),
     }
+    for column in PROJECT_METADATA_COLUMNS:
+        project[column] = row[column] if column in keys else None
+    project["kind"] = project.get("kind") or "knowledge"
+    return project
 
 
-def list_projects() -> list[dict[str, Any]]:
+def list_projects(owner_id: str | None = None) -> list[dict[str, Any]]:
+    """List projects, optionally scoped to one researcher.
+
+    When ``owner_id`` is given, return that researcher's projects plus any
+    legacy/unassigned project (no owner) so nothing silently disappears in a
+    multi-researcher setup that still has no authentication.
+    """
+    owner_id = (owner_id or "").strip()
     rows = []
     for path in projects_root().iterdir():
         if not path.is_dir():
             continue
         project = get_project(path.name)
-        if project:
-            rows.append(project)
+        if not project:
+            continue
+        if owner_id:
+            project_owner = (project.get("owner_id") or "").strip()
+            if project_owner and project_owner != owner_id:
+                continue
+        rows.append(project)
     return sorted(rows, key=lambda item: item["updated_at"], reverse=True)
 
 
@@ -404,6 +517,40 @@ def project_context(project_id: str, query: str) -> str:
         blocks.append(block)
         used += len(block)
     return "\n\n".join(blocks)
+
+
+def project_manuscript_text(project_id: str) -> tuple[str, str]:
+    """Return ``(text, source_name)`` for a paper-review project's manuscript.
+
+    Grounding must verify quotes against the manuscript only, so we pick a single
+    source: the one named in ``manuscript_source_id`` if set, otherwise the
+    largest source (the full paper, not a guidelines snippet). Returns empty
+    strings when the project has no readable source.
+    """
+    path = project_dir(project_id)
+    if path is None or not (path / "project.sqlite3").is_file():
+        return "", ""
+    project = get_project(project_id)
+    chosen_id = (project or {}).get("manuscript_source_id") or ""
+    with _database(path / "project.sqlite3") as db:
+        _ensure_source_ownership(db, project_id)
+        if chosen_id:
+            row = db.execute(
+                "SELECT name, content FROM sources WHERE id = ? AND project_id = ?",
+                (chosen_id, project_id),
+            ).fetchone()
+            if row is not None:
+                return str(row["content"] or ""), str(row["name"] or "")
+        row = db.execute(
+            """
+            SELECT name, content FROM sources
+            WHERE project_id = ? ORDER BY size DESC LIMIT 1
+            """,
+            (project_id,),
+        ).fetchone()
+    if row is None:
+        return "", ""
+    return str(row["content"] or ""), str(row["name"] or "")
 
 
 def project_prompt(project_id: str, prompt: str) -> str:

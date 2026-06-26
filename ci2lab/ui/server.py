@@ -81,8 +81,17 @@ from ci2lab.ui.projects import (
     get_project as _get_project,
     list_project_sources as _list_project_sources,
     list_projects as _list_projects,
+    project_manuscript_text as _project_manuscript_text,
     project_prompt as _project_prompt,
     rename_project as _rename_project,
+    update_project_metadata as _update_project_metadata,
+)
+from ci2lab.ui.researchers import (
+    create_researcher as _create_researcher,
+    delete_researcher as _delete_researcher,
+    get_researcher as _get_researcher,
+    list_researchers as _list_researchers,
+    update_researcher as _update_researcher,
 )
 
 __all__ = [

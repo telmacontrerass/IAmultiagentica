@@ -14,6 +14,8 @@ const state = {
   projects: [],
   currentProject: null,
   projectSources: [],
+  researchers: [],
+  currentResearcher: null,
   allSessions: [],
   lastSystemPayload: null,
   lastToolsPayload: null,
@@ -847,7 +849,6 @@ const els = {
   quickActions: document.querySelector("#quickActions"),
   toolsList: document.querySelector("#toolsList"),
   refreshButton: document.querySelector("#refreshButton"),
-  chatRefreshButton: document.querySelector("#chatRefreshButton"),
   tokenCounter: document.querySelector("#tokenCounter"),
   tokenTurnValue: document.querySelector("#tokenTurnValue"),
   tokenSessionValue: document.querySelector("#tokenSessionValue"),
@@ -880,7 +881,27 @@ const els = {
   projectsList: document.querySelector("#projectsList"),
   projectCreateForm: document.querySelector("#projectCreateForm"),
   projectNameInput: document.querySelector("#projectNameInput"),
+  projectKindInput: document.querySelector("#projectKindInput"),
+  paperMetaFields: document.querySelector("#paperMetaFields"),
+  paperTitleInput: document.querySelector("#paperTitleInput"),
+  paperFieldInput: document.querySelector("#paperFieldInput"),
+  paperVenueInput: document.querySelector("#paperVenueInput"),
+  paperTypeInput: document.querySelector("#paperTypeInput"),
   projectSelect: document.querySelector("#projectSelect"),
+  researcherSelect: document.querySelector("#researcherSelect"),
+  openResearcherProfile: document.querySelector("#openResearcherProfile"),
+  researcherView: document.querySelector("#researcherView"),
+  researcherForm: document.querySelector("#researcherForm"),
+  researcherFormTitle: document.querySelector("#researcherFormTitle"),
+  researcherName: document.querySelector("#researcherName"),
+  researcherEmail: document.querySelector("#researcherEmail"),
+  researcherFields: document.querySelector("#researcherFields"),
+  researcherVenues: document.querySelector("#researcherVenues"),
+  researcherStyle: document.querySelector("#researcherStyle"),
+  researcherGuidelines: document.querySelector("#researcherGuidelines"),
+  researcherLensGrid: document.querySelector("#researcherLensGrid"),
+  deleteResearcher: document.querySelector("#deleteResearcher"),
+  cancelResearcher: document.querySelector("#cancelResearcher"),
   projectContextBar: document.querySelector("#projectContextBar"),
   projectContextName: document.querySelector("#projectContextName"),
   projectContextMeta: document.querySelector("#projectContextMeta"),
@@ -1013,6 +1034,7 @@ function persistUiState() {
     agentsMode: Boolean(els.agentsMode?.checked),
     selectedModel: els.modelSelect?.value || "",
     currentProject: state.currentProject,
+    currentResearcher: state.currentResearcher,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
@@ -1028,10 +1050,12 @@ function restoreUiState() {
     state.tokenUsage = normalizeTokenUsage(payload.tokenUsage);
     state.agentsMode = Boolean(payload.agentsMode);
     state.currentProject = payload.currentProject || null;
+    state.currentResearcher = payload.currentResearcher || null;
     state.activeView = [
       "homeView",
       "projectsView",
       "projectDetailView",
+      "researcherView",
       "chatView",
       "tokenInfoView",
     ].includes(payload.activeView)
@@ -1047,6 +1071,7 @@ function restoreUiState() {
     state.tokenUsage = emptyTokenUsage();
     state.agentsMode = false;
     state.currentProject = null;
+    state.currentResearcher = null;
     state.activeView = "homeView";
   }
 }
@@ -1068,6 +1093,7 @@ function switchView(viewId, scrollTarget = null) {
   state.activeView = viewId;
   document.body.classList.toggle("chat-view-active", viewId === "chatView");
   document.body.classList.toggle("token-info-view-active", viewId === "tokenInfoView");
+  document.body.classList.toggle("researcher-view-active", viewId === "researcherView");
   document.body.classList.toggle(
     "projects-view-active",
     viewId === "projectsView" || viewId === "projectDetailView",
@@ -1439,6 +1465,7 @@ async function startChatSession({ forceNew = false } = {}) {
       model: els.modelSelect.value,
       multi_agent: Boolean(els.agentsMode?.checked),
       project_id: state.currentProject,
+      researcher_id: state.currentResearcher,
     }),
   });
   if (!result.ok) {
@@ -1793,7 +1820,14 @@ function renderProjectContext() {
     return;
   }
   els.projectContextName.textContent = project.name;
-  els.projectContextMeta.textContent = uiText(`${project.source_count} persistent source${project.source_count === 1 ? "" : "s"}`);
+  const sourcesLabel = uiText(`${project.source_count} persistent source${project.source_count === 1 ? "" : "s"}`);
+  if (project.kind === "paper_review") {
+    const bits = [project.field, project.target_venue].filter(Boolean).join(" · ");
+    els.projectContextMeta.textContent =
+      uiText("Grounded peer-review mode") + (bits ? ` — ${bits}` : "") + ` · ${sourcesLabel}`;
+  } else {
+    els.projectContextMeta.textContent = sourcesLabel;
+  }
   if (!els.projectSourcesList) return;
   els.projectSourcesList.innerHTML = state.projectSources.length
     ? state.projectSources.map((source) => `
@@ -1918,22 +1952,39 @@ async function createProject(event) {
   event.preventDefault();
   const name = els.projectNameInput?.value.trim();
   if (!name) return;
+  const kind = els.projectKindInput?.value || "knowledge";
+  const body = { name, kind, owner_id: state.currentResearcher || null };
+  if (kind === "paper_review") {
+    body.paper_title = els.paperTitleInput?.value.trim() || "";
+    body.field = els.paperFieldInput?.value.trim() || "";
+    body.target_venue = els.paperVenueInput?.value.trim() || "";
+    body.article_type = els.paperTypeInput?.value || "";
+    body.reviewer_profile_id = state.currentResearcher || null;
+  }
   const result = await api("/api/projects", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
   if (!result.ok) {
     addMessage("assistant", result.error || "Could not create the project.", "error");
     return;
   }
   els.projectNameInput.value = "";
+  if (els.paperTitleInput) els.paperTitleInput.value = "";
+  if (els.paperFieldInput) els.paperFieldInput.value = "";
+  if (els.paperVenueInput) els.paperVenueInput.value = "";
+  if (els.projectKindInput) els.projectKindInput.value = "knowledge";
+  if (els.paperMetaFields) els.paperMetaFields.hidden = true;
   els.projectCreateForm.hidden = true;
   await refreshProjects();
   await openProjectDetail(result.project.id);
 }
 
 async function refreshProjects() {
-  const result = await api("/api/projects");
+  const owner = state.currentResearcher
+    ? `?owner=${encodeURIComponent(state.currentResearcher)}`
+    : "";
+  const result = await api(`/api/projects${owner}`);
   state.projects = result.projects || [];
   if (state.currentProject && !state.projects.some((item) => item.id === state.currentProject)) {
     state.currentProject = null;
@@ -1942,6 +1993,138 @@ async function refreshProjects() {
   renderProjects();
   if (state.currentProject) await loadProjectSources();
   if (state.activeView === "projectDetailView") renderProjectDetail();
+}
+
+function currentResearcherInfo() {
+  return state.researchers.find((item) => item.id === state.currentResearcher) || null;
+}
+
+function renderResearchers() {
+  if (!els.researcherSelect) return;
+  els.researcherSelect.innerHTML = [
+    `<option value="">${escapeHtml(uiText("No researcher"))}</option>`,
+    ...state.researchers.map((researcher) => (
+      `<option value="${escapeHtml(researcher.id)}">${escapeHtml(researcher.name)}</option>`
+    )),
+    `<option value="__new__">${escapeHtml(uiText("+ New researcher…"))}</option>`,
+  ].join("");
+  els.researcherSelect.value = currentResearcherInfo() ? state.currentResearcher : "";
+}
+
+async function refreshResearchers() {
+  const result = await api("/api/researchers");
+  state.researchers = result.researchers || [];
+  if (state.currentResearcher && !currentResearcherInfo()) {
+    state.currentResearcher = null;
+  }
+  renderResearchers();
+}
+
+const LENS_PREF_KEYS = [
+  ["scope", "Journal fit"],
+  ["novelty", "Contribution & novelty"],
+  ["methodology", "Methodology"],
+  ["field_expert", "Field-specific"],
+  ["adversarial", "Reviewer 2"],
+  ["format", "Formatting"],
+];
+
+function renderLensPrefGrid(prefs) {
+  if (!els.researcherLensGrid) return;
+  prefs = prefs || {};
+  els.researcherLensGrid.innerHTML = LENS_PREF_KEYS.map(([key, label]) => {
+    const value = prefs[key] || "";
+    const options = ["", "low", "medium", "high"].map((level) => {
+      const text = level || uiText("default");
+      const selected = level === value ? " selected" : "";
+      return `<option value="${level}"${selected}>${escapeHtml(text)}</option>`;
+    }).join("");
+    return `<label class="researcher-lens-item">${escapeHtml(uiText(label))}` +
+      `<select data-lens="${key}">${options}</select></label>`;
+  }).join("");
+}
+
+function openResearcherProfile({ create = false } = {}) {
+  const profile = create ? null : currentResearcherInfo();
+  state.researcherFormMode = profile ? "edit" : "new";
+  if (els.researcherFormTitle) {
+    els.researcherFormTitle.textContent = uiText(profile ? "Edit profile" : "New researcher");
+  }
+  if (els.researcherName) els.researcherName.value = profile?.name || "";
+  if (els.researcherEmail) els.researcherEmail.value = profile?.email || "";
+  if (els.researcherFields) els.researcherFields.value = (profile?.fields || []).join(", ");
+  if (els.researcherVenues) els.researcherVenues.value = (profile?.default_venues || []).join(", ");
+  if (els.researcherStyle) els.researcherStyle.value = profile?.reviewing_style || "";
+  if (els.researcherGuidelines) els.researcherGuidelines.value = (profile?.preferred_guidelines || []).join(", ");
+  renderLensPrefGrid(profile?.lens_preferences);
+  if (els.deleteResearcher) els.deleteResearcher.hidden = !profile;
+  renderResearchers();
+  switchView("researcherView");
+}
+
+function _collectResearcherForm() {
+  const lens_preferences = {};
+  els.researcherLensGrid?.querySelectorAll("select[data-lens]").forEach((select) => {
+    if (select.value) lens_preferences[select.dataset.lens] = select.value;
+  });
+  return {
+    name: els.researcherName?.value.trim() || "",
+    email: els.researcherEmail?.value.trim() || "",
+    fields: els.researcherFields?.value.trim() || "",
+    default_venues: els.researcherVenues?.value.trim() || "",
+    reviewing_style: els.researcherStyle?.value.trim() || "",
+    preferred_guidelines: els.researcherGuidelines?.value.trim() || "",
+    lens_preferences,
+  };
+}
+
+async function saveResearcherProfile(event) {
+  event.preventDefault();
+  const body = _collectResearcherForm();
+  if (!body.name) {
+    addMessage("assistant", uiText("A researcher name is required."), "error");
+    return;
+  }
+  const editing = state.researcherFormMode === "edit" && state.currentResearcher;
+  const result = await api(
+    editing ? `/api/researchers/${encodeURIComponent(state.currentResearcher)}` : "/api/researchers",
+    { method: editing ? "PATCH" : "POST", body: JSON.stringify(body) },
+  );
+  if (!result.ok) {
+    addMessage("assistant", result.error || "Could not save the researcher.", "error");
+    return;
+  }
+  await refreshResearchers();
+  await selectResearcher(result.researcher.id);
+  switchView("homeView");
+}
+
+async function deleteResearcherProfile() {
+  if (state.researcherFormMode !== "edit" || !state.currentResearcher) {
+    switchView("homeView");
+    return;
+  }
+  const result = await api(`/api/researchers/${encodeURIComponent(state.currentResearcher)}`, {
+    method: "DELETE",
+  });
+  if (!result.ok) {
+    addMessage("assistant", result.error || "Could not delete the researcher.", "error");
+    return;
+  }
+  state.currentResearcher = null;
+  await refreshResearchers();
+  await refreshProjects();
+  switchView("homeView");
+}
+
+async function selectResearcher(researcherId) {
+  state.currentResearcher = researcherId || null;
+  // Switching researcher re-scopes which projects are visible.
+  state.currentProject = null;
+  state.projectSources = [];
+  renderResearchers();
+  persistUiState();
+  await refreshProjects();
 }
 
 async function uploadProjectSources(event) {
@@ -2163,6 +2346,7 @@ async function refreshAll() {
   renderModels();
   renderTokenInfo();
 
+  await refreshResearchers();
   await refreshProjects();
 
   const sessions = await api("/api/sessions");
@@ -2224,6 +2408,7 @@ async function sendMessage(event) {
         request_id: requestId,
         multi_agent: Boolean(els.agentsMode?.checked),
         project_id: state.currentProject,
+        researcher_id: state.currentResearcher,
         stream: false,
       }),
     });
@@ -2520,6 +2705,25 @@ function bindEvents() {
   els.projectSelect?.addEventListener("change", async () => {
     await selectProject(els.projectSelect.value, { startChat: true });
   });
+  els.researcherSelect?.addEventListener("change", async () => {
+    const value = els.researcherSelect.value;
+    if (value === "__new__") {
+      openResearcherProfile({ create: true });
+      return;
+    }
+    await selectResearcher(value);
+  });
+  els.openResearcherProfile?.addEventListener("click", () => {
+    openResearcherProfile({ create: !state.currentResearcher });
+  });
+  els.researcherForm?.addEventListener("submit", saveResearcherProfile);
+  els.deleteResearcher?.addEventListener("click", deleteResearcherProfile);
+  els.cancelResearcher?.addEventListener("click", () => switchView("homeView"));
+  els.projectKindInput?.addEventListener("change", () => {
+    if (els.paperMetaFields) {
+      els.paperMetaFields.hidden = els.projectKindInput.value !== "paper_review";
+    }
+  });
   els.projectCreateForm?.addEventListener("submit", createProject);
   els.showProjectCreate?.addEventListener("click", () => {
     els.projectCreateForm.hidden = false;
@@ -2610,7 +2814,6 @@ function bindEvents() {
   els.modelSearch.addEventListener("input", renderModels);
   els.modelsList.addEventListener("click", handleModelAction);
   els.refreshButton.addEventListener("click", () => runRefreshFromButton(els.refreshButton));
-  els.chatRefreshButton.addEventListener("click", () => runRefreshFromButton(els.chatRefreshButton));
   els.agentsModeButton?.addEventListener("click", toggleAgentsMode);
   els.toolsDrawerToggle?.addEventListener("click", toggleToolsDrawer);
   els.toolsDrawerClose?.addEventListener("click", () => setToolsDrawer(false));

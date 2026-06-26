@@ -29,6 +29,16 @@ ROLE_MAX_ROUNDS: dict[AgentRole, int] = {
     AgentRole.VALIDATOR: 8,
     AgentRole.REVIEWER: 6,
     AgentRole.SECURITY_REVIEWER: 6,
+    # Peer-review lenses: enough rounds to read the manuscript and emit findings.
+    AgentRole.INTAKE_REVIEWER: 10,
+    AgentRole.SCOPE_REVIEWER: 8,
+    AgentRole.NOVELTY_REVIEWER: 10,
+    AgentRole.METHODOLOGY_REVIEWER: 8,
+    AgentRole.FIELD_EXPERT_REVIEWER: 8,
+    AgentRole.ADVERSARIAL_REVIEWER: 8,
+    AgentRole.FORMAT_REVIEWER: 8,
+    AgentRole.GROUNDEDNESS_VERIFIER: 6,
+    AgentRole.REVISION_PLANNER: 6,
 }
 
 
