@@ -233,6 +233,10 @@ docstrings, full type hints) and [`CHANGELOG.md`](CHANGELOG.md) for notable chan
 - [Regression checklist](docs/regression_checklist.md)
 - [Harness evaluation](docs/evals.md)
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 ## Workspace
 
 ```text

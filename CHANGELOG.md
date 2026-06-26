@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **MIT License** (`LICENSE`), wired into the project metadata.
 - **Pluggable LLM backends** (`ci2lab/harness/backends/`): an `LLMBackend`
   interface with `OllamaBackend` (native `/api/chat`) and `OpenAICompatBackend`
   (`/v1`, for vLLM / LM Studio / llama.cpp), selected by `create_backend()`.
