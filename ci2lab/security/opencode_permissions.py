@@ -383,8 +383,10 @@ def evaluate_opencode_tool(
 
     path = str(args.get("path", "."))
     subjects = _path_subjects(path)
-    perm: PermissionValue | None = None
-    matched: str | None = None
+    # Types come from the unpacking of `_resolve_tool_permission` above; these
+    # are plain re-initialisations (annotating again would shadow that binding).
+    perm = None
+    matched = None
     subject = path
     for candidate in subjects:
         perm, matched = _resolve_tool_permission(rule_map, tool_name, candidate)

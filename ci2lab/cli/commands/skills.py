@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from typing import cast
 
 from rich.table import Table
 
@@ -52,12 +53,12 @@ def _cmd_skills(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     table.add_column("Description")
     for row in rows:
         table.add_row(
-            row["name"],
-            row["source"],
+            cast(str, row["name"]),
+            cast(str, row["source"]),
             "yes" if row["model_invocable"] else "no",
             "yes" if row["user_invocable"] else "no",
-            ", ".join(row["allowed_tools"]) or "-",
-            row["description"],
+            ", ".join(cast("list[str]", row["allowed_tools"])) or "-",
+            cast(str, row["description"]),
         )
     console.print(table)
     return 0

@@ -19,10 +19,7 @@ Every change must pass the same checks CI runs (`.github/workflows/ci.yml`):
 ```bash
 python -m ruff check ci2lab tests      # lint
 python -m ruff format ci2lab tests     # auto-format (run before committing)
-python -m mypy ci2lab/contracts ci2lab/config.py ci2lab/console.py ci2lab/router \
-    ci2lab/hardware ci2lab/runtime ci2lab/pipeline.py ci2lab/harness/backends \
-    ci2lab/harness/context ci2lab/harness/skills ci2lab/harness/token_usage.py \
-    ci2lab/harness/messages.py   # strict-checked packages
+python -m mypy ci2lab                    # type-check (baseline repo-wide, strict on core)
 python -m pytest -q                     # full test suite
 ```
 

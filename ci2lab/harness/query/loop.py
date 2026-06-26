@@ -858,7 +858,9 @@ def run_agent(
                 maybe_save_session(cfg, history, selection)
                 raise
             except Exception as exc:
-                err = classify_request_error(exc, model=selection.ollama_tag, url=client.chat_url)
+                err = classify_request_error(
+                    exc, model=selection.ollama_tag, url=client.backend.chat_url
+                )
                 console.print(f"[red]{err.user_message}[/red]")
                 status = "llm_error"
                 log_error = err.user_message
@@ -1248,7 +1250,7 @@ def run_agent(
             # Retry governor: one tool failing with the same error class too many
             # times (even with varying arguments) is a dead end — stop with a
             # blocker summary instead of burning the round budget.
-            worst_class = max(error_class_counts, key=error_class_counts.get, default=None)
+            worst_class = max(error_class_counts, key=lambda k: error_class_counts[k], default=None)
             if worst_class and error_class_counts[worst_class] >= ERROR_CLASS_LIMIT:
                 console.print("[yellow]Repeated tool failure of the same kind; stopping.[/yellow]")
                 status = "stuck"

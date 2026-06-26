@@ -33,7 +33,7 @@
 | Local web UI | Done — `ci2lab ui` |
 | Context compaction | Done — `harness/context/` |
 | Security engines | Done — `ci2lab/security/` (`ci2lab`, `claude_experimental`, …) |
-| 25 built-in tools | Done — `harness/tools/schemas_parts/registry.py` |
+| 28 built-in tools | Done — `harness/tools/schemas_parts/registry.py` |
 
 ## Localization
 

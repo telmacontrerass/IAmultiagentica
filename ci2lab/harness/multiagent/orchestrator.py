@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -424,7 +425,7 @@ def _run_subagent_stage(
     else:
         console.print(f"[cyan][multi-agent][/cyan] {progress_label}...")
     try:
-        kwargs = {"attempt": attempt}
+        kwargs: dict[str, Any] = {"attempt": attempt}
         if on_progress:
             kwargs["on_progress"] = on_progress
         result = run_subagent(role, task_prompt, selection, config, **kwargs)
@@ -1223,6 +1224,11 @@ def run_multi_agent(
                 return state.final_answer
 
             if "validator" in planned_phases:
+                # Every planned flow that includes "validator" also includes
+                # "planner" and "researcher", so those phases have already run
+                # here and produced their results.
+                assert plan is not None
+                assert research is not None
                 validation_prompt = _build_validation_prompt(
                     user_prompt, plan, research, implementation
                 )

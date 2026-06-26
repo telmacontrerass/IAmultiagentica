@@ -774,7 +774,7 @@ def export_deterministic_report(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     all_results = gate_results + dispatch_results
-    summary = {
+    summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "phase": "P3.0.1",
         "security_engine": "claude_experimental",

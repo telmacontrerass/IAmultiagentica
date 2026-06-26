@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, TypedDict
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -178,7 +179,17 @@ def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | Non
     return "failed", str(error) if error is not None else raw_status
 
 
-def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
+class _SubAgentRunArtifacts(TypedDict):
+    """Structured subagent run artifacts loaded from a run directory."""
+
+    status: str
+    error: str | None
+    duration_ms: int | None
+    rounds: int | None
+    tool_calls: list[dict[str, Any]]
+
+
+def _load_subagent_run_artifacts(run_dir: str | None) -> _SubAgentRunArtifacts:
     """Load a subagent's run artifacts (status, timing, tool calls) from ``run_dir``.
 
     Args:
@@ -307,13 +318,13 @@ def run_subagent(
         output=output,
         status=str(trace_data["status"]),
         attempt=attempt,
-        error=trace_data["error"],  # type: ignore[index]
+        error=trace_data["error"],
         role_anchor=subagent_config.role_anchor,
         allowed_tools=sorted(subagent_config.skill_allowed_tools or ()),
         can_write=spec.can_write,
         input_prompt=_preview_text(task_prompt),
         subagent_run_dir=subagent_config.last_run_dir,
-        tool_calls=list(trace_data["tool_calls"]),  # type: ignore[index]
-        duration_ms=trace_data["duration_ms"],  # type: ignore[index]
-        rounds=trace_data["rounds"],  # type: ignore[index]
+        tool_calls=list(trace_data["tool_calls"]),
+        duration_ms=trace_data["duration_ms"],
+        rounds=trace_data["rounds"],
     )

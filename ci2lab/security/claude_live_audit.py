@@ -630,7 +630,7 @@ def export_audit_report(
     csv_path = out_dir / "results.csv"
     md_path = out_dir / "report.md"
 
-    summary = {
+    summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "workspace": str(workspace.root),
         "outside_secret": str(workspace.outside_secret),

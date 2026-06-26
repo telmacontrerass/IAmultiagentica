@@ -38,16 +38,12 @@ jobs:
       - name: Ruff format check
         run: python -m ruff format --check ci2lab tests
 
-      - name: Mypy (strict-checked packages)
-        # The strict bar is enforced for the packages listed under
-        # [[tool.mypy.overrides]] in pyproject.toml; this list mirrors that set
-        # and grows as more of the codebase is brought up to standard.
-        run: >
-          python -m mypy
-          ci2lab/contracts ci2lab/config.py ci2lab/console.py ci2lab/router
-          ci2lab/hardware ci2lab/runtime ci2lab/pipeline.py ci2lab/harness/backends
-          ci2lab/harness/context ci2lab/harness/skills
-          ci2lab/harness/token_usage.py ci2lab/harness/messages.py
+      - name: Mypy
+        # The whole package type-checks at the baseline bar, with the strict bar
+        # (disallow_untyped_defs) enforced for the packages under
+        # [[tool.mypy.overrides]] in pyproject.toml — a list that grows as more
+        # of the codebase is brought up to standard.
+        run: python -m mypy ci2lab
 
       - name: Pytest
         run: python -m pytest -q

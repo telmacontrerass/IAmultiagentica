@@ -12,7 +12,11 @@ from typing import Any
 import httpx
 
 from ci2lab.harness.mcp.config import load_mcp_config
-from ci2lab.harness.permissions import CONFIRM_TOOLS
+
+# ``ci2lab.harness.permissions`` is a runtime alias that swaps in the real
+# ``security.permissions`` module via ``sys.modules``; import from the concrete
+# module so static analysis can resolve ``CONFIRM_TOOLS``.
+from ci2lab.harness.security.permissions import CONFIRM_TOOLS
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS
 from ci2lab.runtime.ollama import is_catalog_model_installed, ollama_install_info

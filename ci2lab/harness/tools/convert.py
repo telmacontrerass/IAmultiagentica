@@ -211,6 +211,7 @@ def docx_to_pdf(cwd: str, source: str, output: str) -> str:
     pandoc = _pandoc_path()
     if pandoc:
         engines: list[str | None] = []
+        engine: str | None
         for engine in (*_UNICODE_LATEX_ENGINES, *_HTML_PDF_ENGINES):
             if shutil.which(engine):
                 engines.append(engine)

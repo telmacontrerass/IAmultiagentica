@@ -86,14 +86,16 @@ provider means adding one `LLMBackend` subclass and one entry in
 pip install -e ".[dev]"     # adds ruff + mypy
 python -m ruff check ci2lab tests     # lint (passes clean)
 python -m ruff format ci2lab tests    # formatter (whole repo formatted)
-python -m mypy ci2lab/contracts ci2lab/config.py ci2lab/router ci2lab/hardware ci2lab/pipeline.py ci2lab/harness/backends
-python -m pytest -q                    # ~900 tests
+python -m mypy ci2lab                  # type-check (passes clean)
+python -m pytest -q                    # ~905 tests
 ```
 
-Linting and formatting are configured in `pyproject.toml` (`[tool.ruff]`).
-mypy runs in a permissive baseline repo-wide and at the **strict** bar for the
-core packages listed in `[[tool.mypy.overrides]]`; the strict list is intended
-to grow until it covers the whole package.
+Linting and formatting are configured in `pyproject.toml` (`[tool.ruff]`). The
+whole package type-checks at the baseline bar, with the **strict** bar
+(`disallow_untyped_defs`) enforced for the core packages listed in
+`[[tool.mypy.overrides]]`; that strict list is intended to grow until it covers
+the whole package. CI (`.github/workflows/ci.yml`) runs all four gates on
+Python 3.11 and 3.12.
 
 ## Module ownership
 

@@ -359,7 +359,7 @@ def _cmd_event_action(
 
     event = find_event_by_id(events, args.event_id)
     if event is None:
-        msg = {
+        msg: dict[str, Any] = {
             "error": f"event_id not found: {args.event_id!r}",
             "audit_file": str(audit_path),
             "audit_source": source,

@@ -10,9 +10,10 @@ import shutil
 import subprocess
 import sys
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.console import console
@@ -391,14 +392,14 @@ def _t(text: str) -> str:
 
 
 def _translated_menu_options(
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
-) -> list[MenuOption] | list[ModelChoice]:
+    options: Sequence[MenuOption | ModelChoice],
+) -> list[MenuOption | ModelChoice]:
     """Return a copy of the options with menu labels/descriptions translated.
 
     :class:`ModelChoice` entries are passed through unchanged since their labels
     are built from live data.
     """
-    translated: list[MenuOption] | list[ModelChoice] = []
+    translated: list[MenuOption | ModelChoice] = []
     for option in options:
         if isinstance(option, MenuOption):
             translated.append(MenuOption(_t(option.label), _t(option.description), option.value))
@@ -465,7 +466,7 @@ def _language_menu() -> int:
             f"{_t('Display language only. Internal prompts, tools and model messages remain in English.')}"
         ),
     )
-    if selected in {None, "back"}:
+    if selected is None or selected == "back":
         return 0
     _save_display_language(selected)
     console.print(
@@ -631,7 +632,7 @@ def _projects_menu(runtime: Ci2LabConfig) -> int:
             options,
             subtitle="Each project has independent sources and conversations.",
         )
-        if selected in {None, "back"}:
+        if selected is None or selected == "back":
             return 0
         if selected == "create":
             name = _ask_text("Project name")
@@ -692,7 +693,7 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
             options,
             subtitle=(f"{project['source_count']} sources · {len(conversations)} conversations"),
         )
-        if selected in {None, "back"}:
+        if selected is None or selected == "back":
             return 0
         if selected == "chat":
             _run_project_chat(runtime, project_id, multi_agent=False)
@@ -860,7 +861,7 @@ def _project_sources_menu(project_id: str) -> int:
             MenuOption("Back", "Return to the project.", "back"),
         ]
         selected = select_from_menu("Project sources", options)
-        if selected in {None, "back"}:
+        if selected is None or selected == "back":
             return 0
         if selected == "add":
             _add_project_source_from_path(project_id)
@@ -877,7 +878,7 @@ def _project_sources_menu(project_id: str) -> int:
 def _sessions_menu(runner: CommandRunner) -> int:
     """Show the sessions submenu (open JSON, resume, list)."""
     selected = select_from_menu("Sessions", SESSION_OPTIONS)
-    if selected in {None, "back"}:
+    if selected is None or selected == "back":
         return 0
     if selected == "list":
         return _run_command(["sessions"], runner)
@@ -898,7 +899,7 @@ def _sessions_menu(runner: CommandRunner) -> int:
 def _permissions_menu(runner: CommandRunner) -> int:
     """Show the permissions submenu and run the chosen ``permissions`` subcommand."""
     selected = select_from_menu("Permissions dashboard", PERMISSIONS_OPTIONS)
-    if selected in {None, "back"}:
+    if selected is None or selected == "back":
         return 0
     args = ["permissions", selected]
     if selected in {"retry-plan", "approve-session"}:
@@ -912,7 +913,7 @@ def _permissions_menu(runner: CommandRunner) -> int:
 def _evals_menu(runtime: Ci2LabConfig, runner: CommandRunner) -> int:
     """Show the evals submenu and run mock or live evaluations."""
     selected = select_from_menu("Evals", EVAL_OPTIONS)
-    if selected in {None, "back"}:
+    if selected is None or selected == "back":
         return 0
     if selected == "mock":
         return _run_command(["evals", "run"], runner)
@@ -1063,7 +1064,7 @@ def open_session_json(session_id: str) -> int:
 
 def select_from_menu(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     *,
     subtitle: str | None = None,
 ) -> str | None:
@@ -1084,7 +1085,7 @@ def select_from_menu(
 
 def _select_from_menu_app(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     *,
     subtitle: str | None,
 ) -> str | None:
@@ -1190,7 +1191,7 @@ def _select_from_menu_app(
 
 def _select_from_menu_numbered(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     *,
     subtitle: str | None,
 ) -> str | None:
@@ -1225,7 +1226,7 @@ def _select_from_menu_numbered(
 
 def _select_from_menu_raw(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     *,
     subtitle: str | None,
 ) -> str | None:
@@ -1250,7 +1251,7 @@ def _select_from_menu_raw(
 
 def _render_raw_menu(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     index: int,
     *,
     subtitle: str | None,
@@ -1310,7 +1311,7 @@ def _exit_alternate_screen() -> None:
 
 def _render_menu(
     title: str,
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
     index: int,
     *,
     subtitle: str | None,
@@ -1337,7 +1338,7 @@ def _render_menu(
 
 
 def _menu_label_width(
-    options: tuple[MenuOption, ...] | list[MenuOption] | list[ModelChoice],
+    options: Sequence[MenuOption | ModelChoice],
 ) -> int:
     """Return the padded label column width (capped) for aligning descriptions."""
     labels = [option.label for option in options]
@@ -1417,10 +1418,14 @@ def _read_posix_key() -> str:
     import termios
     import tty
 
+    # termios/tty are POSIX-only; aliasing them as Any lets this module
+    # type-check on Windows too (this function only ever runs on POSIX).
+    posix_termios: Any = termios
+    posix_tty: Any = tty
     fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
+    old = posix_termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        posix_tty.setraw(fd)
         first = sys.stdin.read(1)
         if first == "\x1b":
             if not select.select([sys.stdin], [], [], 0.05)[0]:
@@ -1433,7 +1438,7 @@ def _read_posix_key() -> str:
             return "escape"
         return _normalize_key(first)
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        posix_termios.tcsetattr(fd, posix_termios.TCSADRAIN, old)
 
 
 def _normalize_key(key: str) -> str:
@@ -1674,7 +1679,10 @@ def _open_path(path: Path) -> None:
         Exception: Propagates any OS error from the underlying open call.
     """
     if os.name == "nt":
-        os.startfile(path)  # type: ignore[attr-defined]
+        # os.startfile only exists on Windows; aliasing os as Any keeps this
+        # cross-platform for the type checker without a platform-specific ignore.
+        win_os: Any = os
+        win_os.startfile(path)
         return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     subprocess.run([opener, str(path)], check=True)

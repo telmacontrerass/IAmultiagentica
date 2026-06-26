@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.panel import Panel
+
+if TYPE_CHECKING:
+    from rich.status import Status
 
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
@@ -42,7 +46,7 @@ class _TransientProgress:
 
     def __init__(self) -> None:
         """Initialise the progress holder with no active status line."""
-        self._status = None
+        self._status: Status | None = None
 
     def update(self, label: str) -> None:
         """Show or update the status line with *label*; clear it if empty."""
@@ -177,7 +181,7 @@ def _extract_inline_images(
                 _doc = fitz.open(p)
                 _n = len(_doc)
                 _doc.close()
-                _shown = min(_n, 10)
+                _shown: int | str = min(_n, 10)
                 _suffix = f" ({_shown} of {_n} pages)" if _n > 1 else " (1 page)"
             except Exception:
                 _shown = "?"

@@ -13,6 +13,7 @@ built only from verified, anchored findings — unit-testable without a model.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from ci2lab.harness.multiagent.grounding import Finding
 from ci2lab.harness.multiagent.manuscript import ManuscriptIndex
@@ -23,11 +24,11 @@ class ReviewContext:
     """Everything a grounded review of one manuscript needs."""
 
     index: ManuscriptIndex
-    paper_meta: dict[str, str] = field(default_factory=dict)
+    paper_meta: dict[str, Any] = field(default_factory=dict)
     reviewer_block: str = ""
     manuscript_source_name: str = ""
     # url -> {"ok": bool, "category": str, "reason": str} (see grounding.py).
-    fetch_attempts: dict = field(default_factory=dict)
+    fetch_attempts: dict[str, Any] = field(default_factory=dict)
 
     @property
     def readable(self) -> bool:

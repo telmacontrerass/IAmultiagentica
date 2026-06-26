@@ -66,7 +66,13 @@ class LLMBackend(ABC):
         timeout: Per-request timeout in seconds.
         vision_image_count: Number of images in the request; used only to
             produce clearer error messages for multimodal failures.
+
+    Attributes:
+        chat_url: The fully-qualified chat-completions endpoint; each concrete
+            backend sets this in its ``__init__``.
     """
+
+    chat_url: str
 
     def __init__(
         self,

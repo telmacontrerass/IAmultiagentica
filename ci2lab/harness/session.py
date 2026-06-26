@@ -48,7 +48,7 @@ def save_session(
     Returns:
         The path of the written session file.
     """
-    payload = {
+    payload: dict[str, Any] = {
         "id": session_id,
         "updated_at": datetime.now(UTC).isoformat(),
         "model_tag": model_tag,

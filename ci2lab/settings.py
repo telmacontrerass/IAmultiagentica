@@ -299,10 +299,12 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
                 return True
 
         try:
-            if PurePosixPath(norm_s).full_match(norm_p):
+            # ``PurePath.full_match`` exists on Python 3.13+; on 3.11/3.12 the
+            # AttributeError below triggers the manual fallback.
+            if PurePosixPath(norm_s).full_match(norm_p):  # type: ignore[attr-defined]
                 return True
             # case-insensitive (Windows)
-            if PurePosixPath(norm_s.lower()).full_match(norm_p.lower()):
+            if PurePosixPath(norm_s.lower()).full_match(norm_p.lower()):  # type: ignore[attr-defined]
                 return True
         except AttributeError:
             # Python < 3.13: full_match unavailable; manual fallback.

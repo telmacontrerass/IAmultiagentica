@@ -356,9 +356,10 @@ def _permission_layer_gate(
             resolve_session_key,
         )
 
+        audit_ctx = get_audit_persist_context()
         session_key = resolve_session_key(
             session_id=config.session_id,
-            run_id=(get_audit_persist_context().run_id if get_audit_persist_context() else None),
+            run_id=(audit_ctx.run_id if audit_ctx else None),
         )
         fingerprint = build_approval_fingerprint(
             engine=engine,

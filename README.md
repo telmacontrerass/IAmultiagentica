@@ -1,8 +1,10 @@
 # IAmultiagentica
 
-A local CLI that detects your computer's capabilities, recommends open-source models that fit your hardware, and runs a tool-using agent in the terminal (VS Code, PowerShell, CMD).
+A local-first CLI that detects your computer's capabilities, recommends open-source models that fit your hardware, and runs a tool-using ReAct agent in the terminal (VS Code, PowerShell, CMD).
 
 It also includes a local web interface (`ci2lab ui`), workspace skills, an MCP client, and optional project memory.
+
+The inference transport is **pluggable**: the agent runs against Ollama by default, or against any OpenAI-compatible server (vLLM, LM Studio, llama.cpp). Pointing it at a different model or backend is a one-file configuration change — see [Swapping the model or backend](#swapping-the-model-or-backend).
 
 ## Structure
 
@@ -16,12 +18,14 @@ See [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 |--------|--------|-------------|
 | `ci2lab/contracts/` | Done | Shared types between router and harness |
 | `ci2lab/hardware/` | Done | RAM/VRAM/GPU/CPU profiler (`ci2lab hardware`) |
-| `ci2lab/router/` | Done | Catalog, intent, scoring, `model_fits()` |
-| `ci2lab/catalog/` | Done | `models.json` — 64 models with VRAM, tool_mode, benchmarks |
+| `ci2lab/router/` | Done | Catalog, intent, scoring, `build_model_selection()` |
+| `ci2lab/catalog/` | Done | `models.json` — 86 models with VRAM, tool_mode, native context, benchmarks |
 | `ci2lab/pipeline.py` | Done | `prepare_session()`, `build_agent_config()` (CLI + UI) |
+| `ci2lab/harness/backends/` | Done | Pluggable LLM transports (Ollama native + OpenAI-compatible) |
 | `ci2lab/harness/` | Done | ReAct harness, REPL, sessions, streaming, run logs |
 | `ci2lab/harness/query/` | Done | ReAct loop (`run_agent`), nudges, LLM streaming |
-| `ci2lab/harness/tools/` | Done | 25 built-in tools + dynamic MCP (`mcp__*`) |
+| `ci2lab/harness/tools/` | Done | 28 built-in tools + dynamic MCP (`mcp__*`) |
+| `ci2lab/harness/multiagent/` | Done | Role orchestration + grounded scientific peer-review flow |
 | `ci2lab/harness/mcp/` | Done | MCP stdio client (`.ci2lab/mcp.json`) |
 | `ci2lab/harness/skills/` | Done | Workspace skills (`.ci2lab/skills/*/SKILL.md`) |
 | `ci2lab/ui/` | Done | Local web interface at `127.0.0.1:8765` |
@@ -30,7 +34,7 @@ See [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
 ### Harness
 
-- **25 built-in tools**: reading, writing, bash, git, web, notebook, skills, MCP, etc.
+- **28 built-in tools**: reading, writing, bash, git, web, notebook, vision, skills, MCP, etc.
 - Structured logging under `runs/`
 - Supervised editing (`write_file` / `edit_file` / `write_docx` + diff preview)
 - Context compaction (micro-compact + LLM summary + trim)
@@ -110,6 +114,32 @@ ollama pull qwen2.5-coder:7b
 ci2lab --model qwen2.5-coder:7b chat
 ```
 
+## Swapping the model or backend
+
+Each model runs at its **native maximum context window** by default, automatically
+capped to what the scanned VRAM/RAM can hold (`CI2LAB_NUM_CTX` overrides it).
+
+The inference transport lives behind a small `LLMBackend` interface
+(`ci2lab/harness/backends/`). Choosing a different model or server is a
+configuration-only change — set it once in `ci2lab.yaml` (or the matching
+`CI2LAB_*` environment variables):
+
+```yaml
+backend: ollama            # or "openai" for any OpenAI-compatible server
+backend_url: http://localhost:11434/v1
+model: qwen2.5-coder:7b
+```
+
+```powershell
+# Same agent, pointed at a vLLM / LM Studio / llama.cpp server:
+$env:CI2LAB_BACKEND = "openai"
+$env:CI2LAB_BACKEND_URL = "http://localhost:8000/v1"
+ci2lab --model my-served-model chat
+```
+
+Adding support for a brand-new server means writing one `LLMBackend` subclass and
+registering it in `backends/factory.py`; nothing else changes.
+
 ## Using the agent
 
 ```powershell
@@ -174,9 +204,27 @@ ci2lab evals run --live       # requires Ollama
 
 See [`docs/evals.md`](docs/evals.md).
 
+## Development
+
+Quality gates are configured in `pyproject.toml` and enforced by CI
+(`.github/workflows/ci.yml`) on Python 3.11 and 3.12:
+
+```bash
+pip install -e ".[dev]"
+python -m ruff check ci2lab tests      # lint
+python -m ruff format ci2lab tests     # format
+python -m mypy ci2lab                   # type-check (strict on the core packages)
+python -m pytest -q                     # ~900 tests
+```
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the coding standards (Google-style
+docstrings, full type hints) and [`CHANGELOG.md`](CHANGELOG.md) for notable changes.
+
 ## Documentation
 
 - [Project structure](docs/STRUCTURE.md)
+- [Contributing & coding standards](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 - [Commands (practical guide)](COMANDOS.md)
 - [Hardware + router handoff](docs/HARDWARE_ROUTER_HANDOFF.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)

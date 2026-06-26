@@ -148,6 +148,7 @@ def run_single_task(
             checks=[
                 CheckResult(
                     name="mock_responses",
+                    check_type="configuration",
                     passed=False,
                     detail="The task does not define mock_responses",
                 )
