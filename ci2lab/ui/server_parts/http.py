@@ -8,7 +8,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.runtime.ollama import fetch_installed_models, ollama_base_url
@@ -113,8 +113,20 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/tools":
                 self._json(facade._tools_payload(state))
                 return
+            if parsed.path == "/api/researchers":
+                self._json({"ok": True, "researchers": facade._list_researchers()})
+                return
+            if parsed.path.startswith("/api/researchers/"):
+                researcher_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                profile = facade._get_researcher(researcher_id)
+                self._json(
+                    {"ok": bool(profile), "researcher": profile, "error": None if profile else "Researcher not found."},
+                    status=200 if profile else 404,
+                )
+                return
             if parsed.path == "/api/projects":
-                self._json({"ok": True, "projects": facade._list_projects()})
+                owner = parse_qs(parsed.query).get("owner", [""])[0].strip()
+                self._json({"ok": True, "projects": facade._list_projects(owner or None)})
                 return
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
                 project_id = unquote(parsed.path.split("/")[-2]).strip()
@@ -174,8 +186,21 @@ def handler_factory(state: UIState):
             if parsed.path == "/api/files/upload":
                 self._json(facade._upload_file(state, payload))
                 return
+            if parsed.path == "/api/researchers":
+                result = facade._create_researcher(payload)
+                self._json(result, status=201 if result.get("ok") else 400)
+                return
             if parsed.path == "/api/projects":
-                result = facade._create_project(str(payload.get("name") or ""))
+                result = facade._create_project(
+                    str(payload.get("name") or ""),
+                    owner_id=payload.get("owner_id"),
+                    kind=str(payload.get("kind") or "knowledge"),
+                    paper_title=payload.get("paper_title"),
+                    field=payload.get("field"),
+                    target_venue=payload.get("target_venue"),
+                    article_type=payload.get("article_type"),
+                    reviewer_profile_id=payload.get("reviewer_profile_id"),
+                )
                 self._json(result, status=201 if result.get("ok") else 400)
                 return
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/sources"):
@@ -189,9 +214,14 @@ def handler_factory(state: UIState):
             facade = _facade()
             parsed = urlparse(self.path)
             payload = self._read_json()
+            if parsed.path.startswith("/api/researchers/"):
+                researcher_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._update_researcher(researcher_id, payload)
+                self._json(result, status=200 if result.get("ok") else 400)
+                return
             if parsed.path.startswith("/api/projects/"):
                 project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
-                result = facade._rename_project(project_id, str(payload.get("name") or ""))
+                result = facade._update_project_metadata(project_id, payload)
                 self._json(result, status=200 if result.get("ok") else 400)
                 return
             self._json({"error": "Not found"}, status=404)
@@ -203,6 +233,11 @@ def handler_factory(state: UIState):
                 session_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 payload, status = facade._delete_session_payload(session_id)
                 self._json(payload, status=status)
+                return
+            if parsed.path.startswith("/api/researchers/"):
+                researcher_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
+                result = facade._delete_researcher(researcher_id)
+                self._json(result, status=200 if result.get("ok") else 404)
                 return
             if parsed.path.startswith("/api/projects/") and "/sources/" in parsed.path:
                 parts = parsed.path.strip("/").split("/")

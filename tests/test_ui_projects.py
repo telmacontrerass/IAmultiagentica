@@ -171,6 +171,78 @@ def test_project_prompt_identifies_sources(monkeypatch, tmp_path):
     assert "instantaneous rate of change" in prompt
 
 
+def test_paper_review_project_stores_metadata(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    created = projects.create_project(
+        "CI2Lab paper",
+        owner_id="rsr_abc",
+        kind="paper_review",
+        paper_title="A Local Multi-Agent Harness",
+        field="multi-agent systems",
+        target_venue="IEEE TSE",
+        article_type="systems paper",
+    )
+    assert created["ok"] is True
+    project = created["project"]
+    assert project["kind"] == "paper_review"
+    assert project["owner_id"] == "rsr_abc"
+    assert project["field"] == "multi-agent systems"
+    assert project["target_venue"] == "IEEE TSE"
+    assert project["article_type"] == "systems paper"
+
+
+def test_knowledge_projects_default_kind(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Notes")["project"]
+    assert project["kind"] == "knowledge"
+    assert project["owner_id"] is None
+
+
+def test_list_projects_scopes_to_owner_but_keeps_unassigned(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    mine = projects.create_project("Mine", owner_id="rsr_me")["project"]
+    other = projects.create_project("Other", owner_id="rsr_you")["project"]
+    legacy = projects.create_project("Legacy")["project"]  # no owner
+
+    scoped = {p["id"] for p in projects.list_projects("rsr_me")}
+    assert mine["id"] in scoped
+    assert legacy["id"] in scoped  # unassigned stays visible
+    assert other["id"] not in scoped
+
+
+def test_update_project_metadata(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Draft")["project"]
+    result = projects.update_project_metadata(
+        project["id"], {"name": "Final", "kind": "paper_review", "maturity": "early_manuscript"}
+    )
+    assert result["ok"] is True
+    assert result["project"]["name"] == "Final"
+    assert result["project"]["kind"] == "paper_review"
+    assert result["project"]["maturity"] == "early_manuscript"
+
+
+def test_project_manuscript_text_picks_largest_source(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Paper", kind="paper_review")["project"]
+    projects.add_project_source(
+        project["id"],
+        {"name": "guidelines.txt", "content_base64": base64.b64encode(b"Short author guidelines.").decode()},
+    )
+    projects.add_project_source(
+        project["id"],
+        {
+            "name": "manuscript.txt",
+            "content_base64": base64.b64encode(
+                b"This is the full manuscript with much more content than the guidelines file. " * 5
+            ).decode(),
+        },
+    )
+    text, name = projects.project_manuscript_text(project["id"])
+    assert name == "manuscript.txt"
+    assert "full manuscript" in text
+
+
 def test_deleting_source_removes_only_that_project_file(monkeypatch, tmp_path):
     _use_temp_projects(monkeypatch, tmp_path)
     project = projects.create_project("Biology")["project"]

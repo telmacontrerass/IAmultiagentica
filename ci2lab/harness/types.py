@@ -52,6 +52,13 @@ class AgentConfig:
     project_id: str | None = None
     """Optional UI knowledge-project identifier associated with the session."""
 
+    multiagent_flow: str | None = None
+    """Optional explicit multi-agent flow selector (e.g. "paper_review"). When
+    set, the orchestrator runs that flow instead of inferring one from the prompt."""
+
+    researcher_id: str | None = None
+    """Optional researcher-profile id whose field/style the review adapts to."""
+
     confirm_callback: Callable[[str, str], bool] | None = None
 
     run_log_enabled: bool = True

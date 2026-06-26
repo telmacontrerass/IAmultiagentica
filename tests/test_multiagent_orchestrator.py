@@ -363,6 +363,15 @@ def test_all_multiagent_role_progress_labels_are_english():
         AgentRole.VALIDATOR: "Checking the result",
         AgentRole.REVIEWER: "Reviewing the outcome",
         AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+        AgentRole.INTAKE_REVIEWER: "Diagnosing the manuscript",
+        AgentRole.SCOPE_REVIEWER: "Checking journal fit",
+        AgentRole.NOVELTY_REVIEWER: "Auditing the contribution",
+        AgentRole.METHODOLOGY_REVIEWER: "Reviewing the methodology",
+        AgentRole.FIELD_EXPERT_REVIEWER: "Applying field expectations",
+        AgentRole.ADVERSARIAL_REVIEWER: "Mounting Reviewer 2 objections",
+        AgentRole.FORMAT_REVIEWER: "Checking submission readiness",
+        AgentRole.GROUNDEDNESS_VERIFIER: "Verifying findings against the paper",
+        AgentRole.REVISION_PLANNER: "Assembling the review report",
     }
 
     assert {

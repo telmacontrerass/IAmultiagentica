@@ -6,11 +6,19 @@ import os
 from typing import Any
 
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMError
+from ci2lab.harness.multiagent.manuscript import build_index
+from ci2lab.harness.multiagent.paper_review import ReviewContext
 from ci2lab.harness.session import load_session, new_session_id, save_session
 from ci2lab.harness.token_usage import TokenUsageState
 from ci2lab.router.catalog import find_model_by_tag
 from ci2lab.runtime.ollama import is_catalog_model_installed
-from ci2lab.ui.projects import get_project, project_dir, project_prompt
+from ci2lab.ui.projects import (
+    get_project,
+    project_dir,
+    project_manuscript_text,
+    project_prompt,
+)
+from ci2lab.ui.researchers import get_researcher, researcher_context_block
 from ci2lab.ui.server_parts.uploads import normalize_attachments, prompt_with_uploaded_files
 
 
@@ -40,9 +48,40 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     prompt_for_model = prompt_with_uploaded_files(prompt, workspace, attachments)
     if project:
         prompt_for_model = project_prompt(project_id, prompt_for_model)
+
+    # Researcher profile: adapt the review's field/style (it never licenses
+    # inventing content). Peer-review mode is requested explicitly or implied by
+    # a paper-review project.
+    researcher_id = str(payload.get("researcher_id") or "").strip()
+    reviewer_profile = get_researcher(researcher_id) if researcher_id else None
+    reviewer_block = researcher_context_block(reviewer_profile) if reviewer_profile else ""
+    mode = str(payload.get("mode") or "").strip().lower()
+    paper_review_mode = mode == "paper_review" or bool(
+        project and project.get("kind") == "paper_review"
+    )
+
+    review_context = None
+    if paper_review_mode and project:
+        raw_text, source_name = project_manuscript_text(project_id)
+        review_context = ReviewContext(
+            index=build_index(raw_text),
+            paper_meta={
+                "paper_title": project.get("paper_title") or project.get("name"),
+                "field": project.get("field"),
+                "target_venue": project.get("target_venue"),
+                "article_type": project.get("article_type"),
+            },
+            reviewer_block=reviewer_block,
+            manuscript_source_name=source_name,
+        )
+    elif reviewer_block:
+        # A reviewer profile still colors ordinary chats / generic multi-agent runs.
+        prompt_for_model = f"{prompt_for_model}\n\n{reviewer_block}"
+
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
     stream = bool(payload.get("stream", False))
-    multi_agent = bool(payload.get("multi_agent", False))
+    # Peer review is inherently the multi-agent grounded flow.
+    multi_agent = bool(payload.get("multi_agent", False)) or paper_review_mode
     request_id = str(payload.get("request_id") or "").strip()
     cancellation_event = state.begin_chat_request(request_id) if request_id else None
     progress_events: list[str] = []
@@ -98,13 +137,21 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         )
         agent.cancellation_event = cancellation_event
         agent.project_id = project_id or None
+        agent.researcher_id = researcher_id or None
+        agent.multiagent_flow = "paper_review" if paper_review_mode else None
         if multi_agent:
+            # Only forward review_context on the paper-review path so the generic
+            # multi-agent call signature stays unchanged for everything else.
+            review_kwargs = (
+                {"review_context": review_context} if review_context is not None else {}
+            )
             answer = _call_with_optional_progress(
                 run_multi_agent,
                 prompt_for_model,
                 selection,
                 config=agent,
                 on_progress=record_progress,
+                **review_kwargs,
             )
             save_completed_session(
                 session_id=session_id,
@@ -145,9 +192,11 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "model": selection.ollama_tag,
             "display_name": selection.display_name,
             "multi_agent": multi_agent,
+            "paper_review": paper_review_mode,
             "usage": agent.token_usage.to_dict(),
             "process_log": progress_events,
             "project_id": project_id or None,
+            "researcher_id": researcher_id or None,
         }
     except (ChatCancelled, LLMCancelledError):
         return {
@@ -198,7 +247,12 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         else str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
     )
     session_id = str(payload.get("session_id") or "").strip() or new_session_id()
-    multi_agent = bool(payload.get("multi_agent", False))
+    researcher_id = str(payload.get("researcher_id") or "").strip()
+    mode = str(payload.get("mode") or "").strip().lower()
+    paper_review_mode = mode == "paper_review" or bool(
+        project and project.get("kind") == "paper_review"
+    )
+    multi_agent = bool(payload.get("multi_agent", False)) or paper_review_mode
     warnings: list[str] = []
 
     try:
@@ -228,12 +282,14 @@ def chat_start(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "cwd": workspace,
         "ui_mode": "multi_agent" if multi_agent else "herramientas_activas",
         "multi_agent": multi_agent,
+        "paper_review": paper_review_mode,
         "security_profile": state.runtime.security.profile,
         "security_engine": state.runtime.security.engine,
         "warnings": warnings,
         "usage": TokenUsageState().to_dict(),
         "project_id": project_id or None,
         "project_name": project["name"] if project else None,
+        "researcher_id": researcher_id or None,
     }
 
 
