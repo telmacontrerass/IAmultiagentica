@@ -39,8 +39,17 @@ For **each** suspected issue, record a row with these fields:
 - If a wrong value appears in a formula that feeds the final answer, set `used_later: yes` and `affects_result: yes`.
 - If you cannot tell whether a digit is `4.7` or `47`, set `likely_source: ambiguous` or `transcription` and explain what both readings would imply.
 - Distinguish **author mistakes** from **transcription mistakes**: when the handwriting is clear in context but the extracted text disagrees with what the student clearly used later, prefer `transcription`.
+- **Resolve impossible/garbled tokens from context, and always log them.** A coefficient must match the balanced reaction (e.g. the N₂ coefficient is `47`, so a transcribed `n7`, `4.7`, or `h7` means `47`). Fix it from the chemistry — but you MUST still record a row (`likely_source: transcription`, `used_later: no` if the student used the right value, `affects_result: no`). Never silently fix a garble without logging it: if you used `47` in your math, the `n7` misread belongs in the audit as a cosmetic transcription issue.
 
 Use `todo_write` to track: Transcription → Audit table → Corrected solution (if needed).
+
+# Phase 2b — Physical sanity checks (do BEFORE declaring any error)
+Before you flag the student wrong or report a "corrected" number, check your **own** result against physics. A failed check almost always means *your* sign or arithmetic slip, not the student's.
+
+- **Sign convention for reaction enthalpy.** `h_comb = Σ(n·h_f)_products − Σ(n·h_f)_reactants`. The `h_f` values here are **already negative**, so a handwritten `-8×393520` means `8×(-393520) = -3,148,160` — it is **not** `-8×(-393520)`. Do not negate an already-negative `h_f` a second time.
+- **Combustion is exothermic:** `h_comb` MUST be **negative**. If you compute a positive `h_comb` (e.g. `+5,574,450`), you made a sign error — stop and redo it before writing anything.
+- **Flame temperature plausibility:** the adiabatic temperature must be **above** the inlet (298 K) and on the order of a few thousand K. A result below 298 K, or one that swings wildly when you "correct" a value the student copied right, signals an error on your side.
+- **Self-doubt rule:** if your independent recomputation disagrees with the student's internally-consistent result, re-examine YOUR arithmetic and signs first. Only declare the student wrong once your value passes every check above.
 
 # Phase 3 — Corrected solution (required when any `affects_result: yes`)
 When at least one issue has `affects_result: yes`:
@@ -73,3 +82,5 @@ Markdown table with columns: Step | Seen | Likely source | Used later | Affects 
 - **Do not invent author errors from OCR noise.** When `likely_source` is `transcription` and the value the student actually carries downstream is self-consistent and gives their stated result, treat it as a vision/OCR misread — set `affects_result: no` and do **not** "correct" the student. A printed reference value (e.g. a Cp from the given table) that the student copied correctly is not an author error just because the vision model misread it.
 - Before reworking, re-derive the student's final number with the values **they used**. If your independent calculation matches their answer, the student is correct — say so plainly instead of producing a near-identical "corrected" result.
 - Never skip a page or sub-part. If you only audited part (a), you are not done while part (b) exists.
+- **A positive enthalpy of combustion or a flame temperature below the inlet temperature is impossible** — if either appears in your work, you have a sign/arithmetic error; fix it before reporting and never blame the student for it.
+- **Never silently fix a transcription garble** (e.g. `n7` → `47`): if you used the corrected value, log the misread as a cosmetic transcription row in the audit.
