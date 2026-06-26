@@ -951,6 +951,193 @@ def _trace_payload(
     }
 
 
+def _read_json_file(path: Path) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_jsonl_file(path: Path) -> list[dict[str, object]]:
+    try:
+        return [
+            item
+            for item in (
+                json.loads(line)
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
+            if isinstance(item, dict)
+        ]
+    except Exception:
+        return []
+
+
+def _write_json_file(path: Path, data: object) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _phase_parent_artifact(
+    result: SubAgentResult,
+    *,
+    index: int,
+    parent_run_dir: Path,
+) -> dict[str, object]:
+    child_dir = Path(result.subagent_run_dir) if result.subagent_run_dir else None
+    child_summary = _read_json_file(child_dir / "run_summary.json") if child_dir is not None else {}
+    started_at = child_summary.get("started_at")
+    ended_at = child_summary.get("ended_at")
+    child_run_id = child_dir.name if child_dir is not None else None
+    child_run_dir = str(child_dir) if child_dir is not None else None
+    phase_dir = parent_run_dir / "phases" / f"{index:02d}_{result.role.value}"
+    output = result.output or (f"SKIPPED: {result.skipped_reason}" if result.skipped_reason else "")
+    return {
+        "phase_name": result.role.value,
+        "role": result.role.value,
+        "attempt": result.attempt,
+        "model": child_summary.get("model"),
+        "status": result.status,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_ms": result.duration_ms,
+        "rounds": result.rounds,
+        "output": output,
+        "error": result.error,
+        "skipped_reason": result.skipped_reason,
+        "tool_calls": result.tool_calls,
+        "allowed_tools": result.allowed_tools,
+        "can_write": result.can_write,
+        "input_prompt": result.task,
+        "child_run_id": child_run_id,
+        "child_run_dir": child_run_dir,
+        "parent_phase_dir": str(phase_dir),
+    }
+
+
+def _structured_evidence(run: MultiAgentRun) -> dict[str, object]:
+    return {
+        "has_write_tool_evidence": has_write_tool_evidence(run.results),
+        "write_task_lacks_evidence": write_task_lacks_evidence(run),
+        "successful_tools": sorted(_run_successful_tools(run)),
+        "expected_content_readback": _run_has_expected_content_readback(run),
+        "security_verdict": _structured_security_verdict(run),
+    }
+
+
+def _persist_multiagent_parent_run(
+    run_dir: Path,
+    run: MultiAgentRun,
+    selection: ModelSelection,
+    config: AgentConfig,
+    *,
+    started_at: datetime,
+    ended_at: datetime,
+) -> None:
+    """Persist a parent multi-agent workflow beside child subagent runs."""
+
+    trace = _trace_payload(
+        run,
+        selection,
+        config,
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+    parent_run_id = run_dir.name
+    final_status = str(trace["status"])
+    final_answer = run.final_answer or ""
+    phases = [
+        _phase_parent_artifact(result, index=index, parent_run_dir=run_dir)
+        for index, result in enumerate(run.results, start=1)
+    ]
+    run_json = {
+        "parent_run_id": parent_run_id,
+        "prompt": run.user_prompt,
+        "workspace": config.cwd,
+        "model": selection.ollama_tag,
+        "model_id": selection.model_id,
+        "tool_mode": selection.tool_mode,
+        "started_at": started_at.isoformat(),
+        "ended_at": ended_at.isoformat(),
+        "duration_seconds": trace["duration_seconds"],
+        "initial_intent_decision": {
+            "intent": run.intent,
+            "requires_write": run.requires_write,
+            "reason": run.intent_reason,
+            "confidence": run.intent_confidence,
+        },
+        "orchestration_decision_final": {
+            "selected_implementer": (
+                run.selected_coder_role.value if run.selected_coder_role else None
+            ),
+            "final_status": final_status,
+            "failed_phase": trace.get("failed_phase"),
+            "error": run.error,
+        },
+        "phases_planned": trace["planned_phases"],
+        "phases_executed": trace["executed_phases"],
+        "repairs": [
+            {
+                "role": phase["role"],
+                "attempt": phase["attempt"],
+                "status": phase["status"],
+            }
+            for phase in phases
+            if int(phase.get("attempt") or 1) > 1
+        ],
+        "structured_evidence": _structured_evidence(run),
+        "final_status": final_status,
+        "final_answer": final_answer,
+        "child_runs": [
+            {
+                "phase_name": phase["phase_name"],
+                "role": phase["role"],
+                "child_run_id": phase["child_run_id"],
+                "child_run_dir": phase["child_run_dir"],
+            }
+            for phase in phases
+            if phase["child_run_id"]
+        ],
+        "phases": phases,
+    }
+    summary = {
+        "parent_run_id": parent_run_id,
+        "final_status": final_status,
+        "phases_planned": trace["planned_phases"],
+        "phases_executed": trace["executed_phases"],
+        "selected_implementer": (
+            run.selected_coder_role.value if run.selected_coder_role else None
+        ),
+        "child_run_count": len(run_json["child_runs"]),
+        "final_answer_path": "final_answer.md",
+        "run_json_path": "run.json",
+    }
+
+    _write_json_file(run_dir / "multiagent_trace.json", trace)
+    _write_json_file(run_dir / "run.json", run_json)
+    _write_json_file(run_dir / "summary.json", summary)
+    (run_dir / "final_answer.md").write_text(final_answer, encoding="utf-8")
+    trace_path = run_dir / "trace.jsonl"
+    trace_path.write_text("", encoding="utf-8")
+    for phase in phases:
+        with trace_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(phase, ensure_ascii=False) + "\n")
+
+    phases_dir = run_dir / "phases"
+    phases_dir.mkdir(exist_ok=True)
+    for phase in phases:
+        phase_dir = Path(str(phase["parent_phase_dir"]))
+        phase_dir.mkdir(parents=True, exist_ok=True)
+        _write_json_file(phase_dir / "run.json", phase)
+        (phase_dir / "output.md").write_text(
+            str(phase.get("output") or ""),
+            encoding="utf-8",
+        )
+        with (phase_dir / "tool_calls.jsonl").open("w", encoding="utf-8") as fh:
+            for entry in phase.get("tool_calls") or []:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def _run_subagent_stage(
     role: AgentRole,
     task_prompt: str,
@@ -2521,7 +2708,7 @@ def run_multi_agent(
     review_context: ReviewContext | None = None,
 ) -> str:
     """Run the sequential multi-agent flow (code tasks or grounded paper review)."""
-    cfg = config or AgentConfig(cwd=".")
+    cfg = replace(config or AgentConfig(cwd="."), suppress_run_saved_message=True)
     if not cfg.approval_session_id:
         digest = hashlib.sha1(
             f"{cfg.cwd}\n{user_prompt}\n{datetime.now(UTC).isoformat()}".encode()
@@ -2938,15 +3125,13 @@ def run_multi_agent(
             on_progress("")
         ended_at = datetime.now(UTC)
         if run_log and run_log.run_dir is not None:
-            run_log.write_json_artifact(
-                "multiagent_trace.json",
-                _trace_payload(
-                    state,
-                    selection,
-                    cfg,
-                    started_at=started_at,
-                    ended_at=ended_at,
-                ),
+            _persist_multiagent_parent_run(
+                run_log.run_dir,
+                state,
+                selection,
+                cfg,
+                started_at=started_at,
+                ended_at=ended_at,
             )
             run_log.finalize(
                 status=final_status,
@@ -2957,3 +3142,4 @@ def run_multi_agent(
                 ],
                 error=state.error,
             )
+            console.print(f"[dim]Multi-agent run saved: {run_log.run_dir}[/dim]")
