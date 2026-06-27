@@ -26,6 +26,7 @@ from ci2lab.harness.tools.schemas_parts.registry import TOOL_NAMES
 # same result and only burns rounds (weak models often repeat them).
 READ_ONLY_TOOLS = frozenset(
     {
+        "calc",
         "read_file",
         "read_document",
         "ls",

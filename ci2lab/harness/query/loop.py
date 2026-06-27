@@ -568,9 +568,9 @@ def _prepare_turn_content(
 
     import shutil
 
-    # Exercise review needs to read small printed/handwritten digits
-    # (e.g. 58.4 vs 58.14), so render those PDFs at a higher resolution.
-    render_dpi = 170 if is_exercise_review_request(user_prompt) else 96
+    # Exercise scans pack small digits (47 vs 4.7, 58.4 vs 58,19) that the 7B
+    # vision model misreads at low resolution, so render those pages sharply.
+    render_dpi = 250 if is_exercise_review_request(user_prompt) else 96
     expanded_paths: list[str] = []
     pdf_temp_dirs: list[Path] = []
     for raw_path in cfg.image_paths:

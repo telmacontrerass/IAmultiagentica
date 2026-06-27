@@ -2,7 +2,7 @@
 name: review_handwritten_exercise
 description: Transcribe handwritten or scanned exercise work, audit calculations with impact analysis, and rework problems when errors change the answer.
 when_to_use: User provides a handwritten/scanned PDF or image and asks to transcribe, check calculations, or find mistakes step by step.
-allowed-tools: todo_write extract_visual_document
+allowed-tools: todo_write extract_visual_document calc
 disable-model-invocation: false
 ---
 # Goal
@@ -43,10 +43,17 @@ For **each** suspected issue, record a row with these fields:
 
 Use `todo_write` to track: Transcription → Audit table → Corrected solution (if needed).
 
+# Phase 2a — Compute with the `calc` tool, never by hand
+Do **not** evaluate multi-term arithmetic in your head — a wrong intermediate makes you flag a correct student. For every numeric line (each enthalpy sum, each denominator, each final temperature), call `calc` and copy its result verbatim.
+
+- Example: `calc("8*(-393520) + 9*(-241820) - (-249910)")` → use the returned value as `h_comb`.
+- Example: `calc("298 + 5074630 / (8*58.4 + 9*47.15 + 47*34.9)")` → use the returned value as `Tca`.
+- **Every `expr = value` line you display must be a line `calc` actually returned.** Do not write an expression whose left side does not evaluate to the right side. If `calc` disagrees with what you were about to write, your expression was wrong — fix the expression, not the value.
+
 # Phase 2b — Physical sanity checks (do BEFORE declaring any error)
 Before you flag the student wrong or report a "corrected" number, check your **own** result against physics. A failed check almost always means *your* sign or arithmetic slip, not the student's.
 
-- **Sign convention for reaction enthalpy.** `h_comb = Σ(n·h_f)_products − Σ(n·h_f)_reactants`. The `h_f` values here are **already negative**, so a handwritten `-8×393520` means `8×(-393520) = -3,148,160` — it is **not** `-8×(-393520)`. Do not negate an already-negative `h_f` a second time.
+- **Sign convention for reaction enthalpy.** `h_comb = Σ(n·h_f)_products − Σ(n·h_f)_reactants`. The `h_f` values here are **already negative**, so a handwritten `-8×393520` means `8×(-393520) = -3,148,160` — it is **not** `-8×(-393520)`. Do not negate an already-negative `h_f` a second time. Feed the correct form to `calc`: `calc("8*(-393520) + 9*(-241820) - (-249910)")`.
 - **Combustion is exothermic:** `h_comb` MUST be **negative**. If you compute a positive `h_comb` (e.g. `+5,574,450`), you made a sign error — stop and redo it before writing anything.
 - **Flame temperature plausibility:** the adiabatic temperature must be **above** the inlet (298 K) and on the order of a few thousand K. A result below 298 K, or one that swings wildly when you "correct" a value the student copied right, signals an error on your side.
 - **Self-doubt rule:** if your independent recomputation disagrees with the student's internally-consistent result, re-examine YOUR arithmetic and signs first. Only declare the student wrong once your value passes every check above.
@@ -61,6 +68,15 @@ When at least one issue has `affects_result: yes`:
 If **all** issues have `affects_result: no`, skip Phase 3 and say clearly that mistakes were cosmetic/non-propagating.
 
 # Output format (use these headings in order)
+Write all mathematics as **plain text**, never LaTeX — the output is read in a terminal and a plain Markdown file, neither of which renders LaTeX. Use Unicode/ASCII operators (`×`, `÷`, `−`, `/`, `^`, `²`) and write each equation on one line, in the same form you pass to `calc`:
+
+```
+h_comb = 8×(-393520) + 9×(-241820) − (-249910) = -5074630 kJ/kmol
+Tca = 298 + 5074630 / (8×58.4 + 9×47.15 + 47×34.9) = 2302.32 K = 2029.32 °C
+```
+
+Do **not** use `\text{}`, `\frac{}`, `\(...\)`, `\[...\]`, `^\circ`, subscript braces, or any backslash command.
+
 ## Transcription summary
 Brief note on source (preprocessed pages vs `extract_visual_document`).
 
@@ -81,6 +97,10 @@ Markdown table with columns: Step | Seen | Likely source | Used later | Affects 
 - If transcription is too ambiguous to audit a step, say so and call `extract_visual_document` again or flag `uncertain`.
 - **Do not invent author errors from OCR noise.** When `likely_source` is `transcription` and the value the student actually carries downstream is self-consistent and gives their stated result, treat it as a vision/OCR misread — set `affects_result: no` and do **not** "correct" the student. A printed reference value (e.g. a Cp from the given table) that the student copied correctly is not an author error just because the vision model misread it.
 - Before reworking, re-derive the student's final number with the values **they used**. If your independent calculation matches their answer, the student is correct — say so plainly instead of producing a near-identical "corrected" result.
+- **A `transcription`/OCR error is NEVER a material issue.** It is *our* misreading of the page via the vision model, not the student's mistake. On every `transcription` row set `affects_result: no` (use `uncertain` only when the page is too garbled to verify the step at all) — never `yes`. Never list a transcription misread under "Material Issues" and never say it "affected the result." A digit the vision model misread (e.g. `47`→`4.7`, `5074630`→`5079630`, `58.4`→`58,19`) does not change what the student actually wrote.
+- **Decisive verdict check (do this before writing the Summary).** Use `calc` to compute the answer from the physically-correct values, then compare to the student's stated final answer. If they match within rounding, then **Material Issues = 0** and the student is correct — every discrepancy was a cosmetic author typo or OCR noise. Do not claim the results were "impacted," and do not present a "corrected" answer that equals the student's as if it were a fix. Only an `author` value the student carried into their own final answer can ever be a material issue.
 - Never skip a page or sub-part. If you only audited part (a), you are not done while part (b) exists.
 - **A positive enthalpy of combustion or a flame temperature below the inlet temperature is impossible** — if either appears in your work, you have a sign/arithmetic error; fix it before reporting and never blame the student for it.
 - **Never silently fix a transcription garble** (e.g. `n7` → `47`): if you used the corrected value, log the misread as a cosmetic transcription row in the audit.
+- **Every displayed arithmetic line must come from `calc`.** A line whose left side does not evaluate to its stated right side is a hard error — recompute it with `calc` and copy the exact result.
+- **No LaTeX.** Output is read in a terminal and a plain `.md` file. Write math in plain Unicode/ASCII (`×`, `/`, `−`, `²`, `°C`); never emit `\text{}`, `\frac{}`, `\(...\)`, `\[...\]`, or any backslash command.
