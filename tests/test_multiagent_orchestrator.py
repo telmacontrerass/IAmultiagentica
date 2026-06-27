@@ -410,19 +410,27 @@ def test_reviewer_insufficient_evidence_blocks_completed_status():
     run = MultiAgentRun(user_prompt="Implement the requested exercise.")
     run.requires_write = True
     run.selected_coder_role = AgentRole.PYTHON_CODER
-    run.add_result(_result(AgentRole.PYTHON_CODER, "Implemented.", tool_calls=[
-        {
-            "tool": "write_file",
-            "ok": True,
-            "arguments": {"path": "exercise.py"},
-            "output_preview": "wrote",
-        }
-    ]))
-    run.add_result(_result(
-        AgentRole.REVIEWER,
-        "However, there is insufficient evidence to confirm if the task "
-        "specified in Exercise 2 was completed.",
-    ))
+    run.add_result(
+        _result(
+            AgentRole.PYTHON_CODER,
+            "Implemented.",
+            tool_calls=[
+                {
+                    "tool": "write_file",
+                    "ok": True,
+                    "arguments": {"path": "exercise.py"},
+                    "output_preview": "wrote",
+                }
+            ],
+        )
+    )
+    run.add_result(
+        _result(
+            AgentRole.REVIEWER,
+            "However, there is insufficient evidence to confirm if the task "
+            "specified in Exercise 2 was completed.",
+        )
+    )
 
     assert final_run_status(run) == "review_failed"
 
@@ -431,18 +439,26 @@ def test_security_fail_blocks_completed_status_and_final_answer():
     run = MultiAgentRun(user_prompt="Implement the requested exercise.")
     run.requires_write = True
     run.selected_coder_role = AgentRole.PYTHON_CODER
-    run.add_result(_result(AgentRole.PYTHON_CODER, "Implemented.", tool_calls=[
-        {
-            "tool": "write_file",
-            "ok": True,
-            "arguments": {"path": "exercise.py"},
-            "output_preview": "wrote",
-        }
-    ]))
-    run.add_result(_result(
-        AgentRole.SECURITY_REVIEWER,
-        "FAIL: unresolved security/permission evidence gaps: git_status, git_diff",
-    ))
+    run.add_result(
+        _result(
+            AgentRole.PYTHON_CODER,
+            "Implemented.",
+            tool_calls=[
+                {
+                    "tool": "write_file",
+                    "ok": True,
+                    "arguments": {"path": "exercise.py"},
+                    "output_preview": "wrote",
+                }
+            ],
+        )
+    )
+    run.add_result(
+        _result(
+            AgentRole.SECURITY_REVIEWER,
+            "FAIL: unresolved security/permission evidence gaps: git_status, git_diff",
+        )
+    )
 
     assert final_run_status(run) == "security_failed"
     assert "status: completed" not in synthesize_final_answer(run)
@@ -717,11 +733,13 @@ def test_multiagent_parent_run_persists_workflow_artifacts(tmp_path, monkeypatch
         child_dir = tmp_path / "runs" / f"child_{child_counter:02d}_{role.value}"
         child_dir.mkdir(parents=True)
         (child_dir / "run_summary.json").write_text(
-            json.dumps({
-                "started_at": f"2026-06-26T00:00:0{child_counter}+00:00",
-                "ended_at": f"2026-06-26T00:00:1{child_counter}+00:00",
-                "model": selection.ollama_tag,
-            }),
+            json.dumps(
+                {
+                    "started_at": f"2026-06-26T00:00:0{child_counter}+00:00",
+                    "ended_at": f"2026-06-26T00:00:1{child_counter}+00:00",
+                    "model": selection.ollama_tag,
+                }
+            ),
             encoding="utf-8",
         )
         (child_dir / "tool_calls.jsonl").write_text("", encoding="utf-8")
@@ -908,10 +926,7 @@ _WRITE_PROMPT = (
 )
 
 _PYTHON_SCRIPT_OUTPUT = (
-    "```python\n"
-    'with open("prueba_multiagente.txt", "w") as f:\n'
-    '    f.write("MULTIAGENTE_OK")\n'
-    "```"
+    '```python\nwith open("prueba_multiagente.txt", "w") as f:\n    f.write("MULTIAGENTE_OK")\n```'
 )
 
 _WRITE_READBACK_TOOL_CALLS = [
@@ -1025,9 +1040,7 @@ def test_has_write_tool_evidence_requires_successful_write_tool():
     )
     assert not has_write_tool_evidence([failed_write])
 
-    real_write = _result(
-        AgentRole.GENERALIST_CODER, "done", tool_calls=_WRITE_READBACK_TOOL_CALLS
-    )
+    real_write = _result(AgentRole.GENERALIST_CODER, "done", tool_calls=_WRITE_READBACK_TOOL_CALLS)
     assert has_write_tool_evidence([real_write])
 
 
@@ -1040,7 +1053,9 @@ def test_write_task_lacks_evidence_for_returned_script_but_not_for_real_write():
     assert final_run_status(script_run) != "completed"
 
     real_run = _write_run(
-        _result(AgentRole.GENERALIST_CODER, "Created via tools.", tool_calls=_WRITE_READBACK_TOOL_CALLS),
+        _result(
+            AgentRole.GENERALIST_CODER, "Created via tools.", tool_calls=_WRITE_READBACK_TOOL_CALLS
+        ),
         "Validation passed.",
     )
     assert not write_task_lacks_evidence(real_run)
@@ -1116,7 +1131,9 @@ def test_run_multi_agent_write_task_with_tool_evidence_completes(monkeypatch):
             return _result(role, "No existing target file.")
         if role == AgentRole.GENERALIST_CODER:
             return _result(
-                role, "Created the file with tools.", attempt=attempt,
+                role,
+                "Created the file with tools.",
+                attempt=attempt,
                 tool_calls=_WRITE_READBACK_TOOL_CALLS,
             )
         if role == AgentRole.VALIDATOR:

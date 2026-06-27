@@ -169,27 +169,21 @@ def test_p0_english_create_with_scope_constraint_is_write_task():
 
 
 def test_p0_implement_fix_with_scope_constraint_is_write_task():
-    decision = classify_multiagent_intent(
-        "Implement this fix, but do not modify unrelated files."
-    )
+    decision = classify_multiagent_intent("Implement this fix, but do not modify unrelated files.")
     assert decision.intent is MultiAgentIntent.CODE_CHANGE
     assert decision.requires_write is True
     assert "coder" in decision.allowed_phases
 
 
 def test_p0_global_no_write_stays_review_only():
-    decision = classify_multiagent_intent(
-        "Review-only task. Do not implement or edit files."
-    )
+    decision = classify_multiagent_intent("Review-only task. Do not implement or edit files.")
     assert decision.intent is MultiAgentIntent.REVIEW_ONLY
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
 
 
 def test_p0_read_and_explain_with_global_no_write_is_not_a_write_task():
-    decision = classify_multiagent_intent(
-        "Lee este archivo y explícame qué hace. No edites nada."
-    )
+    decision = classify_multiagent_intent("Lee este archivo y explícame qué hace. No edites nada.")
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
     assert decision.intent in (
@@ -199,9 +193,7 @@ def test_p0_read_and_explain_with_global_no_write_is_not_a_write_task():
 
 
 def test_p0_read_pdf_and_save_summary_is_document_summary_with_write():
-    decision = classify_multiagent_intent(
-        "Lee el PDF y guarda el resumen en resumen_drones.txt."
-    )
+    decision = classify_multiagent_intent("Lee el PDF y guarda el resumen en resumen_drones.txt.")
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
     # Persisting the summary needs a role that can actually write — the
@@ -219,8 +211,7 @@ def test_p0_read_pdf_and_save_summary_is_document_summary_with_write():
 
 def test_orchestration_create_file_is_file_operation_with_write():
     decision = classify_orchestration_decision(
-        "Crea un archivo llamado prueba.txt con un saludo. "
-        "No modifiques ningún otro archivo."
+        "Crea un archivo llamado prueba.txt con un saludo. No modifiques ningún otro archivo."
     )
     assert isinstance(decision, OrchestrationDecision)
     assert decision.task_type == "file_operation"
@@ -240,9 +231,7 @@ def test_orchestration_review_only_is_review_with_read_fs():
 
 
 def test_orchestration_implement_fix_is_code_change_with_edit_code():
-    decision = classify_orchestration_decision(
-        "Implementa un fix en orchestrator.py"
-    )
+    decision = classify_orchestration_decision("Implementa un fix en orchestrator.py")
     assert decision.task_type == "code_change"
     assert "edit_code" in decision.required_capabilities
     assert "write_fs" in decision.required_capabilities

@@ -42,9 +42,7 @@ def test_builtin_review_handwritten_exercise_skill_available():
 def test_invoke_review_handwritten_exercise_skill_contract():
     cfg = AgentConfig(cwd=".")
     prompt = invoke_skill(cfg, REVIEW_HANDWRITTEN_EXERCISE_SKILL, "P1_T1_IE.pdf")
-    assert cfg.skill_allowed_tools == frozenset(
-        {"todo_write", "extract_visual_document", "calc"}
-    )
+    assert cfg.skill_allowed_tools == frozenset({"todo_write", "extract_visual_document", "calc"})
     assert "Audit" in prompt
     assert "affects_result" in prompt
     assert "Corrected solution" in prompt

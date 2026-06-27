@@ -983,7 +983,7 @@ def _phase_parent_artifact(
     *,
     index: int,
     parent_run_dir: Path,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     child_dir = Path(result.subagent_run_dir) if result.subagent_run_dir else None
     child_summary = _read_json_file(child_dir / "run_summary.json") if child_dir is not None else {}
     started_at = child_summary.get("started_at")
@@ -1050,7 +1050,7 @@ def _persist_multiagent_parent_run(
         _phase_parent_artifact(result, index=index, parent_run_dir=run_dir)
         for index, result in enumerate(run.results, start=1)
     ]
-    run_json = {
+    run_json: dict[str, Any] = {
         "parent_run_id": parent_run_id,
         "prompt": run.user_prompt,
         "workspace": config.cwd,

@@ -7,24 +7,24 @@ from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.multiagent.intent import classify_orchestration_decision
 from ci2lab.harness.multiagent.orchestrator import (
     _apply_role_guardrails,
-    build_validation_contract,
     _build_research_prompt,
     _build_review_prompt,
     _build_validation_prompt,
-    _detect_invalid_tool_via_bash,
-    _enforce_change_scope_evidence,
-    _finalize_if_evidence_satisfied,
     _detect_hallucinated_output,
+    _detect_invalid_tool_via_bash,
     _detect_researcher_unsupported_claims,
     _detect_role_violation,
+    _enforce_change_scope_evidence,
+    _finalize_if_evidence_satisfied,
     _git_baseline_section,
-    _validator_config_for_contract,
     _reviewer_config_for_scope,
     _structured_security_verdict,
+    _validator_config_for_contract,
+    build_validation_contract,
     final_run_status,
-    synthesize_final_answer,
     run_multi_agent,
     should_repair_with_coder,
+    synthesize_final_answer,
     validation_failed,
 )
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
@@ -32,7 +32,6 @@ from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import ToolCall
-
 
 WRITE_TOOLS = {"write_file", "edit_file", "apply_patch", "notebook_edit"}
 DESTRUCTIVE_TOOLS = {"delete_file", "rm", "rmdir", "git_clean", "git_reset"}
@@ -67,10 +66,7 @@ def _result(
 
 def test_multiagent_phase_tool_availability_matrix(tmp_path):
     parent = AgentConfig(cwd=str(tmp_path))
-    actual = {
-        role: build_subagent_config(role, parent).skill_allowed_tools
-        for role in AgentRole
-    }
+    actual = {role: build_subagent_config(role, parent).skill_allowed_tools for role in AgentRole}
 
     assert actual[AgentRole.PLANNER] == frozenset()
     assert {"read_file", "grep"} <= actual[AgentRole.RESEARCHER]
@@ -377,8 +373,7 @@ def test_tool_trace_records_phase_tool_arguments_and_result(tmp_path, monkeypatc
 def test_tool_trace_preserves_phase_boundaries(tmp_path, monkeypatch):
     trace = _run_traced_write(tmp_path, monkeypatch)
     tools_by_phase = {
-        phase["role"]: [call["tool"] for call in phase["tool_calls"]]
-        for phase in trace["phases"]
+        phase["role"]: [call["tool"] for call in phase["tool_calls"]] for phase in trace["phases"]
     }
 
     assert tools_by_phase["planner"] == []
@@ -415,11 +410,7 @@ def test_complex_create_file_uses_real_write_and_readback(tmp_path):
     )
     responses = [
         LLMResponse(
-            content=(
-                "```write_file\n"
-                '{"path": "notes/todo.txt", "content": "TODO_OK"}\n'
-                "```"
-            ),
+            content=('```write_file\n{"path": "notes/todo.txt", "content": "TODO_OK"}\n```'),
             tool_calls=[],
         ),
         LLMResponse(content="```read_file\nnotes/todo.txt\n```", tool_calls=[]),
@@ -495,7 +486,9 @@ def test_complex_review_only_prompt_never_runs_write_capable_phase(monkeypatch):
 
     def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
         roles.append(role)
-        output = "Review found no infinite loop." if role == AgentRole.REVIEWER else "Context found."
+        output = (
+            "Review found no infinite loop." if role == AgentRole.REVIEWER else "Context found."
+        )
         return _result(role, output, attempt=attempt)
 
     monkeypatch.setattr(
@@ -575,12 +568,12 @@ def test_orchestrator_e2e_simulated_llm_file_creation_uses_tools_and_completes(t
         ),
         LLMResponse(content="```read_file\nnotes/multiagent_trace_probe.txt\n```", tool_calls=[]),
         LLMResponse(content="```read_file\nnotes/multiagent_trace_probe.txt\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
         LLMResponse(content="Security review passed; no permission expansion.", tool_calls=[]),
     ]
 
@@ -622,9 +615,7 @@ def test_orchestrator_e2e_simulated_llm_file_creation_uses_tools_and_completes(t
     ]
     assert validator["tool_calls"][0]["ok"] is True
     reviewer = next(phase for phase in trace["phases"] if phase["role"] == "reviewer")
-    security = next(
-        phase for phase in trace["phases"] if phase["role"] == "security_reviewer"
-    )
+    security = next(phase for phase in trace["phases"] if phase["role"] == "security_reviewer")
     assert [call["tool"] for call in reviewer["tool_calls"]] == ["git_status", "git_diff"]
     assert [call["tool"] for call in security["tool_calls"]] == ["git_status", "git_diff"]
     assert all(call["ok"] for call in reviewer["tool_calls"] + security["tool_calls"])
@@ -708,8 +699,7 @@ def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
             AgentRole.RESEARCHER: "No existing target inspected.",
             AgentRole.GENERALIST_CODER: "Created and read back TRACE_OK_3.",
             AgentRole.VALIDATOR: (
-                "Insufficient evidence: missing successful tool evidence: "
-                "git_status, git_diff."
+                "Insufficient evidence: missing successful tool evidence: git_status, git_diff."
             ),
             AgentRole.REVIEWER: "Insufficient evidence.",
         }
@@ -793,8 +783,7 @@ def test_file_correct_but_validator_role_violation_does_not_run_coder_attempt_2(
     )
 
     run_multi_agent(
-        "Crea un archivo llamado notes/todo.txt con TODO_OK. "
-        "No modifiques ningun otro archivo.",
+        "Crea un archivo llamado notes/todo.txt con TODO_OK. No modifiques ningun otro archivo.",
         default_selection("test:1b"),
         config=AgentConfig(
             cwd=str(tmp_path),
@@ -907,9 +896,7 @@ def test_orchestrator_e2e_simulated_llm_declaration_without_tools_fails(tmp_path
     trace = _multiagent_trace(tmp_path)
     coder = next(phase for phase in trace["phases"] if phase["role"] == "generalist_coder")
     reviewer = next(phase for phase in trace["phases"] if phase["role"] == "reviewer")
-    security = next(
-        phase for phase in trace["phases"] if phase["role"] == "security_reviewer"
-    )
+    security = next(phase for phase in trace["phases"] if phase["role"] == "security_reviewer")
 
     assert trace["status"] in {"insufficient_evidence", "validation_failed"}
     assert trace["status"] != "completed"
@@ -1094,9 +1081,7 @@ def test_reviewer_hallucinated_handoff_about_docx_is_flagged():
     """Reviewer that mentions write_docx / pdf_to_docx / report.docx unrelated to the task
     gets status=hallucinated_output and HALLUCINATED_OUTPUT note in output."""
     run = MultiAgentRun(user_prompt="Fix the off-by-one bug in app.py")
-    run.add_result(
-        _result(AgentRole.PYTHON_CODER, "Fixed the bug in app.py.")
-    )
+    run.add_result(_result(AgentRole.PYTHON_CODER, "Fixed the bug in app.py."))
     reviewer = _result(
         AgentRole.REVIEWER,
         "The task used write_docx and pdf_to_docx to produce report.docx from document.pdf.",
@@ -1369,7 +1354,10 @@ def test_validator_auto_closes_when_required_tools_are_satisfied(tmp_path):
                 },
                 {
                     "id": "bad",
-                    "function": {"name": "bash", "arguments": '{"command": "FAIL: insufficient evidence"}'},
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command": "FAIL: insufficient evidence"}',
+                    },
                 },
             ],
         )
@@ -1547,9 +1535,24 @@ def _completed_file_run_with_evidence() -> MultiAgentRun:
             AgentRole.VALIDATOR,
             "PASS: required validation evidence tools completed successfully.",
             tool_calls=[
-                {"tool": "read_file", "ok": True, "arguments": {"path": "notes/todo.txt"}, "output_preview": "TODO_OK"},
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "read_file",
+                    "ok": True,
+                    "arguments": {"path": "notes/todo.txt"},
+                    "output_preview": "TODO_OK",
+                },
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1559,8 +1562,18 @@ def _completed_file_run_with_evidence() -> MultiAgentRun:
             "PASS: required review scope evidence tools completed successfully.\n\n"
             "[INVALID_TOOL_VIA_BASH] reviewer attempted to invoke a dedicated tool name through bash.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
                 {
                     "tool": "bash",
                     "ok": False,
@@ -1580,8 +1593,18 @@ def test_final_answer_does_not_mix_review_pass_with_invalid_bash_warning():
             AgentRole.SECURITY_REVIEWER,
             "Insufficient evidence: missing successful tool evidence: git_diff, git_status.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1600,8 +1623,18 @@ def test_security_reviewer_does_not_report_missing_git_when_tool_calls_ok():
             AgentRole.SECURITY_REVIEWER,
             "Insufficient evidence: missing successful tool evidence: git_diff, git_status.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1661,7 +1694,6 @@ def test_git_baseline_section_empty_for_clean_repo():
 
 def test_validation_prompt_includes_git_baseline_when_present():
     """_build_validation_prompt includes the pre-run baseline block when provided."""
-    from ci2lab.harness.multiagent.state import SubAgentResult
 
     plan = _result(AgentRole.PLANNER, "Create target.txt")
     research = _result(AgentRole.RESEARCHER, "No existing target.")
@@ -1755,9 +1787,7 @@ def test_blocked_by_skill_does_not_cascade_skip_bash_in_loop(tmp_path):
             config,
         )
 
-    bash_call = next(
-        (c for c in result.tool_calls if c["tool"] == "bash"), None
-    )
+    bash_call = next((c for c in result.tool_calls if c["tool"] == "bash"), None)
     assert bash_call is not None, "bash call was not recorded at all"
     assert bash_call.get("outcome") != "skipped_after_error", (
         "bash was skipped after todo_write was blocked — "

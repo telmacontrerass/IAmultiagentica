@@ -745,7 +745,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
 
     # 1. Destructive filesystem operations: high risk, confirm before running.
     if dangerous:
-        caps: set[Capability] = {"read_fs", "write_fs", "delete_fs"} | extra_caps
+        caps: set[Capability] = extra_caps | {"read_fs", "write_fs", "delete_fs"}
         if _contains_any(text, _SHELL_DELETE_MARKERS):
             caps.add("run_shell")
         return OrchestrationDecision(
@@ -793,7 +793,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     reasons = (legacy.reason,)
 
     if legacy.intent is MultiAgentIntent.DOCUMENT_SUMMARY:
-        caps = {"read_fs"} | extra_caps
+        caps = extra_caps | {"read_fs"}
         if legacy.requires_write:
             caps.add("write_fs")
         return OrchestrationDecision(
@@ -808,7 +808,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     if legacy.intent is MultiAgentIntent.DOCUMENT_TRANSFORM:
         return OrchestrationDecision(
             task_type="file_operation",
-            required_capabilities=frozenset({"read_fs", "write_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs"}),
             risk_level="medium",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -818,7 +818,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     if legacy.intent is MultiAgentIntent.REVIEW_ONLY:
         return OrchestrationDecision(
             task_type="review",
-            required_capabilities=frozenset({"read_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs"}),
             risk_level="low",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -828,7 +828,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     if legacy.intent is MultiAgentIntent.READ_ONLY_ANSWER:
         return OrchestrationDecision(
             task_type="research",
-            required_capabilities=frozenset({"read_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs"}),
             risk_level="low",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -839,7 +839,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
         if _is_file_creation(text):
             return OrchestrationDecision(
                 task_type="file_operation",
-                required_capabilities=frozenset({"read_fs", "write_fs"} | extra_caps),
+                required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs"}),
                 risk_level="medium",
                 allowed_phases=phases,
                 needs_confirmation=False,
@@ -847,7 +847,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
             )
         return OrchestrationDecision(
             task_type="code_change",
-            required_capabilities=frozenset({"read_fs", "write_fs", "edit_code"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs", "edit_code"}),
             risk_level="medium",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -857,7 +857,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     # UNKNOWN -> safe, read-mostly research posture.
     return OrchestrationDecision(
         task_type="research",
-        required_capabilities=frozenset({"read_fs"} | extra_caps),
+        required_capabilities=frozenset(extra_caps | {"read_fs"}),
         risk_level="low",
         allowed_phases=phases,
         needs_confirmation=False,

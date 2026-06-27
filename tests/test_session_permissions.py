@@ -201,10 +201,7 @@ def test_fingerprint_distinguishes_targets(workspace: Path):
 
 
 def test_fingerprint_normalizes_path_slashes_and_default_dot():
-    assert (
-        target_fingerprint("write_file", {"path": r"notes\a.txt"})
-        == "notes/a.txt"
-    )
+    assert target_fingerprint("write_file", {"path": r"notes\a.txt"}) == "notes/a.txt"
     assert target_fingerprint("git_status", {}) == "."
     assert target_fingerprint("git_status", {"path": "."}) == "."
 
