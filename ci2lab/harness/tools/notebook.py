@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from ci2lab.harness.tools.paths import resolve_path
 
-_VALID_CELL_TYPES = frozenset({"code", "markdown", "raw"})
+_VALID_CELL_TYPES: frozenset[str] = frozenset({"code", "markdown", "raw"})
 
 
 def notebook_edit(
@@ -17,6 +16,23 @@ def notebook_edit(
     new_source: str,
     cell_type: str | None = None,
 ) -> str:
+    """Replace the source (and optionally type) of one cell in a notebook.
+
+    Rewrites the cell at ``cell_index`` with ``new_source``; for code cells, any
+    existing outputs are cleared. The notebook is written back as JSON.
+
+    Args:
+        cwd: The current working directory used to resolve ``path``.
+        path: Workspace-relative path to the ``.ipynb`` notebook.
+        cell_index: 0-based index of the cell to edit.
+        new_source: The new cell source text.
+        cell_type: Optional new cell type; one of ``code``, ``markdown`` or
+            ``raw``. If ``None`` the existing type is kept.
+
+    Returns:
+        A success message naming the edited cell, or an ``"Error: ..."`` message
+        if the file/cell is invalid or out of range.
+    """
     resolved = resolve_path(path, cwd)
     if not resolved.is_file():
         return f"Error: file does not exist: {resolved}"
@@ -62,6 +78,7 @@ def notebook_edit(
 
 
 def _to_source_list(text: str) -> list[str]:
+    """Split ``text`` into the newline-terminated line list nbformat expects."""
     if not text:
         return []
     lines = text.splitlines(keepends=True)

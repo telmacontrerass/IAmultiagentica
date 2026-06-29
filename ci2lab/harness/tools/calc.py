@@ -72,7 +72,7 @@ def _eval(node: ast.AST) -> float | int:
         if isinstance(op, ast.Pow):
             if abs(right) > _MAX_POW_EXPONENT:
                 raise ValueError("exponent too large")
-            return left ** right
+            return left**right
         raise ValueError("unsupported operator")
     raise ValueError("unsupported expression element")
 
@@ -98,5 +98,5 @@ def calc(expression: str) -> str:
         return "[calc error: division by zero]"
     except ValueError as exc:
         return f"[calc error: {exc}]"
-    except Exception as exc:  # noqa: BLE001 - defensive: never crash the loop
+    except Exception as exc:  # defensive: never crash the loop
         return f"[calc error: {exc}]"

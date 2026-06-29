@@ -5,22 +5,19 @@ Token counter tests: capture from Ollama → LLMResponse → loop → RunLogger.
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.types import AgentConfig
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
+
 
 def _selection() -> ModelSelection:
     return ModelSelection(
@@ -34,6 +31,7 @@ def _selection() -> ModelSelection:
 # ---------------------------------------------------------------------------
 # 1. LLMClient.chat() captures usage
 # ---------------------------------------------------------------------------
+
 
 class _FakeChatClient:
     """Mock httpx.Client for non-streaming mode with usage in the response."""
@@ -106,6 +104,7 @@ def test_chat_usage_empty_when_ollama_does_not_return_it(monkeypatch):
 # ---------------------------------------------------------------------------
 # 2. LLMClient.stream_chat() captures usage from the final chunk
 # ---------------------------------------------------------------------------
+
 
 class _StreamContext:
     def __init__(self, response):
@@ -219,9 +218,11 @@ def test_stream_chat_usage_in_separate_chunk(monkeypatch):
 
 
 def test_build_payload_includes_stream_options_only_in_streaming():
-    client = LLMClient(_selection())
-    payload_stream = client._build_payload([], tools=None, stream=True)
-    payload_no_stream = client._build_payload([], tools=None, stream=False)
+    from ci2lab.harness.backends import OpenAICompatBackend
+
+    backend = OpenAICompatBackend(_selection())
+    payload_stream = backend._build_payload([], tools=None, stream=True, model="m")
+    payload_no_stream = backend._build_payload([], tools=None, stream=False, model="m")
 
     assert payload_stream.get("stream_options") == {"include_usage": True}
     assert "stream_options" not in payload_no_stream
@@ -231,10 +232,12 @@ def test_build_payload_includes_stream_options_only_in_streaming():
 # 3. RunLogger.record_token_stats() and run_summary.json
 # ---------------------------------------------------------------------------
 
+
 def _make_logger(tmp_path: Path) -> RunLogger:
     sel = _selection()
     cfg = AgentConfig(cwd=str(tmp_path), run_log_enabled=True, runs_dir=str(tmp_path / "runs"))
     from ci2lab.harness.run_logger import build_config_snapshot
+
     snapshot = build_config_snapshot(
         runtime_fields={"model": sel.ollama_tag},
         agent_config=cfg,

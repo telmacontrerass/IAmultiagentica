@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from rich.panel import Panel
 
@@ -29,6 +29,21 @@ def check_write_permission(
     preview: WritePreview,
     config: AgentConfig,
 ) -> tuple[bool, str | None]:
+    """Decide whether a write/mutating tool may run, showing a diff when configured.
+
+    Rejects invalid previews outright. When the config requests a diff preview,
+    confirmation is gathered with the rendered diff; otherwise it falls back to
+    the standard path-based permission check.
+
+    Args:
+        tool_name: Name of the write tool requesting permission.
+        preview: The validated preview of the pending write/diff.
+        config: Agent configuration controlling confirmation behavior.
+
+    Returns:
+        A ``(allowed, denial_message)`` tuple; ``denial_message`` is ``None``
+        when allowed and a user-facing reason when denied or invalid.
+    """
     if not preview.is_valid:
         return False, preview.validation_error
 
@@ -50,6 +65,18 @@ def _confirm_with_preview(
     preview: WritePreview,
     confirm_callback: Callable[[str, str], bool] | None,
 ) -> tuple[bool, str | None]:
+    """Render the write preview as a panel and ask the user to confirm it.
+
+    Args:
+        tool_name: Name of the write tool requesting permission.
+        preview: The preview whose formatted diff is shown to the user.
+        confirm_callback: Optional confirmation function; defaults to
+            :func:`default_confirm` using the preview path.
+
+    Returns:
+        A ``(allowed, denial_message)`` tuple; ``denial_message`` is ``None``
+        when approved and a user-facing reason when denied.
+    """
     body = preview.format_for_display()
     console.print(Panel(body, title=f"Preview: {tool_name}", border_style="yellow"))
 

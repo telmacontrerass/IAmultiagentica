@@ -7,34 +7,47 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ci2lab.security.opencode_permissions import OpenCodePermissionConfig, parse_opencode_permissions
+from ci2lab.security.opencode_permissions import (
+    OpenCodePermissionConfig,
+    parse_opencode_permissions,
+)
 
 _VALID_ACTIONS = frozenset({"allow", "ask", "deny"})
 
-_SUPPORTED_OPENCODE_KEYS = frozenset({
-    "*",
-    "read",
-    "edit",
-    "write",
-    "write_file",
-    "edit_file",
-    "bash",
-    "shell",
-    "grep",
-    "glob",
-    "list",
-    "external_directory",
-})
+_SUPPORTED_OPENCODE_KEYS = frozenset(
+    {
+        "*",
+        "read",
+        "edit",
+        "write",
+        "write_file",
+        "edit_file",
+        "bash",
+        "shell",
+        "grep",
+        "glob",
+        "list",
+        "external_directory",
+    }
+)
 
 _EXTERNAL_ALLOW_WARNING = (
-    "UNSAFE: external_directory=allow permits access outside the workspace "
-    "in opencode_experimental"
+    "UNSAFE: external_directory=allow permits access outside the workspace in opencode_experimental"
 )
 
 
 @dataclass(frozen=True)
 class OpenCodeConfigBundle:
-    """Result of loading and normalizing an OpenCode/CI2Lab config."""
+    """Result of loading and normalizing an OpenCode/CI2Lab config.
+
+    Attributes:
+        config_source: Origin of the config (file path, preset or inline).
+        raw_config: The raw parsed JSON object.
+        permission: The extracted permission mapping.
+        normalized_permission: The permission mapping after normalization.
+        unsupported_tools: OpenCode tool keys not mapped in CI2Lab.
+        warnings: Advisory warnings collected during loading.
+    """
 
     config_source: str
     raw_config: dict[str, Any]
@@ -44,11 +57,23 @@ class OpenCodeConfigBundle:
     warnings: list[str] = field(default_factory=list)
 
     def to_permission_config(self) -> OpenCodePermissionConfig:
+        """Build an :class:`OpenCodePermissionConfig` from this bundle."""
         return parse_opencode_permissions(self.normalized_permission)
 
 
 def load_opencode_config(path: str | Path) -> dict[str, Any]:
-    """Load JSON from disk. Raises ValueError/FileNotFoundError if invalid."""
+    """Load a JSON config object from disk.
+
+    Args:
+        path: Path to the JSON config file.
+
+    Returns:
+        The parsed config as a dict.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file is not valid JSON or not a JSON object.
+    """
     raw_path = Path(path).expanduser().resolve()
     if not raw_path.is_file():
         raise FileNotFoundError(f"Configuration file does not exist: {raw_path}")
@@ -62,10 +87,19 @@ def load_opencode_config(path: str | Path) -> dict[str, Any]:
 
 
 def extract_opencode_permission(config: dict[str, Any]) -> dict[str, Any]:
-    """
-    Extract permission from root-level or security.permission.
+    """Extract the permission mapping from a config object.
 
-    Precedence: security.permission > permission (root).
+    Precedence: ``security.permission`` > root ``permission`` > a config that
+    already looks like a permission map.
+
+    Args:
+        config: Parsed config object.
+
+    Returns:
+        A copy of the extracted permission mapping.
+
+    Raises:
+        ValueError: If ``config`` is not a dict or no permission is found.
     """
     if not isinstance(config, dict):
         raise ValueError("config must be a JSON object.")
@@ -83,17 +117,21 @@ def extract_opencode_permission(config: dict[str, Any]) -> dict[str, Any]:
     if _looks_like_permission_map(config):
         return dict(config)
 
-    raise ValueError(
-        "permission not found: use root key 'permission' or 'security.permission'."
-    )
+    raise ValueError("permission not found: use root key 'permission' or 'security.permission'.")
 
 
 def _looks_like_permission_map(data: dict[str, Any]) -> bool:
+    """Return whether ``data`` resembles a permission map by its top-level keys."""
     markers = {"read", "edit", "bash", "external_directory", "*"}
     return any(key in data for key in markers)
 
 
 def _normalize_action(value: str) -> str:
+    """Normalize and validate a permission action string.
+
+    Raises:
+        ValueError: If ``value`` is not one of allow|ask|deny.
+    """
     action = value.strip().lower()
     if action not in _VALID_ACTIONS:
         raise ValueError(f"invalid permission action: {value!r} (use allow|ask|deny)")
@@ -101,13 +139,24 @@ def _normalize_action(value: str) -> str:
 
 
 def normalize_opencode_permission(permission: dict[str, Any]) -> dict[str, Any]:
-    """Normalize allow/ask/deny values and scalar external_directory."""
+    """Normalize allow/ask/deny values recursively across a permission map.
+
+    Args:
+        permission: Permission mapping to normalize.
+
+    Returns:
+        A new mapping with normalized action strings.
+
+    Raises:
+        ValueError: If ``permission`` is not a dict or holds an invalid value.
+    """
     if not isinstance(permission, dict):
         raise ValueError("permission must be a JSON object.")
     return _normalize_permission_node(permission)
 
 
 def _normalize_permission_node(node: dict[str, Any]) -> dict[str, Any]:
+    """Recursively normalize action strings within a permission subtree."""
     normalized: dict[str, Any] = {}
     for key, value in node.items():
         if isinstance(value, dict):
@@ -115,20 +164,26 @@ def _normalize_permission_node(node: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(value, str):
             normalized[key] = _normalize_action(value)
         else:
-            raise ValueError(
-                f"invalid value in permission[{key!r}]: must be a string or object"
-            )
+            raise ValueError(f"invalid value in permission[{key!r}]: must be a string or object")
     return normalized
 
 
 def validate_opencode_permission(permission: dict[str, Any]) -> None:
-    """Validate types and actions. Raises ValueError if invalid."""
+    """Validate a permission map's structure and action values.
+
+    Args:
+        permission: Permission mapping to validate.
+
+    Raises:
+        ValueError: If the structure or any action value is invalid.
+    """
     if not isinstance(permission, dict):
         raise ValueError("permission must be a JSON object.")
     _validate_permission_node(permission, path="permission")
 
 
 def _validate_permission_node(node: dict[str, Any], *, path: str) -> None:
+    """Recursively validate a permission subtree, reporting the failing path."""
     for key, value in node.items():
         current = f"{path}.{key}"
         if isinstance(value, dict):
@@ -140,7 +195,14 @@ def _validate_permission_node(node: dict[str, Any], *, path: str) -> None:
 
 
 def detect_unsupported_opencode_tools(permission: dict[str, Any]) -> list[str]:
-    """OpenCode tools not mapped in CI2Lab (warning, not error)."""
+    """List permission keys not mapped to CI2Lab tools (warning, not error).
+
+    Args:
+        permission: Permission mapping to inspect.
+
+    Returns:
+        A sorted list of unsupported top-level keys.
+    """
     unsupported: list[str] = []
     for key in permission:
         if key not in _SUPPORTED_OPENCODE_KEYS:
@@ -149,12 +211,19 @@ def detect_unsupported_opencode_tools(permission: dict[str, Any]) -> list[str]:
 
 
 def collect_permission_warnings(permission: dict[str, Any]) -> list[str]:
+    """Collect advisory warnings for a permission map.
+
+    Args:
+        permission: Permission mapping to inspect.
+
+    Returns:
+        A list of warnings (unsupported tools, unsafe external access).
+    """
     warnings: list[str] = []
     unsupported = detect_unsupported_opencode_tools(permission)
     if unsupported:
         warnings.append(
-            "OpenCode tools not supported in CI2Lab (ignored): "
-            + ", ".join(unsupported)
+            "OpenCode tools not supported in CI2Lab (ignored): " + ", ".join(unsupported)
         )
     if _external_directory_allows(permission):
         warnings.append(_EXTERNAL_ALLOW_WARNING)
@@ -162,6 +231,7 @@ def collect_permission_warnings(permission: dict[str, Any]) -> list[str]:
 
 
 def _external_directory_allows(permission: dict[str, Any]) -> bool:
+    """Return whether the permission map allows external-directory access."""
     ext = permission.get("external_directory")
     if isinstance(ext, str):
         return ext.strip().lower() == "allow"
@@ -180,7 +250,19 @@ def load_opencode_config_bundle(
     *,
     config_source: str | None = None,
 ) -> OpenCodeConfigBundle:
-    """Load, extract, normalize and validate permission from a JSON file."""
+    """Load, extract, normalize and validate a permission config from a file.
+
+    Args:
+        path: Path to the JSON config file.
+        config_source: Optional override for the bundle's ``config_source``.
+
+    Returns:
+        A fully populated :class:`OpenCodeConfigBundle`.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the file or its permission map is invalid.
+    """
     raw_path = Path(path).expanduser().resolve()
     raw = load_opencode_config(raw_path)
     permission = extract_opencode_permission(raw)
@@ -203,6 +285,18 @@ def bundle_from_permission(
     *,
     config_source: str = "<inline>",
 ) -> OpenCodeConfigBundle:
+    """Build a config bundle from an in-memory permission map.
+
+    Args:
+        permission: Permission mapping to wrap.
+        config_source: Label identifying the origin of the permission map.
+
+    Returns:
+        A populated :class:`OpenCodeConfigBundle`.
+
+    Raises:
+        ValueError: If the permission map is invalid.
+    """
     validate_opencode_permission(permission)
     normalized = normalize_opencode_permission(permission)
     unsupported = detect_unsupported_opencode_tools(permission)
@@ -218,6 +312,17 @@ def bundle_from_permission(
 
 
 def bundle_from_preset(preset_name: str) -> OpenCodeConfigBundle:
+    """Build a config bundle from a named permission preset.
+
+    Args:
+        preset_name: Name of the preset to load.
+
+    Returns:
+        A populated :class:`OpenCodeConfigBundle` for the preset.
+
+    Raises:
+        UnknownPermissionPresetError: If the preset name is unknown.
+    """
     from ci2lab.security.opencode_presets import preset_permissions
 
     permission = preset_permissions(preset_name)
@@ -226,6 +331,14 @@ def bundle_from_preset(preset_name: str) -> OpenCodeConfigBundle:
 
 
 def export_opencode_format(permission: dict[str, Any]) -> dict[str, Any]:
+    """Render a permission map in OpenCode's root-level ``permission`` format.
+
+    Args:
+        permission: Permission mapping to export.
+
+    Returns:
+        A dict with a single normalized ``permission`` key.
+    """
     normalized = normalize_opencode_permission(permission)
     return {"permission": normalized}
 
@@ -235,6 +348,16 @@ def export_ci2lab_format(
     *,
     permission_preset: str | None = None,
 ) -> dict[str, Any]:
+    """Render a permission map in CI2Lab's ``security`` config format.
+
+    Args:
+        permission: Permission mapping to export.
+        permission_preset: Optional preset name to record in the output.
+
+    Returns:
+        A dict with a ``security`` section for the opencode_experimental
+        engine.
+    """
     normalized = normalize_opencode_permission(permission)
     security: dict[str, Any] = {
         "engine": "opencode_experimental",
@@ -246,6 +369,7 @@ def export_ci2lab_format(
 
 
 def export_warnings_for_permission(permission: dict[str, Any]) -> list[str]:
+    """Return advisory warnings for a permission map (export convenience)."""
     return collect_permission_warnings(permission)
 
 
@@ -255,7 +379,14 @@ def write_json_output(
     output: Path | None,
     workspace: Path | None = None,
 ) -> None:
-    """Write JSON to stdout or file (--output inside workspace if relative)."""
+    """Write a JSON payload to stdout or a file.
+
+    Args:
+        payload: JSON-serializable mapping to write.
+        output: Destination path, or None to print to stdout. A relative path
+            is resolved against ``workspace`` when provided.
+        workspace: Base directory for resolving a relative ``output`` path.
+    """
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     if output is None:
         print(text, end="")

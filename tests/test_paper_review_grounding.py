@@ -100,7 +100,9 @@ def test_parse_findings_from_fenced_json_array():
 
 
 def test_parse_findings_tolerates_key_aliases_and_wrapper():
-    text = '{"findings": [{"issue": "Overclaim", "type": "manuscript", "quote": "state of the art"}]}'
+    text = (
+        '{"findings": [{"issue": "Overclaim", "type": "manuscript", "quote": "state of the art"}]}'
+    )
     findings = grounding.parse_findings(text)
     assert len(findings) == 1
     assert findings[0].claim == "Overclaim"
@@ -237,7 +239,12 @@ def test_classify_fetch_failure_categories():
 def test_extract_fetch_attempts_records_success_and_failure():
     tool_calls = [
         {"tool": "web_fetch", "ok": True, "arguments": {"url": "https://A.com/"}},
-        {"tool": "web_fetch", "ok": False, "arguments": {"url": "https://B.com"}, "error_preview": "403 paywall"},
+        {
+            "tool": "web_fetch",
+            "ok": False,
+            "arguments": {"url": "https://B.com"},
+            "error_preview": "403 paywall",
+        },
         {"tool": "web_search", "ok": True, "arguments": {"query": "C"}},
     ]
     attempts = grounding.extract_fetch_attempts(tool_calls)
@@ -252,7 +259,9 @@ def test_verify_findings_groups_by_disposition():
     index = _index()
     findings = [
         Finding(claim="real", evidence_type="manuscript", evidence_quote="logs every tool call"),
-        Finding(claim="fake", evidence_type="manuscript", evidence_quote="invented nonsense span here"),
+        Finding(
+            claim="fake", evidence_type="manuscript", evidence_quote="invented nonsense span here"
+        ),
         Finding(claim="ext", evidence_type="external", external_url="https://nope.example"),
         Finding(claim="false-absence", evidence_type="absence", absence_terms=["success rate"]),
     ]

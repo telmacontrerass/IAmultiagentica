@@ -65,17 +65,39 @@ class MultiAgentRun:
     final_answer: str | None = None
     failed_phase: str | None = None
     error: str | None = None
-    # Pre-orchestration intent routing (set by classify_multiagent_intent).
+    # Pre-orchestration intent routing (legacy backbone, set by
+    # classify_multiagent_intent).
     intent: str | None = None
     requires_write: bool | None = None
     planned_phases: list[str] = field(default_factory=list)
     intent_reason: str | None = None
     intent_confidence: str | None = None
+    # Rich orchestration decision (advisory, set by
+    # classify_orchestration_decision). These never grant permission; the
+    # execution gate remains the source of truth.
+    task_type: str | None = None
+    required_capabilities: list[str] = field(default_factory=list)
+    risk_level: str | None = None
+    needs_confirmation: bool | None = None
+    decision_reasons: list[str] = field(default_factory=list)
+    # Snapshot of `git status --short` captured before the run starts.
+    # Used by validation and review prompts to distinguish pre-existing WIP
+    # from changes introduced by the current run.
+    git_baseline: str | None = None
 
     def add_result(self, result: SubAgentResult) -> None:
+        """Append a subagent result to the run's ordered result list."""
         self.results.append(result)
 
     def latest_for(self, role: AgentRole) -> SubAgentResult | None:
+        """Return the most recent result for ``role``, or ``None`` if it never ran.
+
+        Args:
+            role: The subagent role to look up.
+
+        Returns:
+            The latest :class:`SubAgentResult` produced by ``role``, or ``None``.
+        """
         for result in reversed(self.results):
             if result.role == role:
                 return result

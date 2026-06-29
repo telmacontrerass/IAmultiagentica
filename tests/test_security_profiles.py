@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ci2lab.config import Ci2LabConfig, load_config
+from ci2lab.config import load_config
 from ci2lab.harness.security_profiles import (
     DEFAULT_PROFILE,
     UnknownSecurityProfileError,
@@ -158,15 +158,17 @@ def test_yes_does_not_bypass_strict(workspace: Path):
 def test_security_limits_map_to_agent_config(monkeypatch, tmp_path: Path):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "ci2lab.json").write_text(
-        json.dumps({
-            "security": {
-                "profile": "standard",
-                "limits": {
-                    "bash_timeout_seconds": 45,
-                    "max_tool_output_chars": 5000,
-                },
+        json.dumps(
+            {
+                "security": {
+                    "profile": "standard",
+                    "limits": {
+                        "bash_timeout_seconds": 45,
+                        "max_tool_output_chars": 5000,
+                    },
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
     runtime = load_config()

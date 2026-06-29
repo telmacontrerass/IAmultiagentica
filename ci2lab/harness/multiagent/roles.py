@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ci2lab.harness.multiagent.state import AgentRole
 from ci2lab.harness.tools.capabilities import FILE_WRITE_TOOLS
@@ -20,35 +20,45 @@ class RoleSpec:
     must_not: str
     expected_output: str
     can_write: bool = False
+    # Tools explicitly forbidden for this role (a subset of the harness tool
+    # registry). The orchestrator uses this to detect and flag role violations
+    # when the model attempts these tools even if the skill allowlist blocks them.
+    forbidden_tools: frozenset[str] = field(default_factory=frozenset)
 
 
 # Local-filesystem read tools every role may use. This is intentionally narrower
 # than `capabilities.READ_ONLY_TOOLS` (which also covers web/cacheable lookups):
 # it is the permission base for a role, not the loop's cache-eligibility set.
-READ_TOOLS = frozenset({
-    "ls",
-    "glob",
-    "read_file",
-    "read_document",
-    "grep",
-})
+READ_TOOLS = frozenset(
+    {
+        "ls",
+        "glob",
+        "read_file",
+        "read_document",
+        "grep",
+    }
+)
 
 # An implementer can read plus author any file type. Sharing the canonical
 # `FILE_WRITE_TOOLS` keeps "what counts as a write" identical to the loop's
 # write-intent gate, so a coder role is always recognized as write-capable.
 EDIT_TOOLS = READ_TOOLS | FILE_WRITE_TOOLS
 
-RUNTIME_TOOLS = READ_TOOLS | frozenset({
-    "bash",
-})
+RUNTIME_TOOLS = READ_TOOLS | frozenset(
+    {
+        "bash",
+    }
+)
 
 # Peer-review lenses are read-only. Scope and novelty may consult the web to
 # check a venue's scope or the state of the art — but any external citation only
 # counts if the source was actually fetched (verified in grounding.py).
-WEB_READ_TOOLS = READ_TOOLS | frozenset({
-    "web_search",
-    "web_fetch",
-})
+WEB_READ_TOOLS = READ_TOOLS | frozenset(
+    {
+        "web_search",
+        "web_fetch",
+    }
+)
 
 # A short instruction shared by every grounded reviewer lens. It is appended to
 # each lens's system_instructions so the anti-hallucination contract is repeated
@@ -58,16 +68,30 @@ _GROUNDING_CONTRACT = (
     "the ONLY source of truth about this paper. Never use outside knowledge of "
     "the paper, its authors, or its results, and never invent quotes, section "
     "names, numbers, or citations. Emit your findings ONLY as a JSON array; each "
-    "item is {\"claim\", \"evidence_type\" (manuscript|absence|external), "
-    "\"evidence_quote\" (verbatim, for manuscript), \"anchor\" (e.g. A12), "
-    "\"absence_terms\" (the exact strings you searched, for absence), "
-    "\"external_url\" (only if you actually fetched it), \"severity\" "
-    "(major|minor), \"reviewer_judgment\"}. If you cannot quote it from the "
+    'item is {"claim", "evidence_type" (manuscript|absence|external), '
+    '"evidence_quote" (verbatim, for manuscript), "anchor" (e.g. A12), '
+    '"absence_terms" (the exact strings you searched, for absence), '
+    '"external_url" (only if you actually fetched it), "severity" '
+    '(major|minor), "reviewer_judgment"}. If you cannot quote it from the '
     "manuscript, do not assert it; say it is not found instead. For an external "
     "citation, FETCH it with web_fetch first; if the fetch fails (paywall, "
     "offline, dead link) still report it with its URL — it will be routed to a "
     "manual-check section, not dropped, and the paper will not be blamed for a "
     "source you could not open."
+)
+
+REVIEW_TOOLS = READ_TOOLS | frozenset(
+    {
+        "git_status",
+        "git_diff",
+    }
+)
+
+VALIDATION_TOOLS = RUNTIME_TOOLS | frozenset(
+    {
+        "git_status",
+        "git_diff",
+    }
 )
 
 
@@ -90,11 +114,18 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
         allowed_tools=READ_TOOLS,
         system_instructions=(
             "You are the research subagent. Inspect only the context needed for the "
-            "task and summarize the files, APIs, and constraints found. Do not modify files."
+            "task and summarize the files, APIs, and constraints found. Do not modify "
+            "files. Do not claim to have created, verified, or modified any file — "
+            "report only what your read tools confirm."
         ),
         phase_purpose="Gather evidence and inspect only the repository context needed for this task.",
-        must_not="Do not implement changes, do not edit files, and do not claim validation or review is finished.",
+        must_not=(
+            "Do not implement changes, do not edit files, do not call write_file or "
+            "apply_patch, and do not claim creation, verification, modification, or "
+            "empty-diff unless a tool result proves it."
+        ),
         expected_output="A focused summary of relevant files, APIs, constraints, and risks for the current task.",
+        forbidden_tools=frozenset({"write_file", "edit_file", "apply_patch", "notebook_edit"}),
     ),
     AgentRole.PYTHON_CODER: RoleSpec(
         role=AgentRole.PYTHON_CODER,
@@ -164,38 +195,93 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
     AgentRole.VALIDATOR: RoleSpec(
         role=AgentRole.VALIDATOR,
         description="Runs validation and reports pass/fail evidence.",
-        allowed_tools=RUNTIME_TOOLS,
+        allowed_tools=VALIDATION_TOOLS,
         system_instructions=(
             "You are the validation subagent. Run or recommend focused checks, report "
-            "whether validation passed, and include actionable failure details."
+            "whether validation passed, and include actionable failure details. "
+            "Do NOT call `todo_write`, `write_file`, `edit_file`, `apply_patch`, or "
+            "`notebook_edit` — these are forbidden for this role and will be recorded "
+            "as a role violation. Your expected tool sequence is: `read_file`/`glob` "
+            "to inspect changes, `bash` to run tests, `git_status`/`git_diff` for "
+            "scope, then a verdict."
         ),
         phase_purpose="Validate the current result using tests or deterministic checks.",
-        must_not="Do not implement changes, do not rewrite the plan, and do not hide failures.",
+        must_not=(
+            "Do not implement changes, do not rewrite the plan, do not hide failures, "
+            "and do NOT use `todo_write`, `write_file`, `edit_file`, or `apply_patch`. "
+            "Do not plan tasks with todo tools — execute checks and emit a verdict."
+        ),
         expected_output="A clear validation result that states pass or fail and includes actionable failure details when needed.",
+        forbidden_tools=frozenset(
+            {
+                "todo_write",
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "notebook_edit",
+            }
+        ),
     ),
     AgentRole.REVIEWER: RoleSpec(
         role=AgentRole.REVIEWER,
         description="Reviews the final result for regressions and completeness.",
-        allowed_tools=READ_TOOLS,
+        allowed_tools=REVIEW_TOOLS,
         system_instructions=(
             "You are the review subagent. Review the completed work for bugs, "
-            "missing tests, regressions, and incomplete requirements. Do not modify files."
+            "missing tests, regressions, and incomplete requirements. Do not modify files. "
+            "Do NOT call `todo_write`, `write_file`, `edit_file`, or `apply_patch` — "
+            "these are forbidden for this role. Your review must be grounded only in "
+            "the task, the run evidence, and your `git_status`/`git_diff` tool results. "
+            "Do not invent file names, tool names, or artifacts that are not present in "
+            "the task or real tool-call evidence."
         ),
         phase_purpose="Review the completed result for bugs, regressions, gaps, and incomplete requirements.",
-        must_not="Do not implement changes, do not edit files, and do not claim validation work you did not perform.",
+        must_not=(
+            "Do not implement changes, do not edit files, do not use `todo_write`, "
+            "`write_file`, `edit_file`, or `apply_patch`, do not claim validation work "
+            "you did not perform, and do not mention files or tools unrelated to the task."
+        ),
         expected_output="A concise review with concrete findings, risks, and missing coverage if any.",
+        forbidden_tools=frozenset(
+            {
+                "todo_write",
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "notebook_edit",
+            }
+        ),
     ),
     AgentRole.SECURITY_REVIEWER: RoleSpec(
         role=AgentRole.SECURITY_REVIEWER,
         description="Reviews permission, command, and security-sensitive changes.",
-        allowed_tools=READ_TOOLS,
+        allowed_tools=REVIEW_TOOLS,
         system_instructions=(
             "You are the security review subagent. Check for permission, command "
-            "execution, secret-handling, and filesystem safety risks. Do not modify files."
+            "execution, secret-handling, and filesystem safety risks. Do not modify files. "
+            "Do NOT call `todo_write`, `write_file`, `edit_file`, or `apply_patch` — "
+            "these are forbidden for this role. Your review must be grounded only in "
+            "the task, the run evidence, and your `git_status`/`git_diff` tool results. "
+            "Do not invent file names, tool names, or artifacts that are not present in "
+            "the task or real tool-call evidence."
         ),
         phase_purpose="Look for security risks, permission expansion, leaks, bypasses, or unsafe tool use.",
-        must_not="Do not implement changes, do not edit files, and do not ignore potential security or permission regressions.",
+        must_not=(
+            "Do not implement changes, do not edit files, do not use `todo_write`, "
+            "`write_file`, `edit_file`, or `apply_patch`, and do not ignore potential "
+            "security or permission regressions. Do not mention tools or files not "
+            "present in the task or real tool-call evidence."
+        ),
         expected_output="A concise security review with concrete risks, permission concerns, and unsafe behaviors if found.",
+        forbidden_tools=frozenset(
+            {
+                "todo_write",
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "notebook_edit",
+            }
+        ),
     ),
     AgentRole.INTAKE_REVIEWER: RoleSpec(
         role=AgentRole.INTAKE_REVIEWER,
@@ -321,7 +407,7 @@ ROLE_SPECS: dict[AgentRole, RoleSpec] = {
             "quote has already been confirmed to exist in the manuscript by code. "
             "Your job is the harder check: does the quote ACTUALLY support the "
             "claim, or is the claim an over-reading or misattribution? For each "
-            "finding return {\"index\", \"supported\" (true/false), \"reason\"}. "
+            'finding return {"index", "supported" (true/false), "reason"}. '
             "Default to supported=false when the quote does not clearly back the "
             "claim. Do not modify files."
         ),

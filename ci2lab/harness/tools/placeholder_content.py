@@ -16,16 +16,24 @@ import re
 
 # Each pattern matches a whole-body placeholder. Anchored and single-token so
 # legitimate one-liners with real text do not match.
-_PLACEHOLDER_PATTERNS = (
-    re.compile(r"^\$\{[^{}]*\}$"),       # ${exercise_1_instructions}
-    re.compile(r"^\{\{[^{}]*\}\}$"),     # {{ extracted_instructions }}
-    re.compile(r"^\$[A-Za-z_]\w*$"),     # $instructions
-    re.compile(r"^<[^<>]*>$"),           # <extracted_instructions> / <insert ... here>
+_PLACEHOLDER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\$\{[^{}]*\}$"),  # ${exercise_1_instructions}
+    re.compile(r"^\{\{[^{}]*\}\}$"),  # {{ extracted_instructions }}
+    re.compile(r"^\$[A-Za-z_]\w*$"),  # $instructions
+    re.compile(r"^<[^<>]*>$"),  # <extracted_instructions> / <insert ... here>
 )
 
 
 def looks_like_placeholder_content(content: str) -> bool:
-    """True if the whole content is one placeholder/variable token."""
+    """True if the whole content is one placeholder/variable token.
+
+    Args:
+        content: The candidate file content.
+
+    Returns:
+        ``True`` when, after stripping, ``content`` is a single line matching
+        one of :data:`_PLACEHOLDER_PATTERNS`; ``False`` otherwise.
+    """
     text = (content or "").strip()
     if not text or "\n" in text:
         return False
@@ -33,6 +41,15 @@ def looks_like_placeholder_content(content: str) -> bool:
 
 
 def placeholder_content_message(content: str) -> str:
+    """Build the refusal message for placeholder ``write_file`` content.
+
+    Args:
+        content: The rejected placeholder content.
+
+    Returns:
+        An ``"Error: ..."`` message instructing the caller to inline the real
+        text instead of a variable reference.
+    """
     token = (content or "").strip()
     return (
         f"Error: the content is a placeholder ({token!r}), not real text. There "

@@ -67,9 +67,7 @@ def _patch(monkeypatch):
             tool_calls=[],
         )
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent
-    )
+    monkeypatch.setattr("ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent)
 
 
 def test_grounded_review_keeps_verified_and_quarantines_hallucination(monkeypatch):
@@ -113,9 +111,7 @@ def test_unverifiable_external_citation_goes_to_manual_check(monkeypatch):
             out = "PAPER REVIEW REPORT\n10. Verdict: major revision"
         return SubAgentResult(role=role, task="t", output=out, attempt=attempt, tool_calls=[])
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent
-    )
+    monkeypatch.setattr("ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent)
     answer = run_multi_agent(
         "peer review this paper",
         default_selection("test:1b"),
@@ -139,9 +135,7 @@ def test_small_context_model_aborts_and_recommends_bigger(monkeypatch):
         calls.append(role)
         return SubAgentResult(role=role, task="t", output="[]", attempt=attempt, tool_calls=[])
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent
-    )
+    monkeypatch.setattr("ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent)
     tiny = replace(default_selection("test:1b"), context_length=2048)
     answer = run_multi_agent(
         "peer review this paper",
@@ -166,9 +160,7 @@ def test_garbage_output_triggers_quality_abort(monkeypatch):
             tool_calls=[],
         )
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent
-    )
+    monkeypatch.setattr("ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent)
     answer = run_multi_agent(
         "peer review this paper",
         default_selection("test:1b"),
@@ -202,9 +194,7 @@ def test_long_manuscript_is_reviewed_chunk_by_chunk(monkeypatch):
             out = "PAPER REVIEW REPORT\n10. Verdict: major revision"
         return SubAgentResult(role=role, task="t", output=out, attempt=attempt, tool_calls=[])
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent
-    )
+    monkeypatch.setattr("ci2lab.harness.multiagent.orchestrator.run_subagent", fake_run_subagent)
     answer = run_multi_agent(
         "peer review this paper",
         default_selection("test:1b"),

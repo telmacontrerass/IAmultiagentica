@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -36,9 +35,7 @@ def outside_secret(tmp_path: Path) -> Path:
         'Invoke-Expression (Get-Content "{outside}")',
     ],
 )
-def test_bash_windows_external_vectors_blocked(
-    workspace: Path, outside_secret: Path, command: str
-):
+def test_bash_windows_external_vectors_blocked(workspace: Path, outside_secret: Path, command: str):
     cmd = command.format(outside=outside_secret)
     blocked = check_bash_blocked(cmd, cwd=str(workspace))
     assert blocked is not None
@@ -48,8 +45,7 @@ def test_bash_userprofile_expansion_blocked_outside(
     workspace: Path, outside_secret: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("USERPROFILE", str(outside_secret.parent.parent))
-    outside = outside_secret.parent / "secret.txt"
-    cmd = f"type %USERPROFILE%\\outside\\secret.txt"
+    cmd = "type %USERPROFILE%\\outside\\secret.txt"
     blocked = check_bash_blocked(cmd, cwd=str(workspace))
     assert blocked is not None
 
@@ -58,7 +54,7 @@ def test_bash_dollar_env_userprofile_blocked(
     workspace: Path, outside_secret: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("USERPROFILE", str(outside_secret.parent.parent))
-    cmd = f'Get-Content "$env:USERPROFILE\\outside\\secret.txt"'
+    cmd = 'Get-Content "$env:USERPROFILE\\outside\\secret.txt"'
     blocked = check_bash_blocked(cmd, cwd=str(workspace))
     assert blocked is not None
 

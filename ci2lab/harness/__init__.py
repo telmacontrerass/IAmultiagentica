@@ -5,7 +5,7 @@ Main entry point: `run_agent` (implemented in `harness.query.loop`).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.types import AgentConfig
@@ -30,7 +30,21 @@ _LAZY_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
+    """Lazily import and return a re-exported harness symbol.
+
+    Defers importing the heavy submodules behind :data:`_LAZY_EXPORTS` until one
+    of their names is first accessed, keeping ``import ci2lab.harness`` cheap.
+
+    Args:
+        name: The attribute being accessed on this module.
+
+    Returns:
+        The resolved object from the target submodule.
+
+    Raises:
+        AttributeError: If ``name`` is not a known lazy export.
+    """
     if name in _LAZY_EXPORTS:
         import importlib
 

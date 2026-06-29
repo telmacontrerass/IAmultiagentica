@@ -59,13 +59,18 @@ def test_agent_multi_agent_prints_final_answer(capsys):
 
 def test_multi_agent_chat_command_uses_repl_alias():
     with patch("ci2lab.cli.main._run_repl", return_value=0) as run_repl:
-        assert main([
-            "agent",
-            "--multi-agent",
-            "--model",
-            "qwen2.5-coder:7b",
-            "chat",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "agent",
+                    "--multi-agent",
+                    "--model",
+                    "qwen2.5-coder:7b",
+                    "chat",
+                ]
+            )
+            == 0
+        )
 
     run_repl.assert_called_once()
     args = run_repl.call_args.args[0]
@@ -75,12 +80,17 @@ def test_multi_agent_chat_command_uses_repl_alias():
 
 def test_global_multi_agent_chat_uses_repl():
     with patch("ci2lab.cli.main._run_repl", return_value=0) as run_repl:
-        assert main([
-            "--multi-agent",
-            "--model",
-            "qwen2.5-coder:7b",
-            "chat",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--multi-agent",
+                    "--model",
+                    "qwen2.5-coder:7b",
+                    "chat",
+                ]
+            )
+            == 0
+        )
 
     run_repl.assert_called_once()
     args = run_repl.call_args.args[0]

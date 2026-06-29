@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from ci2lab.harness.token_usage import TokenUsageState
 
@@ -49,6 +50,14 @@ class AgentConfig:
     session_id: str | None = None
     """If set, persists the history at the end of each turn."""
 
+    approval_session_id: str | None = None
+    """In-memory permission approval scope for one run.
+
+    Unlike session_id, this must not imply chat/session persistence. Multi-agent
+    subagents use it so an "allow session" decision survives phase/attempt
+    boundaries inside the same orchestrated run without leaking to later runs.
+    """
+
     project_id: str | None = None
     """Optional UI knowledge-project identifier associated with the session."""
 
@@ -63,6 +72,9 @@ class AgentConfig:
 
     run_log_enabled: bool = True
     """Persist run artifacts in runs/."""
+
+    suppress_run_saved_message: bool = False
+    """If True, persist run artifacts without printing the final run path."""
 
     runs_dir: str = "runs"
     """Base directory for run logs."""
@@ -96,6 +108,16 @@ class AgentConfig:
 
     role_anchor: str | None = None
     """English role-discipline anchor reinjected for subagents after tool rounds."""
+
+    required_evidence_tools: frozenset[str] | None = None
+    """When set, stop the agent turn once these tools have succeeded.
+
+    Used by compact validation/review phases so a small model cannot keep
+    iterating after the harness already has the required evidence.
+    """
+
+    evidence_completion_verdict: str | None = None
+    """Deterministic final text used when required_evidence_tools are satisfied."""
 
     selection: ModelSelection | None = None
     """Active model selection. Set by run_agent so tools (e.g. `delegate`) can

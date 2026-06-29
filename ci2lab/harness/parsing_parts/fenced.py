@@ -25,25 +25,47 @@ GENERIC_FENCED_RE = re.compile(
     r"```([a-zA-Z0-9_+-]*)\s*\n([\s\S]*?)```",
     re.IGNORECASE,
 )
-SHELL_FENCE_TAGS = frozenset({
-    "bash",
-    "sh",
-    "shell",
-    "cmd",
-    "powershell",
-    "ps",
-    "terminal",
-    "command",
-})
+SHELL_FENCE_TAGS = frozenset(
+    {
+        "bash",
+        "sh",
+        "shell",
+        "cmd",
+        "powershell",
+        "ps",
+        "terminal",
+        "command",
+    }
+)
 
 
 def is_shell_fence_tag(tag: str) -> bool:
+    """Return whether a fence info-string denotes a shell command block.
+
+    Args:
+        tag: The language tag following a ```` ``` ```` fence opener.
+
+    Returns:
+        ``True`` if the tag is a known shell synonym or maps to ``bash``.
+    """
     low = tag.strip().lower()
     return low in SHELL_FENCE_TAGS or map_name(low) == "bash"
 
 
 def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
-    """Parse ```bash/json/...``` blocks that contain tool names + JSON."""
+    """Parse ```bash/json/...``` blocks that contain tool names + JSON.
+
+    For each generic fenced block this extracts embedded JSON tool-call objects,
+    interprets a leading tool name followed by a JSON or free-form argument body,
+    and falls back to treating a shell-tagged block as a ``bash`` command. Calls
+    are de-duplicated within the text.
+
+    Args:
+        text: Model output that may contain fenced code blocks.
+
+    Returns:
+        The distinct tool calls recovered from the blocks, in discovery order.
+    """
     calls: list[ToolCall] = []
     seen: set[tuple[str, str]] = set()
 
@@ -66,8 +88,7 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
             json_part = rest.strip() or " ".join(first_line.strip().split()[1:])
             if json_part:
                 for obj in extract_json_objects(json_part):
-                    payload = obj if "path" in obj or "content" in obj or "command" in obj else obj
-                    call = new_call(mapped, payload if isinstance(payload, dict) else {})
+                    call = new_call(mapped, obj if isinstance(obj, dict) else {})
                     if call.arguments and remember_call(call, seen):
                         calls.append(call)
                 try:
@@ -78,9 +99,7 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
                             calls.append(call)
                 except json.JSONDecodeError:
                     if mapped == "bash" and json_part:
-                        call = redirect_bash_call(
-                            new_call("bash", {"command": json_part})
-                        )
+                        call = redirect_bash_call(new_call("bash", {"command": json_part}))
                         if remember_call(call, seen):
                             calls.append(call)
                     else:
@@ -99,6 +118,15 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
 
 
 def looks_like_shell_command(body: str) -> bool:
+    """Heuristic for whether a fenced block body is a runnable shell command.
+
+    Args:
+        body: The text inside a shell-tagged fenced block.
+
+    Returns:
+        ``False`` for empty bodies, JSON objects, or multi-line bodies that do
+        not begin with a recognised shell/script prefix; otherwise ``True``.
+    """
     stripped = body.strip()
     if not stripped or stripped.startswith("{"):
         return False
@@ -108,6 +136,19 @@ def looks_like_shell_command(body: str) -> bool:
 
 
 def parse_fenced_blocks(text: str) -> list[ToolCall]:
+    """Parse fenced blocks whose info-string is itself a known tool name.
+
+    A block like ```` ```bash ... ``` ```` or ```` ```read_file ... ``` ```` is
+    turned into a call to that tool, with the block body converted to arguments
+    by :func:`fenced_body_to_args` (and ``bash`` calls passed through
+    :func:`redirect_bash_call`).
+
+    Args:
+        text: Model output that may contain tool-named fenced blocks.
+
+    Returns:
+        The tool calls parsed from the matching blocks, in order.
+    """
     calls: list[ToolCall] = []
     for match in FENCED_RE.finditer(text):
         tag = map_name(match.group(1))
@@ -120,6 +161,20 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
 
 
 def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
+    """Convert a fenced-block body into an argument mapping for a given tool.
+
+    Applies per-tool conventions: a body may be JSON (decoded when it forms a
+    ``dict``) or a single positional value (e.g. a path, pattern, URL, query or
+    command) mapped to the tool's primary argument. Unknown tools fall back to a
+    ``{"raw": body}`` mapping.
+
+    Args:
+        tool: Canonical tool name the body belongs to.
+        body: The raw text inside the fenced block.
+
+    Returns:
+        The argument mapping appropriate for ``tool``.
+    """
     if tool == "bash":
         return {"command": body}
     if tool in ("read_file", "read_document"):

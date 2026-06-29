@@ -57,6 +57,7 @@ class FakeClient:
 
 # ---------- micro_compact ----------
 
+
 def test_micro_compact_stubs_old_results_keeps_recent():
     msgs = [{"role": "system", "content": "sys"}]
     for i in range(KEEP_RECENT_TOOL_RESULTS + 2):
@@ -105,6 +106,7 @@ def test_micro_compact_does_not_mutate_input():
 
 # ---------- should_compact ----------
 
+
 def test_should_compact_threshold():
     small = [{"role": "user", "content": "hi"}]
     assert not should_compact(small, context_length=8192)
@@ -114,6 +116,7 @@ def test_should_compact_threshold():
 
 
 # ---------- summarize_history ----------
+
 
 def _history_with_old_turns() -> list[dict]:
     msgs = [{"role": "system", "content": "sys"}]
@@ -151,9 +154,7 @@ def test_summarize_history_tail_does_not_start_with_orphan_tool():
     assert out is not None
     non_system = [m for m in out if m["role"] != "system"]
     # after the summary, the first message of the tail is never an orphan tool
-    first_tool_idx = next(
-        (i for i, m in enumerate(non_system) if m["role"] == "tool"), None
-    )
+    first_tool_idx = next((i for i, m in enumerate(non_system) if m["role"] == "tool"), None)
     if first_tool_idx is not None:
         assert non_system[first_tool_idx - 1].get("tool_calls")
 
@@ -181,6 +182,7 @@ def test_summarize_history_rejects_tool_call_response():
 
 
 # ---------- manage_context ----------
+
 
 def test_manage_context_noop_below_threshold():
     history = [{"role": "user", "content": "hi"}]
@@ -213,9 +215,7 @@ def test_manage_context_falls_back_and_counts_failures():
     for i in range(8):
         history.append({"role": "assistant", "content": f"a{i} " + "b" * 500})
 
-    out, failures, events = manage_context(
-        history, FakeClient(fail=True), context_length=4096
-    )
+    out, failures, events = manage_context(history, FakeClient(fail=True), context_length=4096)
     assert failures == 1
     assert any("failed" in e for e in events)
     # History intact: trimming is done by trim_messages afterwards.
@@ -225,9 +225,7 @@ def test_manage_context_falls_back_and_counts_failures():
 def test_manage_context_stops_retrying_after_max_failures():
     history = [{"role": "user", "content": "u" * 60_000}]
     client = FakeClient(fail=True)
-    out, failures, events = manage_context(
-        history, client, context_length=4096, summary_failures=3
-    )
+    out, failures, events = manage_context(history, client, context_length=4096, summary_failures=3)
     assert failures == 3
     assert client.calls == []
 
@@ -244,6 +242,5 @@ def test_manage_context_summarizes_when_micro_compact_insufficient():
     assert failures == 0
     assert any("summarized" in e for e in events)
     assert any(
-        isinstance(m.get("content"), str) and m["content"].startswith(SUMMARY_PREFIX)
-        for m in out
+        isinstance(m.get("content"), str) and m["content"].startswith(SUMMARY_PREFIX) for m in out
     )

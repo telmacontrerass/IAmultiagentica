@@ -188,7 +188,7 @@ Show the models installed in Ollama.
 
 ## 9. Table of available models
 
-The current catalog has 64 models. Download only the ones that `ci2lab models recommend` suggests and that fit on your machine.
+The current catalog has 86 models. Download only the ones that `ci2lab models recommend` suggests and that fit on your machine.
 
 | Model | Ci2Lab ID | Ollama Tag | Use | Tier | Approx. RAM |
 |---|---|---|---|---|---|
@@ -742,7 +742,7 @@ Disable logging from YAML.
 
 ## The agent's internal tools
 
-The model invokes these during a task (25 built-in tools + dynamic MCP). See `docs/TOOLS_ROADMAP.md`.
+The model invokes these during a task (28 built-in tools + dynamic MCP). See `docs/TOOLS_ROADMAP.md`.
 
 **Reading / exploration:** `ls`, `read_file`, `read_document`, `grep`, `glob`, `file_info`, `tree`, `inspect_file`
 

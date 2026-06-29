@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from unittest.mock import patch
 
 from rich.table import Table
@@ -29,6 +30,8 @@ from ci2lab.harness.llm_errors import LLMError
 
 @dataclass
 class EvalRunSummary:
+    """Summary metadata for one full evaluation run across all tasks."""
+
     started_at: str
     ended_at: str
     mode: str
@@ -39,6 +42,7 @@ class EvalRunSummary:
     results_dir: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the run summary to a JSON-ready dict."""
         return {
             "started_at": self.started_at,
             "ended_at": self.ended_at,
@@ -54,6 +58,7 @@ class EvalRunSummary:
 def _mock_responses_to_llm(
     responses: list[dict[str, Any]],
 ) -> list[LLMResponse]:
+    """Convert mock response dicts into :class:`LLMResponse` objects for patching."""
     return [
         LLMResponse(
             content=item.get("content") or "",
@@ -64,6 +69,7 @@ def _mock_responses_to_llm(
 
 
 def _find_latest_run_dir(runs_parent: Path) -> Path | None:
+    """Return the most recently modified subdirectory, or ``None`` if none exist."""
     if not runs_parent.is_dir():
         return None
     dirs = [p for p in runs_parent.iterdir() if p.is_dir()]
@@ -77,17 +83,19 @@ def _build_agent_config(
     workspace: Path,
     runs_dir: Path,
 ) -> AgentConfig:
+    """Build the :class:`AgentConfig` used to run a single eval task.
+
+    Maps the task's ``requires_approval`` and ``write_tools_enabled`` flags onto
+    the harness configuration and pins non-interactive, logged execution under
+    ``runs_dir`` with the ``ci2lab`` security engine.
+    """
     confirm_callback: Callable[[str, str], bool] | None = None
     if task.requires_approval is False:
         confirm_callback = lambda _n, _s: False  # noqa: E731
     elif task.requires_approval is True:
         confirm_callback = lambda _n, _s: True  # noqa: E731
 
-    write_enabled = (
-        task.write_tools_enabled
-        if task.write_tools_enabled is not None
-        else True
-    )
+    write_enabled = task.write_tools_enabled if task.write_tools_enabled is not None else True
 
     return AgentConfig(
         cwd=str(workspace),
@@ -111,6 +119,23 @@ def run_single_task(
     model: str,
     use_mock: bool,
 ) -> TaskEvalResult:
+    """Execute one task end-to-end and grade the result.
+
+    Sets up the workspace, runs the agent (against mocked LLM responses when
+    ``use_mock`` is true, otherwise live), loads the resulting tool-call log and
+    grades it via :func:`evaluate_task`.
+
+    Args:
+        task: The task to run.
+        workspace: Directory the agent operates in.
+        task_runs_dir: Directory where the harness writes per-run logs.
+        model: Ollama model tag (used in live mode).
+        use_mock: When true, drive the agent with ``task.mock_responses``
+            instead of a real model.
+
+    Returns:
+        The graded :class:`TaskEvalResult`, including any agent error.
+    """
     setup_workspace(workspace, task.workspace_setup)
     config = _build_agent_config(task, workspace, task_runs_dir)
     selection = default_selection(model)
@@ -123,6 +148,7 @@ def run_single_task(
             checks=[
                 CheckResult(
                     name="mock_responses",
+                    check_type="configuration",
                     passed=False,
                     detail="The task does not define mock_responses",
                 )
@@ -146,9 +172,7 @@ def run_single_task(
             with quiet_console:
                 with patch("ci2lab.harness.query.loop.LLMClient") as mock_cls:
                     mock_cls.return_value.chat.side_effect = responses
-                    final_answer = run_agent(
-                        task.prompt, selection, config=config
-                    )
+                    final_answer = run_agent(task.prompt, selection, config=config)
         else:
             with quiet_console:
                 final_answer = run_agent(task.prompt, selection, config=config)
@@ -157,11 +181,7 @@ def run_single_task(
         final_answer = exc.user_message
 
     run_log_dir = _find_latest_run_dir(task_runs_dir)
-    tool_calls = (
-        load_tool_calls_jsonl(run_log_dir / "tool_calls.jsonl")
-        if run_log_dir
-        else []
-    )
+    tool_calls = load_tool_calls_jsonl(run_log_dir / "tool_calls.jsonl") if run_log_dir else []
 
     result = evaluate_task(
         task,
@@ -192,6 +212,26 @@ def run_eval_suite(
     model: str | None = None,
     use_mock: bool = True,
 ) -> tuple[EvalRunSummary, list[TaskEvalResult]]:
+    """Run every selected task and write run artifacts to a timestamped directory.
+
+    For each task this creates an isolated workspace and run-log directory,
+    executes and grades it, prints progress, and appends the result to
+    ``results.jsonl``. A ``summary.json`` is written at the end.
+
+    Args:
+        tasks_dir: Directory of task JSON files; defaults to the standard path.
+        results_base: Base directory for run artifacts; defaults to the
+            standard results directory.
+        task_ids: Optional subset of task ids to run.
+        model: Ollama model tag; defaults to ``DEFAULT_MODEL``.
+        use_mock: Run with mocked LLM responses when true.
+
+    Returns:
+        A tuple of the run :class:`EvalRunSummary` and the per-task results.
+
+    Raises:
+        ValueError: If no tasks match the selection.
+    """
     from ci2lab.config import DEFAULT_MODEL
 
     tasks = load_tasks(tasks_dir, task_ids=task_ids)
@@ -252,6 +292,7 @@ def run_eval_suite(
 
 
 def print_summary_table(results: list[TaskEvalResult]) -> None:
+    """Render a Rich table of task results (id, status, tools) to the console."""
     table = Table(title="Eval results")
     table.add_column("Task")
     table.add_column("Status")

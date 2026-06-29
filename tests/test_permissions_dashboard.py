@@ -83,8 +83,18 @@ def test_resolve_audit_source_fallback(workspace: Path):
 def test_summarize_and_filters(workspace: Path):
     events = [
         {"decision": "allow", "tool": "ls", "security_engine": "ci2lab", "outcome": "executed"},
-        {"decision": "deny", "tool": "bash", "security_engine": "ci2lab", "outcome": "blocked_by_workspace"},
-        {"decision": "ask", "tool": "bash", "security_engine": "opencode_experimental", "outcome": "pending"},
+        {
+            "decision": "deny",
+            "tool": "bash",
+            "security_engine": "ci2lab",
+            "outcome": "blocked_by_workspace",
+        },
+        {
+            "decision": "ask",
+            "tool": "bash",
+            "security_engine": "opencode_experimental",
+            "outcome": "pending",
+        },
         {
             "decision": "allow",
             "tool": "read_file",
@@ -106,7 +116,16 @@ def test_summarize_and_filters(workspace: Path):
 
 def test_format_event_table():
     text = format_event_table(
-        [{"timestamp": "t", "tool": "bash", "target": "x", "decision": "deny", "reason": "r", "outcome": "blocked"}],
+        [
+            {
+                "timestamp": "t",
+                "tool": "bash",
+                "target": "x",
+                "decision": "deny",
+                "reason": "r",
+                "outcome": "blocked",
+            }
+        ],
         max_rows=5,
     )
     assert "bash" in text

@@ -9,12 +9,26 @@ from pathlib import Path
 from ci2lab.harness.tools.paths import resolve_path
 from ci2lab.harness.tools.secret_files import is_sensitive_path, secret_file_block_message
 
-MAX_DISPLAY_LINES = 80
-MAX_NEW_FILE_PREVIEW_CHARS = 2000
+#: Maximum number of unified-diff lines to show before truncating the preview.
+MAX_DISPLAY_LINES: int = 80
+#: Maximum number of characters of new-file content to show in a preview.
+MAX_NEW_FILE_PREVIEW_CHARS: int = 2000
 
 
 @dataclass
 class WritePreview:
+    """Result of pre-validating a write/edit operation before it is applied.
+
+    Attributes:
+        path: Display path (workspace-relative where possible) of the target.
+        is_new_file: Whether the operation would create a new file.
+        diff: Unified diff of the change (empty for new-file/conversion previews).
+        validation_error: Error message when the operation is invalid, else
+            ``None``.
+        new_content: Proposed file content or a human-readable summary, when
+            available.
+    """
+
     path: str
     is_new_file: bool
     diff: str
@@ -23,9 +37,16 @@ class WritePreview:
 
     @property
     def is_valid(self) -> bool:
+        """Whether the previewed operation passed validation."""
         return self.validation_error is None
 
     def format_for_display(self) -> str:
+        """Render a human-readable summary of the preview for confirmation UIs.
+
+        Returns:
+            A multi-line string describing the validation error, the proposed
+            new-file content, or the (possibly truncated) unified diff.
+        """
         lines = [f"File: {self.path}"]
         if self.validation_error:
             lines.append(f"Validation error: {self.validation_error}")
@@ -48,6 +69,7 @@ class WritePreview:
 
 
 def _truncate_diff_lines(diff: str) -> list[str]:
+    """Split a diff into lines, truncating to ``MAX_DISPLAY_LINES`` with a note."""
     rows = diff.splitlines()
     if len(rows) <= MAX_DISPLAY_LINES:
         return rows
@@ -57,6 +79,7 @@ def _truncate_diff_lines(diff: str) -> list[str]:
 
 
 def _unified_diff(old: str, new: str, path: str) -> str:
+    """Build a unified diff string between ``old`` and ``new`` for ``path``."""
     old_lines = old.splitlines(keepends=True)
     new_lines = new.splitlines(keepends=True)
     if not old_lines and not new_lines:
@@ -79,7 +102,20 @@ def compute_edit_result(
     new_string: str,
     replace_all: bool = False,
 ) -> tuple[str | None, str | None]:
-    """Return (new_content, error_message)."""
+    """Compute the file content resulting from an ``edit_file`` operation.
+
+    Args:
+        cwd: Workspace root used to resolve ``path``.
+        path: Target file path (relative to ``cwd`` or absolute).
+        old_string: Substring to be replaced; must exist in the file.
+        new_string: Replacement text; must differ from ``old_string``.
+        replace_all: Replace every occurrence instead of requiring a unique one.
+
+    Returns:
+        A tuple ``(new_content, error_message)`` where exactly one element is
+        non-``None``: the new file content on success, or an error message
+        string describing why the edit cannot be applied.
+    """
     if old_string == new_string:
         return None, "Error: old_string and new_string are identical; nothing to change"
     resolved = resolve_path(path, cwd)
@@ -146,6 +182,19 @@ def preview_write_file(
     *,
     enforce_hard_policy: bool = True,
 ) -> WritePreview:
+    """Preview creating or overwriting a file with ``content``.
+
+    Args:
+        cwd: Workspace root used to resolve ``path``.
+        path: Target file path (relative to ``cwd`` or absolute).
+        content: Full proposed file content.
+        enforce_hard_policy: When ``True``, resolve through the hard path policy
+            and block sensitive paths; when ``False``, resolve leniently.
+
+    Returns:
+        A :class:`WritePreview` with a diff against existing content or a
+        new-file preview, or a validation error for blocked sensitive paths.
+    """
     if enforce_hard_policy:
         resolved = resolve_path(path, cwd)
     else:
@@ -186,6 +235,21 @@ def preview_edit_file(
     *,
     enforce_hard_policy: bool = True,
 ) -> WritePreview:
+    """Preview an ``edit_file`` substitution against an existing file.
+
+    Args:
+        cwd: Workspace root used to resolve ``path``.
+        path: Target file path (relative to ``cwd`` or absolute).
+        old_string: Substring to be replaced.
+        new_string: Replacement text.
+        replace_all: Replace every occurrence instead of requiring a unique one.
+        enforce_hard_policy: When ``True``, resolve through the hard path policy
+            and block sensitive paths; when ``False``, resolve leniently.
+
+    Returns:
+        A :class:`WritePreview` with the unified diff of the proposed edit, or a
+        validation error when the edit cannot be applied or the path is blocked.
+    """
     if enforce_hard_policy:
         resolved = resolve_path(path, cwd)
     else:
@@ -201,9 +265,7 @@ def preview_edit_file(
             diff="",
             validation_error=secret_file_block_message(),
         )
-    new_text, error = compute_edit_result(
-        cwd, path, old_string, new_string, replace_all
-    )
+    new_text, error = compute_edit_result(cwd, path, old_string, new_string, replace_all)
     if error:
         return WritePreview(
             path=rel,
@@ -221,6 +283,17 @@ def preview_edit_file(
 
 
 def preview_apply_patch(cwd: str, patch_text: str) -> WritePreview:
+    """Preview the combined effect of an ``apply_patch`` unified diff.
+
+    Args:
+        cwd: Workspace root against which the patch is planned.
+        patch_text: The unified-diff patch text to apply.
+
+    Returns:
+        A :class:`WritePreview` carrying the combined diff and a label of the
+        touched path(s), or a validation error when the patch is invalid or a
+        no-op.
+    """
     from ci2lab.harness.tools.patch import plan_patch
 
     plan, error = plan_patch(cwd, patch_text)
@@ -258,7 +331,20 @@ def _conversion_preview(
     output_ext: str,
     tool_name: str,
 ) -> WritePreview:
-    """Shared preview builder for docx_to_pdf and pdf_to_docx."""
+    """Shared preview builder for docx_to_pdf and pdf_to_docx.
+
+    Args:
+        cwd: Workspace root used to resolve ``source`` and ``output``.
+        source: Source document path.
+        output: Destination document path.
+        source_ext: Required lowercase suffix for the source (e.g. ``".docx"``).
+        output_ext: Required lowercase suffix for the output (e.g. ``".pdf"``).
+        tool_name: Name of the calling tool, used in error messages.
+
+    Returns:
+        A :class:`WritePreview` summarizing the conversion, or a validation
+        error for bad extensions, missing sources or path violations.
+    """
     from ci2lab.harness.tools.paths import PathViolationError
 
     try:
@@ -278,8 +364,7 @@ def _conversion_preview(
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: {tool_name} requires a {source_ext} source file, "
-                f"no '{source_path.suffix}'"
+                f"Error: {tool_name} requires a {source_ext} source file, no '{source_path.suffix}'"
             ),
         )
     if output_path.suffix.lower() != output_ext:
@@ -288,8 +373,7 @@ def _conversion_preview(
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: {tool_name} requires a {output_ext} output path, "
-                f"no '{output_path.suffix}'"
+                f"Error: {tool_name} requires a {output_ext} output path, no '{output_path.suffix}'"
             ),
         )
     if not source_path.is_file():
@@ -326,6 +410,7 @@ def preview_pdf_to_docx(cwd: str, source: str, output: str) -> WritePreview:
 
 
 def _display_path(resolved: Path, cwd: str) -> str:
+    """Return ``resolved`` relative to ``cwd`` when possible, else its absolute form."""
     try:
         return str(resolved.relative_to(Path(cwd).resolve()))
     except ValueError:

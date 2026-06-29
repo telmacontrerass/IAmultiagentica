@@ -44,19 +44,47 @@ _EXERCISE_REVIEW_RE = re.compile(
 
 
 def is_exercise_review_request(text: str) -> bool:
-    """Return True when the user wants transcription plus calculation checking."""
+    """Return True when the user wants transcription plus calculation checking.
+
+    Args:
+        text: The user's request text to match against the intent regex.
+
+    Returns:
+        ``True`` if the text matches the exercise-review intent pattern.
+    """
     return bool(_EXERCISE_REVIEW_RE.search(text or ""))
 
 
 def should_apply_exercise_review_skill(user_prompt: str, *, has_vision_input: bool) -> bool:
-    """Whether to auto-load the handwritten exercise review skill."""
+    """Whether to auto-load the handwritten exercise review skill.
+
+    Args:
+        user_prompt: The user's request text.
+        has_vision_input: Whether the turn includes image/PDF input.
+
+    Returns:
+        ``True`` only when there is vision input and the prompt matches the
+        exercise-review intent.
+    """
     if not has_vision_input:
         return False
     return is_exercise_review_request(user_prompt)
 
 
-def build_exercise_skill_prefix(cwd: str, user_args: str = "") -> tuple[str, frozenset[str] | None] | None:
-    """Return skill instructions to prepend to the user turn, or None if missing."""
+def build_exercise_skill_prefix(
+    cwd: str, user_args: str = ""
+) -> tuple[str, frozenset[str] | None] | None:
+    """Return skill instructions to prepend to the user turn, or None if missing.
+
+    Args:
+        cwd: Working directory used to discover and load skills.
+        user_args: Optional user arguments rendered into the skill header.
+
+    Returns:
+        A ``(prefix_text, allowed_tools)`` tuple, where ``allowed_tools`` is
+        the skill's allowed-tool set or ``None`` if unrestricted; or ``None``
+        if the skill is not found.
+    """
     skills = load_skills(cwd)
     skill = get_skill(skills, REVIEW_HANDWRITTEN_EXERCISE_SKILL)
     if skill is None:
@@ -79,7 +107,16 @@ def enrich_user_prompt_with_exercise_skill(
     user_prompt: str,
     cwd: str,
 ) -> tuple[str, frozenset[str] | None] | None:
-    """Prepend the exercise review skill body to a plain-text user prompt."""
+    """Prepend the exercise review skill body to a plain-text user prompt.
+
+    Args:
+        user_prompt: The plain-text user prompt to enrich.
+        cwd: Working directory used to load the skill.
+
+    Returns:
+        A ``(enriched_prompt, allowed_tools)`` tuple, or ``None`` if the skill
+        should not be applied or could not be loaded.
+    """
     if not should_apply_exercise_review_skill(user_prompt, has_vision_input=True):
         return None
     prefix = build_exercise_skill_prefix(cwd, user_args=user_prompt)
@@ -95,7 +132,19 @@ def enrich_turn_content_with_exercise_skill(
     content: str | list[dict[str, Any]],
     cwd: str,
 ) -> tuple[str | list[dict[str, Any]], frozenset[str] | None]:
-    """Prepend skill instructions to user content (text or multimodal list)."""
+    """Prepend skill instructions to user content (text or multimodal list).
+
+    Args:
+        user_prompt: The user's request text (used for intent detection).
+        content: The turn content, either a plain string or an OpenAI-style
+            multipart list of blocks.
+        cwd: Working directory used to load the skill.
+
+    Returns:
+        A ``(content, allowed_tools)`` tuple. When the skill applies, the
+        instructions are prepended to ``content`` (in-place on a copy for
+        lists); otherwise the original content is returned with ``None``.
+    """
     if not should_apply_exercise_review_skill(user_prompt, has_vision_input=True):
         return content, None
 

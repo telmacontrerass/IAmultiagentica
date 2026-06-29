@@ -3,10 +3,11 @@ from pathlib import Path
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.hardware.profile import build_cpu_profile_for_testing
 from ci2lab.harness.llm_errors import LLMModelNotFoundError
 from ci2lab.harness.session import load_session, save_session
 from ci2lab.harness.token_usage import TokenUsage
-from ci2lab.hardware.profile import build_cpu_profile_for_testing
+from ci2lab.ui import projects as ui_projects
 from ci2lab.ui.server import (
     UIState,
     _chat,
@@ -16,8 +17,8 @@ from ci2lab.ui.server import (
     _delete_task_payload,
     _finish_delete_task,
     _health_payload,
-    _pull_task_payload,
     _prompt_with_uploaded_files,
+    _pull_task_payload,
     _record_pull_event,
     _session_payload,
     _sessions_payload,
@@ -25,7 +26,6 @@ from ci2lab.ui.server import (
     _tools_payload,
     _upload_file,
 )
-from ci2lab.ui import projects as ui_projects
 
 
 def test_content_type_for_static_assets():
@@ -62,7 +62,7 @@ def test_web_chat_transcript_is_not_auto_translated():
     app_js = (root / "app.js").read_text(encoding="utf-8")
 
     assert 'id="messages" class="messages" aria-live="polite" data-no-translate' in index_html
-    assert 'message: prompt,' in app_js
+    assert "message: prompt," in app_js
     assert "ui_language" not in app_js
     assert "interface_language" not in app_js
 

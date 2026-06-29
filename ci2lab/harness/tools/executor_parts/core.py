@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from ci2lab.harness.security.policy import outcome_for_tool_output
 from ci2lab.harness.security.write_permissions import WRITE_TOOLS
 from ci2lab.harness.tools.bash import _format_bash_block_message
@@ -25,9 +27,8 @@ from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.security.permissions import evaluate_tool_gate
 from ci2lab.settings import check_tool_allowed
 
-
 # Equivalences we suggest when the skill blocks a shell tool.
-_SHELL_TOOL_EQUIVALENT = {
+_SHELL_TOOL_EQUIVALENT: dict[str, tuple[str, ...]] = {
     "bash": ("ls", "grep", "glob", "read_file"),
     "ls": ("ls",),
     "cat": ("read_file",),
@@ -35,9 +36,41 @@ _SHELL_TOOL_EQUIVALENT = {
     "grep": ("grep",),
 }
 
+_BASH_VERDICT_RE = re.compile(r"^\s*(?:PASS|FAIL)\s*:", re.IGNORECASE)
+_BASH_PSEUDO_TOOL_RE = re.compile(
+    r"^\s*(?:git_status|git_diff|read_file|write_file|edit_file|apply_patch|todo_write)\b",
+    re.IGNORECASE,
+)
+
+
+def _strict_role_bash_channels(config: AgentConfig) -> bool:
+    anchor = (config.role_anchor or "").lower()
+    return any(
+        f"acting as {role}" in anchor
+        for role in ("validator", "reviewer", "security_reviewer", "researcher")
+    )
+
+
+def _invalid_role_bash_command(command: str) -> str | None:
+    stripped = command.strip()
+    if _BASH_VERDICT_RE.search(stripped):
+        return "verdict_text"
+    if _BASH_PSEUDO_TOOL_RE.search(stripped):
+        return "pseudo_tool"
+    return None
+
 
 def _skill_block_hint(name: str, allowed_canon: set[str]) -> str:
-    """Suggest the equivalent permitted tool so the model does not get stuck in a loop."""
+    """Suggest the equivalent permitted tool so the model does not get stuck in a loop.
+
+    Args:
+        name: Name of the tool that the active skill blocked.
+        allowed_canon: Canonicalized set of tool names the skill permits.
+
+    Returns:
+        A hint string suggesting allowed equivalents, or generic advice to stop
+        retrying when no equivalent is available.
+    """
     from ci2lab.harness.parsing_parts.common import map_name
 
     candidates = _SHELL_TOOL_EQUIVALENT.get(map_name(name), ())
@@ -52,6 +85,23 @@ def _skill_block_hint(name: str, allowed_canon: set[str]) -> str:
 
 
 def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
+    """Run a single tool call end-to-end and return its result.
+
+    Drives the full execution pipeline: bash/native redirection, skill and
+    settings allow-list filtering, argument normalization, MCP dispatch,
+    security gating and confirmation, audit logging, workspace blocking, the
+    actual dispatch and oversized-output offloading. All failure modes are
+    converted into error :class:`ToolResult` objects rather than raised.
+
+    Args:
+        call: The tool call to execute (name, arguments and optional call id).
+        config: Active agent configuration governing permissions, security
+            engine, workspace and output limits.
+
+    Returns:
+        A :class:`ToolResult` carrying the tool output (or error message), an
+        ``is_error`` flag and an ``outcome`` label for auditing.
+    """
     from ci2lab.harness.mcp.session import get_mcp_manager
 
     ensure_audit_persist_context(config)
@@ -68,6 +118,20 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
     # redirected to the real tool.
     if name == "bash":
         command = str(call.arguments.get("command", ""))
+        if _strict_role_bash_channels(config):
+            invalid_reason = _invalid_role_bash_command(command)
+            if invalid_reason:
+                return ToolResult(
+                    tool_name=name,
+                    content=(
+                        "Error: invalid_tool_via_bash. Validation/review roles "
+                        "must emit PASS:/FAIL: as plain final text and must call "
+                        "dedicated harness tools directly, not through bash."
+                    ),
+                    is_error=True,
+                    call_id=call.call_id,
+                    outcome="invalid_tool_via_bash",
+                )
         redirected = tool_call_from_bash_command(command, call_id=call.call_id)
         if redirected is not None and redirected.name != "bash":
             return execute_tool(redirected, config)
@@ -136,9 +200,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         )
 
     if config.tool_settings is not None:
-        settings_allowed, settings_reason = check_tool_allowed(
-            config.tool_settings, name, args
-        )
+        settings_allowed, settings_reason = check_tool_allowed(config.tool_settings, name, args)
         if not settings_allowed:
             return ToolResult(
                 tool_name=name,
@@ -249,7 +311,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             call_id=call.call_id,
             outcome="blocked_by_workspace",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ToolResult(
             tool_name=name,
             content=f"Error: {exc}",
@@ -287,4 +349,3 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
         call_id=call.call_id,
         outcome=outcome_for_tool_output(output) if is_error else None,
     )
-

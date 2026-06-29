@@ -13,6 +13,7 @@ built only from verified, anchored findings — unit-testable without a model.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from ci2lab.harness.multiagent.grounding import Finding
 from ci2lab.harness.multiagent.manuscript import ManuscriptIndex
@@ -23,18 +24,20 @@ class ReviewContext:
     """Everything a grounded review of one manuscript needs."""
 
     index: ManuscriptIndex
-    paper_meta: dict[str, str] = field(default_factory=dict)
+    paper_meta: dict[str, Any] = field(default_factory=dict)
     reviewer_block: str = ""
     manuscript_source_name: str = ""
     # url -> {"ok": bool, "category": str, "reason": str} (see grounding.py).
-    fetch_attempts: dict = field(default_factory=dict)
+    fetch_attempts: dict[str, Any] = field(default_factory=dict)
 
     @property
     def readable(self) -> bool:
+        """Whether the underlying manuscript index is readable for review."""
         return self.index.readable
 
     @property
     def fetched_ok(self) -> int:
+        """Number of external sources that were successfully fetched this run."""
         return sum(1 for info in self.fetch_attempts.values() if info.get("ok"))
 
 
@@ -49,6 +52,7 @@ REFUSAL_MESSAGE = (
 
 
 def _meta_block(ctx: ReviewContext) -> str:
+    """Render the ``<review_brief>`` block from the context's paper metadata."""
     meta = ctx.paper_meta or {}
     rows = [
         ("Title", meta.get("paper_title")),
@@ -62,9 +66,8 @@ def _meta_block(ctx: ReviewContext) -> str:
     return "<review_brief>\n" + "\n".join(lines) + "\n</review_brief>"
 
 
-def _manuscript_block(
-    ctx: ReviewContext, *, text: str | None = None, part_label: str = ""
-) -> str:
+def _manuscript_block(ctx: ReviewContext, *, text: str | None = None, part_label: str = "") -> str:
+    """Render the ``<manuscript>`` block of anchored text shown to a reviewer."""
     body = text if text is not None else ctx.index.anchored_text
     header = (
         "The paper, segmented with [A#] anchors. Cite these anchors and quote "
@@ -86,6 +89,7 @@ def _base_prompt(
     chunk_text: str | None = None,
     part_label: str = "",
 ) -> str:
+    """Assemble a reviewer prompt with task, brief, manuscript, and output contract."""
     parts = [task.strip(), _meta_block(ctx)]
     if ctx.reviewer_block:
         parts.append(ctx.reviewer_block)
@@ -119,6 +123,7 @@ def _findings_prompt(ctx: ReviewContext, *, task: str, extra: str = "") -> str:
 def build_intake_prompt(
     ctx: ReviewContext, *, chunk_text: str | None = None, part_label: str = ""
 ) -> str:
+    """Build the intake/diagnosis reviewer prompt for ``ctx`` (or one chunk of it)."""
     return _base_prompt(
         ctx,
         chunk_text=chunk_text,
@@ -181,6 +186,18 @@ def build_lens_prompt(
     chunk_text: str | None = None,
     part_label: str = "",
 ) -> str:
+    """Build a lens reviewer's prompt, folding the intake diagnosis in as context.
+
+    Args:
+        lens_value: The lens role value selecting which task text to use.
+        ctx: The review context for this manuscript.
+        intake_text: Shared intake diagnosis to attach as re-verifiable context.
+        chunk_text: Optional anchored text for a single chunk of the manuscript.
+        part_label: Optional label naming the chunk (e.g. ``"part 2 of 3"``).
+
+    Returns:
+        The assembled reviewer prompt string.
+    """
     task = _LENS_TASKS.get(lens_value, "Review the manuscript within your role.")
     extra = ""
     if intake_text.strip():
@@ -200,6 +217,17 @@ def build_reground_prompt(
     chunk_text: str | None = None,
     part_label: str = "",
 ) -> str:
+    """Build a prompt asking a reviewer to re-ground its unverified findings.
+
+    Args:
+        ctx: The review context for this manuscript.
+        failed: The findings that failed deterministic verification.
+        chunk_text: Optional anchored text for a single chunk of the manuscript.
+        part_label: Optional label naming the chunk being reviewed.
+
+    Returns:
+        The assembled re-grounding prompt string.
+    """
     lines = []
     for i, finding in enumerate(failed, start=1):
         lines.append(
@@ -216,15 +244,18 @@ def build_reground_prompt(
         "cannot ground it in the manuscript, DROP it — do not restate it. Return "
         "only the re-grounded findings as a JSON array."
     )
-    return _base_prompt(ctx, task=task, extra=failed_block, chunk_text=chunk_text, part_label=part_label)
+    return _base_prompt(
+        ctx, task=task, extra=failed_block, chunk_text=chunk_text, part_label=part_label
+    )
 
 
 def build_groundedness_prompt(ctx: ReviewContext, verified: list[Finding]) -> str:
+    """Build the verifier prompt asking whether each quote actually supports its claim."""
     lines = []
     for i, finding in enumerate(verified):
         lines.append(
             f"[{i}] claim: {finding.claim}\n"
-            f"    quote: \"{finding.evidence_quote}\"\n"
+            f'    quote: "{finding.evidence_quote}"\n'
             f"    anchor: {finding.matched_anchor or finding.anchor}"
         )
     block = "<findings_to_check>\n" + "\n".join(lines) + "\n</findings_to_check>"
@@ -232,14 +263,15 @@ def build_groundedness_prompt(ctx: ReviewContext, verified: list[Finding]) -> st
         "Each finding below has a quote already confirmed to exist in the "
         "manuscript. Check the harder question: does the quote ACTUALLY support the "
         "claim, or is the claim an over-reading or misattribution? Return a JSON "
-        "array of {\"index\": <number>, \"supported\": true|false, \"reason\": "
-        "\"...\"}. Default to supported=false when the quote does not clearly back "
+        'array of {"index": <number>, "supported": true|false, "reason": '
+        '"..."}. Default to supported=false when the quote does not clearly back '
         "the claim."
     )
     return _findings_prompt(ctx, task=task, extra=block)
 
 
 def build_revision_plan_prompt(ctx: ReviewContext, verified: list[Finding]) -> str:
+    """Build the revision-planner prompt that synthesizes verified findings into a report."""
     findings_block = "<verified_findings>\n" + format_findings(verified) + "\n</verified_findings>"
     task = (
         "Synthesize ONLY the verified findings below into a decision-ready report. "
@@ -278,6 +310,7 @@ _LENS_LABELS = {
 
 
 def format_findings(findings: list[Finding]) -> str:
+    """Render findings as a human-readable, anchored bullet list (``"(none)"`` if empty)."""
     if not findings:
         return "(none)"
     lines = []
@@ -286,7 +319,7 @@ def format_findings(findings: list[Finding]) -> str:
         label = _LENS_LABELS.get(finding.lens, finding.lens or "review")
         header = f"- [{label}] ({finding.severity}) {finding.claim}"
         if finding.evidence_type == "manuscript" and finding.evidence_quote:
-            header += f"\n  Evidence [{anchor}]: \"{finding.evidence_quote}\""
+            header += f'\n  Evidence [{anchor}]: "{finding.evidence_quote}"'
         elif finding.evidence_type == "absence":
             header += f"\n  Evidence: confirmed absent ({', '.join(finding.absence_terms)})"
         elif finding.evidence_type == "external" and finding.external_url:
@@ -312,6 +345,7 @@ _CATEGORY_LABELS = {
 
 
 def _format_needs_check(findings: list[Finding], *, truncated: bool) -> str:
+    """Render the 'could not verify' findings (plus a truncation note) as a bullet list."""
     lines: list[str] = []
     if truncated:
         lines.append(
@@ -337,6 +371,7 @@ def _coverage_note(
     refuted_count: int,
     quarantined_count: int,
 ) -> str:
+    """Render the coverage & limitations section summarizing what was reviewed."""
     index = ctx.index
     parts = [
         f"- Manuscript source: {ctx.manuscript_source_name or 'unknown'}",
@@ -375,15 +410,13 @@ def assemble_report(
     """
     body = planner_output.strip() if planner_output and planner_output.strip() else ""
     if not body:
-        body = (
-            "PAPER REVIEW REPORT (assembled from verified findings)\n\n"
-            + format_findings(verified)
+        body = "PAPER REVIEW REPORT (assembled from verified findings)\n\n" + format_findings(
+            verified
         )
 
     sections = [body]
     sections.append(
-        "## Grounded findings (verified against the manuscript)\n"
-        + format_findings(verified)
+        "## Grounded findings (verified against the manuscript)\n" + format_findings(verified)
     )
 
     if needs_check or ctx.index.truncated:
@@ -416,8 +449,7 @@ def assemble_report(
         sections.append(
             "## Unsubstantiated — DO NOT send to authors\n"
             "These could not be grounded in the manuscript and have no innocent "
-            "explanation, so they are excluded from the review above:\n"
-            + "\n".join(q_lines)
+            "explanation, so they are excluded from the review above:\n" + "\n".join(q_lines)
         )
 
     sections.append(
@@ -460,12 +492,14 @@ class QualitySignals:
     planner_report_ok: bool = False
 
     def note_lens_run(self, raw_output: str) -> None:
+        """Record one lens run, counting it as structured if it attempted the contract."""
         self.lens_runs += 1
         if looks_structured(raw_output):
             self.structured_runs += 1
 
     @property
     def structured_rate(self) -> float:
+        """Fraction of lens runs that attempted structured output (0.0 if none ran)."""
         return self.structured_runs / self.lens_runs if self.lens_runs else 0.0
 
 
@@ -503,6 +537,17 @@ def quality_abort_message(
     model_name: str,
     recommended_min_context: int = 0,
 ) -> str:
+    """Build the abort message shown when the review result would not be reliable.
+
+    Args:
+        reason: Human-readable explanation of why the result was rejected.
+        model_name: The model that produced the unreliable result.
+        recommended_min_context: Suggested minimum context window in tokens; when
+            non-zero it is woven into the recommendation.
+
+    Returns:
+        The formatted abort message.
+    """
     extra = ""
     if recommended_min_context:
         extra = f" with at least ~{recommended_min_context} tokens of context"

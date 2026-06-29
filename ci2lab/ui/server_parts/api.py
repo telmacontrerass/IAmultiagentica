@@ -6,12 +6,17 @@ import json
 import os
 import threading
 import uuid
+from types import ModuleType
 from typing import Any
 
 import httpx
 
 from ci2lab.harness.mcp.config import load_mcp_config
-from ci2lab.harness.permissions import CONFIRM_TOOLS
+
+# ``ci2lab.harness.permissions`` is a runtime alias that swaps in the real
+# ``security.permissions`` module via ``sys.modules``; import from the concrete
+# module so static analysis can resolve ``CONFIRM_TOOLS``.
+from ci2lab.harness.security.permissions import CONFIRM_TOOLS
 from ci2lab.harness.skills.loader import load_skills
 from ci2lab.harness.tools.registry import FUNCTION_SCHEMAS
 from ci2lab.runtime.ollama import is_catalog_model_installed, ollama_install_info
@@ -104,6 +109,7 @@ UI_ACTIONS: list[dict[str, str]] = [
 
 
 def health_payload(state: Any) -> dict[str, Any]:
+    """Build the ``/api/health`` payload (Ollama status, workspace, paths)."""
     installed, error = state.list_installed_models()
     install_info = ollama_install_info()
     return {
@@ -121,12 +127,17 @@ def health_payload(state: Any) -> dict[str, Any]:
 
 
 def models_payload(state: Any) -> dict[str, Any]:
+    """Build the ``/api/models`` payload: the model catalog and install status.
+
+    Each catalog entry is annotated with whether it is installed and, when
+    hardware scanning succeeds, its fit label and recommendation status.
+    """
     installed, error = state.list_installed_models()
     installed_names = {item["name"] for item in installed}
     profile = None
     try:
         profile = _facade().scan_hardware()
-    except Exception:  # noqa: BLE001
+    except Exception:
         profile = None
 
     recommendations = {}
@@ -140,29 +151,31 @@ def models_payload(state: Any) -> dict[str, Any]:
                     limit=len(_facade().load_model_catalog()),
                 )
             }
-        except Exception:  # noqa: BLE001
+        except Exception:
             recommendations = {}
 
     catalog = []
     for model in _facade().load_model_catalog():
         item = recommendations.get(model.id)
-        catalog.append({
-            "id": model.id,
-            "display_name": model.display_name,
-            "family": model.family,
-            "ollama_tag": model.ollama_tag,
-            "categories": model.categories,
-            "tier": model.tier,
-            "benchmark_score": model.benchmark_score,
-            "ram_inference_gb": model.ram_inference_gb,
-            "vram_min_gb": model.vram_min_gb,
-            "context_length": model.context_length,
-            "tool_mode": model.tool_mode,
-            "supports_tools": model.supports_tools,
-            "installed": is_catalog_model_installed(model.ollama_tag, installed_names),
-            "fit_label": getattr(item, "fit_label", None),
-            "recommendation_status": getattr(item, "recommendation_status", None),
-        })
+        catalog.append(
+            {
+                "id": model.id,
+                "display_name": model.display_name,
+                "family": model.family,
+                "ollama_tag": model.ollama_tag,
+                "categories": model.categories,
+                "tier": model.tier,
+                "benchmark_score": model.benchmark_score,
+                "ram_inference_gb": model.ram_inference_gb,
+                "vram_min_gb": model.vram_min_gb,
+                "context_length": model.context_length,
+                "tool_mode": model.tool_mode,
+                "supports_tools": model.supports_tools,
+                "installed": is_catalog_model_installed(model.ollama_tag, installed_names),
+                "fit_label": getattr(item, "fit_label", None),
+                "recommendation_status": getattr(item, "recommendation_status", None),
+            }
+        )
     return {
         "catalog": catalog,
         "installed": installed,
@@ -171,6 +184,11 @@ def models_payload(state: Any) -> dict[str, Any]:
 
 
 def system_payload(state: Any) -> dict[str, Any]:
+    """Build the ``/api/system`` payload: hardware, disk and recommendations.
+
+    Returns an ``ok: False`` payload (still including disk usage) when hardware
+    scanning or recommendation scoring fails.
+    """
     workspace = state.runtime.workspace or os.getcwd()
     try:
         profile = _facade().scan_hardware()
@@ -204,7 +222,7 @@ def system_payload(state: Any) -> dict[str, Any]:
             "disk": disk_payload(workspace),
             "recommendations": recommendations,
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {
             "ok": False,
             "error": str(exc),
@@ -215,6 +233,11 @@ def system_payload(state: Any) -> dict[str, Any]:
 
 
 def tools_payload(state: Any) -> dict[str, Any]:
+    """Build the ``/api/tools`` payload: tools, quick actions, skills and MCP.
+
+    Aggregates the registered tool schemas (with group and confirmation
+    metadata), discovered skills and configured MCP servers for the workspace.
+    """
     workspace = str(state.runtime.workspace or os.getcwd())
     skills = load_skills(workspace)
     mcp_servers = load_mcp_config(workspace)
@@ -225,13 +248,15 @@ def tools_payload(state: Any) -> dict[str, Any]:
         if not name:
             continue
         group = tool_group(name)
-        tools.append({
-            "name": name,
-            "group": group,
-            "description": str(function.get("description") or ""),
-            "requires_confirmation": name in CONFIRM_TOOLS,
-            "web_status": tool_web_status(name),
-        })
+        tools.append(
+            {
+                "name": name,
+                "group": group,
+                "description": str(function.get("description") or ""),
+                "requires_confirmation": name in CONFIRM_TOOLS,
+                "web_status": tool_web_status(name),
+            }
+        )
 
     return {
         "ok": True,
@@ -260,9 +285,24 @@ def tools_payload(state: Any) -> dict[str, Any]:
 
 
 def tool_group(name: str) -> str:
+    """Return the UI group label for a tool name.
+
+    The returned labels are wire-coupled to the frontend (``app.js``
+    ``groupNames``), which matches them verbatim, so both sides must stay in
+    sync.
+    """
     # Return values are wire-coupled: app.js (groupNames) matches these labels
     # verbatim to group the tools list, so keep both sides in sync.
-    if name in {"read_document", "read_file", "ls", "grep", "glob", "file_info", "tree", "inspect_file"}:
+    if name in {
+        "read_document",
+        "read_file",
+        "ls",
+        "grep",
+        "glob",
+        "file_info",
+        "tree",
+        "inspect_file",
+    }:
         return "Explore"
     if name in {"write_file", "edit_file", "notebook_edit"}:
         return "Edit"
@@ -282,6 +322,7 @@ def tool_group(name: str) -> str:
 
 
 def tool_web_status(name: str) -> str:
+    """Return a short note describing a tool's availability in the web UI."""
     if name == "ask_user":
         return "Terminal only; on the web it asks directly in the chat."
     if name in CONFIRM_TOOLS:
@@ -290,6 +331,19 @@ def tool_web_status(name: str) -> str:
 
 
 def pull_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Start (or join) a background download of an Ollama model.
+
+    If a non-finished pull for the same tag already exists, its task is returned
+    instead of starting a second one.
+
+    Args:
+        state: The UI server state holding pull-task registry and lock.
+        payload: Request payload carrying the Ollama ``"tag"``.
+
+    Returns:
+        ``{"ok": True, "tag": ..., "task_id": ..., "task": ...}`` on success,
+        otherwise an error dict when the tag is missing.
+    """
     tag = str(payload.get("tag") or "").strip()
     if not tag:
         return {"ok": False, "error": "The Ollama tag is missing."}
@@ -329,6 +383,10 @@ def pull_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def pull_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
+    """Return the public status of a pull task as ``(payload, http_status)``.
+
+    Yields 400 for an invalid id, 404 when unknown, and 200 with the task.
+    """
     if not task_id or not all(ch.isalnum() or ch in "-_" for ch in task_id):
         return {"ok": False, "error": "Invalid task."}, 400
     with state.pull_lock:
@@ -339,30 +397,52 @@ def pull_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
 
 
 def run_pull_task(state: Any, task_id: str, tag: str) -> None:
+    """Stream an Ollama pull, recording progress and finishing the task.
+
+    Intended to run on a background thread; failures are captured and reported on
+    the task rather than raised.
+
+    Args:
+        state: The UI server state holding the pull-task registry.
+        task_id: Identifier of the task to update.
+        tag: Ollama model tag being pulled.
+    """
     try:
-        with httpx.Client(timeout=None) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=None) as client,
+            client.stream(
                 "POST",
                 f"{state.ollama_base_url}/api/pull",
                 json={"name": tag, "stream": True},
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(event, dict):
-                        record_pull_event(state, task_id, event)
+            ) as response,
+        ):
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    record_pull_event(state, task_id, event)
 
         finish_pull_task(state, task_id, ok=True, status="Download complete")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         finish_pull_task(state, task_id, ok=False, status="Download error", error=str(exc))
 
 
 def record_pull_event(state: Any, task_id: str, event: dict[str, Any]) -> None:
+    """Apply one streamed Ollama pull event to a task's progress state.
+
+    Updates per-layer byte totals (recomputing the aggregate percent) and marks
+    the task complete on a ``success`` status.
+
+    Args:
+        state: The UI server state holding the pull-task registry.
+        task_id: Identifier of the task to update.
+        event: A decoded progress event from the Ollama pull stream.
+    """
     status = str(event.get("status") or "").strip()
     digest = str(event.get("digest") or "").strip()
     total = safe_int(event.get("total"))
@@ -400,6 +480,7 @@ def finish_pull_task(
     status: str,
     error: str | None = None,
 ) -> None:
+    """Mark a pull task finished with a final status (and optional error)."""
     with state.pull_lock:
         task = state.pull_tasks.get(task_id)
         if task is None:
@@ -413,6 +494,7 @@ def finish_pull_task(
 
 
 def recompute_pull_totals(task: dict[str, Any]) -> None:
+    """Recompute a pull task's aggregate byte totals and percent from its layers."""
     layers = task.get("layers") or {}
     total = 0
     completed = 0
@@ -427,12 +509,26 @@ def recompute_pull_totals(task: dict[str, Any]) -> None:
 
 
 def pull_percent(completed: int, total: int) -> float:
+    """Return download progress as a percent clamped to the ``0.0..99.0`` range."""
     if total <= 0:
         return 0.0
     return round(max(0.0, min(99.0, completed / total * 100)), 1)
 
 
 def delete_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Start (or join) a background uninstall of an Ollama model.
+
+    Mirrors :func:`pull_model`: an existing non-finished delete for the same tag
+    is returned rather than starting a duplicate.
+
+    Args:
+        state: The UI server state holding the delete-task registry and lock.
+        payload: Request payload carrying the Ollama ``"tag"``.
+
+    Returns:
+        ``{"ok": True, "tag": ..., "task_id": ..., "task": ...}`` on success,
+        otherwise an error dict when the tag is missing.
+    """
     tag = str(payload.get("tag") or "").strip()
     if not tag:
         return {"ok": False, "error": "The Ollama tag is missing."}
@@ -469,6 +565,10 @@ def delete_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
+    """Return the public status of a delete task as ``(payload, http_status)``.
+
+    Yields 400 for an invalid id, 404 when unknown, and 200 with the task.
+    """
     if not task_id or not all(ch.isalnum() or ch in "-_" for ch in task_id):
         return {"ok": False, "error": "Invalid task."}, 400
     with state.delete_lock:
@@ -479,6 +579,16 @@ def delete_task_payload(state: Any, task_id: str) -> tuple[dict[str, Any], int]:
 
 
 def run_delete_task(state: Any, task_id: str, tag: str) -> None:
+    """Call Ollama to delete a model, updating and finishing the task.
+
+    Intended to run on a background thread; failures are captured and reported on
+    the task rather than raised.
+
+    Args:
+        state: The UI server state holding the delete-task registry.
+        task_id: Identifier of the task to update.
+        tag: Ollama model tag to uninstall.
+    """
     try:
         update_delete_task(state, task_id, status="Contacting Ollama", percent=35.0)
         with httpx.Client(timeout=60.0) as client:
@@ -490,11 +600,12 @@ def run_delete_task(state: Any, task_id: str, tag: str) -> None:
             )
             response.raise_for_status()
         finish_delete_task(state, task_id, ok=True, status="Model uninstalled")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         finish_delete_task(state, task_id, ok=False, status="Uninstall error", error=str(exc))
 
 
 def update_delete_task(state: Any, task_id: str, *, status: str, percent: float) -> None:
+    """Update a delete task's status and monotonically advance its percent."""
     with state.delete_lock:
         task = state.delete_tasks.get(task_id)
         if task is None:
@@ -511,6 +622,7 @@ def finish_delete_task(
     status: str,
     error: str | None = None,
 ) -> None:
+    """Mark a delete task finished with a final status (and optional error)."""
     with state.delete_lock:
         task = state.delete_tasks.get(task_id)
         if task is None:
@@ -522,8 +634,8 @@ def finish_delete_task(
         task["percent"] = 100.0 if ok else task.get("percent", 0.0)
 
 
-def _facade():
+def _facade() -> ModuleType:
+    """Return the ``ci2lab.ui.server`` facade module (imported lazily)."""
     from ci2lab.ui import server as facade
 
     return facade
-

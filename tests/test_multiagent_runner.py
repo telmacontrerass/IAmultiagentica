@@ -25,6 +25,20 @@ def test_build_subagent_config_filters_tools_without_mutating_parent():
     assert "write_file" not in subagent.skill_allowed_tools
 
 
+def test_build_subagent_config_preserves_approval_scope_without_chat_session():
+    parent = AgentConfig(
+        cwd=".",
+        stream=True,
+        session_id="chat-session",
+        approval_session_id="multiagent-run",
+    )
+
+    subagent = build_subagent_config(AgentRole.VALIDATOR, parent)
+
+    assert subagent.session_id is None
+    assert subagent.approval_session_id == "multiagent-run"
+
+
 def test_build_subagent_config_applies_role_round_budget():
     parent = AgentConfig(cwd=".", max_rounds=25)
 
@@ -163,7 +177,10 @@ def test_subagent_role_anchor_is_passed_to_run_agent():
     _, _, kwargs = mock_run_agent.mock_calls[0]
     subagent_config = kwargs["config"]
     assert subagent_config.role_anchor == build_role_anchor(AgentRole.VALIDATOR)
-    assert "Validate the current result using tests or deterministic checks." in subagent_config.role_anchor
+    assert (
+        "Validate the current result using tests or deterministic checks."
+        in subagent_config.role_anchor
+    )
 
 
 def test_run_subagent_passes_user_selected_model_to_run_agent():

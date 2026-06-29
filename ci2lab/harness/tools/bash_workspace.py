@@ -7,10 +7,10 @@ import re
 import shlex
 from pathlib import Path
 
-WORKSPACE_ACCESS_BLOCKED = (
-    "Blocked command: tries to access a path outside the workspace."
-)
+#: Block message returned when a command references a path outside the workspace.
+WORKSPACE_ACCESS_BLOCKED = "Blocked command: tries to access a path outside the workspace."
 
+#: Commands that read or copy files, used to gate ``..`` traversal checks.
 _FILE_ACCESS_VERBS = re.compile(
     r"\b(?:"
     r"cat|type|more|less|head|tail|"
@@ -22,14 +22,20 @@ _FILE_ACCESS_VERBS = re.compile(
     re.I,
 )
 
+#: Matches Windows absolute paths such as ``C:\dir\file``.
 _WIN_ABS_PATH = re.compile(r"[A-Za-z]:[\\/][^\s'\"|&;<>^]+")
+#: Matches UNC paths such as ``\\server\share``.
 _UNC_PATH = re.compile(r"\\\\[^\s'\"|&;<>^]+")
+#: Matches single- or double-quoted strings, capturing their inner content.
 _QUOTED_PATH = re.compile(r"""['"]([^'"]+)['"]""")
+#: Matches ``%VAR%`` style Windows environment-variable references.
 _PERCENT_ENV = re.compile(r"%([^%]+)%")
+#: Matches ``$env:VAR`` style PowerShell environment-variable references.
 _DOLLAR_ENV = re.compile(r"\$env:([^\\\s'\"]+)", re.I)
 
 
 def _expand_windows_env_refs(raw: str) -> str:
+    """Expand ``%VAR%`` and ``$env:VAR`` references using the current environment."""
     expanded = raw
     for match in _PERCENT_ENV.finditer(raw):
         value = os.environ.get(match.group(1))
@@ -43,6 +49,7 @@ def _expand_windows_env_refs(raw: str) -> str:
 
 
 def _strip_quotes(token: str) -> str:
+    """Remove a single matching pair of surrounding single or double quotes."""
     token = token.strip()
     if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
         return token[1:-1]
@@ -50,7 +57,18 @@ def _strip_quotes(token: str) -> str:
 
 
 def extract_path_candidates(command: str) -> list[str]:
-    """Extract path candidates from a shell command."""
+    """Extract path candidates from a shell command.
+
+    Combines several heuristics (UNC paths, Windows absolute paths, quoted
+    strings, and tokenised operands) to collect strings that plausibly refer to
+    filesystem paths. URLs are skipped.
+
+    Args:
+        command: The shell command line to scan.
+
+    Returns:
+        A de-duplicated list of candidate path strings, in discovery order.
+    """
     if not command or not command.strip():
         return []
 
@@ -58,6 +76,7 @@ def extract_path_candidates(command: str) -> list[str]:
     seen: set[str] = set()
 
     def add(raw: str) -> None:
+        """Normalise ``raw`` and append it to ``found`` if it looks like a path."""
         cleaned = _strip_quotes(raw.strip().rstrip(",;"))
         cleaned = _expand_windows_env_refs(cleaned)
         if not cleaned or cleaned in seen:
@@ -112,7 +131,16 @@ def extract_path_candidates(command: str) -> list[str]:
 
 
 def path_escapes_workspace(raw_path: str, workspace: Path) -> bool:
-    """True if the resolved path falls outside the workspace."""
+    """Return ``True`` if the resolved path falls outside the workspace.
+
+    Args:
+        raw_path: A candidate path, possibly relative or containing env refs.
+        workspace: The resolved workspace root the path must stay within.
+
+    Returns:
+        ``True`` if the path resolves outside ``workspace`` (or cannot be
+        resolved), ``False`` otherwise.
+    """
     if not raw_path or not str(raw_path).strip():
         return False
     raw_path = _expand_windows_env_refs(raw_path)
@@ -134,6 +162,14 @@ def check_bash_workspace_blocked(command: str, cwd: str) -> str | None:
     Return a block message if the command references paths outside the workspace.
 
     Applied before asking the user for confirmation.
+
+    Args:
+        command: The shell command line to inspect.
+        cwd: The workspace root the command must stay confined to.
+
+    Returns:
+        :data:`WORKSPACE_ACCESS_BLOCKED` if any referenced path escapes the
+        workspace, otherwise ``None``.
     """
     if not command or not command.strip():
         return None

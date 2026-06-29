@@ -13,6 +13,19 @@ def append_assistant_turn(
     content: str,
     tool_calls: list[ToolCall] | None = None,
 ) -> None:
+    """Append an assistant turn to the message history in place.
+
+    Args:
+        messages: Conversation history to mutate. The new assistant message is
+            appended to this list.
+        content: Assistant text. Empty/falsy values are serialized as an empty
+            string for Ollama compatibility.
+        tool_calls: Optional tool calls to attach to the assistant message,
+            serialized to the OpenAI-compatible function-call shape.
+
+    Returns:
+        None. ``messages`` is modified in place.
+    """
     # Ollama rejects assistant messages with JSON null content (`<nil>`), even
     # when the message also carries tool_calls. Keep it OpenAI-compatible but
     # serialize empty assistant text as an empty string.
@@ -36,9 +49,21 @@ def append_tool_results(
     messages: list[dict[str, Any]],
     results: list[ToolResult],
 ) -> None:
+    """Append tool-result messages to the history in place.
+
+    Args:
+        messages: Conversation history to mutate. One ``role="tool"`` message is
+            appended per result.
+        results: Tool execution results to serialize back to the model.
+
+    Returns:
+        None. ``messages`` is modified in place.
+    """
     for result in results:
-        messages.append({
-            "role": "tool",
-            "tool_call_id": result.call_id or result.tool_name,
-            "content": result.content,
-        })
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": result.call_id or result.tool_name,
+                "content": result.content,
+            }
+        )

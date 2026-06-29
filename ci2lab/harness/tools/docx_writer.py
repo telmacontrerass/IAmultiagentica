@@ -11,23 +11,29 @@ from typing import Any
 from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 from ci2lab.harness.tools.write_preview import WritePreview
 
-
 # ---------------------------------------------------------------------------
 # Preview (without executing anything on disk)
 # ---------------------------------------------------------------------------
 
+
 def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
-    """
-    Build a descriptive WritePreview for fill_docx_template.
+    """Build a descriptive :class:`WritePreview` for ``fill_docx_template``.
 
     Does not read or write anything to disk; it only validates that the template
     exists and generates the confirmation text the user will see.
+
+    Args:
+        cwd: The current working directory used to resolve paths.
+        args: Tool arguments; recognised keys are ``template`` (str),
+            ``output`` (str) and ``fields`` (mapping of placeholder to value).
+
+    Returns:
+        A :class:`WritePreview` describing the planned write, carrying a
+        ``validation_error`` when the template/output paths are invalid.
     """
     template = str(args.get("template", "")).strip()
     output = str(args.get("output", "")).strip()
-    fields: dict[str, str] = {
-        str(k): str(v) for k, v in (args.get("fields") or {}).items()
-    }
+    fields: dict[str, str] = {str(k): str(v) for k, v in (args.get("fields") or {}).items()}
 
     if not template:
         return WritePreview(
@@ -67,10 +73,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             path=output,
             is_new_file=True,
             diff="",
-            validation_error=(
-                f"Error: the template must be a .docx, "
-                f"not '{template_path.suffix}'"
-            ),
+            validation_error=(f"Error: the template must be a .docx, not '{template_path.suffix}'"),
         )
 
     # Validate that the output does not match the template
@@ -98,8 +101,7 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
             is_new_file=True,
             diff="",
             validation_error=(
-                f"Error: the output must have a .docx extension, "
-                f"not '{output_path.suffix}'"
+                f"Error: the output must have a .docx extension, not '{output_path.suffix}'"
             ),
         )
 
@@ -130,9 +132,9 @@ def preview_fill_docx(cwd: str, args: dict[str, Any]) -> WritePreview:
 # Placeholder substitution in a DOCX paragraph
 # ---------------------------------------------------------------------------
 
+
 def _replace_in_paragraph(paragraph: Any, fields: dict[str, str]) -> int:
-    """
-    Substitute {{key}} → value in a paragraph, handling split runs.
+    """Substitute ``{{key}}`` → value in a paragraph, handling split runs.
 
     python-docx may split a placeholder's text across several runs
     (text fragments with different formatting). The strategy:
@@ -142,6 +144,13 @@ def _replace_in_paragraph(paragraph: Any, fields: dict[str, str]) -> int:
 
     This preserves the formatting of the first run (font, bold, size)
     but loses formatting variations within the same paragraph. Acceptable in v1.
+
+    Args:
+        paragraph: A python-docx paragraph object to mutate in place.
+        fields: Mapping of placeholder keys to replacement values.
+
+    Returns:
+        The number of distinct placeholder keys that were substituted.
     """
     full_text = paragraph.text
     new_text = full_text
@@ -169,24 +178,29 @@ def _replace_in_paragraph(paragraph: Any, fields: dict[str, str]) -> int:
 # Main function
 # ---------------------------------------------------------------------------
 
+
 def fill_docx_template(
     cwd: str,
     template: str,
     output: str,
     fields: dict[str, str],
 ) -> str:
-    """
-    Generate a DOCX by filling a template with the given fields.
+    """Generate a DOCX by filling a template with the given fields.
 
-    Always returns a string: a success message or "Error: ...".
+    Args:
+        cwd: The current working directory used to resolve paths.
+        template: Workspace-relative path to the ``.docx`` template.
+        output: Workspace-relative destination path for the generated ``.docx``.
+        fields: Mapping of placeholder keys to replacement values.
+
+    Returns:
+        A success message describing the generated document and substitution
+        count, or an ``"Error: ..."`` message on any failure.
     """
     try:
         from docx import Document
     except ImportError:
-        return (
-            "Error: missing python-docx dependency. "
-            "Run: pip install -e '.'"
-        )
+        return "Error: missing python-docx dependency. Run: pip install -e '.'"
 
     # Resolve paths (already validated in preview, but re-validated for safety)
     try:
@@ -203,7 +217,7 @@ def fill_docx_template(
     # Open the template
     try:
         doc = Document(str(template_path))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not open the template {template}: {exc}"
 
     # Create output directory if it does not exist
@@ -224,7 +238,7 @@ def fill_docx_template(
     # Save
     try:
         doc.save(str(output_path))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not save the document to {output}: {exc}"
 
     size_kb = round(output_path.stat().st_size / 1024, 1)

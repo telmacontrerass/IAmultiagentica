@@ -21,7 +21,6 @@ from ci2lab.security.permissions_dashboard import (
 from ci2lab.security.session_permissions import (
     bind_active_session,
     clear_session_permissions,
-    list_session_approvals,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

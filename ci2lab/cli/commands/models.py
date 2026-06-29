@@ -8,14 +8,15 @@ import subprocess
 
 from rich.table import Table
 
-from ci2lab.console import console
 from ci2lab.cli.commands.hardware import _print_memory_budget_context
 from ci2lab.config import load_config
+from ci2lab.console import console
 from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
 from ci2lab.router.recommend import (
+    ScoredRecommendation,
     build_display_recommendations,
     model_fits,
     recommend_download_plan,
@@ -26,6 +27,15 @@ from ci2lab.runtime.ollama import fetch_installed_model_names
 
 
 def _cmd_models_recommend(args: argparse.Namespace) -> int:
+    """Recommend catalog models, either for a query or as a general download plan.
+
+    Args:
+        args: Parsed CLI arguments (optional ``model_prompt``, ``--json`` and
+            ``--limit``).
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` if no model fits the budget.
+    """
     profile = scan_hardware()
     prompt = " ".join(args.model_prompt)
     if prompt:
@@ -39,6 +49,14 @@ def _cmd_models_recommend(args: argparse.Namespace) -> int:
 
 
 def _cmd_models_install(args: argparse.Namespace) -> int:
+    """Print the pull/run/chat commands for an allowed catalog model.
+
+    Args:
+        args: Parsed CLI arguments (the model ``id``/tag and ``--json``).
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` if the model is not allowed.
+    """
     profile = scan_hardware()
     model = _resolve_allowed_model(args.model, profile=profile)
     if model is None:
@@ -46,12 +64,16 @@ def _cmd_models_install(args: argparse.Namespace) -> int:
 
     commands = _install_commands(model)
     if args.json:
-        console.print_json(json.dumps({
-            "id": model.id,
-            "display_name": model.display_name,
-            "ollama_tag": model.ollama_tag,
-            "commands": commands,
-        }))
+        console.print_json(
+            json.dumps(
+                {
+                    "id": model.id,
+                    "display_name": model.display_name,
+                    "ollama_tag": model.ollama_tag,
+                    "commands": commands,
+                }
+            )
+        )
         return 0
 
     console.print(f"[bold]Chosen model:[/bold] {model.display_name}")
@@ -66,6 +88,15 @@ def _cmd_models_install(args: argparse.Namespace) -> int:
 
 
 def _cmd_models_run(args: argparse.Namespace) -> int:
+    """Open an allowed catalog model directly with ``ollama run``.
+
+    Args:
+        args: Parsed CLI arguments (the model ``id``/tag).
+
+    Returns:
+        Process exit code: the ``ollama run`` return code, or ``1`` if the model
+        is not allowed or the ``ollama`` executable is missing.
+    """
     profile = scan_hardware()
     model = _resolve_allowed_model(args.model, profile=profile)
     if model is None:
@@ -84,6 +115,7 @@ def _cmd_models_run(args: argparse.Namespace) -> int:
 
 
 def _install_commands(model: ModelSpec) -> dict[str, str]:
+    """Return the ``pull``/``ollama_run``/``ci2lab_chat`` command strings for a model."""
     return {
         "pull": f"ollama pull {model.ollama_tag}",
         "ollama_run": f"ollama run {model.ollama_tag}",
@@ -92,12 +124,26 @@ def _install_commands(model: ModelSpec) -> dict[str, str]:
 
 
 def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> ModelSpec | None:
+    """Resolve a catalog model by id/tag/name, ensuring it fits the budget.
+
+    Prints an error and the table of allowed models when the name is unknown or
+    the model is too large for the current inference budget.
+
+    Args:
+        model_name: User-supplied model identifier (catalog id, Ollama tag or
+            display name; matched case-insensitively).
+        profile: The detected hardware profile used to check that the model fits.
+
+    Returns:
+        The matching :class:`ModelSpec`, or ``None`` if unknown or too large.
+    """
     normalized = model_name.strip().lower()
     models = load_model_catalog()
     exact = [
         model
         for model in models
-        if normalized in {
+        if normalized
+        in {
             model.id.lower(),
             model.ollama_tag.lower(),
             model.display_name.lower(),
@@ -111,10 +157,11 @@ def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> Mode
 
     model = exact[0]
     if not model_fits(model, profile):
-        console.print(f"[red]That model exists, but it does not fit on this machine:[/red] {model.display_name}")
         console.print(
-            "Approximate budget for inference: "
-            f"[bold]{profile.inference_budget_gb:g} GB[/bold]."
+            f"[red]That model exists, but it does not fit on this machine:[/red] {model.display_name}"
+        )
+        console.print(
+            f"Approximate budget for inference: [bold]{profile.inference_budget_gb:g} GB[/bold]."
         )
         _print_allowed_models(profile)
         return None
@@ -123,6 +170,7 @@ def _resolve_allowed_model(model_name: str, *, profile: HardwareProfile) -> Mode
 
 
 def _print_allowed_models(profile: HardwareProfile) -> None:
+    """Print a table of catalog models that fit within the budget for ``profile``."""
     allowed = [model for model in load_model_catalog() if model_fits(model, profile)]
     if not allowed:
         console.print("[yellow]No catalog models fit within this budget.[/yellow]")
@@ -140,10 +188,21 @@ def _print_allowed_models(profile: HardwareProfile) -> None:
 def _focused_recommend_command(
     *,
     prompt: str,
-    profile,
+    profile: HardwareProfile,
     json_output: bool,
     limit: int,
 ) -> int:
+    """Rank catalog models for a specific task prompt and print the results.
+
+    Args:
+        prompt: The task description to classify and score models against.
+        profile: The detected hardware profile.
+        json_output: When True, emit a JSON payload instead of a table.
+        limit: Maximum number of recommendations to display.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` if no model fits the budget.
+    """
     intent = classify_intent(prompt)
     runtime = load_config()
     installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
@@ -193,9 +252,7 @@ def _focused_recommend_command(
     console.print(f"Detected intent: [bold]{intent.category}[/bold]")
     _print_memory_budget_context(profile)
     if ollama_error:
-        console.print(
-            "[yellow]Warning: could not query Ollama to mark installed models.[/yellow]"
-        )
+        console.print("[yellow]Warning: could not query Ollama to mark installed models.[/yellow]")
 
     if not recommendations:
         console.print("[yellow]No catalog models fit within this budget.[/yellow]")
@@ -229,7 +286,16 @@ def _focused_recommend_command(
     return 0
 
 
-def _download_plan_command(*, profile, json_output: bool) -> int:
+def _download_plan_command(*, profile: HardwareProfile, json_output: bool) -> int:
+    """Print a general per-use-case download plan for the given hardware.
+
+    Args:
+        profile: The detected hardware profile.
+        json_output: When True, emit a JSON payload instead of a table.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` if no model fits the budget.
+    """
     runtime = load_config()
     installed_names, ollama_error = fetch_installed_model_names(runtime.backend_url)
     plan = recommend_download_plan(profile=profile, installed_names=installed_names)
@@ -265,9 +331,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
 
     _print_memory_budget_context(profile)
     if ollama_error:
-        console.print(
-            "[yellow]Warning: could not query Ollama to mark installed models.[/yellow]"
-        )
+        console.print("[yellow]Warning: could not query Ollama to mark installed models.[/yellow]")
 
     if not plan:
         console.print("[yellow]No catalog models fit within this budget.[/yellow]")
@@ -284,9 +348,7 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
     table.add_column("Reason")
     for item in plan:
         recommendation = item.recommendation
-        install_label = (
-            "[green]Already installed[/green]" if item.installed else "To download"
-        )
+        install_label = "[green]Already installed[/green]" if item.installed else "To download"
         table.add_row(
             ", ".join(item.use_cases),
             recommendation.model.display_name,
@@ -301,7 +363,8 @@ def _download_plan_command(*, profile, json_output: bool) -> int:
     return 0
 
 
-def _criteria_payload(item) -> dict[str, float | str | bool]:
+def _criteria_payload(item: ScoredRecommendation) -> dict[str, float | str | bool]:
+    """Return the per-criterion scoring breakdown as a JSON-serializable dict."""
     return {
         "quality": item.quality_score,
         "speed": item.speed_score,
@@ -319,7 +382,8 @@ def _criteria_payload(item) -> dict[str, float | str | bool]:
     }
 
 
-def _memory_summary(item) -> str:
+def _memory_summary(item: ScoredRecommendation) -> str:
+    """Return a short human-readable memory-usage summary for a recommendation."""
     return (
         f"uses ~{item.memory_required_gb:g} GB "
         f"({item.memory_usage_percent:g}%); "

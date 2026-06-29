@@ -4,17 +4,17 @@ from unittest.mock import patch
 from ci2lab.cli.menu import (
     MenuOption,
     ModelChoice,
-    build_model_choices,
-    open_session_json,
-    select_session,
-    _parse_command_line,
-    _run_doctor_with_ollama_install_option,
     _add_project_source_from_path,
+    _parse_command_line,
     _projects_menu,
+    _run_doctor_with_ollama_install_option,
     _run_project_chat,
     _visible_option_window,
+    build_model_choices,
+    open_session_json,
     run_start_menu,
     select_from_menu,
+    select_session,
 )
 from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts import HardwareProfile, ModelSpec
@@ -241,12 +241,15 @@ def test_run_project_chat_uses_project_workspace_and_id(monkeypatch):
             ),
         ),
     ):
-        assert _run_project_chat(
-            Ci2LabConfig(),
-            project["id"],
-            session_id="session-1",
-            multi_agent=True,
-        ) == 0
+        assert (
+            _run_project_chat(
+                Ci2LabConfig(),
+                project["id"],
+                session_id="session-1",
+                multi_agent=True,
+            )
+            == 0
+        )
 
     assert build.call_args.kwargs["cwd"] == project["workspace"]
     assert config.project_id == project["id"]
@@ -269,7 +272,7 @@ def test_menu_command_mode_runs_manual_args():
 
 
 def test_parse_command_line_preserves_windows_paths_and_strips_quotes():
-    assert _parse_command_line(r'--workspace C:\Users\Pablo chat') == [
+    assert _parse_command_line(r"--workspace C:\Users\Pablo chat") == [
         "--workspace",
         r"C:\Users\Pablo",
         "chat",
@@ -307,10 +310,13 @@ def test_visible_option_window_scrolls_to_selected_item():
 
 def test_doctor_does_not_offer_ollama_install_when_found():
     calls = []
-    with patch(
-        "ci2lab.cli.menu.ollama_install_info",
-        return_value={"executable": "C:/Ollama/ollama.exe", "models_dir": "models"},
-    ), patch("ci2lab.cli.menu._confirm") as confirm:
+    with (
+        patch(
+            "ci2lab.cli.menu.ollama_install_info",
+            return_value={"executable": "C:/Ollama/ollama.exe", "models_dir": "models"},
+        ),
+        patch("ci2lab.cli.menu._confirm") as confirm,
+    ):
         assert _run_doctor_with_ollama_install_option(lambda args: calls.append(args) or 0) == 0
 
     assert calls == [["doctor"]]
@@ -332,9 +338,7 @@ def test_doctor_offers_ollama_install_when_missing():
         patch("ci2lab.cli.menu._confirm", return_value=True),
         patch("ci2lab.cli.menu.subprocess.run", return_value=completed) as run,
     ):
-        result = _run_doctor_with_ollama_install_option(
-            lambda args: calls.append(args) or 0
-        )
+        result = _run_doctor_with_ollama_install_option(lambda args: calls.append(args) or 0)
 
     assert result == 0
     assert calls == [["doctor"]]

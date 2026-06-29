@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ci2lab.harness.parsing import resolve_tool_calls
 
 

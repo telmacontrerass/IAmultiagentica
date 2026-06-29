@@ -41,6 +41,7 @@ _VALID_TOP_KEYS = frozenset({"allow", "deny", "vision_model", "vision_enabled"})
 # Public types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ToolSettings:
     """allow/deny rules and vision settings already merged from all active levels."""
@@ -56,12 +57,14 @@ class ToolSettings:
 
     @classmethod
     def empty(cls) -> ToolSettings:
+        """Return a ToolSettings with no allow/deny rules and unset vision config."""
         return cls()
 
 
 # ---------------------------------------------------------------------------
 # Search paths
 # ---------------------------------------------------------------------------
+
 
 def _settings_paths(cwd: str) -> list[Path]:
     """
@@ -77,6 +80,7 @@ def _settings_paths(cwd: str) -> list[Path]:
 # ---------------------------------------------------------------------------
 # Reading and parsing a file
 # ---------------------------------------------------------------------------
+
 
 def _load_raw(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
@@ -111,9 +115,7 @@ def _parse_tool_patterns(
     Ignores invalid entries with a warning instead of raising exceptions.
     """
     if not isinstance(raw, dict):
-        logger.warning(
-            "settings.json (%s): must be {tool: [patterns]}; ignored.", context
-        )
+        logger.warning("settings.json (%s): must be {tool: [patterns]}; ignored.", context)
         return {}
     result: dict[str, list[str]] = {}
     for tool, patterns in raw.items():
@@ -136,15 +138,9 @@ def _parse_tool_patterns(
 def _parse_single_file(data: dict[str, Any], *, source: str) -> ToolSettings:
     unknown = set(data.keys()) - _VALID_TOP_KEYS
     if unknown:
-        logger.warning(
-            "settings.json (%s): unknown keys ignored: %s", source, unknown
-        )
-    allow = _parse_tool_patterns(
-        data.get("allow", {}), context=f"{source}.allow"
-    )
-    deny = _parse_tool_patterns(
-        data.get("deny", {}), context=f"{source}.deny"
-    )
+        logger.warning("settings.json (%s): unknown keys ignored: %s", source, unknown)
+    allow = _parse_tool_patterns(data.get("allow", {}), context=f"{source}.allow")
+    deny = _parse_tool_patterns(data.get("deny", {}), context=f"{source}.deny")
     vision_model = str(data["vision_model"]) if "vision_model" in data else None
     vision_enabled = bool(data["vision_enabled"]) if "vision_enabled" in data else None
     return ToolSettings(
@@ -158,6 +154,7 @@ def _parse_single_file(data: dict[str, Any], *, source: str) -> ToolSettings:
 # ---------------------------------------------------------------------------
 # Layer merging
 # ---------------------------------------------------------------------------
+
 
 def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
     """
@@ -184,9 +181,7 @@ def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
 
     # vision settings: project wins when set; otherwise fall back to global
     merged_vision_model = (
-        project_s.vision_model
-        if project_s.vision_model is not None
-        else global_s.vision_model
+        project_s.vision_model if project_s.vision_model is not None else global_s.vision_model
     )
     merged_vision_enabled = (
         project_s.vision_enabled
@@ -205,6 +200,7 @@ def _merge(global_s: ToolSettings, project_s: ToolSettings) -> ToolSettings:
 # ---------------------------------------------------------------------------
 # Public loading
 # ---------------------------------------------------------------------------
+
 
 def load_settings(cwd: str) -> ToolSettings:
     """
@@ -229,6 +225,7 @@ def load_settings(cwd: str) -> ToolSettings:
 # ---------------------------------------------------------------------------
 # Evaluating a specific call
 # ---------------------------------------------------------------------------
+
 
 def subject_for_tool(tool_name: str, args: dict[str, Any]) -> str:
     """
@@ -281,9 +278,7 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
     norm_p = _normalize_path(pattern)
 
     # direct match (case-insensitive on Windows via lower())
-    if fnmatch.fnmatchcase(norm_s, norm_p) or fnmatch.fnmatchcase(
-        norm_s.lower(), norm_p.lower()
-    ):
+    if fnmatch.fnmatchcase(norm_s, norm_p) or fnmatch.fnmatchcase(norm_s.lower(), norm_p.lower()):
         return True
 
     # for bash: try a prefix match (rm * must cover "rm -rf .")
@@ -304,10 +299,12 @@ def _pattern_matches(pattern: str, subject: str) -> bool:
                 return True
 
         try:
-            if PurePosixPath(norm_s).full_match(norm_p):
+            # ``PurePath.full_match`` exists on Python 3.13+; on 3.11/3.12 the
+            # AttributeError below triggers the manual fallback.
+            if PurePosixPath(norm_s).full_match(norm_p):  # type: ignore[attr-defined]
                 return True
             # case-insensitive (Windows)
-            if PurePosixPath(norm_s.lower()).full_match(norm_p.lower()):
+            if PurePosixPath(norm_s.lower()).full_match(norm_p.lower()):  # type: ignore[attr-defined]
                 return True
         except AttributeError:
             # Python < 3.13: full_match unavailable; manual fallback.
@@ -376,8 +373,7 @@ def check_tool_allowed(
         if matched_allow is None:
             return (
                 False,
-                f"blocked by settings.json allow[{tool_name!r}]: "
-                f"no pattern matches {subject!r}",
+                f"blocked by settings.json allow[{tool_name!r}]: no pattern matches {subject!r}",
             )
 
     # 3. Allowed
