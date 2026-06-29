@@ -25,6 +25,10 @@ let activeChatRequest = null;
 
 const STORAGE_KEY = "ci2lab.ui.state.v1";
 const LANGUAGE_KEY = "ci2lab.ui.language";
+const THEME_KEY = "ci2lab.ui.theme";
+const SUPPORTED_THEMES = ["light", "dark"];
+let currentTheme = localStorage.getItem(THEME_KEY) || "light";
+if (!SUPPORTED_THEMES.includes(currentTheme)) currentTheme = "light";
 const INTERNAL_LANGUAGE = "en";
 const SUPPORTED_LANGUAGES = ["en", "es", "fr", "pt"];
 let currentLanguage = localStorage.getItem(LANGUAGE_KEY) || "en";
@@ -788,6 +792,29 @@ function syncLanguageControl() {
   });
 }
 
+function applyTheme(theme) {
+  if (!SUPPORTED_THEMES.includes(theme)) theme = "light";
+  currentTheme = theme;
+  document.documentElement.setAttribute("data-theme", theme);
+  const icon = els.themeToggle?.querySelector(".theme-toggle-icon");
+  if (icon) icon.textContent = theme === "dark" ? "☾" : "☀";
+  if (els.themeToggle) {
+    els.themeToggle.setAttribute(
+      "aria-label",
+      theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+    );
+  }
+}
+
+function setDisplayTheme(theme) {
+  applyTheme(theme);
+  localStorage.setItem(THEME_KEY, currentTheme);
+}
+
+function toggleTheme() {
+  setDisplayTheme(currentTheme === "dark" ? "light" : "dark");
+}
+
 function setDisplayLanguage(language) {
   if (!SUPPORTED_LANGUAGES.includes(language)) return;
   currentLanguage = language;
@@ -919,6 +946,7 @@ const els = {
   projectChatsList: document.querySelector("#projectChatsList"),
   newProjectChat: document.querySelector("#newProjectChat"),
   languageControl: document.querySelector("#languageControl"),
+  themeToggle: document.querySelector("#themeToggle"),
   languageTrigger: document.querySelector(".language-trigger"),
   languageCurrentLabel: document.querySelector("#languageCurrentLabel"),
   languageButtons: document.querySelectorAll("[data-language]"),
@@ -2674,6 +2702,7 @@ function toggleControlHelp(button) {
 }
 
 function bindEvents() {
+  els.themeToggle?.addEventListener("click", toggleTheme);
   els.languageButtons?.forEach((button) => {
     button.addEventListener("click", () => {
       setDisplayLanguage(button.dataset.language || "en");
@@ -2875,6 +2904,7 @@ function bindEvents() {
 }
 
 restoreUiState();
+applyTheme(currentTheme);
 syncLanguageControl();
 translateNode(document.body);
 const translationObserver = new MutationObserver((mutations) => {

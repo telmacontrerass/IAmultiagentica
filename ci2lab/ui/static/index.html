@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,23 +8,34 @@
   </head>
   <body>
     <div class="app-shell">
-      <div class="language-control" id="languageControl">
+      <div class="app-top-controls">
         <button
-          class="language-trigger"
+          id="themeToggle"
+          class="theme-toggle"
           type="button"
-          aria-haspopup="true"
-          aria-expanded="false"
-          aria-label="Change interface language"
-          title="Change language"
+          aria-label="Switch color theme"
+          title="Switch light / dark theme"
         >
-          <span class="language-globe" aria-hidden="true">◎</span>
-          <span id="languageCurrentLabel">English</span>
+          <span class="theme-toggle-icon" aria-hidden="true">☀</span>
         </button>
-        <div class="language-menu" role="menu" aria-label="Change interface language">
-          <button type="button" role="menuitem" data-language="en">English</button>
-          <button type="button" role="menuitem" data-language="es">Español</button>
-          <button type="button" role="menuitem" data-language="fr">Français</button>
-          <button type="button" role="menuitem" data-language="pt">Português</button>
+        <div class="language-control" id="languageControl">
+          <button
+            class="language-trigger"
+            type="button"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-label="Change interface language"
+            title="Change language"
+          >
+            <span class="language-globe" aria-hidden="true">◎</span>
+            <span id="languageCurrentLabel">English</span>
+          </button>
+          <div class="language-menu" role="menu" aria-label="Change interface language">
+            <button type="button" role="menuitem" data-language="en">English</button>
+            <button type="button" role="menuitem" data-language="es">Español</button>
+            <button type="button" role="menuitem" data-language="fr">Français</button>
+            <button type="button" role="menuitem" data-language="pt">Português</button>
+          </div>
         </div>
       </div>
 

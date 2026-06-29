@@ -483,14 +483,29 @@ textarea:focus {
 .chat-panel {
   height: clamp(520px, 72vh, 820px);
   min-height: 500px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--line);
   border-top: 4px solid var(--ink);
   border-radius: 10px;
   background: #ffffff;
   box-shadow: var(--shadow);
+}
+
+/* The message list is the only growing/scrolling row; every bar keeps its
+   natural height. This is robust to optional bars (project context, review
+   mode) appearing or hiding above the messages. */
+.chat-panel > .chat-topbar,
+.chat-panel > .project-context-bar,
+.chat-panel > .review-mode-bar,
+.chat-panel > .attachment-bar,
+.chat-panel > .composer {
+  flex: 0 0 auto;
+}
+
+.chat-panel > .messages {
+  flex: 1 1 auto;
 }
 
 .chat-topbar {
@@ -3514,54 +3529,297 @@ input[type="search"],
   }
 }
 
-/* Researcher switch in the sidebar (above the Home nav) */
-.researcher-switch {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+/* Researcher switcher in the sidebar (above the Home nav) */
+.researcher-switcher {
+  position: relative;
+  width: 100%;
 }
 
-.researcher-switch label {
+.researcher-label {
+  margin: 0 0 8px 4px;
   font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(244, 241, 232, 0.62);
 }
 
-.researcher-switch select {
+.researcher-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 34px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(14px);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.researcher-card:hover,
+.researcher-card:focus-within,
+.researcher-card.is-open {
+  border-color: rgba(245, 181, 27, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(245, 181, 27, 0.12),
+    0 16px 38px rgba(0, 0, 0, 0.34);
+}
+
+.researcher-trigger {
   width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--white);
-}
-
-.researcher-switch select option {
-  color: var(--ink);
-}
-
-.researcher-profile-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 4px 6px;
+  display: block;
   border: 0;
+  border-radius: 0;
+  padding: 11px 12px 10px;
   background: transparent;
-  color: var(--gold);
-  font-weight: 700;
+  color: var(--white);
+  text-align: left;
   cursor: pointer;
 }
 
-.researcher-profile-link:hover {
-  color: #ffc83d;
+.researcher-trigger:focus-visible {
+  outline: 2px solid rgba(245, 181, 27, 0.7);
+  outline-offset: -2px;
+}
+
+.researcher-main-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.researcher-avatar {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(245, 181, 27, 0.2), rgba(245, 181, 27, 0.04)),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(245, 181, 27, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 22px rgba(245, 181, 27, 0.08);
+}
+
+.researcher-avatar.is-muted {
+  color: rgba(244, 241, 232, 0.55);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+}
+
+.researcher-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.researcher-name {
+  display: block;
+  font-size: 16px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.researcher-subtitle {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.15;
+  color: rgba(244, 241, 232, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.researcher-chevron {
+  flex: 0 0 auto;
+  color: rgba(244, 241, 232, 0.86);
+  transition: transform 160ms ease;
+}
+
+.researcher-card.is-open .researcher-chevron {
+  transform: rotate(180deg);
+}
+
+.researcher-profile-row {
+  width: 100%;
+  margin: 0;
+  padding: 9px 12px 10px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.researcher-profile-row:hover,
+.researcher-profile-row:focus-visible {
+  outline: none;
+  color: #ffd84d;
+  background: rgba(245, 181, 27, 0.06);
+}
+
+.researcher-dropdown {
+  position: absolute;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(18, 18, 16, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 60px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+  animation: researcherDropdownIn 150ms ease both;
+}
+
+.researcher-dropdown[hidden] {
+  display: none;
+}
+
+.researcher-dropdown::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 28px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: rgba(18, 18, 16, 0.96);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+@keyframes researcherDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.researcher-option {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--white);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.researcher-option:hover,
+.researcher-option:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.researcher-option.is-selected {
+  background: linear-gradient(90deg, rgba(245, 181, 27, 0.14), rgba(245, 181, 27, 0.04));
+}
+
+.researcher-option .researcher-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
+.researcher-option-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.researcher-option-title {
+  font-size: 14px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.researcher-option-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(244, 241, 232, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.researcher-check {
+  color: var(--gold);
+  flex: 0 0 auto;
+}
+
+.researcher-divider {
+  height: 1px;
+  margin: 7px 10px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.researcher-new-action {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.researcher-new-action span {
+  color: var(--gold);
+}
+
+.researcher-new-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .researcher-card,
+  .researcher-chevron,
+  .researcher-option,
+  .researcher-profile-row,
+  .researcher-dropdown {
+    transition: none;
+    animation: none;
+  }
 }
 
 .researcher-view-active .topbar {
@@ -3649,4 +3907,1126 @@ input[type="search"],
   .researcher-form-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* =========================================================
+   Ci2Lab theme system (light / dark).
+   Re-skins the MAIN content only — the left sidebar keeps its
+   own styling. Driven entirely by tokens so one component set
+   renders in both modes. Appended last so it wins the cascade.
+   ========================================================= */
+
+:root,
+[data-theme="light"] {
+  --page-bg:
+    radial-gradient(circle at 82% 8%, rgba(255, 196, 0, 0.12), transparent 30%),
+    radial-gradient(circle at 16% 84%, rgba(255, 196, 0, 0.07), transparent 32%),
+    #f7f3ea;
+
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-strong: rgba(255, 255, 255, 0.94);
+  --surface-soft: rgba(255, 250, 237, 0.72);
+  --surface-warm: rgba(255, 247, 224, 0.72);
+
+  --border: rgba(70, 55, 25, 0.12);
+  --border-strong: rgba(184, 132, 0, 0.28);
+
+  --text: #111111;
+  --text-soft: rgba(17, 17, 17, 0.68);
+  --text-muted: rgba(17, 17, 17, 0.48);
+
+  --label: #b98500;
+  --label-blue: #2563eb;
+
+  --accent: #f7b500;
+  --accent-strong: #ffbf00;
+  --accent-soft: rgba(255, 196, 0, 0.13);
+  --accent-glow: rgba(255, 196, 0, 0.30);
+
+  --danger-bg: rgba(198, 40, 40, 0.08);
+  --danger-border: rgba(198, 40, 40, 0.26);
+
+  --shadow-card: 0 14px 38px rgba(50, 42, 25, 0.10);
+  --shadow-glow: 0 0 36px rgba(255, 196, 0, 0.22);
+
+  --radius-page: 24px;
+  --radius-card: 18px;
+  --radius-control: 12px;
+}
+
+[data-theme="dark"] {
+  --page-bg:
+    radial-gradient(circle at 82% 6%, rgba(60, 220, 220, 0.12), transparent 28%),
+    radial-gradient(circle at 16% 82%, rgba(255, 196, 0, 0.07), transparent 34%),
+    #061113;
+
+  --surface: rgba(10, 28, 32, 0.74);
+  --surface-strong: rgba(9, 22, 26, 0.92);
+  --surface-soft: rgba(14, 37, 42, 0.62);
+  --surface-warm: rgba(255, 196, 0, 0.07);
+
+  --border: rgba(158, 236, 236, 0.12);
+  --border-strong: rgba(255, 196, 0, 0.34);
+
+  --text: #f6f2e8;
+  --text-soft: rgba(246, 242, 232, 0.70);
+  --text-muted: rgba(246, 242, 232, 0.46);
+
+  --label: #66f2ee;
+  --label-blue: #66f2ee;
+
+  --accent: #f7b500;
+  --accent-strong: #ffcf33;
+  --accent-soft: rgba(255, 196, 0, 0.12);
+  --accent-glow: rgba(255, 196, 0, 0.36);
+
+  --danger-bg: rgba(255, 122, 107, 0.08);
+  --danger-border: rgba(255, 122, 107, 0.30);
+
+  --shadow-card: 0 18px 44px rgba(0, 0, 0, 0.28);
+  --shadow-glow: 0 0 42px rgba(255, 196, 0, 0.18);
+
+  --radius-page: 24px;
+  --radius-card: 18px;
+  --radius-control: 12px;
+
+  /* Legacy tokens that are safe to remap globally (the sidebar
+     does not consume them) so existing components re-theme. */
+  --blue: #66d9ff;
+  --blue-soft: rgba(102, 217, 255, 0.10);
+  --blue-line: rgba(102, 217, 255, 0.24);
+  --danger: #ff7a6b;
+  --success: #56d6a0;
+  --shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+  --shadow-soft: 0 28px 80px rgba(0, 0, 0, 0.34);
+}
+
+/* Page canvas — the sidebar keeps its own explicit background/colour. */
+body {
+  background: var(--page-bg);
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+/* Dark mode: remap the legacy design tokens ONLY inside the main
+   content. The sidebar (outside .main) keeps the root values, so its
+   --white / --ink based text stays readable. */
+[data-theme="dark"] .main {
+  --ink: #f6f2e8;
+  --muted: rgba(246, 242, 232, 0.55);
+  --line: rgba(158, 236, 236, 0.14);
+  --soft: rgba(12, 30, 34, 0.66);
+  --white: rgba(14, 34, 38, 0.86);
+  --paper: #061113;
+  --gold-dark: #ffcf33;
+}
+
+.main {
+  color: var(--text);
+}
+
+/* Section kickers adopt the themed label colour (gold in light,
+   cyan in dark) while keeping the blue/gold variants distinct. */
+.main .eyebrow,
+.main .label {
+  color: var(--label);
+}
+
+.main .hardware-section .eyebrow {
+  color: var(--label-blue);
+}
+
+.main .recommendation-section .eyebrow {
+  color: var(--accent-strong);
+}
+
+/* --- Dark-mode overrides for surfaces that hardcode light colours --- */
+[data-theme="dark"] .main .chat-panel {
+  background: var(--surface-strong);
+}
+
+[data-theme="dark"] .main .chat-topbar {
+  background: rgba(12, 30, 34, 0.6);
+}
+
+[data-theme="dark"] .main .messages {
+  background:
+    linear-gradient(180deg, rgba(102, 217, 255, 0.05), rgba(0, 0, 0, 0)),
+    #08171a;
+}
+
+[data-theme="dark"] .main .message.user {
+  background: rgba(255, 196, 0, 0.16);
+  color: var(--text);
+  border-color: rgba(255, 196, 0, 0.30);
+}
+
+[data-theme="dark"] .main .hardware-section {
+  background: linear-gradient(180deg, var(--blue-soft), transparent 70%);
+  border-color: var(--blue-line);
+}
+
+[data-theme="dark"] .main .recommendation-card {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .main .meter,
+[data-theme="dark"] .main .progress-bar {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="dark"] .main .badge,
+[data-theme="dark"] .main .session-tag code {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+[data-theme="dark"] .main .ghost-button,
+[data-theme="dark"] .main .session-card button {
+  background: var(--surface-strong);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+[data-theme="dark"] .main .strip-button:hover {
+  background: rgba(255, 196, 0, 0.10);
+}
+
+[data-theme="dark"] .main .project-context-bar {
+  background: var(--surface-warm);
+}
+
+[data-theme="dark"] .main .project-sources-list {
+  background: var(--surface-strong);
+}
+
+[data-theme="dark"] .main .project-chat-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .main .project-detail-empty {
+  background: var(--surface-soft);
+}
+
+[data-theme="dark"] .main .project-create-card {
+  background: var(--surface-warm);
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .main .project-picker select,
+[data-theme="dark"] .main .help-toggle {
+  background: var(--white);
+}
+
+[data-theme="dark"] .main .control-help-text {
+  background: var(--surface-strong);
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .main .project-source-row button {
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------
+   Defeat the light "glassmorphism polish" surfaces in dark
+   mode. Those rules hardcode rgba(255,255,255,…) backgrounds
+   that ignore the token remap, so each must be re-skinned
+   explicitly with the dark surface tokens.
+   --------------------------------------------------------- */
+[data-theme="dark"] {
+  --glass-strong: rgba(9, 22, 26, 0.92);
+}
+
+[data-theme="dark"] .main .topbar,
+[data-theme="dark"] .main .panel,
+[data-theme="dark"] .main .chat-panel,
+[data-theme="dark"] .main .tools-drawer {
+  background: var(--surface-strong);
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+[data-theme="dark"] .main .system-section,
+[data-theme="dark"] .main .metric-card,
+[data-theme="dark"] .main .recommendation-card,
+[data-theme="dark"] .main .model-card,
+[data-theme="dark"] .main .session-card,
+[data-theme="dark"] .main .tool-section,
+[data-theme="dark"] .main .tool-card,
+[data-theme="dark"] .main .token-info-section,
+[data-theme="dark"] .main .token-model-facts div {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+[data-theme="dark"] .main .hardware-section {
+  background: linear-gradient(180deg, var(--blue-soft), transparent 70%);
+  border-color: var(--blue-line);
+}
+
+[data-theme="dark"] .main .recommendation-section {
+  background: var(--surface-warm);
+}
+
+[data-theme="dark"] .main .chat-topbar,
+[data-theme="dark"] .main .attachment-bar,
+[data-theme="dark"] .main .composer {
+  background: rgba(12, 30, 34, 0.72);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .main .messages {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(102, 217, 255, 0.06), transparent 32%),
+    linear-gradient(180deg, #0a1c20 0%, #08171a 100%);
+}
+
+[data-theme="dark"] .main .message.assistant,
+[data-theme="dark"] .main .session-details,
+[data-theme="dark"] .main .message.thinking {
+  background: var(--surface-strong);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+[data-theme="dark"] .main .message.stopped {
+  color: #ffd98a;
+  background: rgba(255, 196, 0, 0.12);
+  border-color: rgba(255, 196, 0, 0.34);
+}
+
+/* All text fields in the main content. */
+[data-theme="dark"] .main select,
+[data-theme="dark"] .main input,
+[data-theme="dark"] .main textarea {
+  background: var(--surface-strong);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .main select::placeholder,
+[data-theme="dark"] .main input::placeholder,
+[data-theme="dark"] .main textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Composer toolbar / chat controls (drop the light inset glow). */
+[data-theme="dark"] .main .toolbar-button,
+[data-theme="dark"] .main .prompt-actions-menu summary,
+[data-theme="dark"] .main .prompt-actions,
+[data-theme="dark"] .main .strip-button,
+[data-theme="dark"] .main .token-counter,
+[data-theme="dark"] .main .attachment-chip {
+  background: var(--surface-strong);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .main .attachment-chip button {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* Keep the gold accents gold. */
+[data-theme="dark"] .main .file-button {
+  background: var(--gold);
+  color: #17130b;
+  border-color: var(--gold-dark);
+  box-shadow: none;
+}
+
+[data-theme="dark"] .main .agents-mode-button.active,
+[data-theme="dark"] .main .strip-button[aria-expanded="true"] {
+  background: var(--gold);
+  color: #17130b;
+}
+
+[data-theme="dark"] .main .control-main-row:has(.ghost-button) .help-toggle {
+  background: var(--surface-strong);
+  border-color: var(--border);
+}
+
+/* Themed danger buttons in the main content (both modes). */
+.main .danger-button {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: var(--radius-control);
+}
+
+/* A faint warm wash on the recommended-models block (the .is-accent feel). */
+.main .recommendation-section {
+  background: var(--surface-warm);
+  border-radius: var(--radius-card);
+  padding: 14px;
+}
+
+/* =========================================================
+   Reusable ci2-* visual primitives (token-driven, theme-safe)
+   ========================================================= */
+
+.ci2-page-shell {
+  position: relative;
+}
+
+.ci2-page-hero,
+.ci2-panel,
+.ci2-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-page);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.ci2-card,
+.ci2-subcard {
+  border-radius: var(--radius-card);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+.ci2-subcard {
+  padding: 18px;
+  background: var(--surface-soft);
+}
+
+.ci2-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--label);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ci2-page-title {
+  margin: 10px 0 0;
+  color: var(--text);
+  font-size: clamp(40px, 5vw, 72px);
+  line-height: 0.94;
+  letter-spacing: -0.06em;
+  font-weight: 900;
+}
+
+.ci2-page-title.is-serif {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.ci2-page-subtitle {
+  margin-top: 18px;
+  max-width: 780px;
+  color: var(--text-soft);
+  font-size: clamp(17px, 1.5vw, 23px);
+  line-height: 1.45;
+}
+
+.ci2-primary-button {
+  border: 1px solid rgba(180, 125, 0, 0.34);
+  border-radius: var(--radius-control);
+  color: #111;
+  background: linear-gradient(180deg, #ffd24a, var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 12px 30px var(--accent-glow);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ci2-secondary-button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+}
+
+.ci2-danger-button {
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+  color: var(--danger);
+  background: var(--danger-bg);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ci2-input,
+.ci2-select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.ci2-input:focus,
+.ci2-select:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.ci2-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(140, 120, 80, 0.18);
+}
+
+.ci2-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--accent));
+}
+
+.ci2-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  padding: 7px 10px;
+}
+
+/* =========================================================
+   Decorative gold orbital arcs (purely decorative, non-blocking)
+   ========================================================= */
+
+.ci2-has-orbit {
+  position: relative;
+  overflow: hidden;
+}
+
+.ci2-orbit-deco,
+.projects-library .project-card::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -95px;
+  width: 220px;
+  height: 220px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+  background:
+    radial-gradient(circle at center, var(--accent-glow) 0 2%, transparent 3%),
+    repeating-radial-gradient(circle at center, transparent 0 28px, var(--accent-glow) 29px 30px, transparent 31px 52px);
+  mask-image: radial-gradient(circle, black 0 62%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle, black 0 62%, transparent 72%);
+}
+
+/* Keep real content above the decorative arcs. */
+.ci2-has-orbit > *:not(.ci2-orbit-deco),
+.projects-library .project-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.projects-library .project-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Profile hero icon badge */
+.profile-icon-badge {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 26px;
+}
+
+.researcher-view-active .projects-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+}
+
+/* =========================================================
+   Top-right controls: theme toggle next to the language pill
+   ========================================================= */
+
+.app-top-controls {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-top-controls .language-control {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(17, 17, 17, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink, #111);
+  box-shadow: 0 10px 24px rgba(17, 17, 17, 0.08);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  border-color: rgba(184, 129, 0, 0.38);
+  box-shadow: 0 14px 30px rgba(17, 17, 17, 0.12);
+  outline: 0;
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .theme-toggle {
+  border-color: rgba(158, 236, 236, 0.22);
+  background: rgba(10, 28, 32, 0.85);
+  color: #f6f2e8;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* =========================================================
+   Responsive polish
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .ci2-page-title {
+    font-size: clamp(34px, 10vw, 52px);
+  }
+
+  .ci2-orbit-deco,
+  .projects-library .project-card::after {
+    opacity: 0.32;
+    transform: scale(0.78);
+  }
+}
+
+@media (max-width: 720px) {
+  .app-top-controls {
+    top: 10px;
+    right: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle {
+    transition: none;
+  }
+}
+
+/* =========================================================
+   Researcher reviewing documents — instructions.md + rubrics.
+   Two half-width upload boxes (like Models / Sessions) with a
+   line-numbered, scrollable, editable document view.
+   ========================================================= */
+
+.researcher-card-heading {
+  margin-bottom: 16px;
+}
+
+.researcher-card-heading .eyebrow {
+  margin: 0;
+}
+
+.researcher-card-heading h3 {
+  margin: 4px 0 6px;
+  font-size: 21px;
+}
+
+.researcher-card-heading p {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.researcher-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.researcher-doc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft);
+}
+
+.researcher-doc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.researcher-doc-head-copy {
+  min-width: 0;
+}
+
+.researcher-doc-head-copy .eyebrow {
+  margin: 0;
+}
+
+.researcher-doc-head-copy h3 {
+  margin: 3px 0 5px;
+  font-size: 18px;
+}
+
+.researcher-doc-head-copy p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.researcher-doc-head .source-add-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 16px;
+  justify-content: center;
+  gap: 8px;
+}
+
+.researcher-doc-head .source-add-button > span:first-child {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.doc-editor {
+  position: relative;
+  display: flex;
+  height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.doc-editor-gutter {
+  flex: 0 0 auto;
+  width: 46px;
+  margin: 0;
+  padding: 12px 8px 12px 0;
+  text-align: right;
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+  color: var(--muted);
+  background: rgba(20, 16, 6, 0.04);
+  border-right: 1px solid var(--line);
+  font: inherit;
+  tab-size: 4;
+}
+
+.doc-editor .doc-editor-area {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+}
+
+.researcher-doc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doc-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.doc-clear-button {
+  min-height: 34px;
+  padding: 0 13px;
+}
+
+.rubrics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rubrics-empty {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.rubric-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  overflow: hidden;
+}
+
+.rubric-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.rubric-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font: inherit;
+}
+
+.rubric-caret {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.rubric-card.is-open .rubric-caret {
+  transform: rotate(90deg);
+}
+
+.rubric-name {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rubric-meta {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.rubric-remove {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.rubric-remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.rubric-editor {
+  height: 220px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
+/* Dark theme: keep the document boxes inside the navy-glass system. */
+[data-theme="dark"] .main .researcher-doc-panel {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .main .doc-editor,
+[data-theme="dark"] .main .rubric-card {
+  background: var(--surface-strong);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .main .doc-editor .doc-editor-area {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+}
+
+[data-theme="dark"] .main .doc-editor-gutter {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .main .rubric-editor {
+  border-top-color: var(--border);
+}
+
+[data-theme="dark"] .main .rubric-toggle {
+  color: var(--text);
+}
+
+[data-theme="dark"] .main .rubric-remove {
+  border-color: var(--border);
+}
+
+@media (max-width: 900px) {
+  .researcher-docs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Make the Delete button match Cancel / Save instead of a tiny odd pill. */
+.researcher-form-actions .danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.researcher-form-actions .danger-button:hover,
+.researcher-form-actions .danger-button:focus-visible {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+  outline: none;
+}
+
+/* =========================================================
+   Chat review-mode banner — tells the user whether the peer
+   review is personalised (a researcher is selected) or generic.
+   ========================================================= */
+
+.review-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  background: var(--soft);
+}
+
+.review-mode-bar[data-active="true"] {
+  border-left-color: var(--gold);
+  background: rgba(245, 181, 27, 0.1);
+}
+
+.review-mode-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.review-mode-bar[data-active="true"] .review-mode-dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(245, 181, 27, 0.2);
+}
+
+.review-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.review-mode-copy strong {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.review-mode-copy span {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+[data-theme="dark"] .main .review-mode-bar {
+  background: var(--surface);
+  border-color: var(--border);
+  border-left-color: var(--text-muted);
+}
+
+[data-theme="dark"] .main .review-mode-bar[data-active="true"] {
+  border-left-color: var(--gold);
+  background: rgba(255, 196, 0, 0.08);
+}
+
+/* =========================================================
+   Project icon picker — single-colour glyphs chosen at create
+   time and editable from the project heading.
+   ========================================================= */
+
+.project-glyph {
+  font-family: "Segoe UI Symbol", "Segoe UI", system-ui, sans-serif;
+  font-variant-emoji: text;
+  line-height: 1;
+}
+
+.icon-picker {
+  position: relative;
+}
+
+.icon-picker > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.icon-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Create-form trigger: a compact control beside the other fields. */
+.project-icon-field {
+  flex: 0 0 auto;
+}
+
+.icon-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--gold-dark);
+}
+
+.icon-picker-trigger .project-glyph {
+  font-size: 22px;
+}
+
+.icon-picker-caret {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Shared glyph popover. It is portaled to <body> when open, so it must be
+   styled with root-level tokens (it lives outside .main) and shown via the
+   .is-visible class — coordinates are set in JS. */
+.icon-grid {
+  position: fixed;
+  z-index: 1200;
+  top: 0;
+  left: 0;
+  display: none;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  width: max-content;
+  max-width: min(320px, 86vw);
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.icon-grid.is-visible {
+  display: grid;
+}
+
+.icon-option {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.icon-option .project-glyph {
+  font-size: 22px;
+}
+
+.icon-option:hover {
+  background: rgba(245, 181, 27, 0.16);
+  border-color: var(--border);
+}
+
+.icon-option.is-selected {
+  border-color: var(--gold);
+  background: rgba(245, 181, 27, 0.22);
+}
+
+/* Detail-heading trigger reuses the existing 66x66 folder-mark box. */
+.project-detail-icon > summary.project-folder-mark {
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.project-detail-icon > summary.project-folder-mark:hover {
+  border-color: var(--gold);
+}
+
+/* The create-form trigger stays inside .main, so theme it there. */
+[data-theme="dark"] .main .icon-picker-trigger {
+  background: var(--surface-strong);
+  border-color: var(--border);
 }
