@@ -12,7 +12,6 @@ from ci2lab.security.audit import clear_audit_log, get_audit_log
 from ci2lab.security.engine import evaluate_tool_gate
 from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
 from ci2lab.security.session_permissions import (
-    ApprovalFingerprint,
     bind_active_session,
     build_approval_fingerprint,
     clear_session_permissions,
@@ -202,10 +201,7 @@ def test_fingerprint_distinguishes_targets(workspace: Path):
 
 
 def test_fingerprint_normalizes_path_slashes_and_default_dot():
-    assert (
-        target_fingerprint("write_file", {"path": r"notes\a.txt"})
-        == "notes/a.txt"
-    )
+    assert target_fingerprint("write_file", {"path": r"notes\a.txt"}) == "notes/a.txt"
     assert target_fingerprint("git_status", {}) == "."
     assert target_fingerprint("git_status", {"path": "."}) == "."
 

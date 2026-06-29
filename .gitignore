@@ -55,8 +55,25 @@ audit/live_claude/
 
 # Local test leftovers / manual scratch files
 /prueba.pdf
-/drones-10-00361-v2.pdf
 /inside.txt
 generated_ok.md
 /opencode.json
-claude.md
+
+# Stray sample media / documents. Do NOT commit data files to the repo root —
+# keep prose under docs/ and bundled assets inside the package. Root-level media
+# globs catch future strays; the named entries below are the ones removed from
+# tracking. (CLAUDE.md / README.md / *.md docs are intentionally NOT ignored.)
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.pdf
+/*.docx
+/*.pptx
+/*.xlsx
+/image1.png
+/imagen2.jpg
+/imagen3.jpg
+/imagen4.jpg
+/P1_T1_IE.pdf
+/drones-10-00361-v2.pdf

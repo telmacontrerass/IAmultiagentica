@@ -26,9 +26,7 @@ def test_doctor_markers_are_ascii():
 
 def test_cmd_doctor_output_encodes_cp1252(monkeypatch):
     buf = StringIO()
-    monkeypatch.setattr(
-        "ci2lab.cli.commands.doctor.console", Console(file=buf, width=120)
-    )
+    monkeypatch.setattr("ci2lab.cli.commands.doctor.console", Console(file=buf, width=120))
     monkeypatch.setattr("importlib.util.find_spec", lambda _name: object())
 
     class FakeResponse:
@@ -53,9 +51,7 @@ def test_cmd_doctor_output_encodes_cp1252(monkeypatch):
 
 def test_cmd_doctor_ollama_error_encodes_cp1252(monkeypatch):
     buf = StringIO()
-    monkeypatch.setattr(
-        "ci2lab.cli.commands.doctor.console", Console(file=buf, width=120)
-    )
+    monkeypatch.setattr("ci2lab.cli.commands.doctor.console", Console(file=buf, width=120))
     monkeypatch.setattr("importlib.util.find_spec", lambda _name: object())
 
     def fail_get(*args, **kwargs):

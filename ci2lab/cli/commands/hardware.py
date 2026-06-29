@@ -13,6 +13,14 @@ from ci2lab.hardware import scan_hardware
 
 
 def _cmd_hardware(args: argparse.Namespace) -> int:
+    """Print the detected hardware profile as a table or JSON.
+
+    Args:
+        args: Parsed CLI arguments; ``--json`` selects JSON output.
+
+    Returns:
+        Process exit code (always ``0``).
+    """
     profile = scan_hardware()
     if args.json:
         console.print_json(json.dumps(profile.to_dict()))
@@ -31,6 +39,7 @@ def _cmd_hardware(args: argparse.Namespace) -> int:
 
 
 def _print_memory_budget_context(profile: HardwareProfile) -> None:
+    """Print the theoretical and currently available inference memory budget."""
     mode = profile.inference_mode
     console.print(
         f"Your machine theoretically allows ~{profile.inference_budget_theoretical_gb:g} GB "
@@ -40,9 +49,7 @@ def _print_memory_budget_context(profile: HardwareProfile) -> None:
         available_label = "Safe VRAM available now"
     else:
         available_label = "Safe RAM available now"
-    console.print(
-        f"{available_label}: ~{profile.inference_budget_available_gb:g} GB."
-    )
+    console.print(f"{available_label}: ~{profile.inference_budget_available_gb:g} GB.")
     if profile.memory_pressure:
         console.print(
             "[yellow]Warning: there is memory pressure. "

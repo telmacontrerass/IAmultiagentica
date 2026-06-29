@@ -13,12 +13,17 @@ def test_normalize_error_class_maps_known_errors():
     assert normalize_error_class(_err("Error: a valid PDF engine is missing.")) == "no_pdf_engine"
     assert normalize_error_class(_err("Error: file does not exist: /x")) == "source_not_found"
     assert normalize_error_class(_err("Error: old_string not found in the file")) == "edit_mismatch"
-    assert normalize_error_class(_err("Error: 'x' is not a valid .docx (not an OOXML package)")) == "invalid_source"
+    assert (
+        normalize_error_class(_err("Error: 'x' is not a valid .docx (not an OOXML package)"))
+        == "invalid_source"
+    )
     assert normalize_error_class(_err("Error: path outside the workspace")) == "path_outside"
 
 
 def test_normalize_error_class_prefers_outcome():
-    r = _err("tool `x` is not allowed by the active skill. Allowed: ls.", outcome="blocked_by_skill")
+    r = _err(
+        "tool `x` is not allowed by the active skill. Allowed: ls.", outcome="blocked_by_skill"
+    )
     assert normalize_error_class(r) == "not_allowed_by_skill"
     r2 = _err("Error: blocked", outcome="blocked_by_policy")
     assert normalize_error_class(r2) == "blocked_by_policy"

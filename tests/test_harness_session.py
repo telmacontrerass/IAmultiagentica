@@ -26,12 +26,14 @@ def test_load_session_normalizes_null_content(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
     sid = "legacy_null"
     (tmp_path / f"{sid}.json").write_text(
-        json.dumps({
-            "id": sid,
-            "model_tag": "m:1",
-            "cwd": "/tmp",
-            "messages": [{"role": "assistant", "content": None}],
-        }),
+        json.dumps(
+            {
+                "id": sid,
+                "model_tag": "m:1",
+                "cwd": "/tmp",
+                "messages": [{"role": "assistant", "content": None}],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -65,9 +67,11 @@ def test_is_delete_session_request_accepts_natural_language():
 
 
 def test_session_title_uses_first_user_message_keywords():
-    title = session_title([
-        {"role": "user", "content": "read P1_T1_IE.pdf and check the exercise"},
-    ])
+    title = session_title(
+        [
+            {"role": "user", "content": "read P1_T1_IE.pdf and check the exercise"},
+        ]
+    )
     assert title == "P1 T1 IE pdf"
 
 

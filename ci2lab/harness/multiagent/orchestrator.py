@@ -12,14 +12,44 @@ import hashlib
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.multiagent.intent import classify_multiagent_intent
+from ci2lab.harness.multiagent.context_budget import (
+    assess_feasibility,
+    chunk_anchored_text,
+    infeasible_message,
+    plan_chunks,
+    recommended_context_for,
+    total_manuscript_chars,
+)
+from ci2lab.harness.multiagent.grounding import (
+    Finding,
+    VerificationBuckets,
+    extract_fetch_attempts,
+    parse_findings,
+    regroundable,
+    verify_findings,
+)
+from ci2lab.harness.multiagent.intent import MultiAgentIntent, classify_multiagent_intent
+from ci2lab.harness.multiagent.paper_review import (
+    REFUSAL_MESSAGE,
+    QualitySignals,
+    ReviewContext,
+    assemble_report,
+    assess_quality,
+    build_groundedness_prompt,
+    build_intake_prompt,
+    build_lens_prompt,
+    build_reground_prompt,
+    build_revision_plan_prompt,
+    quality_abort_message,
+)
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
 from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
@@ -39,10 +69,22 @@ class ValidationContract:
     required_evidence_tools: list[str] = field(default_factory=list)
     expected_changed_paths: list[str] = field(default_factory=list)
     forbidden_changed_paths: list[str] = field(default_factory=list)
+    allowed_write_roots: list[str] = field(default_factory=list)
     scope_check_required: bool = False
     test_commands: list[str] = field(default_factory=list)
     baseline_summary: str = "Pre-run git baseline: clean or unavailable."
     implementation_evidence_summary: str = "No implementation tool evidence recorded."
+
+
+# Ordered read-only lenses that run after intake in the grounded paper review.
+_PAPER_REVIEW_LENSES = (
+    AgentRole.SCOPE_REVIEWER,
+    AgentRole.NOVELTY_REVIEWER,
+    AgentRole.METHODOLOGY_REVIEWER,
+    AgentRole.FIELD_EXPERT_REVIEWER,
+    AgentRole.ADVERSARIAL_REVIEWER,
+    AgentRole.FORMAT_REVIEWER,
+)
 
 _VALIDATION_FAILURE_MARKERS = (
     "fail",
@@ -179,8 +221,26 @@ _IMPLEMENTATION_TASK_MARKERS = (
     "change",
     "convert",
     "generate code",
+    "complete",
+    "solve",
+    "develop",
+    "build",
 )
 
+# The roles that actually produce the deliverable: the researcher (gathers the
+# only context the coder sees) plus every implementer (any role that can write).
+# Only a block from one of these marks the whole run blocked — the planner,
+# validator, reviewer, and security reviewer are advisory, so their confusion
+# (e.g. a validator that replies "BLOCKED: please provide a validation step")
+# must never abort a run whose researcher and coder already did real work.
+# Derived from ROLE_SPECS so adding a new implementer role can never silently
+# fall out of this set.
+_LOAD_BEARING_ROLES = frozenset(
+    {AgentRole.RESEARCHER} | {role for role, spec in ROLE_SPECS.items() if spec.can_write}
+)
+
+# Implementation language a researcher may surface when a "read this document"
+# task actually requires writing code (e.g. an exercise statement in a PDF).
 _RESEARCH_DISCOVERED_WRITE_MARKERS = (
     "task involves implementing",
     "involves implementing",
@@ -209,27 +269,50 @@ _CODE_CONSTRAINT_MARKERS = (
     "operator `in`",
 )
 
-_WRITE_EVIDENCE_TOOLS = frozenset({
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "write_docx",
-    "docx_to_pdf",
-    "pdf_to_docx",
-    "notebook_edit",
-})
+_WRITE_EVIDENCE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "write_docx",
+        "docx_to_pdf",
+        "pdf_to_docx",
+        "notebook_edit",
+    }
+)
 
-_READBACK_EVIDENCE_TOOLS = frozenset({
-    "read_file",
-    "read_document",
-    "grep",
-    "inspect_file",
-})
+_READBACK_EVIDENCE_TOOLS = frozenset(
+    {
+        "read_file",
+        "read_document",
+        "grep",
+        "inspect_file",
+    }
+)
 
-_CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset({
-    "git_status",
-    "git_diff",
-})
+_CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset(
+    {
+        "git_status",
+        "git_diff",
+    }
+)
+
+# A request is test-centric or docs-centric only when the USER asks for tests or
+# docs as the deliverable — matched against the user's own prompt, never against
+# planner/researcher evidence. An "implement/complete/solve" task that merely
+# mentions that unit tests are required (e.g. an exam statement) must not be
+# routed to the test-only coder, which would leave the actual program unwritten.
+_TEST_REQUEST_RE = re.compile(
+    r"\bunit tests?\b|\bpytest\b|\btest (case|suite|coverage|file)s?\b|"
+    r"\b(write|add|create|update|run|fix|implement|generate)\b[^.\n]{0,30}\btests?\b",
+    re.IGNORECASE,
+)
+_DOCS_REQUEST_RE = re.compile(
+    r"\breadme\b|\bchangelog\b|\bdocumentation\b|\bdocstrings?\b|\bdocs?\b|\.md\b",
+    re.IGNORECASE,
+)
+_FRONTEND_EVIDENCE = ("frontend", "javascript", ".js", ".html", ".css", "ui/static")
+_PYTHON_EVIDENCE = (".py", "python", "ci2lab/", "harness")
 
 _CHANGE_SCOPE_REQUEST_MARKERS = (
     "git status",
@@ -255,28 +338,52 @@ _CHANGE_SCOPE_REQUEST_MARKERS = (
 # Tools that read-only roles (validator, reviewer, security_reviewer) are
 # never allowed to call. Attempting them is a role discipline violation.
 _FORBIDDEN_TOOLS_FOR_ROLE: dict[AgentRole, frozenset[str]] = {
-    AgentRole.VALIDATOR: frozenset({
-        "todo_write",
-        "write_file", "edit_file", "apply_patch", "notebook_edit",
-    }),
-    AgentRole.REVIEWER: frozenset({
-        "todo_write",
-        "write_file", "edit_file", "apply_patch", "notebook_edit",
-    }),
-    AgentRole.SECURITY_REVIEWER: frozenset({
-        "todo_write",
-        "write_file", "edit_file", "apply_patch", "notebook_edit",
-    }),
-    AgentRole.RESEARCHER: frozenset({
-        "write_file", "edit_file", "apply_patch", "notebook_edit",
-    }),
+    AgentRole.VALIDATOR: frozenset(
+        {
+            "todo_write",
+            "write_file",
+            "edit_file",
+            "apply_patch",
+            "notebook_edit",
+        }
+    ),
+    AgentRole.REVIEWER: frozenset(
+        {
+            "todo_write",
+            "write_file",
+            "edit_file",
+            "apply_patch",
+            "notebook_edit",
+        }
+    ),
+    AgentRole.SECURITY_REVIEWER: frozenset(
+        {
+            "todo_write",
+            "write_file",
+            "edit_file",
+            "apply_patch",
+            "notebook_edit",
+        }
+    ),
+    AgentRole.RESEARCHER: frozenset(
+        {
+            "write_file",
+            "edit_file",
+            "apply_patch",
+            "notebook_edit",
+        }
+    ),
 }
 
 # Document-processing tool names whose appearance in a reviewer/security_reviewer
 # output is suspicious when they are not present in the task or real tool calls.
-_HALLUCINATED_DOC_TOOLS = frozenset({
-    "write_docx", "pdf_to_docx", "docx_to_pdf",
-})
+_HALLUCINATED_DOC_TOOLS = frozenset(
+    {
+        "write_docx",
+        "pdf_to_docx",
+        "docx_to_pdf",
+    }
+)
 
 # Matches "report.docx", "document.pdf", "document.docx" in output text.
 _HALLUCINATED_DOC_FILE_RE = re.compile(
@@ -307,6 +414,18 @@ _PROMPT_PATH_RE = re.compile(
     r"\b[\w./\\-]+\.(?:py|txt|md|json|yaml|yml|toml|ini|csv|html|css|js|ts|tsx|jsx)\b",
     re.IGNORECASE,
 )
+_FOLDER_SCOPE_RE = re.compile(
+    r"\b(?:inside|within|under|in)\s+(?:the\s+)?(?:new\s+)?"
+    r"(?:folder|directory|carpeta)\s+(?:called|named|llamad[ao])?\s*"
+    r"[`\"']?([A-Za-z0-9_.-]+)[`\"']?",
+    re.IGNORECASE,
+)
+_CREATE_FOLDER_RE = re.compile(
+    r"\b(?:make|create|new|crear|crea)\b.{0,50}?"
+    r"(?:folder|directory|carpeta)\s+(?:called|named|llamad[ao])?\s*"
+    r"[`\"']?([A-Za-z0-9_.-]+)[`\"']?",
+    re.IGNORECASE,
+)
 _PROMPT_EXACT_CONTENT_RE = re.compile(
     r"\b(?:exactly|exactamente|contenido)\s*(?:this content|este contenido)?\s*:?\s*"
     r"(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([A-Za-z0-9_.:-]+))",
@@ -319,19 +438,27 @@ _BASH_PSEUDO_TOOL_RE = re.compile(
 )
 _PATCH_TARGET_RE = re.compile(r"^\+\+\+\s+b/(.+)$", re.MULTILINE)
 _NUMBERED_LINE_RE = re.compile(r"^\s*\d+\|(.*)$")
+_SCOPE_ROOT_STOPWORDS = frozenset(
+    {
+        "and",
+        "or",
+        "inside",
+        "folder",
+        "directory",
+        "carpeta",
+        "directorio",
+    }
+)
 
 
 def _combined_output(*results: SubAgentResult | None) -> str:
-    return "\n\n".join(
-        result.output for result in results if result is not None and result.output
-    )
+    """Join the non-empty outputs of the given results with blank-line separators."""
+    return "\n\n".join(result.output for result in results if result is not None and result.output)
 
 
 def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
-    return any(
-        re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text)
-        for marker in markers
-    )
+    """True if any marker appears in ``text`` as a whole word (word-boundary match)."""
+    return any(re.search(rf"(?<!\w){re.escape(marker)}(?!\w)", text) for marker in markers)
 
 
 def _tool_name(entry: dict[str, object]) -> str:
@@ -369,6 +496,110 @@ def _write_artifact_paths(implementation: SubAgentResult) -> list[str]:
         patch = str(args.get("patch") or "")
         paths.extend(match.group(1).strip() for match in _PATCH_TARGET_RE.finditer(patch))
     return _unique_preserving_order([p for p in paths if p and p != "(target unknown)"])
+
+
+def _normalize_rel_path(path: str) -> str:
+    return path.replace("\\", "/").lstrip("./").rstrip("/")
+
+
+def _path_under_root(path: str, root: str) -> bool:
+    normalized = _normalize_rel_path(path)
+    normalized_root = _normalize_rel_path(root)
+    return normalized == normalized_root or normalized.startswith(normalized_root + "/")
+
+
+def _infer_allowed_write_roots(*texts: str | None) -> list[str]:
+    combined = "\n".join(text or "" for text in texts)
+    roots: list[str] = []
+    for regex in (_FOLDER_SCOPE_RE, _CREATE_FOLDER_RE):
+        roots.extend(match.group(1) for match in regex.finditer(combined))
+    low = combined.lower()
+    if (
+        any(
+            marker in low
+            for marker in (
+                "new folder",
+                "new directory",
+                "nueva carpeta",
+                "make a new folder",
+                "create a new folder",
+            )
+        )
+        and "inside" in low
+    ):
+        exercise = re.search(r"\bexercise\s+(\d+)\b|\bejercicio\s+(\d+)\b", low)
+        if exercise:
+            number = next(group for group in exercise.groups() if group)
+            roots.append(f"exercise_{number}")
+    clean = [
+        _normalize_rel_path(root)
+        for root in roots
+        if root
+        and "." not in Path(root).name
+        and _normalize_rel_path(root).lower() not in _SCOPE_ROOT_STOPWORDS
+    ]
+    return _unique_preserving_order(clean)
+
+
+def _scope_limited_to_expected_paths(text: str) -> bool:
+    low = (text or "").lower()
+    return any(
+        marker in low
+        for marker in (
+            "do not modify any other file",
+            "do not change any other file",
+            "no modifiques ningun otro archivo",
+            "no modifiques ningún otro archivo",
+            "no cambies ningun otro archivo",
+            "no cambies ningún otro archivo",
+            "no other files",
+        )
+    )
+
+
+def _scope_violation_paths(
+    written_paths: list[str],
+    *,
+    allowed_roots: list[str],
+    allowed_paths: list[str],
+) -> list[str]:
+    if not allowed_roots and not allowed_paths:
+        return []
+    normalized_allowed_paths = {_normalize_rel_path(path) for path in allowed_paths}
+    violations: list[str] = []
+    for path in written_paths:
+        normalized = _normalize_rel_path(path)
+        in_root = any(_path_under_root(normalized, root) for root in allowed_roots)
+        exact = normalized in normalized_allowed_paths
+        if not in_root and not exact:
+            violations.append(path)
+    return _unique_preserving_order(violations)
+
+
+def _strip_numbered_lines(content: str) -> str:
+    lines = content.splitlines()
+    stripped = [
+        match.group(1)
+        for line in lines
+        if (match := _NUMBERED_LINE_RE.match(line)) is not None
+    ]
+    return "\n".join(stripped) if stripped and len(stripped) == len(lines) else content
+
+
+def _python_readback_error(path: str, content: str) -> str | None:
+    source = _strip_numbered_lines(content)
+    if not source.strip():
+        return f"Python artifact invalid: {path} is empty."
+    try:
+        ast.parse(source, filename=path)
+    except SyntaxError as exc:
+        return f"Python artifact invalid: {path}: {exc.msg} at line {exc.lineno}."
+    return None
+
+
+def _py_compile_failed(output: str) -> bool:
+    low = (output or "").lower()
+    return "syntaxerror" in low or "traceback" in low or "error:" in low
 
 
 def _tool_output_preview(entry: dict[str, object], *, limit: int = 180) -> str:
@@ -440,10 +671,7 @@ def _detect_role_violation(result: SubAgentResult) -> SubAgentResult:
     forbidden = _FORBIDDEN_TOOLS_FOR_ROLE.get(result.role, frozenset())
     if not forbidden:
         return result
-    violations = [
-        entry for entry in result.tool_calls
-        if _tool_name(entry) in forbidden
-    ]
+    violations = [entry for entry in result.tool_calls if _tool_name(entry) in forbidden]
     if not violations:
         return result
     violation_names = sorted({_tool_name(e) for e in violations})
@@ -535,14 +763,10 @@ def _detect_hallucinated_output(
         return result
     output_lower = result.output.lower()
     prompt_lower = run.user_prompt.lower()
-    real_tools = frozenset(
-        _tool_name(e)
-        for r in run.results
-        for e in r.tool_calls
-        if _tool_ok(e)
-    )
+    real_tools = frozenset(_tool_name(e) for r in run.results for e in r.tool_calls if _tool_ok(e))
     alien_doc_tools = {
-        t for t in _HALLUCINATED_DOC_TOOLS
+        t
+        for t in _HALLUCINATED_DOC_TOOLS
         if t in output_lower and t not in prompt_lower and t not in real_tools
     }
     doc_files = _HALLUCINATED_DOC_FILE_RE.findall(result.output)
@@ -561,9 +785,7 @@ def _detect_hallucinated_output(
     return result
 
 
-def _apply_role_guardrails(
-    result: SubAgentResult, run: MultiAgentRun
-) -> SubAgentResult:
+def _apply_role_guardrails(result: SubAgentResult, run: MultiAgentRun) -> SubAgentResult:
     """Apply all role-discipline and evidence guardrails to a phase result."""
     result = _detect_role_violation(result)
     result = _detect_invalid_tool_via_bash(result)
@@ -610,15 +832,9 @@ def _build_tool_evidence_report(
 ) -> str:
     entries = [entry for entry in _evidence_entries(results) if _tool_ok(entry)]
     writes = [entry for entry in entries if _tool_name(entry) in _WRITE_EVIDENCE_TOOLS]
-    readbacks = [
-        entry for entry in entries if _tool_name(entry) in _READBACK_EVIDENCE_TOOLS
-    ]
+    readbacks = [entry for entry in entries if _tool_name(entry) in _READBACK_EVIDENCE_TOOLS]
     scope_checks = [entry for entry in entries if _is_change_scope_evidence(entry)]
-    implementer = (
-        selected_coder_role.value
-        if selected_coder_role is not None
-        else "none selected"
-    )
+    implementer = selected_coder_role.value if selected_coder_role is not None else "none selected"
     return (
         "Real tool-call evidence available. Treat this section as the only "
         "source of truth for filesystem effects; do not treat subagent narrative "
@@ -653,11 +869,13 @@ def _evidence_rules() -> str:
 
 
 def _role_label(role: AgentRole, attempt: int) -> str:
+    """Build a short trace label for a role, appending the attempt number when > 1."""
     suffix = f" attempt {attempt}" if attempt > 1 else ""
     return f"{role.value}{suffix}"
 
 
 def _role_progress_label(role: AgentRole, attempt: int) -> str:
+    """Build a human-friendly progress label for a role and attempt number."""
     labels = {
         AgentRole.PLANNER: "Planning the work",
         AgentRole.RESEARCHER: "Gathering the needed context",
@@ -669,6 +887,15 @@ def _role_progress_label(role: AgentRole, attempt: int) -> str:
         AgentRole.VALIDATOR: "Checking the result",
         AgentRole.REVIEWER: "Reviewing the outcome",
         AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+        AgentRole.INTAKE_REVIEWER: "Diagnosing the manuscript",
+        AgentRole.SCOPE_REVIEWER: "Checking journal fit",
+        AgentRole.NOVELTY_REVIEWER: "Auditing the contribution",
+        AgentRole.METHODOLOGY_REVIEWER: "Reviewing the methodology",
+        AgentRole.FIELD_EXPERT_REVIEWER: "Applying field expectations",
+        AgentRole.ADVERSARIAL_REVIEWER: "Mounting Reviewer 2 objections",
+        AgentRole.FORMAT_REVIEWER: "Checking submission readiness",
+        AgentRole.GROUNDEDNESS_VERIFIER: "Verifying findings against the paper",
+        AgentRole.REVISION_PLANNER: "Assembling the review report",
     }
     label = labels[role]
     return f"{label} (attempt {attempt})" if attempt > 1 else label
@@ -677,14 +904,11 @@ def _role_progress_label(role: AgentRole, attempt: int) -> str:
 def subagent_blocked(result: SubAgentResult) -> bool:
     """Detect explicit subagent stop conditions."""
     text = result.output.strip().lower()
-    return (
-        result.status == "blocked"
-        or text.startswith("blocked:")
-        or "max rounds" in text
-    )
+    return result.status == "blocked" or text.startswith("blocked:") or "max rounds" in text
 
 
 def _preview_text(text: str | None, *, limit: int) -> str:
+    """Return ``text`` truncated to ``limit`` characters with a marker when longer."""
     value = text or ""
     if len(value) <= limit:
         return value
@@ -692,12 +916,14 @@ def _preview_text(text: str | None, *, limit: int) -> str:
 
 
 def _hash_text(text: str | None) -> str | None:
+    """Return the SHA-256 hex digest of ``text``, or ``None`` when it is ``None``."""
     if text is None:
         return None
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _failure_status(exc: Exception) -> str:
+    """Classify an exception as ``"timeout"`` or ``"failed"`` from its message."""
     if "timeout" in str(exc).lower():
         return "timeout"
     return "failed"
@@ -711,6 +937,7 @@ def _failed_result(
     attempt: int,
     error: str,
 ) -> SubAgentResult:
+    """Build a placeholder result for a phase that raised before producing output."""
     stage_config = build_subagent_config(role, config)
     spec = ROLE_SPECS[role]
     return SubAgentResult(
@@ -734,6 +961,7 @@ def _skipped_result(
     *,
     reason: str,
 ) -> SubAgentResult:
+    """Build a placeholder result for a phase that was deliberately skipped."""
     stage_config = build_subagent_config(role, config)
     spec = ROLE_SPECS[role]
     return SubAgentResult(
@@ -752,6 +980,7 @@ def _skipped_result(
 
 
 def _phase_trace(result: SubAgentResult) -> dict[str, object]:
+    """Build the JSON-serializable trace record for a single executed phase."""
     tool_calls = [
         {
             "tool": entry.get("tool"),
@@ -806,6 +1035,7 @@ def _trace_payload(
     started_at: datetime,
     ended_at: datetime,
 ) -> dict[str, object]:
+    """Build the full multi-agent trace payload written to ``multiagent_trace.json``."""
     phases = [_phase_trace(result) for result in run.results]
     planned_phases: list[str] = list(run.planned_phases) or [
         AgentRole.PLANNER.value,
@@ -824,7 +1054,11 @@ def _trace_payload(
         planned_phases.append(AgentRole.SECURITY_REVIEWER.value)
     executed_phases = [result.role.value for result in run.results if result.status != "skipped"]
     failed_phase = next(
-        (result.role.value for result in run.results if result.status in {"failed", "timeout", "blocked"}),
+        (
+            result.role.value
+            for result in run.results
+            if result.status in {"failed", "timeout", "blocked"}
+        ),
         run.failed_phase,
     )
     last_validation = run.latest_for(AgentRole.VALIDATOR)
@@ -866,7 +1100,7 @@ def _trace_payload(
 def _read_json_file(path: Path) -> dict[str, object]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -882,7 +1116,7 @@ def _read_jsonl_file(path: Path) -> list[dict[str, object]]:
             )
             if isinstance(item, dict)
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
@@ -895,21 +1129,15 @@ def _phase_parent_artifact(
     *,
     index: int,
     parent_run_dir: Path,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     child_dir = Path(result.subagent_run_dir) if result.subagent_run_dir else None
-    child_summary = (
-        _read_json_file(child_dir / "run_summary.json")
-        if child_dir is not None
-        else {}
-    )
+    child_summary = _read_json_file(child_dir / "run_summary.json") if child_dir is not None else {}
     started_at = child_summary.get("started_at")
     ended_at = child_summary.get("ended_at")
     child_run_id = child_dir.name if child_dir is not None else None
     child_run_dir = str(child_dir) if child_dir is not None else None
     phase_dir = parent_run_dir / "phases" / f"{index:02d}_{result.role.value}"
-    output = result.output or (
-        f"SKIPPED: {result.skipped_reason}" if result.skipped_reason else ""
-    )
+    output = result.output or (f"SKIPPED: {result.skipped_reason}" if result.skipped_reason else "")
     return {
         "phase_name": result.role.value,
         "role": result.role.value,
@@ -968,7 +1196,7 @@ def _persist_multiagent_parent_run(
         _phase_parent_artifact(result, index=index, parent_run_dir=run_dir)
         for index, result in enumerate(run.results, start=1)
     ]
-    run_json = {
+    run_json: dict[str, Any] = {
         "parent_run_id": parent_run_id,
         "prompt": run.user_prompt,
         "workspace": config.cwd,
@@ -1065,6 +1293,7 @@ def _run_subagent_stage(
     attempt: int = 1,
     on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
+    """Run one subagent stage with progress/console reporting around the call."""
     label = _role_label(role, attempt)
     progress_label = _role_progress_label(role, attempt)
     if on_progress:
@@ -1072,7 +1301,7 @@ def _run_subagent_stage(
     else:
         console.print(f"[cyan][multi-agent][/cyan] {progress_label}...")
     try:
-        kwargs = {"attempt": attempt}
+        kwargs: dict[str, Any] = {"attempt": attempt}
         if on_progress:
             kwargs["on_progress"] = on_progress
         result = run_subagent(role, task_prompt, selection, config, **kwargs)
@@ -1097,6 +1326,11 @@ def _execute_phase(
     attempt: int = 1,
     on_progress: Callable[[str], None] | None = None,
 ) -> SubAgentResult:
+    """Run a phase, record its result on ``state``, and flag load-bearing blocks.
+
+    Re-raises any exception from the stage after recording a failed result on the
+    run state.
+    """
     try:
         result = _run_subagent_stage(
             role,
@@ -1119,27 +1353,44 @@ def _execute_phase(
         state.add_result(failed)
         raise
     state.add_result(result)
-    if subagent_blocked(result):
+    # Only a load-bearing role blocking is a real failure. An advisory role
+    # (validator/reviewer/security) that returns "BLOCKED" is confused, not a
+    # dependency block, and must not mark the whole run failed.
+    if subagent_blocked(result) and role in _LOAD_BEARING_ROLES:
         state.failed_phase = role.value
         state.error = result.output or result.error
     return result
 
 
 def choose_coder_role(
-    plan: SubAgentResult | None, research: SubAgentResult | None
+    plan: SubAgentResult | None,
+    research: SubAgentResult | None,
+    *,
+    user_prompt: str = "",
 ) -> AgentRole:
-    """Choose an implementation role from planner/researcher evidence."""
-    text = _combined_output(plan, research).lower()
-    if any(marker in text for marker in ("readme", ".md", "docs/", "documentacion")):
-        return AgentRole.DOCS_CODER
-    if any(marker in text for marker in ("pytest", "tests/", "test_", "unit test")):
+    """Choose an implementation role.
+
+    The USER's request decides the primary deliverable; planner/researcher text
+    only refines *which* implementer to use. A build/implement/complete/solve
+    request is an implementation job even when it also needs tests or touches
+    docs — so the test- and docs-only specialists are picked only when the user
+    actually asked for tests or docs, judged from their own prompt. Otherwise
+    route by the language signal in the prompt and evidence, defaulting to the
+    generalist implementer (which can write any file) rather than a specialist
+    that would write nothing.
+    """
+    prompt = (user_prompt or "").lower()
+    evidence = _combined_output(plan, research).lower()
+
+    if _TEST_REQUEST_RE.search(prompt):
         return AgentRole.TEST_CODER
-    if any(
-        marker in text
-        for marker in ("frontend", "javascript", ".js", ".html", ".css", "ui/static")
-    ):
+    if _DOCS_REQUEST_RE.search(prompt):
+        return AgentRole.DOCS_CODER
+
+    combined = f"{prompt}\n{evidence}"
+    if any(marker in combined for marker in _FRONTEND_EVIDENCE):
         return AgentRole.FRONTEND_CODER
-    if any(marker in text for marker in (".py", "python", "ci2lab/", "harness")):
+    if any(marker in combined for marker in _PYTHON_EVIDENCE):
         return AgentRole.PYTHON_CODER
     return AgentRole.GENERALIST_CODER
 
@@ -1161,9 +1412,8 @@ def should_skip_implementation(
     evidence = _combined_output(plan, research).lower()
     if _contains_marker(evidence, _IMPLEMENTATION_TASK_MARKERS):
         return False
-    return (
-        _contains_marker(evidence, _READ_ONLY_TASK_MARKERS)
-        and _contains_marker(evidence, _DOCUMENT_TASK_MARKERS)
+    return _contains_marker(evidence, _READ_ONLY_TASK_MARKERS) and _contains_marker(
+        evidence, _DOCUMENT_TASK_MARKERS
     )
 
 
@@ -1253,14 +1503,10 @@ def should_repair_with_coder(validation: SubAgentResult) -> bool:
         "timeout",
     }:
         return False
-    text = "\n".join(
-        part for part in (validation.output, validation.error or "") if part
-    ).lower()
+    text = "\n".join(part for part in (validation.output, validation.error or "") if part).lower()
     if any(marker in text for marker in _NON_ACTIONABLE_VALIDATION_FAILURE_MARKERS):
         return False
-    return any(
-        marker in text for marker in _ACTIONABLE_IMPLEMENTATION_FAILURE_MARKERS
-    )
+    return any(marker in text for marker in _ACTIONABLE_IMPLEMENTATION_FAILURE_MARKERS)
 
 
 def has_write_tool_evidence(results: list[SubAgentResult]) -> bool:
@@ -1336,14 +1582,12 @@ def final_run_status(run: MultiAgentRun) -> str:
 
 def should_run_security_review(run: MultiAgentRun) -> bool:
     """Decide whether the optional security reviewer should run."""
-    text = "\n\n".join(
-        [run.user_prompt]
-        + [result.output for result in run.results]
-    ).lower()
+    text = "\n\n".join([run.user_prompt] + [result.output for result in run.results]).lower()
     return any(marker in text for marker in _SECURITY_REVIEW_MARKERS)
 
 
 def _build_planner_prompt(user_prompt: str) -> str:
+    """Build the planner subagent's task prompt for ``user_prompt``."""
     return (
         "Create the authoritative execution plan for this task. The rest of "
         "the subagents must follow your plan, so make the delegation explicit.\n\n"
@@ -1362,6 +1606,7 @@ def _build_planner_prompt(user_prompt: str) -> str:
 
 
 def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str:
+    """Build the researcher subagent's task prompt, embedding the planner's plan."""
     plan_text = plan.output if plan else "No explicit plan was produced for this task."
     return (
         "Follow the planner's execution plan. Only perform the research/context "
@@ -1372,7 +1617,11 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
         "specific content (a document, an exercise, a section, a function), quote "
         "the exact relevant text VERBATIM in your report. Do not just summarize "
         "it or say where it is. If you read a document to find instructions, "
-        "include those instructions in full.\n\n"
+        "include those instructions in full.\n"
+        "NEVER write a section heading and leave it empty (e.g. a title with no "
+        "text under it). Paste the full content you read; if you genuinely could "
+        "not obtain a piece of content, say so explicitly instead of leaving a "
+        "blank placeholder.\n\n"
         "Evidence discipline: do NOT claim to have created, verified, or modified "
         "any file, and do NOT claim the diff is empty — report only facts confirmed "
         "by your read-tool results. If you have no tool result for something, say "
@@ -1392,13 +1641,16 @@ def _build_implementation_prompt(
     plan: SubAgentResult | None,
     research: SubAgentResult | None,
 ) -> str:
+    """Build the implementer subagent's task prompt from the plan and research findings."""
     # A document task runs no planner, so `plan` may be absent — fall back to the
     # user task directly rather than failing.
-    plan_text = plan.output if plan is not None else (
-        "No separate plan was produced; follow the user task directly."
+    plan_text = (
+        plan.output
+        if plan is not None
+        else ("No separate plan was produced; follow the user task directly.")
     )
-    research_text = research.output if research is not None else (
-        "No research output was produced."
+    research_text = (
+        research.output if research is not None else ("No research output was produced.")
     )
     return (
         "Follow the execution plan and the researcher findings. "
@@ -1423,6 +1675,11 @@ def _build_implementation_prompt(
         '`open(path, "w")`. Code returned as text is never executed, leaves no '
         "tool evidence, and will be treated as no change at all. After writing, "
         "read the file back with `read_file` so the content can be verified.\n\n"
+        "Your deliverable is the actual file(s) the task requires, WRITTEN TO "
+        "DISK with their real content — not a description and not empty code "
+        "blocks. Create every file the task calls for (the program/solution it "
+        "asks you to build, and any tests it explicitly requests), and do not "
+        "claim the task is complete until those files exist with real content.\n\n"
         f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
         f"Research:\n{research_text}"
     )
@@ -1476,9 +1733,7 @@ def _enforce_change_scope_evidence(
         for marker in ("insufficient evidence", "failed", "failure", "error")
     )
     result.output = (
-        f"{prior_output}\n\n{scope_failure}"
-        if prior_output and prior_is_failure
-        else scope_failure
+        f"{prior_output}\n\n{scope_failure}" if prior_output and prior_is_failure else scope_failure
     )
     return result
 
@@ -1489,11 +1744,7 @@ def _required_tools_satisfied(
 ) -> bool:
     if not required_tools:
         return False
-    successful = {
-        _tool_name(entry)
-        for entry in result.tool_calls
-        if _tool_ok(entry)
-    }
+    successful = {_tool_name(entry) for entry in result.tool_calls if _tool_ok(entry)}
     return set(required_tools) <= successful
 
 
@@ -1518,8 +1769,11 @@ def _finalize_if_evidence_satisfied(
     verdict: str,
 ) -> SubAgentResult:
     """Prefer real satisfied evidence over later/narrative validator drift."""
-    if result.status == "failed":
-        return result
+    for entry in result.tool_calls:
+        if _tool_name(entry) == "bash" and not _tool_ok(entry):
+            command = str(_tool_args(entry).get("command") or "").strip()
+            if command.startswith("python -m py_compile "):
+                return result
     if not _required_tools_satisfied(result, required_tools):
         return result
     result.status = "completed"
@@ -1540,7 +1794,32 @@ def _deterministic_scope_review_result(
 
     tool_entries: list[dict[str, object]] = []
     required_tools = ("git_status", "git_diff")
-    prior_entries = _successful_tool_entries(prior_results or [], required_tools)
+    prior_results = prior_results or []
+    prior_validation = next(
+        (result for result in reversed(prior_results) if result.role == AgentRole.VALIDATOR),
+        None,
+    )
+    if prior_validation and validation_failed(prior_validation):
+        output = (
+            "Insufficient evidence: prior validation failed, so scope review "
+            "cannot report PASS. Do not report PASS for change scope."
+        )
+        spec = ROLE_SPECS[role]
+        return SubAgentResult(
+            role=role,
+            task=task_prompt,
+            output=output,
+            status="failed",
+            error=output,
+            role_anchor=None,
+            allowed_tools=sorted(config.skill_allowed_tools or ()),
+            can_write=spec.can_write,
+            input_prompt=_shorten(task_prompt, limit=600),
+            tool_calls=[],
+            rounds=0,
+        )
+
+    prior_entries = _successful_tool_entries(prior_results, required_tools)
     if {entry["tool"] for entry in prior_entries} >= set(required_tools):
         tool_entries = prior_entries
     else:
@@ -1553,23 +1832,23 @@ def _deterministic_scope_review_result(
         for name in ("git_status", "git_diff"):
             call = ToolCall(name=name, arguments={"path": "."})
             result = execute_tool(call, read_only_config)
-            tool_entries.append({
-                "tool": name,
-                "ok": not result.is_error,
-                "outcome": result.outcome,
-                "arguments": call.arguments,
-                "output_preview": result.content[:600],
-                "error_preview": result.content[:600] if result.is_error else None,
-            })
+            tool_entries.append(
+                {
+                    "tool": name,
+                    "ok": not result.is_error,
+                    "outcome": result.outcome,
+                    "arguments": call.arguments,
+                    "output_preview": result.content[:600],
+                    "error_preview": result.content[:600] if result.is_error else None,
+                }
+            )
 
     if all(_tool_ok(entry) for entry in tool_entries):
         status = "completed"
         output = verdict
         error = None
     else:
-        missing = ", ".join(
-            _tool_name(entry) for entry in tool_entries if not _tool_ok(entry)
-        )
+        missing = ", ".join(_tool_name(entry) for entry in tool_entries if not _tool_ok(entry))
         status = "failed"
         output = f"FAIL: missing successful scope evidence: {missing}."
         error = output
@@ -1598,13 +1877,19 @@ def _can_use_deterministic_validation(
     tools = set(contract.required_evidence_tools)
     if not tools:
         return False
-    if "bash" in tools and not _only_py_compile_commands(contract.test_commands):
+    if "bash" in tools and not all(
+        command.strip().startswith("python -m py_compile ")
+        for command in contract.test_commands
+    ):
         return False
     if not tools <= {"read_file", "git_status", "git_diff", "bash"}:
         return False
     if "read_file" not in tools:
         return True
-    if any((Path(config.cwd) / path).exists() for path in contract.expected_artifacts):
+    expected_path = contract.expected_artifacts[0] if contract.expected_artifacts else None
+    if expected_path and not (Path(config.cwd) / expected_path).exists():
+        return False
+    if expected_path:
         return True
     expected_content = next(
         (
@@ -1617,18 +1902,11 @@ def _can_use_deterministic_validation(
     for entry in implementation.tool_calls:
         if _entry_satisfies_readback(
             entry,
-            expected_path=contract.expected_artifacts[0] if contract.expected_artifacts else None,
+            expected_path=expected_path,
             expected_content=expected_content,
         ):
             return True
     return False
-
-
-def _only_py_compile_commands(commands: list[str]) -> bool:
-    return bool(commands) and all(
-        command.strip().startswith("python -m py_compile ")
-        for command in commands
-    )
 
 
 def _entry_satisfies_readback(
@@ -1639,7 +1917,9 @@ def _entry_satisfies_readback(
 ) -> bool:
     if _tool_name(entry) != "read_file" or not _tool_ok(entry):
         return False
-    if expected_path and expected_path.replace("\\", "/") not in _tool_target(entry).replace("\\", "/"):
+    if expected_path and expected_path.replace("\\", "/") not in _tool_target(entry).replace(
+        "\\", "/"
+    ):
         return False
     return expected_content is None or expected_content in _tool_output_preview(entry, limit=2000)
 
@@ -1647,6 +1927,7 @@ def _entry_satisfies_readback(
 def _implementation_readback_entry(
     contract: ValidationContract,
     implementation: SubAgentResult,
+    *,
     expected_path: str | None = None,
 ) -> dict[str, object] | None:
     expected_path = expected_path or (
@@ -1674,32 +1955,6 @@ def _implementation_readback_entry(
     )
 
 
-def _strip_numbered_lines(text: str) -> str:
-    lines: list[str] = []
-    for line in (text or "").splitlines():
-        match = _NUMBERED_LINE_RE.match(line)
-        lines.append(match.group(1) if match else line)
-    return "\n".join(lines)
-
-
-def _python_readback_error(path: str, content: str) -> str | None:
-    source = _strip_numbered_lines(content)
-    if not source.strip() or source.strip() == "(empty file)":
-        return f"{path}: Python file is empty."
-    try:
-        ast.parse(source, filename=path)
-    except SyntaxError as exc:
-        return f"{path}: Python syntax error: {exc.msg}."
-    return None
-
-
-def _py_compile_failed(output: str) -> bool:
-    text = output or ""
-    return "SyntaxError" in text or bool(
-        re.search(r"\[exit code (?!0\])\d+\]", text)
-    )
-
-
 def _deterministic_validation_result(
     contract: ValidationContract,
     task_prompt: str,
@@ -1720,6 +1975,18 @@ def _deterministic_validation_result(
         None,
     )
     artifact_failures: list[str] = []
+    scope_violations = _scope_violation_paths(
+        _write_artifact_paths(implementation),
+        allowed_roots=contract.allowed_write_roots,
+        allowed_paths=contract.expected_changed_paths
+        if not contract.allowed_write_roots
+        else [],
+    )
+    if scope_violations:
+        artifact_failures.append(
+            "Scope violation: wrote outside allowed scope: "
+            + ", ".join(scope_violations)
+        )
     for name in contract.required_evidence_tools:
         if name == "read_file" and contract.expected_artifacts:
             for artifact_path in contract.expected_artifacts:
@@ -1739,8 +2006,7 @@ def _deterministic_validation_result(
                             artifact_failures.append(py_error)
                     tool_entries.append(entry)
                     continue
-                arguments = {"path": artifact_path}
-                call = ToolCall(name=name, arguments=arguments)
+                call = ToolCall(name=name, arguments={"path": artifact_path})
                 result = execute_tool(call, read_only_config)
                 ok = not result.is_error
                 py_error = None
@@ -1751,51 +2017,61 @@ def _deterministic_validation_result(
                     if py_error:
                         ok = False
                         artifact_failures.append(py_error)
-                error_preview = None
-                if not ok:
-                    error_preview = py_error or result.content[:600]
-                tool_entries.append({
-                    "tool": name,
-                    "ok": ok,
-                    "outcome": result.outcome,
-                    "arguments": call.arguments,
-                    "output_preview": result.content[:600],
-                    "error_preview": error_preview,
-                })
+                tool_entries.append(
+                    {
+                        "tool": name,
+                        "ok": ok,
+                        "outcome": result.outcome,
+                        "arguments": call.arguments,
+                        "output_preview": result.content[:600],
+                        "error_preview": (py_error or result.content[:600]) if not ok else None,
+                    }
+                )
             continue
-        elif name in {"git_status", "git_diff"}:
-            arguments = {"path": "."}
-        elif name == "bash" and _only_py_compile_commands(contract.test_commands):
+        if (
+            name == "bash"
+            and "bash" in set(config.skill_allowed_tools or ())
+            and all(
+            command.strip().startswith("python -m py_compile ")
+            for command in contract.test_commands
+            )
+        ):
             for command in contract.test_commands:
                 call = ToolCall(name=name, arguments={"command": command})
                 result = execute_tool(call, read_only_config)
                 ok = not result.is_error and not _py_compile_failed(result.content)
                 if not ok:
-                    artifact_failures.append(result.content[:300])
-                tool_entries.append({
-                    "tool": name,
-                    "ok": ok,
-                    "outcome": result.outcome,
-                    "arguments": call.arguments,
-                    "output_preview": result.content[:600],
-                    "error_preview": result.content[:600] if not ok else None,
-                })
-            continue
+                    artifact_failures.append(
+                        f"Python artifact invalid: {command}: {result.content[:300]}"
+                    )
+                tool_entries.append(
+                    {
+                        "tool": name,
+                        "ok": ok,
+                        "outcome": result.outcome,
+                        "arguments": call.arguments,
+                        "output_preview": result.content[:600],
+                        "error_preview": result.content[:600] if not ok else None,
+                    }
+                )
+                continue
+        if name in {"git_status", "git_diff"}:
+            arguments = {"path": "."}
         else:
             continue
         call = ToolCall(name=name, arguments=arguments)
         result = execute_tool(call, read_only_config)
         ok = not result.is_error
-        if name == "read_file" and expected_content and expected_content not in result.content:
-            ok = False
-        tool_entries.append({
-            "tool": name,
-            "ok": ok,
-            "outcome": result.outcome,
-            "arguments": call.arguments,
-            "output_preview": result.content[:600],
-            "error_preview": result.content[:600] if not ok else None,
-        })
+        tool_entries.append(
+            {
+                "tool": name,
+                "ok": ok,
+                "outcome": result.outcome,
+                "arguments": call.arguments,
+                "output_preview": result.content[:600],
+                "error_preview": result.content[:600] if not ok else None,
+            }
+        )
 
     successful = {_tool_name(entry) for entry in tool_entries if _tool_ok(entry)}
     required = set(contract.required_evidence_tools) - {"bash"}
@@ -1806,11 +2082,8 @@ def _deterministic_validation_result(
     else:
         missing = ", ".join(sorted(required - successful))
         status = "failed"
-        details = "; ".join(artifact_failures)
-        if missing and details:
-            output = f"FAIL: missing successful validation evidence: {missing}. {details}"
-        elif details:
-            output = f"FAIL: artifact validation failed. {details}"
+        if artifact_failures:
+            output = "FAIL: " + " ".join(artifact_failures)
         else:
             output = f"FAIL: missing successful validation evidence: {missing}."
         error = output
@@ -1857,7 +2130,8 @@ def _baseline_summary(git_baseline: str | None, expected_paths: list[str]) -> st
         return "Baseline summary: clean or unavailable."
     lines = [line.strip() for line in git_baseline.splitlines() if line.strip()]
     relevant = [
-        line for line in lines
+        line
+        for line in lines
         if any(path.replace("\\", "/") in line.replace("\\", "/") for path in expected_paths)
     ]
     if relevant:
@@ -1952,13 +2226,31 @@ def build_validation_contract(
     plan_text = plan.output if plan else ""
     research_text = research.output if research else ""
     written_paths = _write_artifact_paths(implementation)
+    prompt_paths = _extract_prompt_paths(user_prompt, plan_text)
     expected_paths = _unique_preserving_order(
-        _extract_prompt_paths(user_prompt, plan_text, implementation.output)
+        prompt_paths
+        + _extract_prompt_paths(implementation.output)
         + written_paths
+    )
+    allowed_roots = _infer_allowed_write_roots(user_prompt, plan_text)
+    exact_scope_paths = prompt_paths if _scope_limited_to_expected_paths(user_prompt) else []
+    scope_violations = _scope_violation_paths(
+        written_paths,
+        allowed_roots=allowed_roots,
+        allowed_paths=exact_scope_paths,
     )
     expected_content = _extract_expected_content(user_prompt)
     test_commands = _extract_test_commands(user_prompt, plan_text, research_text)
-    scope_required = _requires_change_scope_evidence(user_prompt, plan_text)
+    for path in expected_paths:
+        if path.endswith(".py"):
+            command = f"python -m py_compile {path.replace(chr(34), '')}"
+            if command not in test_commands:
+                test_commands.append(command)
+    scope_required = (
+        _requires_change_scope_evidence(user_prompt, plan_text)
+        or bool(allowed_roots)
+        or bool(exact_scope_paths)
+    )
     task_type = (
         "read_only"
         if not _contains_marker(intent_text, _IMPLEMENTATION_TASK_MARKERS)
@@ -1982,20 +2274,31 @@ def build_validation_contract(
         required_tools.extend(["git_status", "git_diff"])
         checks.append("Inspect change scope with git_status and git_diff.")
     if not checks:
-        checks.append("Validate the implementation against the user request using the smallest sufficient read/check tools.")
+        checks.append(
+            "Validate the implementation against the user request using the smallest sufficient read/check tools."
+        )
     expected_properties = []
     if expected_content:
         expected_properties.append(expected_content)
-    if "no modifiques" in prompt_lower or "do not modify" in prompt_lower or "no other files" in prompt_lower:
+    if (
+        "no modifiques" in prompt_lower
+        or "do not modify" in prompt_lower
+        or "no other files" in prompt_lower
+    ):
         expected_properties.append("No files outside the requested scope should be changed.")
+    forbidden_changed_paths = []
+    if scope_required:
+        forbidden_changed_paths.append("paths outside expected_changed_paths")
+    forbidden_changed_paths.extend(scope_violations)
     return ValidationContract(
         task_type=task_type,
         expected_artifacts=expected_paths,
         expected_contents_or_properties=expected_properties,
         required_checks=checks,
         required_evidence_tools=_unique_preserving_order(required_tools),
-        expected_changed_paths=expected_paths,
-        forbidden_changed_paths=["paths outside expected_changed_paths"] if scope_required else [],
+        expected_changed_paths=exact_scope_paths or expected_paths,
+        forbidden_changed_paths=_unique_preserving_order(forbidden_changed_paths),
+        allowed_write_roots=allowed_roots,
         scope_check_required=scope_required,
         test_commands=test_commands,
         baseline_summary=_baseline_summary(git_baseline, expected_paths),
@@ -2025,6 +2328,8 @@ def _format_validation_contract(contract: ValidationContract) -> str:
         f"{_format_contract_list(contract.expected_changed_paths)}\n"
         "forbidden_changed_paths:\n"
         f"{_format_contract_list(contract.forbidden_changed_paths)}\n"
+        "allowed_write_roots:\n"
+        f"{_format_contract_list(contract.allowed_write_roots)}\n"
         f"scope_check_required: {contract.scope_check_required}\n"
         "test_commands:\n"
         f"{_format_contract_list(contract.test_commands)}\n"
@@ -2040,19 +2345,17 @@ def _validator_config_for_contract(
 ) -> AgentConfig:
     """Restrict validator tools to the contract; include bash only for real tests."""
     tools = set(contract.required_evidence_tools)
-    python_artifacts = [
-        path for path in contract.expected_artifacts if path.lower().endswith(".py")
-    ]
-    if python_artifacts:
-        for path in python_artifacts:
-            command = f"python -m py_compile {path.replace(chr(34), '')}"
-            if command not in contract.test_commands:
-                contract.test_commands.append(command)
-        if config.skill_allowed_tools is None or "bash" in config.skill_allowed_tools:
-            tools.add("bash")
-            if "bash" not in contract.required_evidence_tools:
-                contract.required_evidence_tools.append("bash")
+    test_commands = list(contract.test_commands)
+    can_use_bash = config.skill_allowed_tools is None or "bash" in set(config.skill_allowed_tools)
+    if can_use_bash:
+        for path in contract.expected_artifacts:
+            if path.endswith(".py"):
+                command = f"python -m py_compile {path.replace(chr(34), '')}"
+                if command not in test_commands:
+                    test_commands.append(command)
     if contract.test_commands:
+        tools.add("bash")
+    if test_commands:
         tools.add("bash")
     else:
         tools.discard("bash")
@@ -2064,6 +2367,8 @@ def _validator_config_for_contract(
         config,
         skill_allowed_tools=frozenset(tools),
         required_evidence_tools=frozenset(tools - {"bash"}),
+        # The validator prompt carries the test commands through the contract;
+        # deterministic validation reads them from the contract itself.
         evidence_completion_verdict=(
             "PASS: required validation evidence tools completed successfully."
         ),
@@ -2098,6 +2403,7 @@ def _build_validation_prompt(
     *,
     git_baseline: str | None = None,
 ) -> str:
+    """Build the validator subagent's task prompt from the plan, research, and implementation."""
     contract = build_validation_contract(
         user_prompt,
         plan,
@@ -2143,6 +2449,7 @@ def _build_repair_prompt(
     previous_implementation: SubAgentResult,
     validation: SubAgentResult,
 ) -> str:
+    """Build the repair prompt that asks the implementer to fix a validation failure."""
     return (
         "The validator reported a failure. Repair the implementation while "
         "staying within the same implementer role and the planner's assigned "
@@ -2163,6 +2470,7 @@ def _build_repair_prompt(
 
 
 def _build_review_prompt(run: MultiAgentRun) -> str:
+    """Build the reviewer subagent's prompt from the full run's accumulated evidence."""
     tool_evidence = _build_tool_evidence_report(
         run.user_prompt,
         run.results,
@@ -2200,6 +2508,7 @@ def _build_review_prompt(run: MultiAgentRun) -> str:
 
 
 def _build_security_review_prompt(run: MultiAgentRun) -> str:
+    """Build the security reviewer subagent's prompt from the run's accumulated evidence."""
     tool_evidence = _build_tool_evidence_report(
         run.user_prompt,
         run.results,
@@ -2258,13 +2567,15 @@ def _phase_final_text(result: SubAgentResult | None, *, fallback: str) -> str:
 
 def synthesize_final_answer(run: MultiAgentRun) -> str:
     """Create a concise final answer from orchestrator state."""
-    # A blocked planner is not fatal — it is advisory and the load-bearing roles
-    # (researcher, coder) run after it — so it must not mark the whole run blocked.
+    # Only a blocked load-bearing role (researcher or coder) makes the run
+    # blocked. The planner, validator, reviewer, and security reviewer are
+    # advisory: a confused "BLOCKED" from any of them must not discard the real
+    # work the researcher and coder produced.
     blocked = next(
         (
             result
             for result in run.results
-            if subagent_blocked(result) and result.role != AgentRole.PLANNER
+            if subagent_blocked(result) and result.role in _LOAD_BEARING_ROLES
         ),
         None,
     )
@@ -2276,9 +2587,7 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
         )
 
     research = run.latest_for(AgentRole.RESEARCHER)
-    implementation = (
-        run.latest_for(run.selected_coder_role) if run.selected_coder_role else None
-    )
+    implementation = run.latest_for(run.selected_coder_role) if run.selected_coder_role else None
     last_validation = run.latest_for(AgentRole.VALIDATOR)
     reviewer = run.latest_for(AgentRole.REVIEWER)
     security_reviewer = run.latest_for(AgentRole.SECURITY_REVIEWER)
@@ -2329,21 +2638,15 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
         )
     else:
         security_text = f"\n\nSecurity review:\n{_structured_security_verdict(run)}"
-    validation_text = (
-        _phase_final_text(
-            last_validation,
-            fallback="No validation output was produced.",
-        )
+    validation_text = _phase_final_text(
+        last_validation,
+        fallback="No validation output was produced.",
     )
     implementation_text = (
-        implementation.output
-        if implementation
-        else "No implementation output was produced."
+        implementation.output if implementation else "No implementation output was produced."
     )
     if run.selected_coder_role is None:
-        research_text = (
-            research.output if research else "No research output was produced."
-        )
+        research_text = research.output if research else "No research output was produced."
         return (
             f"Multi-agent run finished with status: {status}\n"
             f"Selected implementer: {coder}\n\n"
@@ -2362,6 +2665,344 @@ def synthesize_final_answer(run: MultiAgentRun) -> str:
     )
 
 
+# --- grounded paper-review flow -------------------------------------------
+
+
+def _paper_review_phases() -> list[str]:
+    """Return the ordered phase names of the grounded paper-review pipeline."""
+    return (
+        [AgentRole.INTAKE_REVIEWER.value]
+        + [role.value for role in _PAPER_REVIEW_LENSES]
+        + [AgentRole.GROUNDEDNESS_VERIFIER.value, AgentRole.REVISION_PLANNER.value]
+    )
+
+
+def _safe_execute(
+    state: MultiAgentRun,
+    role: AgentRole,
+    task_prompt: str,
+    selection: ModelSelection,
+    config: AgentConfig,
+    *,
+    attempt: int = 1,
+    on_progress: Callable[[str], None] | None = None,
+) -> SubAgentResult | None:
+    """Run a review phase resiliently: one failing lens never aborts the review."""
+    try:
+        result = _execute_phase(
+            state,
+            role,
+            task_prompt,
+            selection,
+            config,
+            attempt=attempt,
+            on_progress=on_progress,
+        )
+    except Exception:
+        state.failed_phase = None
+        state.error = None
+        return state.results[-1] if state.results else None
+    if subagent_blocked(result):
+        state.failed_phase = None
+        state.error = None
+    return result
+
+
+def _absorb_fetched(ctx: ReviewContext, result: SubAgentResult | None) -> None:
+    """Merge a subagent's web_fetch attempts into the review context.
+
+    A prior successful fetch of a URL is never downgraded by a later failure.
+    """
+    if result is None or not result.tool_calls:
+        return
+    for url, info in extract_fetch_attempts(result.tool_calls).items():
+        existing = ctx.fetch_attempts.get(url)
+        if existing and existing.get("ok"):
+            continue
+        ctx.fetch_attempts[url] = info
+
+
+def _verify_lens_output(
+    state: MultiAgentRun,
+    role: AgentRole,
+    result: SubAgentResult | None,
+    ctx: ReviewContext,
+    selection: ModelSelection,
+    config: AgentConfig,
+    on_progress: Callable[[str], None] | None,
+    *,
+    chunk_text: str | None = None,
+    part_label: str = "",
+) -> VerificationBuckets:
+    """Parse, deterministically verify, and re-ground a lens's findings once."""
+    if result is None or not result.output:
+        return VerificationBuckets()
+    findings = parse_findings(result.output, default_lens=role.value)
+    buckets = verify_findings(findings, ctx.index, ctx.fetch_attempts)
+
+    to_reground = regroundable(buckets.quarantined)
+    if to_reground:
+        regrounded = _safe_execute(
+            state,
+            role,
+            build_reground_prompt(ctx, to_reground, chunk_text=chunk_text, part_label=part_label),
+            selection,
+            config,
+            attempt=2,
+            on_progress=on_progress,
+        )
+        _absorb_fetched(ctx, regrounded)
+        if regrounded is not None and regrounded.output:
+            rg_findings = parse_findings(regrounded.output, default_lens=role.value)
+            rg = verify_findings(rg_findings, ctx.index, ctx.fetch_attempts)
+            reground_ids = {id(item) for item in to_reground}
+            buckets.quarantined = [q for q in buckets.quarantined if id(q) not in reground_ids]
+            buckets.merge(rg)
+    return buckets
+
+
+def _loads_any(text: str) -> list:
+    """Parse JSON into a list of verdict objects, tolerating wrappers and single objects."""
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("verdicts", "results", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return [data]
+    return []
+
+
+def _parse_support_verdicts(text: str) -> dict[int, bool]:
+    """Parse the groundedness verifier's output into ``{finding_index: supported}``."""
+    text = text or ""
+    objects: list = []
+    for block in re.findall(r"```(?:json)?\s*(.*?)```", text, re.S):
+        objects.extend(_loads_any(block.strip()))
+    if not objects:
+        objects.extend(_loads_any(text.strip()))
+    if not objects:
+        start, end = text.find("["), text.rfind("]")
+        if start != -1 and end > start:
+            objects.extend(_loads_any(text[start : end + 1]))
+
+    verdicts: dict[int, bool] = {}
+    for obj in objects:
+        if not isinstance(obj, dict) or "index" not in obj:
+            continue
+        try:
+            index = int(obj["index"])
+        except (TypeError, ValueError):
+            continue
+        supported = obj.get("supported")
+        if isinstance(supported, bool):
+            verdicts[index] = supported
+        else:
+            verdicts[index] = str(supported).strip().lower() in {
+                "true",
+                "yes",
+                "y",
+                "1",
+                "supported",
+            }
+    return verdicts
+
+
+def _groundedness_pass(
+    state: MultiAgentRun,
+    verified: list[Finding],
+    ctx: ReviewContext,
+    selection: ModelSelection,
+    config: AgentConfig,
+    on_progress: Callable[[str], None] | None,
+) -> tuple[list[Finding], list[Finding]]:
+    """Adversarial check that each verified quote actually supports its claim."""
+    if not verified:
+        return verified, []
+    result = _safe_execute(
+        state,
+        AgentRole.GROUNDEDNESS_VERIFIER,
+        build_groundedness_prompt(ctx, verified),
+        selection,
+        config,
+        on_progress=on_progress,
+    )
+    if result is None or not result.output:
+        # No verdict available: keep the code-verified findings (quotes do exist).
+        return verified, []
+    verdicts = _parse_support_verdicts(result.output)
+    if not verdicts:
+        return verified, []
+    kept: list[Finding] = []
+    dropped: list[Finding] = []
+    for index, finding in enumerate(verified):
+        if verdicts.get(index, True):
+            kept.append(finding)
+        else:
+            finding.status = "quarantined"
+            finding.reason = "Groundedness verifier: the quote does not support the claim."
+            dropped.append(finding)
+    return kept, dropped
+
+
+def _run_paper_review(
+    state: MultiAgentRun,
+    selection: ModelSelection,
+    config: AgentConfig,
+    ctx: ReviewContext | None,
+    *,
+    on_progress: Callable[[str], None] | None = None,
+) -> str:
+    """Run the grounded peer-review pipeline and return the assembled report."""
+    if ctx is None or not ctx.readable:
+        return REFUSAL_MESSAGE
+
+    model_name = selection.display_name or selection.ollama_tag
+    context_length = int(getattr(selection, "context_length", 0) or 0)
+
+    # Pre-flight: never grab more than the model can take. If even one usable
+    # chunk will not fit (or the paper would need too many chunks), abort and
+    # recommend a larger-context model instead of producing an incomplete review.
+    feasibility = assess_feasibility(ctx.index, context_length)
+    if not feasibility.feasible:
+        return infeasible_message(feasibility, model_name=model_name, context_length=context_length)
+
+    chunks = plan_chunks(ctx.index.segments, feasibility.budget_chars)
+    n_chunks = len(chunks)
+
+    def part_label(i: int) -> str:
+        return f"part {i + 1} of {n_chunks}" if n_chunks > 1 else ""
+
+    buckets = VerificationBuckets()
+    signals = QualitySignals()
+
+    # Intake mapped over chunks; its diagnoses become shared context for lenses.
+    intake_outputs: list[str] = []
+    for i, chunk in enumerate(chunks):
+        chunk_text = chunk_anchored_text(chunk)
+        intake = _safe_execute(
+            state,
+            AgentRole.INTAKE_REVIEWER,
+            build_intake_prompt(ctx, chunk_text=chunk_text, part_label=part_label(i)),
+            selection,
+            config,
+            on_progress=on_progress,
+        )
+        signals.note_lens_run(intake.output if intake else "")
+        _absorb_fetched(ctx, intake)
+        buckets.merge(
+            _verify_lens_output(
+                state,
+                AgentRole.INTAKE_REVIEWER,
+                intake,
+                ctx,
+                selection,
+                config,
+                on_progress,
+                chunk_text=chunk_text,
+                part_label=part_label(i),
+            )
+        )
+        if intake and intake.output:
+            intake_outputs.append(intake.output)
+    intake_text = "\n\n".join(intake_outputs)
+
+    # Each lens mapped over each chunk: the window is never exceeded, and the
+    # findings are merged across the whole manuscript (the divide-conquer phase).
+    for role in _PAPER_REVIEW_LENSES:
+        if role.value not in state.planned_phases:
+            continue
+        for i, chunk in enumerate(chunks):
+            chunk_text = chunk_anchored_text(chunk)
+            result = _safe_execute(
+                state,
+                role,
+                build_lens_prompt(
+                    role.value, ctx, intake_text, chunk_text=chunk_text, part_label=part_label(i)
+                ),
+                selection,
+                config,
+                on_progress=on_progress,
+            )
+            signals.note_lens_run(result.output if result else "")
+            _absorb_fetched(ctx, result)
+            buckets.merge(
+                _verify_lens_output(
+                    state,
+                    role,
+                    result,
+                    ctx,
+                    selection,
+                    config,
+                    on_progress,
+                    chunk_text=chunk_text,
+                    part_label=part_label(i),
+                )
+            )
+
+    if AgentRole.GROUNDEDNESS_VERIFIER.value in state.planned_phases:
+        kept, dropped = _groundedness_pass(
+            state, buckets.verified, ctx, selection, config, on_progress
+        )
+        buckets.verified = kept
+        buckets.quarantined.extend(dropped)
+
+    planner_output = ""
+    if AgentRole.REVISION_PLANNER.value in state.planned_phases:
+        planner = _safe_execute(
+            state,
+            AgentRole.REVISION_PLANNER,
+            build_revision_plan_prompt(ctx, buckets.verified),
+            selection,
+            config,
+            on_progress=on_progress,
+        )
+        planner_output = planner.output if planner else ""
+
+    # Post-flight quality gate: if the model could not actually do the job, drop
+    # the result and recommend a stronger model rather than ship rubbish.
+    _fill_quality_signals(signals, buckets, planner_output)
+    ok, reason = assess_quality(signals)
+    if not ok:
+        return quality_abort_message(
+            reason,
+            model_name=model_name,
+            recommended_min_context=recommended_context_for(total_manuscript_chars(ctx.index)),
+        )
+
+    return assemble_report(
+        ctx,
+        planner_output,
+        buckets.verified,
+        buckets.needs_check,
+        buckets.refuted,
+        buckets.quarantined,
+    )
+
+
+def _fill_quality_signals(
+    signals: QualitySignals, buckets: VerificationBuckets, planner_output: str
+) -> None:
+    """Populate ``signals`` from the verification buckets and planner output for the gate."""
+    signals.verified = len(buckets.verified)
+    signals.needs_check = len(buckets.needs_check)
+    signals.refuted = len(buckets.refuted)
+    all_findings = buckets.verified + buckets.needs_check + buckets.refuted + buckets.quarantined
+    for finding in all_findings:
+        if finding.evidence_type == "manuscript":
+            signals.manuscript_findings += 1
+    for finding in buckets.quarantined:
+        if finding.evidence_type == "manuscript" and "not found" in finding.reason.lower():
+            signals.hallucinated += 1
+    signals.planner_report_ok = bool(
+        planner_output and "PAPER REVIEW REPORT" in planner_output.upper()
+    )
+
+
 def run_multi_agent(
     user_prompt: str,
     selection: ModelSelection,
@@ -2369,14 +3010,13 @@ def run_multi_agent(
     config: AgentConfig | None = None,
     max_repair_attempts: int = 2,
     on_progress: Callable[[str], None] | None = None,
+    review_context: ReviewContext | None = None,
 ) -> str:
-    """Run the first sequential multi-agent flow."""
+    """Run the sequential multi-agent flow (code tasks or grounded paper review)."""
     cfg = replace(config or AgentConfig(cwd="."), suppress_run_saved_message=True)
     if not cfg.approval_session_id:
         digest = hashlib.sha1(
-            f"{cfg.cwd}\n{user_prompt}\n{datetime.now(timezone.utc).isoformat()}".encode(
-                "utf-8"
-            )
+            f"{cfg.cwd}\n{user_prompt}\n{datetime.now(UTC).isoformat()}".encode()
         ).hexdigest()[:12]
         cfg = replace(cfg, approval_session_id=f"multiagent-{digest}")
     state = MultiAgentRun(user_prompt=user_prompt)
@@ -2385,27 +3025,47 @@ def run_multi_agent(
     # Deterministic pre-orchestration intent gate (NVIDIA-style intent routing).
     # Decide which phases are allowed *before* building or executing any phase.
     decision = classify_multiagent_intent(user_prompt)
-    planned_phases = list(decision.allowed_phases)
-    state.intent = decision.intent.value
-    state.requires_write = decision.requires_write
-    state.intent_reason = decision.reason
-    state.intent_confidence = decision.confidence
+    is_paper_review = (
+        cfg.multiagent_flow == "paper_review" or decision.intent == MultiAgentIntent.PAPER_REVIEW
+    )
+    if is_paper_review:
+        planned_phases = _paper_review_phases()
+        state.intent = MultiAgentIntent.PAPER_REVIEW.value
+        state.requires_write = False
+        state.intent_reason = (
+            decision.reason
+            if decision.intent == MultiAgentIntent.PAPER_REVIEW
+            else "Paper-review flow selected explicitly."
+        )
+        state.intent_confidence = "high"
+    else:
+        planned_phases = list(decision.allowed_phases)
+        state.intent = decision.intent.value
+        state.requires_write = decision.requires_write
+        state.intent_reason = decision.reason
+        state.intent_confidence = decision.confidence
     state.planned_phases = planned_phases
     if on_progress:
         on_progress("Preparing the multi-agent workflow...")
     else:
         console.print(
-            f"[cyan][multi-agent][/cyan] intent={decision.intent.value} "
-            f"requires_write={decision.requires_write} phases={planned_phases}"
+            f"[cyan][multi-agent][/cyan] intent={state.intent} "
+            f"requires_write={state.requires_write} phases={planned_phases}"
         )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     run_log = RunLogger.maybe_create(cfg, selection, user_prompt)
     if run_log:
         run_log.start()
 
     final_status = "success"
     try:
+        if is_paper_review:
+            state.final_answer = _run_paper_review(
+                state, selection, cfg, review_context, on_progress=on_progress
+            )
+            return state.final_answer
+
         plan: SubAgentResult | None = None
         if "planner" in planned_phases:
             plan_prompt = _build_planner_prompt(user_prompt)
@@ -2447,9 +3107,8 @@ def run_multi_agent(
             if subagent_blocked(research):
                 state.final_answer = synthesize_final_answer(state)
                 return state.final_answer
-            if (
-                "coder" not in planned_phases
-                and research_discovered_write_requirement(user_prompt, plan, research)
+            if "coder" not in planned_phases and research_discovered_write_requirement(
+                user_prompt, plan, research
             ):
                 promote_to_write_flow(state, planned_phases)
                 if on_progress is None:
@@ -2460,7 +3119,7 @@ def run_multi_agent(
 
         # Implementation + validation only run when the intent allows writes.
         if "coder" in planned_phases:
-            coder_role = choose_coder_role(plan, research)
+            coder_role = choose_coder_role(plan, research, user_prompt=user_prompt)
             state.selected_coder_role = coder_role
 
             implementation_prompt = _build_implementation_prompt(user_prompt, plan, research)
@@ -2477,6 +3136,11 @@ def run_multi_agent(
                 return state.final_answer
 
             if "validator" in planned_phases:
+                # Every planned flow that includes "validator" also includes
+                # "planner" and "researcher", so those phases have already run
+                # here and produced their results.
+                assert plan is not None
+                assert research is not None
                 validation_contract = build_validation_contract(
                     user_prompt,
                     plan,
@@ -2485,13 +3149,18 @@ def run_multi_agent(
                     git_baseline=state.git_baseline,
                 )
                 validation_prompt = _build_validation_prompt(
-                    user_prompt, plan, research, implementation,
+                    user_prompt,
+                    plan,
+                    research,
+                    implementation,
                     git_baseline=state.git_baseline,
                 )
                 validation_config = _validator_config_for_contract(
                     cfg,
                     validation_contract,
                 )
+                # Prefer deterministic evidence collection when the contract and
+                # config allow it; otherwise run the validator subagent.
                 if _can_use_deterministic_validation(
                     validation_contract,
                     validation_config,
@@ -2535,9 +3204,10 @@ def run_multi_agent(
                     ),
                 )
                 validation = _apply_role_guardrails(validation, state)
-                if subagent_blocked(validation):
-                    state.final_answer = synthesize_final_answer(state)
-                    return state.final_answer
+                # A blocked/confused validator is advisory — keep the run going
+                # to the reviewer and final synthesis instead of discarding the
+                # implementation. Only a genuine validation *failure* (below)
+                # triggers the repair loop.
 
                 repair_attempt = 0
                 while (
@@ -2605,9 +3275,7 @@ def run_multi_agent(
                         validation.attempt = repair_attempt + 1
                         state.add_result(validation)
                         if not on_progress:
-                            console.print(
-                                "[green][multi-agent][/green] completed validator"
-                            )
+                            console.print("[green][multi-agent][/green] completed validator")
                     else:
                         validation = _execute_phase(
                             state,
@@ -2632,8 +3300,9 @@ def run_multi_agent(
                     )
                     validation = _apply_role_guardrails(validation, state)
                     if subagent_blocked(validation):
-                        state.final_answer = synthesize_final_answer(state)
-                        return state.final_answer
+                        # Validator gave up mid-repair: stop retrying, but still
+                        # review and synthesize what the coder produced.
+                        break
 
         if "reviewer" in planned_phases:
             review_prompt = _build_review_prompt(state)
@@ -2657,10 +3326,7 @@ def run_multi_agent(
                     AgentRole.REVIEWER,
                     review_prompt,
                     review_config,
-                    verdict=(
-                        "PASS: required review scope evidence tools completed "
-                        "successfully."
-                    ),
+                    verdict=("PASS: required review scope evidence tools completed successfully."),
                     prior_results=state.results,
                 )
                 state.add_result(review)
@@ -2701,9 +3367,7 @@ def run_multi_agent(
                 )
                 if security_scope_required:
                     if on_progress:
-                        on_progress(
-                            "security_reviewer: collecting deterministic scope evidence"
-                        )
+                        on_progress("security_reviewer: collecting deterministic scope evidence")
                     else:
                         print(
                             "[multi-agent:security_reviewer] Collecting deterministic scope evidence...",
@@ -2714,16 +3378,13 @@ def run_multi_agent(
                         security_prompt,
                         security_config,
                         verdict=(
-                            "PASS: required security scope evidence tools "
-                            "completed successfully."
+                            "PASS: required security scope evidence tools completed successfully."
                         ),
                         prior_results=state.results,
                     )
                     state.add_result(security_review)
                     if not on_progress:
-                        console.print(
-                            "[green][multi-agent][/green] completed security_reviewer"
-                        )
+                        console.print("[green][multi-agent][/green] completed security_reviewer")
                 else:
                     security_review = _execute_phase(
                         state,
@@ -2767,7 +3428,7 @@ def run_multi_agent(
     finally:
         if on_progress:
             on_progress("")
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         if run_log and run_log.run_dir is not None:
             _persist_multiagent_parent_run(
                 run_log.run_dir,

@@ -45,6 +45,20 @@ DOCUMENT_UPLOAD_SUFFIXES = SUPPORTED_DOCUMENT_SUFFIXES | {".rtf"}
 
 
 def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate and store a base64-encoded attachment in the workspace upload dir.
+
+    Enforces the supported suffix list, decodes and size-checks the content, and
+    rejects names that look sensitive before writing the file.
+
+    Args:
+        state: The UI server state (provides the runtime workspace).
+        payload: Upload payload with ``"name"`` and ``"content_base64"`` keys,
+            and an optional ``"workspace"`` override.
+
+    Returns:
+        ``{"ok": True, "file": ...}`` on success, otherwise
+        ``{"ok": False, "error": ...}`` with a user-facing message.
+    """
     workspace = str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
     name = str(payload.get("name") or "").strip()
     encoded = str(payload.get("content_base64") or "").strip()
@@ -99,6 +113,11 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_attachments(raw: Any) -> list[dict[str, str]]:
+    """Coerce a raw attachments value into at most five ``{name, path}`` dicts.
+
+    Non-list inputs and malformed entries are ignored; a missing name falls back
+    to the path's file name.
+    """
     if not isinstance(raw, list):
         return []
     attachments: list[dict[str, str]] = []
@@ -117,6 +136,21 @@ def prompt_with_uploaded_files(
     workspace: str,
     attachments: list[dict[str, str]],
 ) -> str:
+    """Append already-read attachment contents to a prompt.
+
+    Each attachment is read locally (rejecting paths outside the upload dir),
+    and its extracted text — or an error explanation — is added as a block so
+    the model can answer without claiming it cannot access the files.
+
+    Args:
+        prompt: The user's original prompt.
+        workspace: Workspace directory the attachments live under.
+        attachments: Normalised ``{name, path}`` attachment entries.
+
+    Returns:
+        The prompt unchanged when there are no attachments, otherwise the prompt
+        with the rendered attachment content appended.
+    """
     if not attachments:
         return prompt
 
@@ -144,9 +178,7 @@ def prompt_with_uploaded_files(
             )
             continue
         blocks.append(
-            f"### {file['name']}\n"
-            f"Local path: {path}\n"
-            f"Content read with read_document:\n{content}"
+            f"### {file['name']}\nLocal path: {path}\nContent read with read_document:\n{content}"
         )
 
     return (
@@ -158,11 +190,17 @@ def prompt_with_uploaded_files(
 
 
 def is_upload_path(path: str) -> bool:
+    """Return whether ``path`` lies within the upload directory."""
     normalized = path.replace("\\", "/").lstrip("/")
     return normalized == UPLOAD_DIR_NAME or normalized.startswith(f"{UPLOAD_DIR_NAME}/")
 
 
 def safe_upload_name(name: str) -> str:
+    """Sanitise an uploaded file name into a safe, lowercased ``stem+suffix``.
+
+    Strips directory components and null bytes, length-bounds the stem and
+    suffix, and replaces disallowed characters, always yielding a non-empty name.
+    """
     raw = Path(name).name.strip().replace("\x00", "")
     stem = Path(raw).stem[:90] or "file"
     suffix = Path(raw).suffix[:16]
@@ -172,6 +210,11 @@ def safe_upload_name(name: str) -> str:
 
 
 def unique_upload_path(upload_dir: Path, safe_name: str) -> Path:
+    """Return a non-colliding path for ``safe_name`` within ``upload_dir``.
+
+    Appends ``-2``, ``-3``, ... before the suffix until a free name is found,
+    falling back to a random suffix after many collisions.
+    """
     candidate = upload_dir / safe_name
     if not candidate.exists():
         return candidate
@@ -186,13 +229,14 @@ def unique_upload_path(upload_dir: Path, safe_name: str) -> Path:
 
 
 def _read_document(workspace: str, path: str) -> str:
+    """Read a document via the server facade (extracting text where supported)."""
     from ci2lab.ui import server as facade
 
     return facade.read_document(workspace, path)
 
 
 def _read_file(workspace: str, path: str) -> str:
+    """Read a raw file's text via the server facade."""
     from ci2lab.ui import server as facade
 
     return facade.read_file(workspace, path)
-

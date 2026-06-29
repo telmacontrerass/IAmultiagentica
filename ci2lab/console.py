@@ -7,7 +7,8 @@ can silence it with a single patch (`ci2lab.console.console.print`).
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from rich.console import Console
 
@@ -30,14 +31,31 @@ class _ActiveProgress:
         self._status: Any = None
 
     def set(self, status: Any) -> None:
+        """Register ``status`` as the currently active live spinner."""
         self._status = status
 
     def clear(self, status: Any = None) -> None:
+        """Clear the active spinner.
+
+        Args:
+            status: If given, only clears when it is the active spinner; this
+                avoids one owner clearing a spinner started by another. When
+                ``None``, clears unconditionally.
+        """
         if status is None or self._status is status:
             self._status = None
 
     @contextlib.contextmanager
     def suspended(self) -> Iterator[None]:
+        """Pause the active spinner for the duration of the ``with`` block.
+
+        Stops the spinner before yielding so an ``input()`` prompt stays
+        visible, then restarts it afterwards — but only if the same spinner is
+        still active (it may have been cleared or replaced meanwhile).
+
+        Yields:
+            ``None``; the value is unused.
+        """
         status = self._status
         if status is not None:
             status.stop()

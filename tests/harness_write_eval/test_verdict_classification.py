@@ -33,12 +33,7 @@ def test_classify_pass_when_oracle_ok():
 
 
 def test_classify_model_tool_format():
-    answer = (
-        "Tool call:\n"
-        "```json\n"
-        '{"name": "write_file", "arguments": BROKEN\n'
-        "```"
-    )
+    answer = 'Tool call:\n```json\n{"name": "write_file", "arguments": BROKEN\n```'
     verdict, _ = classify_live_verdict(
         case=_case("create_file_simple"),
         oracle_ok=False,

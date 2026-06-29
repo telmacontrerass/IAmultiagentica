@@ -19,6 +19,21 @@ def call_llm(
     stream: bool,
     cancel_event: Any | None = None,
 ) -> LLMResponse:
+    """Call the LLM, optionally rendering streamed tokens to the console.
+
+    Args:
+        client: The LLM client used to issue the chat request.
+        messages: The conversation history to send, as chat message dicts.
+        tools: Tool schemas to expose to the model, or ``None`` for no tools.
+        stream: When ``True``, stream tokens live; otherwise make a single
+            blocking call.
+        cancel_event: Optional cancellation primitive forwarded to the client
+            to abort an in-flight request.
+
+    Returns:
+        The model's response. In streaming mode, the streamed text is folded
+        back into the response when the final event carries no content.
+    """
     if not stream:
         if cancel_event is None:
             return client.chat(messages, tools=tools)

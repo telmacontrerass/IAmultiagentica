@@ -1,8 +1,6 @@
 import json
 import subprocess
 
-import pytest
-
 from ci2lab.harness.tools.ask_user import ask_user
 from ci2lab.harness.tools.git_tools import git_diff, git_status
 from ci2lab.harness.tools.notebook import notebook_edit

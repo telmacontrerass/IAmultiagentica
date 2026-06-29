@@ -5,14 +5,32 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ci2lab.config import DEFAULT_TOOL_MODE, Ci2LabConfig, load_config, merge_cli_config
 from ci2lab.console import console
 from ci2lab.harness.security_profiles import SecurityConfig
 from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 
+if TYPE_CHECKING:
+    from ci2lab.contracts import ModelSelection
+    from ci2lab.harness.types import AgentConfig
+
 
 def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
+    """Merge CLI flags onto the loaded config and apply any security-engine override.
+
+    Args:
+        args: Parsed CLI arguments carrying the agent flags (model, tool mode,
+            workspace, security engine, etc.).
+
+    Returns:
+        The effective :class:`Ci2LabConfig` after merging CLI overrides.
+
+    Raises:
+        ValueError: If ``merge_cli_config`` rejects an invalid combination of
+            flags.
+    """
     base = load_config()
     merged = merge_cli_config(
         base,
@@ -50,11 +68,22 @@ def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
 def _build_config(
     runtime: Ci2LabConfig,
     args: argparse.Namespace,
-    selection,
-):
-    import os
-    from pathlib import Path
+    selection: ModelSelection,
+) -> AgentConfig:
+    """Build the agent configuration for a run, resolving workspace and images.
 
+    Resolves the effective working directory, loads tool settings for it and
+    rewrites ``--image`` paths relative to that workspace (skipping text PDFs,
+    which should be read via ``read_document``).
+
+    Args:
+        runtime: The merged runtime configuration.
+        args: Parsed CLI arguments (workspace/cwd, session and image paths).
+        selection: The resolved model selection for this run.
+
+    Returns:
+        The :class:`AgentConfig` produced by ``pipeline.build_agent_config``.
+    """
     from ci2lab.pipeline import build_agent_config
     from ci2lab.settings import load_settings
 
@@ -89,8 +118,10 @@ def _build_config(
         session_id=args.session,
         image_paths=resolved_images,
         tool_settings=tool_settings,
-        vision_model=tool_settings.vision_model or "",
-        vision_enabled=tool_settings.vision_enabled if tool_settings.vision_enabled is not None else True,
+        vision_model=tool_settings.vision_model or "qwen2.5vl:7b",
+        vision_enabled=tool_settings.vision_enabled
+        if tool_settings.vision_enabled is not None
+        else True,
     )
 
 
@@ -107,13 +138,24 @@ def _resolve_selection(
     runtime: Ci2LabConfig,
     prompt: str,
     args: argparse.Namespace,
-):
+) -> ModelSelection:
+    """Resolve the model selection for a prompt without pulling the model.
+
+    Args:
+        runtime: The merged runtime configuration (model, backend, tool mode).
+        prompt: The user prompt; influences routing when no model is forced.
+        args: Parsed CLI arguments used to compute the tool-mode override.
+
+    Returns:
+        The resolved :class:`ModelSelection`.
+    """
     from ci2lab.pipeline import prepare_session
 
     _, selection = prepare_session(
         prompt,
         force_model=runtime.model,
         tool_mode_override=_tool_mode_override(runtime, args),
+        backend=runtime.backend,
         backend_url=runtime.backend_url,
         pull=False,
     )

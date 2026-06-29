@@ -15,6 +15,14 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 def _read(name: str) -> str:
+    """Read and strip a prompt fragment from the bundled ``prompts`` directory.
+
+    Args:
+        name: File name of the prompt fragment (relative to ``_PROMPTS_DIR``).
+
+    Returns:
+        The fragment's text content with leading/trailing whitespace removed.
+    """
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
 
 
@@ -22,6 +30,21 @@ def build_system_prompt(
     selection: ModelSelection,
     cwd: str,
 ) -> str:
+    """Assemble the full system prompt for a harness run.
+
+    Combines the base system prompt with environment details, optional
+    OS-specific guidance, project memory, the skill catalog, MCP server status
+    and, when the model lacks native tool support, fenced-tool instructions.
+
+    Args:
+        selection: Resolved model selection driving display name, tool mode and
+            tool-support capabilities.
+        cwd: Absolute working directory used to load project memory, skills and
+            MCP status, and reported back in the environment section.
+
+    Returns:
+        The complete system prompt as a single newline-joined string.
+    """
     parts = [_read("system.md")]
 
     parts.append(

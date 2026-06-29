@@ -62,6 +62,7 @@ class HardwareProfile:
     """Extra scan data (e.g. nvidia-smi output) for debugging."""
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict of this profile."""
         return {
             "ram_total_gb": self.ram_total_gb,
             "ram_available_gb": self.ram_available_gb,
@@ -147,6 +148,7 @@ class ModelSelection:
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict of this selection."""
         return {
             "model_id": self.model_id,
             "ollama_tag": self.ollama_tag,

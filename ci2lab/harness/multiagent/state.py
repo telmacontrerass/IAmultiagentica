@@ -20,6 +20,18 @@ class AgentRole(str, Enum):
     VALIDATOR = "validator"
     REVIEWER = "reviewer"
     SECURITY_REVIEWER = "security_reviewer"
+    # Scientific peer-review lenses. All read-only and grounded: every claim must
+    # be backed by a verbatim manuscript quote or a verifiable absence/external
+    # reference (see ci2lab/harness/multiagent/grounding.py).
+    INTAKE_REVIEWER = "intake_reviewer"
+    SCOPE_REVIEWER = "scope_reviewer"
+    NOVELTY_REVIEWER = "novelty_reviewer"
+    METHODOLOGY_REVIEWER = "methodology_reviewer"
+    FIELD_EXPERT_REVIEWER = "field_expert_reviewer"
+    ADVERSARIAL_REVIEWER = "adversarial_reviewer"
+    FORMAT_REVIEWER = "format_reviewer"
+    GROUNDEDNESS_VERIFIER = "groundedness_verifier"
+    REVISION_PLANNER = "revision_planner"
 
 
 @dataclass
@@ -74,9 +86,18 @@ class MultiAgentRun:
     git_baseline: str | None = None
 
     def add_result(self, result: SubAgentResult) -> None:
+        """Append a subagent result to the run's ordered result list."""
         self.results.append(result)
 
     def latest_for(self, role: AgentRole) -> SubAgentResult | None:
+        """Return the most recent result for ``role``, or ``None`` if it never ran.
+
+        Args:
+            role: The subagent role to look up.
+
+        Returns:
+            The latest :class:`SubAgentResult` produced by ``role``, or ``None``.
+        """
         for result in reversed(self.results):
             if result.role == role:
                 return result

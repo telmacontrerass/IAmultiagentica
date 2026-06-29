@@ -8,10 +8,11 @@ import re
 import shutil
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from ci2lab.harness.tools.filesystem import read_document, read_file
 from ci2lab.harness.tools.secret_files import is_sensitive_path
@@ -26,18 +27,47 @@ from ci2lab.ui.server_parts.uploads import (
 PROJECT_CONTEXT_CHARS = 24_000
 PROJECT_SOURCE_LIMIT = 100
 
+# Optional per-project metadata. Knowledge projects leave these empty; a
+# paper-review project ("kind" == "paper_review") uses them to center everything
+# on one manuscript and to route/adapt the peer-review flow.
+PROJECT_METADATA_COLUMNS: dict[str, str] = {
+    "owner_id": "TEXT",
+    "kind": "TEXT",
+    "paper_title": "TEXT",
+    "field": "TEXT",
+    "target_venue": "TEXT",
+    "article_type": "TEXT",
+    "reviewer_profile_id": "TEXT",
+    "manuscript_source_id": "TEXT",
+    "maturity": "TEXT",
+    "review_status": "TEXT",
+}
+
+PROJECT_KINDS = frozenset({"knowledge", "paper_review"})
+
 
 def projects_root() -> Path:
+    """Return the root directory for all projects, creating it if needed."""
     root = Path.home() / ".ci2lab" / "projects"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _valid_project_id(project_id: str) -> bool:
+    """Return whether ``project_id`` matches the allowed identifier pattern."""
     return bool(project_id) and bool(re.fullmatch(r"[a-z0-9][a-z0-9_-]{5,63}", project_id))
 
 
 def project_dir(project_id: str) -> Path | None:
+    """Resolve a project's directory, guarding against path traversal.
+
+    Args:
+        project_id: The project identifier to resolve.
+
+    Returns:
+        The project directory under :func:`projects_root`, or ``None`` if the id
+        is invalid or would escape the projects root.
+    """
     if not _valid_project_id(project_id):
         return None
     root = projects_root().resolve()
@@ -48,6 +78,7 @@ def project_dir(project_id: str) -> Path | None:
 
 
 def _connect(path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with row access and foreign keys enabled."""
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
@@ -56,6 +87,7 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 @contextmanager
 def _database(path: Path) -> Iterator[sqlite3.Connection]:
+    """Yield a transactional SQLite connection, committing then closing it."""
     connection = _connect(path)
     try:
         with connection:
@@ -66,10 +98,7 @@ def _database(path: Path) -> Iterator[sqlite3.Connection]:
 
 def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
     """Tag legacy rows and make project ownership queryable inside each DB."""
-    columns = {
-        str(row["name"])
-        for row in db.execute("PRAGMA table_info(sources)").fetchall()
-    }
+    columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(sources)").fetchall()}
     if "project_id" not in columns:
         db.execute("ALTER TABLE sources ADD COLUMN project_id TEXT")
     db.execute(
@@ -78,8 +107,24 @@ def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
     )
 
 
+def _ensure_project_metadata(db: sqlite3.Connection) -> None:
+    """Add optional metadata columns to legacy ``project`` tables in place."""
+    columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(project)").fetchall()}
+    for name, sqltype in PROJECT_METADATA_COLUMNS.items():
+        if name not in columns:
+            db.execute(f"ALTER TABLE project ADD COLUMN {name} {sqltype}")
+    db.execute("UPDATE project SET kind = 'knowledge' WHERE kind IS NULL OR kind = ''")
+
+
 def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
-    now = datetime.now(timezone.utc).isoformat()
+    """Create the project/sources schema and upsert the project row.
+
+    Args:
+        path: Path to the project's SQLite database file.
+        project_id: Identifier of the project being initialised.
+        name: Display name to store for the project.
+    """
+    now = datetime.now(UTC).isoformat()
     with _database(path) as db:
         db.executescript(
             """
@@ -108,32 +153,125 @@ def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
             (project_id, name, project_id, now, now),
         )
         _ensure_source_ownership(db, project_id)
+        _ensure_project_metadata(db)
 
 
-def create_project(name: str) -> dict[str, Any]:
+def _clean_meta_value(value: Any) -> str:
+    """Normalise whitespace and truncate a metadata value to 300 characters."""
+    return " ".join(str(value or "").split()).strip()[:300]
+
+
+def create_project(
+    name: str,
+    *,
+    owner_id: str | None = None,
+    kind: str = "knowledge",
+    paper_title: str | None = None,
+    field: str | None = None,
+    target_venue: str | None = None,
+    article_type: str | None = None,
+    reviewer_profile_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a new isolated project and its on-disk database.
+
+    Args:
+        name: Display name (1-100 characters after whitespace normalisation).
+        owner_id: Optional researcher id that owns the project.
+        kind: Project kind; one of :data:`PROJECT_KINDS`.
+        paper_title: Optional manuscript title for paper-review projects.
+        field: Optional research field metadata.
+        target_venue: Optional target publication venue.
+        article_type: Optional article-type metadata.
+        reviewer_profile_id: Optional default reviewer profile id.
+
+    Returns:
+        ``{"ok": True, "project": ...}`` on success, otherwise
+        ``{"ok": False, "error": ...}`` with a user-facing message.
+    """
     clean_name = " ".join(str(name or "").split()).strip()
     if not clean_name:
         return {"ok": False, "error": "Project name is required."}
     if len(clean_name) > 100:
         return {"ok": False, "error": "Project name must be 100 characters or fewer."}
+    kind = (kind or "knowledge").strip().lower()
+    if kind not in PROJECT_KINDS:
+        return {"ok": False, "error": "Unknown project kind."}
 
     project_id = f"prj_{uuid.uuid4().hex[:12]}"
     path = projects_root() / project_id
     (path / "sources").mkdir(parents=True)
     _initialize_database(path / "project.sqlite3", project_id=project_id, name=clean_name)
+    metadata = {
+        "owner_id": owner_id,
+        "kind": kind,
+        "paper_title": paper_title,
+        "field": field,
+        "target_venue": target_venue,
+        "article_type": article_type,
+        "reviewer_profile_id": reviewer_profile_id,
+    }
+    metadata = {key: value for key, value in metadata.items() if value not in (None, "")}
+    if metadata:
+        update_project_metadata(project_id, metadata)
+    return {"ok": True, "project": get_project(project_id)}
+
+
+def update_project_metadata(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Update name and/or paper-review metadata on a project."""
+    path = project_dir(project_id)
+    if path is None or not (path / "project.sqlite3").is_file():
+        return {"ok": False, "error": "Project not found."}
+
+    assignments: dict[str, Any] = {}
+    if "name" in payload:
+        clean_name = " ".join(str(payload.get("name") or "").split()).strip()
+        if not clean_name or len(clean_name) > 100:
+            return {"ok": False, "error": "Use a project name between 1 and 100 characters."}
+        assignments["name"] = clean_name
+    for column in PROJECT_METADATA_COLUMNS:
+        if column not in payload:
+            continue
+        value = _clean_meta_value(payload.get(column))
+        if column == "kind" and value and value.lower() not in PROJECT_KINDS:
+            return {"ok": False, "error": "Unknown project kind."}
+        assignments[column] = value.lower() if column == "kind" else value
+
+    if not assignments:
+        return {"ok": True, "project": get_project(project_id)}
+
+    now = datetime.now(UTC).isoformat()
+    set_clause = ", ".join(f"{column} = ?" for column in assignments)
+    values = list(assignments.values())
+    with _database(path / "project.sqlite3") as db:
+        _ensure_project_metadata(db)
+        db.execute(
+            f"UPDATE project SET {set_clause}, updated_at = ? WHERE id = ?",
+            (*values, now, project_id),
+        )
     return {"ok": True, "project": get_project(project_id)}
 
 
 def get_project(project_id: str) -> dict[str, Any] | None:
+    """Return a project's full record including source counts and metadata.
+
+    Args:
+        project_id: Identifier of the project to load.
+
+    Returns:
+        A dict describing the project (id, name, timestamps, source stats,
+        workspace path and metadata columns), or ``None`` when the project does
+        not exist or its database cannot be read.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return None
     try:
         with _database(path / "project.sqlite3") as db:
+            _ensure_project_metadata(db)
+            _ensure_source_ownership(db, project_id)
             row = db.execute("SELECT * FROM project WHERE id = ?", (project_id,)).fetchone()
             if row is None:
                 return None
-            _ensure_source_ownership(db, project_id)
             source_count = db.execute(
                 "SELECT COUNT(*) FROM sources WHERE project_id = ?", (project_id,)
             ).fetchone()[0]
@@ -143,7 +281,8 @@ def get_project(project_id: str) -> dict[str, Any] | None:
             ).fetchone()[0]
     except sqlite3.Error:
         return None
-    return {
+    keys = set(row.keys())
+    project = {
         "id": row["id"],
         "name": row["name"],
         "created_at": row["created_at"],
@@ -153,27 +292,48 @@ def get_project(project_id: str) -> dict[str, Any] | None:
         "source_size_label": format_upload_size(int(source_bytes)),
         "workspace": str(path),
     }
+    for column in PROJECT_METADATA_COLUMNS:
+        project[column] = row[column] if column in keys else None
+    project["kind"] = project.get("kind") or "knowledge"
+    return project
 
 
-def list_projects() -> list[dict[str, Any]]:
+def list_projects(owner_id: str | None = None) -> list[dict[str, Any]]:
+    """List projects, optionally scoped to one researcher.
+
+    When ``owner_id`` is given, return that researcher's projects plus any
+    legacy/unassigned project (no owner) so nothing silently disappears in a
+    multi-researcher setup that still has no authentication.
+    """
+    owner_id = (owner_id or "").strip()
     rows = []
     for path in projects_root().iterdir():
         if not path.is_dir():
             continue
         project = get_project(path.name)
-        if project:
-            rows.append(project)
+        if not project:
+            continue
+        if owner_id:
+            project_owner = (project.get("owner_id") or "").strip()
+            if project_owner and project_owner != owner_id:
+                continue
+        rows.append(project)
     return sorted(rows, key=lambda item: item["updated_at"], reverse=True)
 
 
 def rename_project(project_id: str, name: str) -> dict[str, Any]:
+    """Rename a project, validating the new name length.
+
+    Returns:
+        ``{"ok": True, "project": ...}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     clean_name = " ".join(str(name or "").split()).strip()
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
     if not clean_name or len(clean_name) > 100:
         return {"ok": False, "error": "Use a project name between 1 and 100 characters."}
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _database(path / "project.sqlite3") as db:
         db.execute(
             "UPDATE project SET name = ?, updated_at = ? WHERE id = ?",
@@ -183,6 +343,11 @@ def rename_project(project_id: str, name: str) -> dict[str, Any]:
 
 
 def delete_project(project_id: str) -> dict[str, Any]:
+    """Delete a project, its workspace, and any sessions scoped to it.
+
+    Returns:
+        ``{"ok": True, "project_id": ...}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not path.is_dir() or get_project(project_id) is None:
         return {"ok": False, "error": "Project not found."}
@@ -200,6 +365,11 @@ def delete_project(project_id: str) -> dict[str, Any]:
 
 
 def list_project_sources(project_id: str) -> dict[str, Any]:
+    """List a project's indexed source files, newest first.
+
+    Returns:
+        ``{"ok": True, "sources": [...]}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -229,6 +399,19 @@ def list_project_sources(project_id: str) -> dict[str, Any]:
 
 
 def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Decode, store and index a base64-encoded source file into a project.
+
+    Validates the name, format, size and sensitivity, writes the file under the
+    project's ``sources`` directory, extracts text, and records a source row.
+
+    Args:
+        project_id: Identifier of the target project.
+        payload: Upload payload with ``"name"`` and ``"content_base64"`` keys.
+
+    Returns:
+        ``{"ok": True, "source": ..., "project": ...}`` on success, otherwise
+        ``{"ok": False, "error": ...}`` with a user-facing message.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -276,7 +459,7 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
         return {"ok": False, "error": f"Could not index the source: {content}"}
 
     source_id = f"src_{uuid.uuid4().hex[:12]}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _database(path / "project.sqlite3") as db:
         db.execute(
             """
@@ -314,6 +497,12 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
 
 
 def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
+    """Remove a source from a project, deleting its row and stored file.
+
+    Returns:
+        ``{"ok": True, "source_id": ..., "project": ...}`` on success, otherwise
+        an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -334,7 +523,7 @@ def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
         )
         db.execute(
             "UPDATE project SET updated_at = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), project_id),
+            (datetime.now(UTC).isoformat(), project_id),
         )
     target = (path / row["relative_path"]).resolve()
     if target.is_relative_to(path.resolve()):
@@ -343,17 +532,44 @@ def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
 
 
 def _terms(text: str) -> set[str]:
+    """Tokenise text into a set of lowercased terms, dropping common stopwords."""
     return {
         token
         for token in re.findall(r"[\wÀ-ÿ]{3,}", text.lower())
-        if token not in {
-            "para", "como", "este", "esta", "that", "with", "from", "have",
-            "sobre", "entre", "the", "and", "una", "uno", "unos", "unas",
+        if token
+        not in {
+            "para",
+            "como",
+            "este",
+            "esta",
+            "that",
+            "with",
+            "from",
+            "have",
+            "sobre",
+            "entre",
+            "the",
+            "and",
+            "una",
+            "uno",
+            "unos",
+            "unas",
         }
     }
 
 
 def _chunks(text: str, size: int = 3500, overlap: int = 350) -> list[str]:
+    """Split text into overlapping character windows for retrieval.
+
+    Args:
+        text: Source text to chunk.
+        size: Maximum characters per chunk.
+        overlap: Number of trailing characters repeated at the start of the next
+            chunk to preserve context across boundaries.
+
+    Returns:
+        The list of chunks (empty when the text is blank).
+    """
     clean = re.sub(r"\n{3,}", "\n\n", text).strip()
     if not clean:
         return []
@@ -406,7 +622,69 @@ def project_context(project_id: str, query: str) -> str:
     return "\n\n".join(blocks)
 
 
+def project_manuscript_text(project_id: str) -> tuple[str, str]:
+    """Return ``(text, source_name)`` for a paper-review project's manuscript.
+
+    Grounding must verify quotes against the manuscript only, so we pick a single
+    source: the one named in ``manuscript_source_id`` if set, otherwise the
+    largest source (the full paper, not a guidelines snippet). Returns empty
+    strings when the project has no readable source.
+    """
+    path = project_dir(project_id)
+    if path is None or not (path / "project.sqlite3").is_file():
+        return "", ""
+    project = get_project(project_id)
+    chosen_id = (project or {}).get("manuscript_source_id") or ""
+
+    def source_text(row: sqlite3.Row) -> tuple[str, str]:
+        name = str(row["name"] or "")
+        relative_path = str(row["relative_path"] or "")
+        if Path(name).suffix.lower() == ".pdf" and relative_path:
+            # Paper-review projects currently receive manuscripts as PDFs. Always
+            # run them through the document reader at review time so the peer
+            # review works on extracted manuscript text, not stale cached content.
+            extracted = read_document(str(path), relative_path)
+            if extracted.startswith("Error:"):
+                return "", name
+            return extracted, name
+        return str(row["content"] or ""), name
+
+    with _database(path / "project.sqlite3") as db:
+        _ensure_source_ownership(db, project_id)
+        if chosen_id:
+            row = db.execute(
+                """
+                SELECT name, relative_path, content
+                FROM sources WHERE id = ? AND project_id = ?
+                """,
+                (chosen_id, project_id),
+            ).fetchone()
+            if row is not None:
+                return source_text(row)
+        row = db.execute(
+            """
+            SELECT name, relative_path, content FROM sources
+            WHERE project_id = ? ORDER BY size DESC LIMIT 1
+            """,
+            (project_id,),
+        ).fetchone()
+    if row is None:
+        return "", ""
+    return source_text(row)
+
+
 def project_prompt(project_id: str, prompt: str) -> str:
+    """Wrap a user prompt with the project's name and relevant source excerpts.
+
+    Args:
+        project_id: Identifier of the active project.
+        prompt: The user's original prompt.
+
+    Returns:
+        The prompt unchanged when the project is missing; otherwise the prompt
+        augmented with project framing and (when available) a
+        ``<project_sources>`` context block.
+    """
     project = get_project(project_id)
     if project is None:
         return prompt

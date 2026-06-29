@@ -24,11 +24,35 @@ __all__ = [
 
 
 def resolve_path(raw: str, cwd: str) -> Path:
-    """Compat: resolve_path(raw, cwd) -> resolve_workspace_path(cwd, raw)."""
+    """Resolve ``raw`` against ``cwd``, confined to the workspace.
+
+    Backwards-compatible wrapper that flips the argument order of
+    :func:`resolve_workspace_path`: ``resolve_path(raw, cwd)`` is equivalent to
+    ``resolve_workspace_path(cwd, raw)``.
+
+    Args:
+        raw: The user/agent-supplied path, absolute or workspace-relative.
+        cwd: The current working directory used as the resolution base.
+
+    Returns:
+        The resolved absolute :class:`~pathlib.Path`, guaranteed to lie within
+        the workspace root.
+
+    Raises:
+        PathViolationError: If the resolved path escapes the workspace root.
+    """
     return resolve_workspace_path(cwd, raw)
 
 
 def format_size(num_bytes: int) -> str:
+    """Format a byte count as a human-readable size string.
+
+    Args:
+        num_bytes: The size in bytes.
+
+    Returns:
+        The size rendered with a ``B``, ``KB`` or ``MB`` suffix (e.g. ``"1.5 KB"``).
+    """
     if num_bytes < 1024:
         return f"{num_bytes} B"
     if num_bytes < 1024 * 1024:

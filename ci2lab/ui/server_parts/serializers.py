@@ -16,6 +16,11 @@ from ci2lab.harness.session import (
 
 
 def disk_payload(workspace: str) -> dict[str, Any]:
+    """Return disk-usage stats (in GB and percentages) for a workspace path.
+
+    Falls back to the current working directory when ``workspace`` does not
+    exist.
+    """
     path = Path(workspace)
     if not path.exists():
         path = Path.cwd()
@@ -35,10 +40,12 @@ def disk_payload(workspace: str) -> dict[str, Any]:
 
 
 def bytes_to_gb(value: int | float) -> float:
+    """Convert a byte count to gibibytes, rounded to two decimals."""
     return round(float(value) / (1024**3), 2)
 
 
 def format_upload_size(num_bytes: int) -> str:
+    """Format a byte count as a human-readable ``B``/``KB``/``MB`` string."""
     if num_bytes < 1024:
         return f"{num_bytes} B"
     if num_bytes < 1024 * 1024:
@@ -47,6 +54,7 @@ def format_upload_size(num_bytes: int) -> str:
 
 
 def sessions_payload() -> list[dict[str, Any]]:
+    """Return all sessions, each tagged with its id as ``internal_tag``."""
     rows: list[dict[str, Any]] = []
     for row in list_sessions():
         session_id = str(row.get("id") or "")
@@ -57,6 +65,15 @@ def sessions_payload() -> list[dict[str, Any]]:
 
 
 def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
+    """Load one session as a UI payload with its visible messages.
+
+    Args:
+        session_id: Identifier of the session to load.
+
+    Returns:
+        A ``(payload, http_status)`` tuple: 400 for an invalid id, 404 when not
+        found, and 200 with the serialised session otherwise.
+    """
     if not session_id or not all(ch.isalnum() or ch in "-_" for ch in session_id):
         return {"ok": False, "error": "Invalid session."}, 400
     data = load_session(session_id)
@@ -88,6 +105,10 @@ def session_payload(session_id: str) -> tuple[dict[str, Any], int]:
 
 
 def delete_session_payload(session_id: str) -> tuple[dict[str, Any], int]:
+    """Delete a session and return a ``(payload, http_status)`` UI response.
+
+    Returns 400 for an invalid id, 404 when not found, and 200 on success.
+    """
     if not session_id or not all(ch.isalnum() or ch in "-_" for ch in session_id):
         return {"ok": False, "error": "Invalid session."}, 400
     deleted = delete_session(session_id)
@@ -97,6 +118,7 @@ def delete_session_payload(session_id: str) -> tuple[dict[str, Any], int]:
 
 
 def public_pull_task(task: dict[str, Any]) -> dict[str, Any]:
+    """Project an internal pull-task dict to its public, client-safe fields."""
     return {
         "id": task["id"],
         "tag": task["tag"],
@@ -111,6 +133,7 @@ def public_pull_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_delete_task(task: dict[str, Any]) -> dict[str, Any]:
+    """Project an internal delete-task dict to its public, client-safe fields."""
     return {
         "id": task["id"],
         "tag": task["tag"],
@@ -123,21 +146,29 @@ def public_delete_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_runs(runs_dir: str) -> list[dict[str, Any]]:
+    """Return up to the 20 most recent run directories under ``runs_dir``.
+
+    Each entry carries the run ``name``, absolute ``path`` and ``modified``
+    timestamp; the list is empty when the directory does not exist.
+    """
     base = Path(runs_dir)
     if not base.is_dir():
         return []
     rows = []
     for path in sorted(base.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
         if path.is_dir():
-            rows.append({
-                "name": path.name,
-                "path": str(path),
-                "modified": path.stat().st_mtime,
-            })
+            rows.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "modified": path.stat().st_mtime,
+                }
+            )
     return rows
 
 
 def safe_int(value: Any) -> int:
+    """Coerce a value to ``int``, returning ``0`` on ``None`` or invalid input."""
     try:
         return int(value or 0)
     except (TypeError, ValueError):

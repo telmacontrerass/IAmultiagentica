@@ -22,6 +22,7 @@ from ci2lab.security.engine import UnknownSecurityEngineError
 from ci2lab.security.opencode_presets import UnknownPermissionPresetError
 
 DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_BACKEND = "ollama"
 DEFAULT_BACKEND_URL = "http://localhost:11434/v1"
 DEFAULT_TOOL_MODE = "native"
 DEFAULT_MAX_ROUNDS = 25
@@ -39,6 +40,9 @@ _CONFIG_FILENAMES = ("ci2lab.yaml", "ci2lab.yml", "ci2lab.json")
 @dataclass
 class Ci2LabConfig:
     model: str = DEFAULT_MODEL
+    backend: str = DEFAULT_BACKEND
+    """Inference provider that serves the model: ``ollama`` or ``openai`` (any
+    OpenAI-compatible server such as vLLM, LM Studio or llama.cpp)."""
     backend_url: str = DEFAULT_BACKEND_URL
     tool_mode: str = DEFAULT_TOOL_MODE
     max_rounds: int = DEFAULT_MAX_ROUNDS
@@ -162,6 +166,8 @@ def _from_env(config: Ci2LabConfig) -> Ci2LabConfig:
     mapping: dict[str, Any] = {}
     if model := os.environ.get("CI2LAB_MODEL"):
         mapping["model"] = model
+    if backend := os.environ.get("CI2LAB_BACKEND"):
+        mapping["backend"] = backend
     if url := os.environ.get("CI2LAB_OLLAMA_URL"):
         mapping["backend_url"] = url
     if backend := os.environ.get("CI2LAB_BACKEND_URL"):
@@ -230,9 +236,7 @@ def resolve_workspace(
 ) -> str:
     """Resolve the working directory; error if --workspace and --cwd coexist."""
     if workspace and cwd:
-        raise ValueError(
-            "Use only one of --workspace or --cwd, not both."
-        )
+        raise ValueError("Use only one of --workspace or --cwd, not both.")
     raw = workspace or cwd or config.workspace
     if not raw:
         # Portable startup: when ci2lab is launched from its own repository,

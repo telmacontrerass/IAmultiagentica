@@ -7,24 +7,24 @@ from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.multiagent.intent import classify_orchestration_decision
 from ci2lab.harness.multiagent.orchestrator import (
     _apply_role_guardrails,
-    build_validation_contract,
     _build_research_prompt,
     _build_review_prompt,
     _build_validation_prompt,
-    _detect_invalid_tool_via_bash,
-    _enforce_change_scope_evidence,
-    _finalize_if_evidence_satisfied,
     _detect_hallucinated_output,
+    _detect_invalid_tool_via_bash,
     _detect_researcher_unsupported_claims,
     _detect_role_violation,
+    _enforce_change_scope_evidence,
+    _finalize_if_evidence_satisfied,
     _git_baseline_section,
-    _validator_config_for_contract,
     _reviewer_config_for_scope,
     _structured_security_verdict,
+    _validator_config_for_contract,
+    build_validation_contract,
     final_run_status,
-    synthesize_final_answer,
     run_multi_agent,
     should_repair_with_coder,
+    synthesize_final_answer,
     validation_failed,
 )
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
@@ -32,7 +32,6 @@ from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
 from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import ToolCall
-
 
 WRITE_TOOLS = {"write_file", "edit_file", "apply_patch", "notebook_edit"}
 DESTRUCTIVE_TOOLS = {"delete_file", "rm", "rmdir", "git_clean", "git_reset"}
@@ -67,10 +66,7 @@ def _result(
 
 def test_multiagent_phase_tool_availability_matrix(tmp_path):
     parent = AgentConfig(cwd=str(tmp_path))
-    actual = {
-        role: build_subagent_config(role, parent).skill_allowed_tools
-        for role in AgentRole
-    }
+    actual = {role: build_subagent_config(role, parent).skill_allowed_tools for role in AgentRole}
 
     assert actual[AgentRole.PLANNER] == frozenset()
     assert {"read_file", "grep"} <= actual[AgentRole.RESEARCHER]
@@ -377,8 +373,7 @@ def test_tool_trace_records_phase_tool_arguments_and_result(tmp_path, monkeypatc
 def test_tool_trace_preserves_phase_boundaries(tmp_path, monkeypatch):
     trace = _run_traced_write(tmp_path, monkeypatch)
     tools_by_phase = {
-        phase["role"]: [call["tool"] for call in phase["tool_calls"]]
-        for phase in trace["phases"]
+        phase["role"]: [call["tool"] for call in phase["tool_calls"]] for phase in trace["phases"]
     }
 
     assert tools_by_phase["planner"] == []
@@ -415,11 +410,7 @@ def test_complex_create_file_uses_real_write_and_readback(tmp_path):
     )
     responses = [
         LLMResponse(
-            content=(
-                "```write_file\n"
-                '{"path": "notes/todo.txt", "content": "TODO_OK"}\n'
-                "```"
-            ),
+            content=('```write_file\n{"path": "notes/todo.txt", "content": "TODO_OK"}\n```'),
             tool_calls=[],
         ),
         LLMResponse(content="```read_file\nnotes/todo.txt\n```", tool_calls=[]),
@@ -495,7 +486,9 @@ def test_complex_review_only_prompt_never_runs_write_capable_phase(monkeypatch):
 
     def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
         roles.append(role)
-        output = "Review found no infinite loop." if role == AgentRole.REVIEWER else "Context found."
+        output = (
+            "Review found no infinite loop." if role == AgentRole.REVIEWER else "Context found."
+        )
         return _result(role, output, attempt=attempt)
 
     monkeypatch.setattr(
@@ -575,12 +568,12 @@ def test_orchestrator_e2e_simulated_llm_file_creation_uses_tools_and_completes(t
         ),
         LLMResponse(content="```read_file\nnotes/multiagent_trace_probe.txt\n```", tool_calls=[]),
         LLMResponse(content="```read_file\nnotes/multiagent_trace_probe.txt\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_status\n{\"path\": \".\"}\n```", tool_calls=[]),
-        LLMResponse(content="```git_diff\n{\"path\": \".\"}\n```", tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_status\n{"path": "."}\n```', tool_calls=[]),
+        LLMResponse(content='```git_diff\n{"path": "."}\n```', tool_calls=[]),
         LLMResponse(content="Security review passed; no permission expansion.", tool_calls=[]),
     ]
 
@@ -622,9 +615,7 @@ def test_orchestrator_e2e_simulated_llm_file_creation_uses_tools_and_completes(t
     ]
     assert validator["tool_calls"][0]["ok"] is True
     reviewer = next(phase for phase in trace["phases"] if phase["role"] == "reviewer")
-    security = next(
-        phase for phase in trace["phases"] if phase["role"] == "security_reviewer"
-    )
+    security = next(phase for phase in trace["phases"] if phase["role"] == "security_reviewer")
     assert [call["tool"] for call in reviewer["tool_calls"]] == ["git_status", "git_diff"]
     assert [call["tool"] for call in security["tool_calls"]] == ["git_status", "git_diff"]
     assert all(call["ok"] for call in reviewer["tool_calls"] + security["tool_calls"])
@@ -708,8 +699,7 @@ def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
             AgentRole.RESEARCHER: "No existing target inspected.",
             AgentRole.GENERALIST_CODER: "Created and read back TRACE_OK_3.",
             AgentRole.VALIDATOR: (
-                "Insufficient evidence: missing successful tool evidence: "
-                "git_status, git_diff."
+                "Insufficient evidence: missing successful tool evidence: git_status, git_diff."
             ),
             AgentRole.REVIEWER: "Insufficient evidence.",
         }
@@ -723,20 +713,6 @@ def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
     monkeypatch.setattr(
         "ci2lab.harness.multiagent.orchestrator.run_subagent",
         fake_run_subagent,
-    )
-
-    def fail_git_scope(call, config):
-        if call.name in {"git_status", "git_diff"}:
-            return SimpleNamespace(
-                is_error=True,
-                content=f"Error: forced missing {call.name} evidence",
-                outcome="forced_missing_git_evidence",
-            )
-        return execute_tool(call, config)
-
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.execute_tool",
-        fail_git_scope,
     )
 
     run_multi_agent(
@@ -807,8 +783,7 @@ def test_file_correct_but_validator_role_violation_does_not_run_coder_attempt_2(
     )
 
     run_multi_agent(
-        "Crea un archivo llamado notes/todo.txt con TODO_OK. "
-        "No modifiques ningun otro archivo.",
+        "Crea un archivo llamado notes/todo.txt con TODO_OK. No modifiques ningun otro archivo.",
         default_selection("test:1b"),
         config=AgentConfig(
             cwd=str(tmp_path),
@@ -921,31 +896,20 @@ def test_orchestrator_e2e_simulated_llm_declaration_without_tools_fails(tmp_path
     trace = _multiagent_trace(tmp_path)
     coder = next(phase for phase in trace["phases"] if phase["role"] == "generalist_coder")
     reviewer = next(phase for phase in trace["phases"] if phase["role"] == "reviewer")
-    security = next(
-        phase for phase in trace["phases"] if phase["role"] == "security_reviewer"
-    )
+    security = next(phase for phase in trace["phases"] if phase["role"] == "security_reviewer")
 
     assert trace["status"] in {"insufficient_evidence", "validation_failed"}
     assert trace["status"] != "completed"
     assert coder["tool_calls"] == []
-    for phase in (reviewer, security):
-        if phase["status"] == "completed":
-            assert [call["tool"] for call in phase["tool_calls"]] == [
-                "git_status",
-                "git_diff",
-            ]
-            assert all(call["ok"] for call in phase["tool_calls"])
-        else:
-            assert phase["status"] == "failed"
-            assert "Do not report PASS" in phase["final_output_preview"]
-            assert not phase["final_output_preview"].startswith("PASS")
+    assert reviewer["status"] == "failed"
+    assert security["status"] == "failed"
+    assert "Do not report PASS" in reviewer["final_output_preview"]
+    assert "Do not report PASS" in security["final_output_preview"]
+    assert not reviewer["final_output_preview"].startswith("PASS")
+    assert not security["final_output_preview"].startswith("PASS")
     assert not (tmp_path / "notes" / "todo.txt").exists()
     assert "status: completed" not in result
-    assert (
-        "Insufficient evidence" in result
-        or "Evidence gate" in result
-        or "no real write/read tool calls" in result
-    )
+    assert "Insufficient evidence: no real write/read tool calls." in result
 
 
 # ---------------------------------------------------------------------------
@@ -1117,9 +1081,7 @@ def test_reviewer_hallucinated_handoff_about_docx_is_flagged():
     """Reviewer that mentions write_docx / pdf_to_docx / report.docx unrelated to the task
     gets status=hallucinated_output and HALLUCINATED_OUTPUT note in output."""
     run = MultiAgentRun(user_prompt="Fix the off-by-one bug in app.py")
-    run.add_result(
-        _result(AgentRole.PYTHON_CODER, "Fixed the bug in app.py.")
-    )
+    run.add_result(_result(AgentRole.PYTHON_CODER, "Fixed the bug in app.py."))
     reviewer = _result(
         AgentRole.REVIEWER,
         "The task used write_docx and pdf_to_docx to produce report.docx from document.pdf.",
@@ -1183,11 +1145,10 @@ def test_validation_contract_for_simple_file_creation():
 
 
 def test_validation_contract_includes_written_artifact_path():
-    plan = _result(AgentRole.PLANNER, "Create the exercise solution.")
-    research = _result(AgentRole.RESEARCHER, "Exercise requires Python.")
+    plan = _result(AgentRole.PLANNER, "Create the requested exercise file.")
     implementation = _result(
-        AgentRole.GENERALIST_CODER,
-        "Created the requested solution.",
+        AgentRole.PYTHON_CODER,
+        "Created the solution.",
         tool_calls=[
             {
                 "tool": "write_file",
@@ -1199,185 +1160,135 @@ def test_validation_contract_includes_written_artifact_path():
     )
 
     contract = build_validation_contract(
-        "Complete exercise 1 from the PDF.",
+        "Create the solution for exercise 1.",
         plan,
-        research,
+        None,
         implementation,
     )
 
     assert "exercise_1/main.py" in contract.expected_artifacts
-    assert "read_file" in contract.required_evidence_tools
+    assert any("Read back each artifact written" in check for check in contract.required_checks)
 
 
-def test_validator_reads_file_written_by_coder(tmp_path, monkeypatch):
-    calls: list[AgentRole] = []
-
-    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
-        calls.append(role)
-        if role == AgentRole.GENERALIST_CODER:
-            target = tmp_path / "notes" / "artifact.txt"
-            target.parent.mkdir()
-            target.write_text("ARTIFACT_OK\n", encoding="utf-8")
-            return _result(
-                role,
-                "Created notes/artifact.txt.",
-                tool_calls=[
-                    {
-                        "tool": "write_file",
-                        "ok": True,
-                        "arguments": {
-                            "path": "notes/artifact.txt",
-                            "content": "ARTIFACT_OK\n",
-                        },
-                        "output_preview": "Wrote notes/artifact.txt",
-                    }
-                ],
-            )
-        outputs = {
-            AgentRole.PLANNER: "Plan: create notes/artifact.txt.",
-            AgentRole.RESEARCHER: "No existing target inspected.",
-            AgentRole.REVIEWER: "Review complete.",
-        }
-        return _result(role, outputs.get(role, "ok"), attempt=attempt)
-
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent",
-        fake_run_subagent,
+def test_folder_scope_allows_writes_inside_inferred_folder():
+    implementation = _result(
+        AgentRole.PYTHON_CODER,
+        "Created exercise_1/main.py.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "exercise_1/main.py", "content": "print('ok')\n"},
+                "output_preview": "Wrote exercise_1/main.py",
+            }
+        ],
     )
 
-    run_multi_agent(
-        "Create notes/artifact.txt with ARTIFACT_OK.",
-        default_selection("test:1b"),
-        config=AgentConfig(
-            cwd=str(tmp_path),
-            runs_dir=str(tmp_path / "runs"),
-            run_log_enabled=True,
-        ),
-        max_repair_attempts=0,
+    contract = build_validation_contract(
+        "Make a new folder and complete exercise 1 inside.",
+        None,
+        None,
+        implementation,
     )
 
-    trace = _multiagent_trace(tmp_path)
-    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+    assert contract.allowed_write_roots == ["exercise_1"]
+    assert contract.scope_check_required is True
+    assert "exercise_1/main.py" in contract.expected_artifacts
+    assert "main.py" not in contract.forbidden_changed_paths
 
-    assert AgentRole.GENERALIST_CODER in calls
-    assert any(
-        call["tool"] == "read_file"
-        and call["arguments"] == {"path": "notes/artifact.txt"}
-        and call["ok"]
-        for call in validator["tool_calls"]
+
+def test_folder_scope_violation_fails_validation(tmp_path):
+    implementation = _result(
+        AgentRole.PYTHON_CODER,
+        "Created exercise_1/main.py and main.py.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "exercise_1/main.py", "content": "print('ok')\n"},
+                "output_preview": "Wrote exercise_1/main.py",
+            },
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "main.py", "content": "print('outside')\n"},
+                "output_preview": "Wrote main.py",
+            },
+        ],
     )
 
-
-def test_invalid_python_written_by_coder_fails_validation(tmp_path, monkeypatch):
-    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
-        if role in CODER_ROLES:
-            target = tmp_path / "exercise_1" / "main.py"
-            target.parent.mkdir()
-            target.write_text("def main(\n    pass\n", encoding="utf-8")
-            return _result(
-                role,
-                "Created exercise_1/main.py.",
-                tool_calls=[
-                    {
-                        "tool": "write_file",
-                        "ok": True,
-                        "arguments": {
-                            "path": "exercise_1/main.py",
-                            "content": "def main(\n    pass\n",
-                        },
-                        "output_preview": "Wrote exercise_1/main.py",
-                    }
-                ],
-            )
-        outputs = {
-            AgentRole.PLANNER: "Plan: create exercise_1/main.py.",
-            AgentRole.RESEARCHER: "Exercise requires Python.",
-            AgentRole.REVIEWER: "Review complete.",
-        }
-        return _result(role, outputs.get(role, "ok"), attempt=attempt)
-
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent",
-        fake_run_subagent,
+    contract = build_validation_contract(
+        "Make a new folder and complete exercise 1 inside.",
+        None,
+        None,
+        implementation,
     )
 
-    run_multi_agent(
-        "Create exercise_1/main.py for exercise 1.",
-        default_selection("test:1b"),
-        config=AgentConfig(
-            cwd=str(tmp_path),
-            runs_dir=str(tmp_path / "runs"),
-            run_log_enabled=True,
-            auto_confirm=True,
-        ),
-        max_repair_attempts=0,
+    assert "main.py" in contract.forbidden_changed_paths
+    assert contract.allowed_write_roots == ["exercise_1"]
+
+
+def test_no_folder_scope_inference_does_not_block_extra_paths():
+    implementation = _result(
+        AgentRole.PYTHON_CODER,
+        "Created two helper files.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "main.py", "content": "print('ok')\n"},
+                "output_preview": "Wrote main.py",
+            },
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "helper.py", "content": "VALUE = 1\n"},
+                "output_preview": "Wrote helper.py",
+            },
+        ],
     )
 
-    trace = _multiagent_trace(tmp_path)
-    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
-
-    assert trace["status"] == "validation_failed"
-    assert any(call["tool"] == "read_file" for call in validator["tool_calls"])
-    assert any(
-        call["tool"] == "bash"
-        and "py_compile" in call["arguments"]["command"]
-        and not call["ok"]
-        for call in validator["tool_calls"]
+    contract = build_validation_contract(
+        "Create a Python solution.",
+        None,
+        None,
+        implementation,
     )
 
+    assert contract.allowed_write_roots == []
+    assert "main.py" not in contract.forbidden_changed_paths
+    assert "helper.py" not in contract.forbidden_changed_paths
 
-def test_python_artifact_validation_falls_back_without_bash(tmp_path, monkeypatch):
-    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
-        if role in CODER_ROLES:
-            target = tmp_path / "exercise_1" / "main.py"
-            target.parent.mkdir()
-            target.write_text("def main(\n    pass\n", encoding="utf-8")
-            return _result(
-                role,
-                "Created exercise_1/main.py.",
-                tool_calls=[
-                    {
-                        "tool": "write_file",
-                        "ok": True,
-                        "arguments": {
-                            "path": "exercise_1/main.py",
-                            "content": "def main(\n    pass\n",
-                        },
-                        "output_preview": "Wrote exercise_1/main.py",
-                    }
-                ],
-            )
-        outputs = {
-            AgentRole.PLANNER: "Plan: create exercise_1/main.py.",
-            AgentRole.RESEARCHER: "Exercise requires Python.",
-            AgentRole.REVIEWER: "Review complete.",
-        }
-        return _result(role, outputs.get(role, "ok"), attempt=attempt)
 
-    monkeypatch.setattr(
-        "ci2lab.harness.multiagent.orchestrator.run_subagent",
-        fake_run_subagent,
+def test_do_not_modify_other_file_restricts_to_expected_path():
+    implementation = _result(
+        AgentRole.PYTHON_CODER,
+        "Updated app.py and helper.py.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "app.py", "content": "print('ok')\n"},
+                "output_preview": "Wrote app.py",
+            },
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "helper.py", "content": "VALUE = 1\n"},
+                "output_preview": "Wrote helper.py",
+            },
+        ],
     )
 
-    run_multi_agent(
-        "Create exercise_1/main.py for exercise 1.",
-        default_selection("test:1b"),
-        config=AgentConfig(
-            cwd=str(tmp_path),
-            runs_dir=str(tmp_path / "runs"),
-            run_log_enabled=True,
-            skill_allowed_tools=frozenset({"read_file", "write_file"}),
-        ),
-        max_repair_attempts=0,
+    contract = build_validation_contract(
+        "Modify app.py. Do not modify any other file.",
+        None,
+        None,
+        implementation,
     )
 
-    trace = _multiagent_trace(tmp_path)
-    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
-
-    assert trace["status"] == "validation_failed"
-    assert [call["tool"] for call in validator["tool_calls"]] == ["read_file"]
-    assert validator["tool_calls"][0]["ok"] is False
-    assert "Python syntax error" in validator["tool_calls"][0]["error_preview"]
+    assert contract.expected_changed_paths == ["app.py"]
+    assert "helper.py" in contract.forbidden_changed_paths
 
 
 def test_simple_file_validation_contract_does_not_give_bash_to_validator():
@@ -1431,6 +1342,143 @@ def test_code_validation_contract_with_pytest_gives_bash_to_validator():
     cfg = _validator_config_for_contract(AgentConfig(cwd="."), contract)
 
     assert "bash" in cfg.skill_allowed_tools
+
+
+def test_validator_reads_file_written_by_coder(tmp_path, monkeypatch):
+    calls: list[AgentRole] = []
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        if role == AgentRole.GENERALIST_CODER:
+            target = tmp_path / "notes" / "artifact.txt"
+            target.parent.mkdir()
+            target.write_text("ARTIFACT_OK", encoding="utf-8")
+            return _result(
+                role,
+                "Created notes/artifact.txt.",
+                attempt=attempt,
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {
+                            "path": "notes/artifact.txt",
+                            "content": "ARTIFACT_OK",
+                        },
+                        "output_preview": "Wrote notes/artifact.txt",
+                    }
+                ],
+            )
+        return _result(role, "ok", attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create notes/artifact.txt with exactly this content: ARTIFACT_OK.",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=str(tmp_path), runs_dir=str(tmp_path / "runs"), run_log_enabled=True),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+    assert AgentRole.VALIDATOR not in calls
+    assert any(call["tool"] == "read_file" for call in validator["tool_calls"])
+
+
+def test_invalid_python_written_by_coder_fails_validation(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PYTHON_CODER:
+            target = tmp_path / "exercise_1" / "main.py"
+            target.parent.mkdir()
+            target.write_text("def broken(:\n", encoding="utf-8")
+            return _result(
+                role,
+                "Created exercise_1/main.py.",
+                attempt=attempt,
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {
+                            "path": "exercise_1/main.py",
+                            "content": "def broken(:\n",
+                        },
+                        "output_preview": "Wrote exercise_1/main.py",
+                    }
+                ],
+            )
+        return _result(role, "ok", attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create exercise_1/main.py.",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=str(tmp_path), runs_dir=str(tmp_path / "runs"), run_log_enabled=True),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+    assert trace["status"] == "validation_failed"
+    assert any(call["tool"] == "bash" for call in validator["tool_calls"])
+    assert "Python artifact invalid" in (
+        validator.get("final_output_preview") or validator.get("error") or ""
+    )
+
+
+def test_python_artifact_validation_falls_back_without_bash(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PYTHON_CODER:
+            target = tmp_path / "main.py"
+            target.write_text("def broken(:\n", encoding="utf-8")
+            return _result(
+                role,
+                "Created main.py.",
+                attempt=attempt,
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {"path": "main.py", "content": "def broken(:\n"},
+                        "output_preview": "Wrote main.py",
+                    }
+                ],
+            )
+        return _result(role, "ok", attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create main.py.",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+            skill_allowed_tools=frozenset({"read_file", "write_file", "edit_file", "apply_patch"}),
+        ),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+    assert trace["status"] == "validation_failed"
+    assert not any(call["tool"] == "bash" for call in validator["tool_calls"])
+    assert any(call["tool"] == "read_file" for call in validator["tool_calls"])
+    assert "Python artifact invalid" in (
+        validator.get("final_output_preview") or validator.get("error") or ""
+    )
 
 
 def test_validation_contract_read_only_does_not_require_git_diff():
@@ -1590,7 +1638,10 @@ def test_validator_auto_closes_when_required_tools_are_satisfied(tmp_path):
                 },
                 {
                     "id": "bad",
-                    "function": {"name": "bash", "arguments": '{"command": "FAIL: insufficient evidence"}'},
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command": "FAIL: insufficient evidence"}',
+                    },
                 },
             ],
         )
@@ -1768,9 +1819,24 @@ def _completed_file_run_with_evidence() -> MultiAgentRun:
             AgentRole.VALIDATOR,
             "PASS: required validation evidence tools completed successfully.",
             tool_calls=[
-                {"tool": "read_file", "ok": True, "arguments": {"path": "notes/todo.txt"}, "output_preview": "TODO_OK"},
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "read_file",
+                    "ok": True,
+                    "arguments": {"path": "notes/todo.txt"},
+                    "output_preview": "TODO_OK",
+                },
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1780,8 +1846,18 @@ def _completed_file_run_with_evidence() -> MultiAgentRun:
             "PASS: required review scope evidence tools completed successfully.\n\n"
             "[INVALID_TOOL_VIA_BASH] reviewer attempted to invoke a dedicated tool name through bash.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
                 {
                     "tool": "bash",
                     "ok": False,
@@ -1801,8 +1877,18 @@ def test_final_answer_does_not_mix_review_pass_with_invalid_bash_warning():
             AgentRole.SECURITY_REVIEWER,
             "Insufficient evidence: missing successful tool evidence: git_diff, git_status.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1821,8 +1907,18 @@ def test_security_reviewer_does_not_report_missing_git_when_tool_calls_ok():
             AgentRole.SECURITY_REVIEWER,
             "Insufficient evidence: missing successful tool evidence: git_diff, git_status.",
             tool_calls=[
-                {"tool": "git_status", "ok": True, "arguments": {"path": "."}, "output_preview": "?? notes/"},
-                {"tool": "git_diff", "ok": True, "arguments": {"path": "."}, "output_preview": "(no tracked diff)"},
+                {
+                    "tool": "git_status",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "?? notes/",
+                },
+                {
+                    "tool": "git_diff",
+                    "ok": True,
+                    "arguments": {"path": "."},
+                    "output_preview": "(no tracked diff)",
+                },
             ],
         )
     )
@@ -1882,7 +1978,6 @@ def test_git_baseline_section_empty_for_clean_repo():
 
 def test_validation_prompt_includes_git_baseline_when_present():
     """_build_validation_prompt includes the pre-run baseline block when provided."""
-    from ci2lab.harness.multiagent.state import SubAgentResult
 
     plan = _result(AgentRole.PLANNER, "Create target.txt")
     research = _result(AgentRole.RESEARCHER, "No existing target.")
@@ -1976,9 +2071,7 @@ def test_blocked_by_skill_does_not_cascade_skip_bash_in_loop(tmp_path):
             config,
         )
 
-    bash_call = next(
-        (c for c in result.tool_calls if c["tool"] == "bash"), None
-    )
+    bash_call = next((c for c in result.tool_calls if c["tool"] == "bash"), None)
     assert bash_call is not None, "bash call was not recorded at all"
     assert bash_call.get("outcome") != "skipped_after_error", (
         "bash was skipped after todo_write was blocked — "

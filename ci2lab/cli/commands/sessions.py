@@ -11,6 +11,14 @@ from ci2lab.console import console
 
 
 def _cmd_sessions(args: argparse.Namespace) -> int:
+    """List saved sessions as a table or JSON.
+
+    Args:
+        args: Parsed CLI arguments; ``--json`` selects JSON output.
+
+    Returns:
+        Process exit code (always ``0``).
+    """
     from ci2lab.harness.session import list_sessions
 
     rows = list_sessions()

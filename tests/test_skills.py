@@ -49,7 +49,9 @@ def test_load_skills_from_workspace(workspace_with_skill: Path) -> None:
     assert "Run bash" in skill.body
 
 
-def test_cmd_skills_lists_workspace_skill(workspace_with_skill: Path, tmp_path: Path, monkeypatch) -> None:
+def test_cmd_skills_lists_workspace_skill(
+    workspace_with_skill: Path, tmp_path: Path, monkeypatch
+) -> None:
     output = tmp_path / "skills.txt"
     with output.open("w", encoding="utf-8") as handle:
         monkeypatch.setattr(
@@ -116,6 +118,7 @@ def test_builtin_research_skills_available() -> None:
     assert "research_web_doc_review" in skills
     assert "research_web_vs_repo" in skills
     assert "live_fact_lookup" in skills
+    assert "review_handwritten_exercise" in skills
 
 
 def test_live_fact_lookup_skill_contract() -> None:
@@ -154,10 +157,13 @@ Body
     url = "https://docs.python.org/3/library/pathlib.html"
 
     with (
-        patch("ci2lab.harness.repl.read_prompt_line", side_effect=[
-            f"/research_web_doc_review {url}",
-            "/exit",
-        ]),
+        patch(
+            "ci2lab.harness.repl.read_prompt_line",
+            side_effect=[
+                f"/research_web_doc_review {url}",
+                "/exit",
+            ],
+        ),
         patch("ci2lab.harness.repl.run_agent") as mock_run_agent,
         patch("ci2lab.harness.repl.console.print"),
     ):

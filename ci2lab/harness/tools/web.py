@@ -8,12 +8,16 @@ from urllib.parse import urlparse
 
 import httpx
 
+#: Maximum number of characters returned by :func:`web_fetch` before truncation.
 _DEFAULT_MAX_CHARS = 80_000
+#: HTTP request timeout, in seconds, for outbound fetches.
 _TIMEOUT_SECONDS = 30.0
+#: User-Agent header sent with web fetches.
 _USER_AGENT = "ci2lab/0.1 (local coding agent)"
 
 
 def _strip_html(text: str) -> str:
+    """Remove scripts, styles and tags from HTML, returning collapsed plain text."""
     text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text)
     text = re.sub(r"(?is)<[^>]+>", " ", text)
     text = unescape(text)
@@ -23,6 +27,19 @@ def _strip_html(text: str) -> str:
 
 
 def web_fetch(url: str, max_chars: int = _DEFAULT_MAX_CHARS) -> str:
+    """Fetch an ``http``/``https`` URL and return its text content.
+
+    HTML responses are stripped to plain text and the body is truncated to
+    ``max_chars`` (clamped between 1,000 and :data:`_DEFAULT_MAX_CHARS`).
+
+    Args:
+        url: The URL to fetch; only ``http`` and ``https`` schemes are allowed.
+        max_chars: Maximum number of characters of body to return.
+
+    Returns:
+        A header line followed by the (possibly truncated) body, or an error
+        string describing a validation or request failure.
+    """
     if not url or not str(url).strip():
         return "Error: url is required"
 
@@ -63,11 +80,21 @@ def web_fetch(url: str, max_chars: int = _DEFAULT_MAX_CHARS) -> str:
     return f"{title}\n\n{body}"
 
 
+#: Default number of search results requested by :func:`web_search`.
 _DEFAULT_SEARCH_RESULTS = 5
 
 
 def web_search(query: str, max_results: int = _DEFAULT_SEARCH_RESULTS) -> str:
-    """Search the web via DuckDuckGo and return title + URL + snippet per result."""
+    """Search the web via DuckDuckGo and return title + URL + snippet per result.
+
+    Args:
+        query: The search query string.
+        max_results: Desired number of results (clamped between 1 and 10).
+
+    Returns:
+        A formatted list of results, a "no results" message, or an error string
+        (for an empty query or a missing/failing ``ddgs`` dependency).
+    """
     if not query or not str(query).strip():
         return "Error: query is required"
 
@@ -76,15 +103,12 @@ def web_search(query: str, max_results: int = _DEFAULT_SEARCH_RESULTS) -> str:
     try:
         from ddgs import DDGS  # lazy import — optional dependency
     except ImportError:
-        return (
-            "Error: ddgs is not installed. "
-            "Run: pip install ddgs"
-        )
+        return "Error: ddgs is not installed. Run: pip install ddgs"
 
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(str(query).strip(), max_results=limit))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error searching DuckDuckGo: {exc}"
 
     if not results:

@@ -29,13 +29,33 @@ def execute_write_tool(
     *,
     gate: ToolGateResult | None = None,
 ) -> ToolResult:
+    """Execute a write/edit tool with preview, validation and confirmation.
+
+    Builds a diff/content preview for the requested write tool, validates it,
+    optionally prompts for confirmation (and displays the diff when enabled),
+    and finally dispatches the real tool. Path violations and validation
+    failures are converted into error :class:`ToolResult` objects rather than
+    raised.
+
+    Args:
+        name: Canonical write-tool name (e.g. ``write_file``, ``edit_file``,
+            ``apply_patch``, ``docx_to_pdf``).
+        args: Normalized tool arguments for the write operation.
+        config: Active agent configuration controlling write enablement,
+            security engine and preview behavior.
+        call_id: Identifier of the originating tool call, echoed back on the
+            result; may be ``None``.
+        gate: Gate result from the security evaluation. When ``None``,
+            confirmation is assumed to be required.
+
+    Returns:
+        A :class:`ToolResult` describing success, denial or error, with an
+        ``outcome`` label suitable for auditing.
+    """
     if not config.write_tools_enabled:
         return ToolResult(
             tool_name=name,
-            content=(
-                f"Error: `{name}` disabled by configuration "
-                "(write_tools_enabled=false)."
-            ),
+            content=(f"Error: `{name}` disabled by configuration (write_tools_enabled=false)."),
             is_error=True,
             call_id=call_id,
             outcome="blocked_by_config",
@@ -53,9 +73,7 @@ def execute_write_tool(
         elif name == "write_docx":
             from ci2lab.harness.tools.write_preview import preview_write_docx
 
-            preview = preview_write_docx(
-                config.cwd, args["path"], args["content"]
-            )
+            preview = preview_write_docx(config.cwd, args["path"], args["content"])
         elif name == "apply_patch":
             preview = preview_apply_patch(config.cwd, args["patch"])
         elif name == "fill_docx_template":
@@ -83,7 +101,7 @@ def execute_write_tool(
             call_id=call_id,
             outcome="blocked_by_workspace",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ToolResult(
             tool_name=name,
             content=f"Error: {exc}",
@@ -171,7 +189,7 @@ def execute_write_tool(
 
     try:
         output = DISPATCH[name](config, args)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ToolResult(
             tool_name=name,
             content=f"Error: {exc}",
@@ -188,4 +206,3 @@ def execute_write_tool(
         call_id=call_id,
         outcome="failed" if is_error else "approved",
     )
-

@@ -10,6 +10,7 @@ import pytest
 from ci2lab.harness.parsing import resolve_tool_calls
 from ci2lab.harness.tools.bash import run_bash
 from ci2lab.harness.tools.registry import execute_tool
+from ci2lab.harness.types import AgentConfig, ToolCall
 from ci2lab.security import (
     DecisionAction,
     PathViolationError,
@@ -20,7 +21,6 @@ from ci2lab.security import (
     get_audit_log,
     resolve_workspace_path,
 )
-from ci2lab.harness.types import AgentConfig, ToolCall
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def test_yes_does_not_bypass_bash_external(workspace: Path, outside_secret: Path
 
 def test_fenced_mode_same_workspace_restrictions(workspace: Path, outside_secret: Path):
     calls = resolve_tool_calls(
-        f'```read_file\n{outside_secret}\n```',
+        f"```read_file\n{outside_secret}\n```",
         [],
         tool_mode="fenced",
     )
@@ -147,7 +147,6 @@ def test_symlink_outside_workspace(workspace: Path, outside_secret: Path):
         raise
     if not link.exists() and not link.is_symlink():
         pytest.skip("Could not create symlink")
-    decision = check_path_allowed(str(workspace), "escape_link")
     # resolve() follows the symlink; it must detect the workspace escape or not leak
     result = execute_tool(
         ToolCall("read_file", {"path": "escape_link"}, "t1"),

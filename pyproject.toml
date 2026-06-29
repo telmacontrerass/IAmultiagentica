@@ -5,9 +5,24 @@ build-backend = "hatchling.build"
 [project]
 name = "ci2lab"
 version = "0.1.0"
-description = "Agente local: hardware profiling, router de modelos, arnés ReAct con MCP/skills/UI"
+description = "Local-first agentic CLI: hardware profiling, open-source model routing, and a tool-using ReAct harness with MCP, skills and a web UI."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ci2Lab", email = "ci2lab9@gmail.com" }]
+keywords = ["agent", "llm", "ollama", "react", "mcp", "local-first", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "ddgs>=9.0",
     "httpx>=0.27",
@@ -17,16 +32,24 @@ dependencies = [
     "pypdf>=4.0",
     "pymupdf>=1.24",
     "rich>=13.0",
+    "sympy>=1.12",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "mypy>=1.11",
 ]
 convert = [
     "pdf2docx>=0.5",
 ]
+
+[project.urls]
+Repository = "https://github.com/telmacontrerass/IAmultiagentica"
+Documentation = "https://github.com/telmacontrerass/IAmultiagentica/blob/main/docs/STRUCTURE.md"
+Issues = "https://github.com/telmacontrerass/IAmultiagentica/issues"
 
 [project.scripts]
 ci2lab = "ci2lab.cli:main"
@@ -40,6 +63,95 @@ packages = ["ci2lab"]
 "ci2lab/harness/skills/builtin" = "ci2lab/harness/skills/builtin"
 "ci2lab/catalog/models.json" = "ci2lab/catalog/models.json"
 "ci2lab/ui/static" = "ci2lab/ui/static"
+"ci2lab/py.typed" = "ci2lab/py.typed"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["ci2lab", "tests"]
+
+[tool.ruff.lint]
+# A pragmatic, production-grade rule set. `E`/`W`/`F` (pycodestyle + pyflakes)
+# catch correctness and style issues; `I` enforces import order; `UP` keeps
+# syntax modern; `B`/`C4`/`SIM`/`RUF` flag bug-prone and over-complex patterns.
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "B008",    # function calls in argument defaults are used intentionally here
+    "SIM102",  # nested `if`s are sometimes clearer than a combined condition
+    "SIM103",  # an explicit return reads better than a negated condition here
+    "SIM105",  # `contextlib.suppress` is not always clearer than try/except
+    "SIM108",  # an `if`/`else` block is sometimes clearer than a ternary
+    "SIM112",  # Windows env-var names (e.g. `ProgramFiles(x86)`) are mixed-case
+    "SIM117",  # nested `with` blocks are sometimes clearer than one combined
+    "UP042",   # `str, Enum` is kept over `StrEnum` to preserve `str()` semantics
+    "RUF001",  # intentional Unicode (e.g. the DeepSeek `｜` tool-call token)
+    "RUF002",  # intentional Unicode typography in docstrings (×, en dash)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests favour readability over strict production rules: they shadow fixtures,
+# build throwaway fake classes, and use assert/unpacking patterns freely.
+"tests/**" = ["F811", "E402", "RUF012", "B011", "RUF059", "C408"]
+# Package façades intentionally re-export names for a stable public API.
+"**/__init__.py" = ["F401"]
+# Module-level façades that deliberately re-export internals (often under a
+# leading underscore for tests and sibling modules). F401 must not strip these.
+"ci2lab/harness/compact.py" = ["F401"]
+"ci2lab/harness/loop.py" = ["F401"]
+"ci2lab/harness/parsing.py" = ["F401"]
+"ci2lab/harness/permissions.py" = ["F401"]
+"ci2lab/harness/policy.py" = ["F401"]
+"ci2lab/harness/write_permissions.py" = ["F401"]
+"ci2lab/harness/query/loop.py" = ["F401"]
+"ci2lab/harness/tools/executor.py" = ["F401"]
+"ci2lab/harness/tools/executor_parts/core.py" = ["F401"]
+"ci2lab/harness/tools/filesystem.py" = ["F401"]
+"ci2lab/ui/server.py" = ["F401"]
+"ci2lab/cli/runtime.py" = ["F401"]
+"ci2lab/config.py" = ["F401"]
+"ci2lab/harness/mcp/session.py" = ["F401"]
+"ci2lab/harness/multiagent/runner.py" = ["F401"]
+"ci2lab/harness/tools/schemas_parts/builtins.py" = ["F401"]
+"ci2lab/harness/tools/skill_tool.py" = ["F401"]
+"ci2lab/security/audit.py" = ["F401"]
+"ci2lab/security/permissions.py" = ["F401"]
+"ci2lab/ui/server_parts/api.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ci2lab"]
+
+[tool.mypy]
+# Baseline type checking. Strictness is ratcheted up per-package via the
+# overrides below; the long-term target is `strict = true` repo-wide.
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+extra_checks = true
+
+[[tool.mypy.overrides]]
+# Core packages held to the strict bar already; the list grows as packages are
+# brought up to standard. The long-term target is `strict = true` repo-wide.
+module = [
+    "ci2lab.contracts.*",
+    "ci2lab.config",
+    "ci2lab.console",
+    "ci2lab.router.*",
+    "ci2lab.hardware.*",
+    "ci2lab.runtime.*",
+    "ci2lab.pipeline",
+    "ci2lab.harness.backends.*",
+    "ci2lab.harness.context.*",
+    "ci2lab.harness.skills.*",
+    "ci2lab.harness.token_usage",
+    "ci2lab.harness.messages",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

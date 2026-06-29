@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -30,6 +30,8 @@ RunStatus = str  # success | llm_error | max_rounds | interrupted
 
 @dataclass
 class ToolCallLogEntry:
+    """One serialized record of a tool call for the run log."""
+
     round: int
     tool_call_id: str
     tool: str
@@ -45,6 +47,8 @@ class ToolCallLogEntry:
 
 @dataclass
 class TokenUsageLogEntry:
+    """One serialized record of per-round token usage for the run log."""
+
     round: int
     model: str
     prompt_tokens: int
@@ -66,9 +70,7 @@ class RunLogger:
 
     _run_dir: Path | None = field(default=None, init=False, repr=False)
     _active: bool = field(default=True, init=False, repr=False)
-    _started_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc), init=False
-    )
+    _started_at: datetime = field(default_factory=lambda: datetime.now(UTC), init=False)
     _tool_entries: list[ToolCallLogEntry] = field(default_factory=list, init=False)
     _token_entries: list[TokenUsageLogEntry] = field(default_factory=list, init=False)
     _rounds_completed: int = field(default=0, init=False)
@@ -83,6 +85,17 @@ class RunLogger:
         selection: ModelSelection,
         user_prompt: str,
     ) -> RunLogger | None:
+        """Create a :class:`RunLogger` when run logging is enabled.
+
+        Args:
+            agent_config: The agent configuration controlling logging.
+            selection: The resolved model selection for the run.
+            user_prompt: The user's prompt for the run.
+
+        Returns:
+            A configured :class:`RunLogger`, or ``None`` when run logging is
+            disabled.
+        """
         if not agent_config.run_log_enabled:
             return None
         snapshot = agent_config.config_snapshot or {}
@@ -95,6 +108,16 @@ class RunLogger:
         )
 
     def start(self) -> Path | None:
+        """Create the run directory and bind the run's permission/audit context.
+
+        Only a top-level run (``delegation_depth == 0``) binds the shared audit
+        context and permission session; subagents reuse the parent's.
+
+        Returns:
+            The created run directory, or ``None`` if the logger is inactive or
+            the directory could not be created (in which case the logger is
+            deactivated).
+        """
         if not self._active:
             return None
         try:
@@ -104,24 +127,35 @@ class RunLogger:
             self._run_dir.mkdir(parents=True, exist_ok=False)
             self.agent_config.last_run_dir = str(self._run_dir)
             self._write_json("config_snapshot.json", self.config_snapshot)
-            set_audit_persist_context(
-                AuditPersistContext(
-                    workspace=self.agent_config.cwd,
-                    runs_dir=self.agent_config.runs_dir,
-                    run_id=self._run_dir.name,
-                    run_subdir=self._run_dir.name,
-                    security_engine=self.agent_config.security_engine,
+            # Only the top-level run owns the audit context and permission
+            # session. A subagent (delegation_depth > 0) must NOT rebind them:
+            # doing so gives each subagent its own session key, so a user's
+            # "allow session" granted in one role never carries to the next, and
+            # the subagent's finalize would clear the parent's grants. Leaving
+            # the parent's context in place means every subagent in a multi-agent
+            # run shares one permission session (one prompt, not one per role).
+            if self.agent_config.delegation_depth == 0:
+                set_audit_persist_context(
+                    AuditPersistContext(
+                        workspace=self.agent_config.cwd,
+                        runs_dir=self.agent_config.runs_dir,
+                        run_id=self._run_dir.name,
+                        run_subdir=self._run_dir.name,
+                        security_engine=self.agent_config.security_engine,
+                    )
                 )
-            )
-            bind_active_session(
-                self.agent_config.session_id or self._run_dir.name
-            )
+                bind_active_session(self.agent_config.session_id or self._run_dir.name)
             return self._run_dir
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._deactivate(f"Could not create the run folder: {exc}")
             return None
 
     def set_rounds_completed(self, round_num: int) -> None:
+        """Record the number of rounds completed so far.
+
+        Args:
+            round_num: The count of completed rounds.
+        """
         self._rounds_completed = round_num
 
     def record_token_stats(
@@ -131,7 +165,13 @@ class RunLogger:
         tokens_prompt_peak: int,
         tokens_completion_total: int,
     ) -> None:
-        """Records the real token counters returned by Ollama."""
+        """Records the real token counters returned by Ollama.
+
+        Args:
+            tokens_prompt_last: Prompt tokens for the most recent round.
+            tokens_prompt_peak: Highest prompt-token count seen across rounds.
+            tokens_completion_total: Cumulative completion tokens generated.
+        """
         self._tokens_prompt_last = tokens_prompt_last
         self._tokens_prompt_peak = tokens_prompt_peak
         self._tokens_completion_total = tokens_completion_total
@@ -145,6 +185,18 @@ class RunLogger:
         started_at: datetime,
         ended_at: datetime,
     ) -> None:
+        """Append a tool-call record to ``tool_calls.jsonl``.
+
+        No-op when the logger is inactive or has no run directory. Output is
+        truncated to ``LOG_OUTPUT_MAX_CHARS``; write failures only warn.
+
+        Args:
+            round_num: The round in which the call occurred.
+            call: The tool call that was executed.
+            result: The result returned by the tool.
+            started_at: When the call started.
+            ended_at: When the call ended.
+        """
         if not self._active or self._run_dir is None:
             return
         duration_ms = max(0, int((ended_at - started_at).total_seconds() * 1000))
@@ -172,16 +224,20 @@ class RunLogger:
             path = self._run_dir / "tool_calls.jsonl"
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn(f"Could not record tool call: {exc}")
 
     def record_token_usage(self, *, round_num: int, usage: TokenUsage | None) -> None:
-        if (
-            not self._active
-            or self._run_dir is None
-            or usage is None
-            or not usage.available
-        ):
+        """Append a token-usage record to ``token_usage.jsonl``.
+
+        No-op when the logger is inactive, has no run directory, or ``usage`` is
+        missing/unavailable. Write failures only warn.
+
+        Args:
+            round_num: The round the usage corresponds to.
+            usage: The token-usage data to record, if any.
+        """
+        if not self._active or self._run_dir is None or usage is None or not usage.available:
             return
         entry = TokenUsageLogEntry(
             round=round_num,
@@ -198,7 +254,7 @@ class RunLogger:
             path = self._run_dir / "token_usage.jsonl"
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn(f"Could not record token usage: {exc}")
 
     def finalize(
@@ -209,9 +265,22 @@ class RunLogger:
         conversation: list[dict[str, Any]],
         error: str | None = None,
     ) -> None:
+        """Write the run summary and conversation, then tear down shared context.
+
+        Aggregates tool and token statistics into ``run_summary.json``, writes
+        ``conversation.json`` and ``final_answer.md``, and—for a top-level run
+        only—clears the shared permission session and audit context. No-op when
+        the logger is inactive or has no run directory.
+
+        Args:
+            status: Final run status (e.g. ``success``, ``max_rounds``).
+            final_answer: The agent's final answer text.
+            conversation: The full conversation to persist.
+            error: Optional error message associated with the run.
+        """
         if not self._active or self._run_dir is None:
             return
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         duration_s = (ended_at - self._started_at).total_seconds()
         tools_used = sorted({e.tool for e in self._tool_entries})
         prompt_tokens = sum(e.prompt_tokens for e in self._token_entries)
@@ -272,18 +341,23 @@ class RunLogger:
             )
             if not self.agent_config.suppress_run_saved_message:
                 console.print(f"[dim]Run saved: {self._run_dir}[/dim]")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn(f"Could not finalize the run log: {exc}")
         finally:
-            session_key = self.agent_config.session_id or (
-                self._run_dir.name if self._run_dir is not None else None
-            )
-            if session_key:
-                clear_session_permissions(session_key)
-            bind_active_session(None)
-            set_audit_persist_context(None)
+            # Mirror start(): only the top-level run tears down the shared
+            # permission session and audit context. A subagent clearing them
+            # would wipe approvals the rest of the multi-agent run still needs.
+            if self.agent_config.delegation_depth == 0:
+                session_key = self.agent_config.session_id or (
+                    self._run_dir.name if self._run_dir is not None else None
+                )
+                if session_key:
+                    clear_session_permissions(session_key)
+                bind_active_session(None)
+                set_audit_persist_context(None)
 
     def _write_json(self, name: str, data: Any) -> None:
+        """Write ``data`` as pretty-printed JSON to ``name`` in the run directory."""
         if self._run_dir is None:
             return
         path = self._run_dir / name
@@ -294,24 +368,34 @@ class RunLogger:
 
     @property
     def run_dir(self) -> Path | None:
+        """The run directory, or ``None`` if not started or deactivated."""
         return self._run_dir
 
     def write_json_artifact(self, name: str, data: Any) -> None:
+        """Write an arbitrary JSON artifact into the run directory.
+
+        Args:
+            name: File name to write within the run directory.
+            data: JSON-serializable data to persist.
+        """
         self._write_json(name, data)
 
     def _deactivate(self, message: str) -> None:
+        """Disable the logger, drop the run directory, and warn ``message``."""
         self._active = False
         self._run_dir = None
         self._warn(message)
 
     @staticmethod
     def _warn(message: str) -> None:
+        """Print a yellow run-log warning to the console."""
         console.print(f"[yellow]Warning (run log): {message}[/yellow]")
 
 
 def _iso(dt: datetime) -> str:
+    """Return ``dt`` as an ISO-8601 string, assuming UTC if it is naive."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -321,7 +405,17 @@ def build_config_snapshot(
     agent_config: AgentConfig,
     selection: ModelSelection,
 ) -> dict[str, Any]:
-    """Safe snapshot of the effective configuration (no secrets, no full env)."""
+    """Safe snapshot of the effective configuration (no secrets, no full env).
+
+    Args:
+        runtime_fields: Extra resolved runtime fields to include verbatim.
+        agent_config: The agent configuration to snapshot.
+        selection: The resolved model selection to snapshot.
+
+    Returns:
+        A nested mapping with ``resolved`` and ``selection`` sections describing
+        the effective configuration.
+    """
     return {
         "resolved": {
             **runtime_fields,

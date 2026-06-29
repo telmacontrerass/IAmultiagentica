@@ -13,10 +13,7 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
         if isinstance(content, str):
             total += len(content)
         elif content is None and msg.get("tool_calls"):
-            total += sum(
-                len(str(tc.get("function", {})))
-                for tc in msg["tool_calls"]
-            )
+            total += sum(len(str(tc.get("function", {}))) for tc in msg["tool_calls"])
         role = msg.get("role", "")
         total += len(role) + 8
     return max(1, total // 4)
@@ -46,7 +43,6 @@ def trim_messages(
     if not rest:
         return system_msgs
 
-    tail: list[dict[str, Any]] = []
     while rest:
         candidate = system_msgs + rest
         if estimate_tokens(candidate) <= budget:

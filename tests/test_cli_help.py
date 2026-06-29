@@ -93,20 +93,35 @@ def test_no_args_in_interactive_terminal_opens_launcher():
 
 def test_tools_shortcut_model_first_expands_to_friendly_chat():
     assert _expand_tools_shortcut(["qwen:1.8b", "tools"]) == [
-        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream", "chat"
+        "--model",
+        "qwen:1.8b",
+        "--tool-mode",
+        "fenced",
+        "--no-stream",
+        "chat",
     ]
 
 
 def test_tools_shortcut_command_first_expands_to_friendly_chat():
     assert _expand_tools_shortcut(["tools", "qwen:1.8b"]) == [
-        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream", "chat"
+        "--model",
+        "qwen:1.8b",
+        "--tool-mode",
+        "fenced",
+        "--no-stream",
+        "chat",
     ]
 
 
 def test_tools_shortcut_with_prompt_runs_one_turn():
     assert _expand_tools_shortcut(["qwen:1.8b", "tools", "resume", "test.pdf"]) == [
-        "--model", "qwen:1.8b", "--tool-mode", "fenced", "--no-stream",
-        "agent", "resume test.pdf",
+        "--model",
+        "qwen:1.8b",
+        "--tool-mode",
+        "fenced",
+        "--no-stream",
+        "agent",
+        "resume test.pdf",
     ]
 
 

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-
-_QUOTED_STRING_KEYS = ("path", "url", "directory", "file", "filename", "filepath")
+#: Argument keys whose values may arrive wrapped in stray quotes/backticks and
+#: should be unquoted before use.
+_QUOTED_STRING_KEYS: tuple[str, ...] = ("path", "url", "directory", "file", "filename", "filepath")
 
 
 def _strip_surrounding_quotes(value: Any) -> Any:
@@ -24,6 +25,21 @@ def _strip_surrounding_quotes(value: Any) -> Any:
 
 
 def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Normalize an argument dict for a specific tool.
+
+    Strips ``None`` values, unquotes path-like keys and resolves the per-tool
+    aliases that different models tend to emit (for example mapping ``cmd`` to
+    ``command`` for ``bash`` or ``diff`` to ``patch`` for ``apply_patch``).
+    Numeric arguments such as ``offset`` and ``max_results`` are coerced to
+    ``int`` where possible.
+
+    Args:
+        name: Canonical tool name selecting which alias rules to apply.
+        args: Raw argument mapping from the model.
+
+    Returns:
+        A new normalized argument mapping.
+    """
     cleaned = {k: v for k, v in args.items() if v is not None}
     for key in _QUOTED_STRING_KEYS:
         if key in cleaned:
@@ -115,6 +131,7 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _coerce_int(value: Any) -> Any:
+    """Convert digit-only strings to ``int``, leaving other values untouched."""
     if isinstance(value, bool):
         return value
     if isinstance(value, int):

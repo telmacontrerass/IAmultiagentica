@@ -4,7 +4,6 @@ from ci2lab.harness.tools.patch import apply_patch, plan_patch
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import AgentConfig, ToolCall
 
-
 SAMPLE_PATCH = """\
 --- a/note.txt
 +++ b/note.txt

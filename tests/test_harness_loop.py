@@ -2,22 +2,48 @@ from unittest.mock import MagicMock, patch
 
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
-from ci2lab.harness.tools.registry import execute_tool
-from ci2lab.harness.token_usage import TokenUsage
 from ci2lab.harness.query.loop import (
+    _agent_can_write_files,
     _initial_progress_label,
     _model_progress_label,
     _prepend_missing_reads,
     _tool_progress_label,
 )
+from ci2lab.harness.token_usage import TokenUsage
+from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import ToolCall, ToolResult
+
+
+def test_agent_can_write_files_gates_on_effective_allowlist():
+    # Regression: read-only roles (researcher/reviewer/planner/validator) were
+    # nudged to "call write_file" they could not run, derailing the role. The
+    # gate must reflect the effective tool allow-list, not the prompt wording.
+    from ci2lab.harness.multiagent.roles import EDIT_TOOLS, READ_TOOLS, RUNTIME_TOOLS
+
+    # No skill/role restriction -> full tool set -> can write.
+    assert _agent_can_write_files(AgentConfig(cwd=".")) is True
+    # Coder roles carry the file-writing tools.
+    assert _agent_can_write_files(AgentConfig(cwd=".", skill_allowed_tools=EDIT_TOOLS)) is True
+    # Read-only and runtime-only roles cannot write files.
+    assert _agent_can_write_files(AgentConfig(cwd=".", skill_allowed_tools=READ_TOOLS)) is False
+    assert _agent_can_write_files(AgentConfig(cwd=".", skill_allowed_tools=RUNTIME_TOOLS)) is False
+    # The toolless planner cannot write either.
+    assert _agent_can_write_files(AgentConfig(cwd=".", skill_allowed_tools=frozenset())) is False
+    # Synonyms canonicalize, so an `edit` allow-list still counts as writable.
+    assert (
+        _agent_can_write_files(AgentConfig(cwd=".", skill_allowed_tools=frozenset({"edit"})))
+        is True
+    )
 
 
 def test_initial_progress_label_describes_user_visible_work():
     assert _initial_progress_label("summarize test.pdf") == "Preparing to read the document..."
     assert _initial_progress_label("fix this test") == "Planning the code change..."
     assert _initial_progress_label("corrige esta prueba") == "Planning the code change..."
-    assert _initial_progress_label("what is the latest price?") == "Checking what information is needed..."
+    assert (
+        _initial_progress_label("what is the latest price?")
+        == "Checking what information is needed..."
+    )
     assert _initial_progress_label("hello") == "Deciding the next step..."
     assert (
         _initial_progress_label("lista los archivos del repositorio")
@@ -27,15 +53,11 @@ def test_initial_progress_label_describes_user_visible_work():
 
 
 def test_spanish_prompts_still_produce_english_progress_labels():
-    assert _initial_progress_label("lee este documento") == (
-        "Preparing to read the document..."
-    )
+    assert _initial_progress_label("lee este documento") == ("Preparing to read the document...")
     assert _initial_progress_label("busca información actual en internet") == (
         "Checking what information is needed..."
     )
-    assert _initial_progress_label("corrige esta prueba") == (
-        "Planning the code change..."
-    )
+    assert _initial_progress_label("corrige esta prueba") == ("Planning the code change...")
     assert _initial_progress_label("revisa los archivos del repositorio") == (
         "Inspecting the relevant project context..."
     )
@@ -50,15 +72,24 @@ def test_model_progress_label_explains_later_rounds():
 
 
 def test_tool_progress_label_uses_real_tool_work():
-    assert _tool_progress_label([
-        ToolCall(name="read_file", arguments={"path": "paper.pdf"}, call_id="c1")
-    ]) == "Extracting information from the PDF..."
-    assert _tool_progress_label([
-        ToolCall(name="apply_patch", arguments={"patch": "*** Begin Patch"}, call_id="c1")
-    ]) == "Generating code changes..."
-    assert _tool_progress_label([
-        ToolCall(name="web_search", arguments={"query": "latest release"}, call_id="c1")
-    ]) == "Looking up current information..."
+    assert (
+        _tool_progress_label(
+            [ToolCall(name="read_file", arguments={"path": "paper.pdf"}, call_id="c1")]
+        )
+        == "Extracting information from the PDF..."
+    )
+    assert (
+        _tool_progress_label(
+            [ToolCall(name="apply_patch", arguments={"patch": "*** Begin Patch"}, call_id="c1")]
+        )
+        == "Generating code changes..."
+    )
+    assert (
+        _tool_progress_label(
+            [ToolCall(name="web_search", arguments={"query": "latest release"}, call_id="c1")]
+        )
+        == "Looking up current information..."
+    )
 
 
 def test_run_agent_single_turn_no_tools():
@@ -118,10 +149,12 @@ def test_run_agent_accumulates_token_usage_across_rounds():
 
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "ls", "arguments": '{"path": "."}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            }
+        ],
         usage=TokenUsage(
             prompt_tokens=10,
             completion_tokens=3,
@@ -157,10 +190,12 @@ def test_run_agent_executes_tool_then_answers():
 
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "ls", "arguments": '{"path": "."}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            }
+        ],
     )
     final = LLMResponse(content="There are several files.", tool_calls=[])
 
@@ -197,10 +232,12 @@ def test_run_agent_prints_model_text_before_tool_execution():
 
     with_tool = LLMResponse(
         content="I will inspect the workspace first.",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "ls", "arguments": '{"path": "."}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            }
+        ],
     )
     final = LLMResponse(content="There are several files.", tool_calls=[])
 
@@ -238,10 +275,40 @@ def test_run_agent_nudges_web_search_once_after_no_internet_reply():
         for m in second_turn_messages
         if isinstance(m, dict) and m.get("role") == "user"
     ]
-    assert sum(
-        "You can use `web_search` for live info without a URL" in str(msg)
-        for msg in nudge_messages
-    ) == 1
+    assert (
+        sum(
+            "You can use `web_search` for live info without a URL" in str(msg)
+            for msg in nudge_messages
+        )
+        == 1
+    )
+
+
+def test_run_agent_shows_model_reply_before_a_nudge():
+    # Insight: the model's prose must be visible even on rounds the loop nudges
+    # instead of finalizing — otherwise the user only sees the system nudge and
+    # never what the agent actually said.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    first = LLMResponse(
+        content="I do not have access to the internet right now.",
+        tool_calls=[],
+    )
+    second = LLMResponse(content="Got it, I will use web_search.", tool_calls=[])
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.console.print") as mock_print,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [first, second]
+        run_agent("give me a live result", selection, config=config)
+
+    printed_texts = [str(call.args[0]) for call in mock_print.call_args_list if call.args]
+    # The first-round reply is surfaced as a "Model:" line before the nudge.
+    assert any(
+        "Model:" in text and "do not have access to the internet" in text for text in printed_texts
+    )
 
 
 def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
@@ -250,10 +317,12 @@ def test_run_agent_does_not_reuse_false_success_text_before_tool_result():
 
     with_tool = LLMResponse(
         content="Result: Command executed successfully. Removed file.txt.",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "bash", "arguments": '{"command": "rm file.txt"}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "bash", "arguments": '{"command": "rm file.txt"}'},
+            }
+        ],
     )
     final = LLMResponse(content="The action was blocked by the security policy.", tool_calls=[])
 
@@ -283,10 +352,12 @@ def test_run_agent_loop_break_nudge_restates_original_prompt():
     original = "tell me the score of spains soccer match from yesterday"
     repeated_call = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "ls", "arguments": '{"path": "."}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "ls", "arguments": '{"path": "."}'},
+            }
+        ],
     )
     final = LLMResponse(content="There is no score in the available results.", tool_calls=[])
 
@@ -396,12 +467,19 @@ def test_final_answer_after_tree_stays_anchored_to_latest_user_prompt():
     )
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "tree",
+                    "arguments": '{"path": ".", "depth": 2, "max_entries": 100}',
+                },
+            }
+        ],
     )
-    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
+    final = LLMResponse(
+        content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[]
+    )
 
     with (
         patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
@@ -446,10 +524,15 @@ def test_role_anchor_reinjected_after_tool_round():
     prompt = "Review the result after checking the repository tree."
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "tree",
+                    "arguments": '{"path": ".", "depth": 2, "max_entries": 100}',
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Review complete: no major issues found.", tool_calls=[])
 
@@ -490,12 +573,19 @@ def test_classic_loop_has_no_role_anchor_by_default():
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "tree",
+                    "arguments": '{"path": ".", "depth": 2, "max_entries": 100}',
+                },
+            }
+        ],
     )
-    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
+    final = LLMResponse(
+        content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[]
+    )
 
     with (
         patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
@@ -515,8 +605,7 @@ def test_classic_loop_has_no_role_anchor_by_default():
 
     second_turn_messages = client.chat.call_args_list[1].args[0]
     assert not any(
-        m.get("role") == "user"
-        and "Role anchor:" in str(m.get("content", ""))
+        m.get("role") == "user" and "Role anchor:" in str(m.get("content", ""))
         for m in second_turn_messages
         if isinstance(m, dict)
     )
@@ -537,12 +626,19 @@ def test_context_summary_does_not_override_current_user_request():
     ]
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "tree", "arguments": '{"path": ".", "depth": 2, "max_entries": 100}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "tree",
+                    "arguments": '{"path": ".", "depth": 2, "max_entries": 100}',
+                },
+            }
+        ],
     )
-    final = LLMResponse(content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[])
+    final = LLMResponse(
+        content="The loop seems to be in ci2lab/harness/query/loop.py.", tool_calls=[]
+    )
     manage_calls = {"count": 0}
 
     def fake_manage_context(history, client, context_length, summary_failures=0):
@@ -556,7 +652,11 @@ def test_context_summary_does_not_override_current_user_request():
                     "content": "[Summary of earlier conversation]\n\nThe task was to create docs/summary.md",
                 },
             )
-            return injected, summary_failures, ["Context: summarized history (~1000 → ~500 estimated tokens)."]
+            return (
+                injected,
+                summary_failures,
+                ["Context: summarized history (~1000 → ~500 estimated tokens)."],
+            )
         return history, summary_failures, []
 
     with (
@@ -598,17 +698,21 @@ def test_repeated_read_only_call_is_served_from_cache():
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     read = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
+            }
+        ],
     )
     read_again = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c2",
-            "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {"name": "read_document", "arguments": '{"path": "doc.pdf"}'},
+            }
+        ],
     )
     final = LLMResponse(content="Done following the document.", tool_calls=[])
     exec_mock = MagicMock(
@@ -647,25 +751,29 @@ def test_repeated_web_search_is_served_from_cache():
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     search = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {
-                "name": "web_search",
-                "arguments": '{"query": "Spain vs Saudi Arabia result", "max_results": 5}',
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "web_search",
+                    "arguments": '{"query": "Spain vs Saudi Arabia result", "max_results": 5}',
+                },
+            }
+        ],
     )
     # Same query, different max_results and casing/whitespace — must still hit
     # the normalized cache key.
     search_again = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c2",
-            "function": {
-                "name": "web_search",
-                "arguments": '{"query": "  Spain vs Saudi Arabia RESULT ", "max_results": 3}',
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {
+                    "name": "web_search",
+                    "arguments": '{"query": "  Spain vs Saudi Arabia RESULT ", "max_results": 3}',
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Spain won 4-0.", tool_calls=[])
     exec_mock = MagicMock(
@@ -705,15 +813,27 @@ def test_read_cache_invalidated_after_mutation():
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     read = LLMResponse(
         content="",
-        tool_calls=[{"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}],
+        tool_calls=[
+            {"id": "c1", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}
+        ],
     )
     write = LLMResponse(
         content="",
-        tool_calls=[{"id": "c2", "function": {"name": "write_file", "arguments": '{"path": "main.py", "content": "x=1"}'}}],
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "main.py", "content": "x=1"}',
+                },
+            }
+        ],
     )
     read_again = LLMResponse(
         content="",
-        tool_calls=[{"id": "c3", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}],
+        tool_calls=[
+            {"id": "c3", "function": {"name": "read_file", "arguments": '{"path": "main.py"}'}}
+        ],
     )
     final = LLMResponse(content="Done.", tool_calls=[])
 
@@ -870,29 +990,31 @@ def test_finish_blocked_while_todo_plan_has_open_steps(tmp_path):
     # is all completed.
     selection = default_selection("test:1b")
     selection.context_length = 1_000_000
-    config = AgentConfig(
-        cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False
-    )
+    config = AgentConfig(cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False)
     plan = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {
-                "name": "todo_write",
-                "arguments": '{"todos": [{"content": "do the real work", "status": "pending"}]}',
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "todo_write",
+                    "arguments": '{"todos": [{"content": "do the real work", "status": "pending"}]}',
+                },
+            }
+        ],
     )
     premature_finish = LLMResponse(content="All set!", tool_calls=[])
     complete_plan = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c2",
-            "function": {
-                "name": "todo_write",
-                "arguments": '{"todos": [{"content": "do the real work", "status": "completed"}]}',
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {
+                    "name": "todo_write",
+                    "arguments": '{"todos": [{"content": "do the real work", "status": "completed"}]}',
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Done — the work is complete.", tool_calls=[])
 
@@ -922,9 +1044,7 @@ def test_finish_not_blocked_when_no_plan_was_created(tmp_path):
     )
     selection = default_selection("test:1b")
     selection.context_length = 1_000_000
-    config = AgentConfig(
-        cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False
-    )
+    config = AgentConfig(cwd=str(tmp_path), stream=False, auto_confirm=True, run_log_enabled=False)
     with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
         client = MockClient.return_value
         client.chat.side_effect = [LLMResponse(content="Here is the answer.", tool_calls=[])]
@@ -943,10 +1063,15 @@ def test_described_change_without_write_triggers_one_nudge():
     prose = LLMResponse(content="Here is the code:\n\nprint('hi')", tool_calls=[])
     write = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "write_file", "arguments": '{"path": "main.py", "content": "print(1)"}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "main.py", "content": "print(1)"}',
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Wrote main.py.", tool_calls=[])
     with (
@@ -984,9 +1109,24 @@ def test_dependent_write_skipped_after_failed_read_in_same_round():
     batched = LLMResponse(
         content="",
         tool_calls=[
-            {"id": "c1", "function": {"name": "pdf_to_docx", "arguments": '{"source": "exam.pdf", "output": "exam.docx"}'}},
-            {"id": "c2", "function": {"name": "read_document", "arguments": '{"path": "exam.docx"}'}},
-            {"id": "c3", "function": {"name": "write_file", "arguments": '{"path": "ex1.txt", "content": "<EXERCISE_1_TEXT>"}'}},
+            {
+                "id": "c1",
+                "function": {
+                    "name": "pdf_to_docx",
+                    "arguments": '{"source": "exam.pdf", "output": "exam.docx"}',
+                },
+            },
+            {
+                "id": "c2",
+                "function": {"name": "read_document", "arguments": '{"path": "exam.docx"}'},
+            },
+            {
+                "id": "c3",
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "ex1.txt", "content": "<EXERCISE_1_TEXT>"}',
+                },
+            },
         ],
     )
     final = LLMResponse(content="I could not read the PDF.", tool_calls=[])
@@ -1075,16 +1215,18 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
 
     edit_call = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {
-                "name": "edit_file",
-                "arguments": (
-                    '{"path": "Tests.py", "old_string": "line three", '
-                    '"new_string": "Fourteenth attempt"}'
-                ),
-            },
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "edit_file",
+                    "arguments": (
+                        '{"path": "Tests.py", "old_string": "line three", '
+                        '"new_string": "Fourteenth attempt"}'
+                    ),
+                },
+            }
+        ],
     )
     final = LLMResponse(
         content="Done: line 3 of Tests.py now reads Fourteenth attempt.",
@@ -1116,10 +1258,15 @@ def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
 
     model_trying_tools = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "web_search", "arguments": '{"query": "btc price", "max_results": 5}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "web_search",
+                    "arguments": '{"query": "btc price", "max_results": 5}',
+                },
+            }
+        ],
     )
     final = LLMResponse(
         content="With what I have, I can't verify the full source. Warning: partial data.",
@@ -1149,10 +1296,15 @@ def test_run_agent_disables_streaming_when_tools_are_available():
 
     with_tool = LLMResponse(
         content="",
-        tool_calls=[{
-            "id": "c1",
-            "function": {"name": "web_search", "arguments": '{"query": "btc price", "max_results": 5}'},
-        }],
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "web_search",
+                    "arguments": '{"query": "btc price", "max_results": 5}',
+                },
+            }
+        ],
     )
     final = LLMResponse(content="Final answer with results.", tool_calls=[])
 
@@ -1162,8 +1314,6 @@ def test_run_agent_disables_streaming_when_tools_are_available():
 
     first_call = mock_call_llm.call_args_list[0]
     assert first_call.kwargs["stream"] is False
-
-
 
 
 def test_governor_stops_on_repeated_error_class_with_varying_args():
@@ -1179,13 +1329,15 @@ def test_governor_stops_on_repeated_error_class_with_varying_args():
     def docx_call(n):
         return LLMResponse(
             content="",
-            tool_calls=[{
-                "id": f"c{n}",
-                "function": {
-                    "name": "docx_to_pdf",
-                    "arguments": f'{{"source": "a.docx", "output": "out{n}.pdf"}}',
-                },
-            }],
+            tool_calls=[
+                {
+                    "id": f"c{n}",
+                    "function": {
+                        "name": "docx_to_pdf",
+                        "arguments": f'{{"source": "a.docx", "output": "out{n}.pdf"}}',
+                    },
+                }
+            ],
         )
 
     final = LLMResponse(content="done", tool_calls=[])

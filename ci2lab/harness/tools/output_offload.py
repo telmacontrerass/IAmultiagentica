@@ -13,12 +13,16 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
+from re import Pattern
 
-_OFFLOAD_DIR = Path(".ci2lab") / "tool_outputs"
-_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+#: Workspace-relative directory where offloaded tool outputs are stored.
+_OFFLOAD_DIR: Path = Path(".ci2lab") / "tool_outputs"
+#: Pattern matching characters that are unsafe in generated output filenames.
+_SAFE_NAME_RE: Pattern[str] = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def _truncation_fallback(output: str, max_chars: int) -> str:
+    """Truncate ``output`` to ``max_chars`` with a trailing total-length note."""
     return output[:max_chars] + f"\n... (truncated, {len(output)} characters total)"
 
 
@@ -33,6 +37,20 @@ def offload_large_output(
 
     Falls back to plain truncation if the file cannot be written, so a failure
     here never breaks the tool call.
+
+    Args:
+        cwd: Workspace root under which the offload file is written.
+        tool_name: Name of the tool that produced the output (used in the
+            generated filename and the preview header).
+        call_id: Originating tool-call id; when ``None`` a content hash is used
+            to derive a stable filename.
+        output: The full tool output to offload.
+        max_chars: Per-call character budget driving the head/tail preview sizes.
+
+    Returns:
+        A compact preview string containing a head and tail excerpt plus a
+        pointer to the saved file, or a plain truncation of ``output`` if the
+        file could not be written.
     """
     total = len(output)
     try:
@@ -43,7 +61,7 @@ def offload_large_output(
         ident = _SAFE_NAME_RE.sub("_", str(ident))
         target = out_dir / f"{stem}_{ident}.txt"
         target.write_text(output, encoding="utf-8")
-    except Exception:  # noqa: BLE001
+    except Exception:
         return _truncation_fallback(output, max_chars)
 
     # Path the model passes to read_file: relative to the workspace so it

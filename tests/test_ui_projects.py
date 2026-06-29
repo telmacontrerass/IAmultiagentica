@@ -98,9 +98,7 @@ def test_source_rows_are_tagged_with_their_own_project_id(monkeypatch, tmp_path)
     )
 
     with sqlite3.connect(Path(project["workspace"]) / "project.sqlite3") as db:
-        stored_project_id = db.execute(
-            "SELECT project_id FROM sources"
-        ).fetchone()[0]
+        stored_project_id = db.execute("SELECT project_id FROM sources").fetchone()[0]
 
     assert stored_project_id == project["id"]
 
@@ -169,6 +167,115 @@ def test_project_prompt_identifies_sources(monkeypatch, tmp_path):
     assert "Calculus" in prompt
     assert "slides.md" in prompt
     assert "instantaneous rate of change" in prompt
+
+
+def test_paper_review_project_stores_metadata(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    created = projects.create_project(
+        "CI2Lab paper",
+        owner_id="rsr_abc",
+        kind="paper_review",
+        paper_title="A Local Multi-Agent Harness",
+        field="multi-agent systems",
+        target_venue="IEEE TSE",
+        article_type="systems paper",
+    )
+    assert created["ok"] is True
+    project = created["project"]
+    assert project["kind"] == "paper_review"
+    assert project["owner_id"] == "rsr_abc"
+    assert project["field"] == "multi-agent systems"
+    assert project["target_venue"] == "IEEE TSE"
+    assert project["article_type"] == "systems paper"
+
+
+def test_knowledge_projects_default_kind(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Notes")["project"]
+    assert project["kind"] == "knowledge"
+    assert project["owner_id"] is None
+
+
+def test_list_projects_scopes_to_owner_but_keeps_unassigned(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    mine = projects.create_project("Mine", owner_id="rsr_me")["project"]
+    other = projects.create_project("Other", owner_id="rsr_you")["project"]
+    legacy = projects.create_project("Legacy")["project"]  # no owner
+
+    scoped = {p["id"] for p in projects.list_projects("rsr_me")}
+    assert mine["id"] in scoped
+    assert legacy["id"] in scoped  # unassigned stays visible
+    assert other["id"] not in scoped
+
+
+def test_update_project_metadata(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Draft")["project"]
+    result = projects.update_project_metadata(
+        project["id"], {"name": "Final", "kind": "paper_review", "maturity": "early_manuscript"}
+    )
+    assert result["ok"] is True
+    assert result["project"]["name"] == "Final"
+    assert result["project"]["kind"] == "paper_review"
+    assert result["project"]["maturity"] == "early_manuscript"
+
+
+def test_project_manuscript_text_picks_largest_source(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Paper", kind="paper_review")["project"]
+    projects.add_project_source(
+        project["id"],
+        {
+            "name": "guidelines.txt",
+            "content_base64": base64.b64encode(b"Short author guidelines.").decode(),
+        },
+    )
+    projects.add_project_source(
+        project["id"],
+        {
+            "name": "manuscript.txt",
+            "content_base64": base64.b64encode(
+                b"This is the full manuscript with much more content than the guidelines file. " * 5
+            ).decode(),
+        },
+    )
+    text, name = projects.project_manuscript_text(project["id"])
+    assert name == "manuscript.txt"
+    assert "full manuscript" in text
+
+
+def test_project_manuscript_text_reads_pdf_with_document_reader(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Paper", kind="paper_review")["project"]
+    extracted_texts = iter(
+        [
+            "Indexed text from the PDF.",
+            "Review-time extracted manuscript text from the PDF.",
+        ]
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_document(cwd: str, path: str) -> str:
+        calls.append((cwd, path))
+        return next(extracted_texts)
+
+    monkeypatch.setattr(projects, "read_document", fake_read_document)
+
+    added = projects.add_project_source(
+        project["id"],
+        {
+            "name": "manuscript.pdf",
+            "content_base64": base64.b64encode(b"%PDF fake paper").decode(),
+        },
+    )
+
+    text, name = projects.project_manuscript_text(project["id"])
+
+    assert added["ok"] is True
+    assert name == "manuscript.pdf"
+    assert text == "Review-time extracted manuscript text from the PDF."
+    assert len(calls) == 2
+    assert calls[1][1] == added["source"]["path"]
 
 
 def test_deleting_source_removes_only_that_project_file(monkeypatch, tmp_path):

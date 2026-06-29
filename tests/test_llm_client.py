@@ -6,8 +6,8 @@ import httpx
 import pytest
 
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.llm_errors import LLMCancelledError
-from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
+from ci2lab.harness.llm_client import LLMClient, LLMResponse
+from ci2lab.harness.llm_errors import LLMCancelledError, LLMModelNotFoundError
 
 
 def _selection(**overrides) -> ModelSelection:
@@ -20,7 +20,7 @@ def _selection(**overrides) -> ModelSelection:
     return ModelSelection(**base)
 
 
-def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
+def test_chat_does_not_retry_with_slug_model_id(monkeypatch):
     calls: list[str] = []
 
     class FakeClient:
@@ -36,37 +36,20 @@ def test_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
         def post(self, url, json):
             calls.append(json["model"])
             request = httpx.Request("POST", url)
-            if len(calls) == 1:
-                return httpx.Response(
-                    404,
-                    json={"error": "model qwen2.5-coder:1.5b not found"},
-                    request=request,
-                )
-            # Native Ollama (/api/chat) response shape.
             return httpx.Response(
-                200,
-                json={
-                    "message": {"role": "assistant", "content": "ok"},
-                    "done": True,
-                    "prompt_eval_count": 7,
-                    "eval_count": 2,
-                },
+                404,
+                json={"error": "model qwen2.5-coder:1.5b not found"},
                 request=request,
             )
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
     client = LLMClient(_selection())
-    result = client.chat([{"role": "user", "content": "hola"}])
+    with pytest.raises(LLMModelNotFoundError):
+        client.chat([{"role": "user", "content": "hola"}])
 
-    assert isinstance(result, LLMResponse)
-    assert result.content == "ok"
-    assert result.usage is not None
-    assert result.usage.prompt_tokens == 7
-    assert result.usage.completion_tokens == 2
-    assert result.usage.total_tokens == 9
-    assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
-    assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+    assert calls == ["qwen2.5-coder:1.5b"]
+    assert client.selection.ollama_tag == "qwen2.5-coder:1.5b"
 
 
 def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
@@ -102,6 +85,7 @@ def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
     assert captured["payload"]["options"]["num_predict"] == 4096
     # The OpenAI-only fields must not leak into the native request.
     assert "max_tokens" not in captured["payload"]
+
 
 def test_chat_cancel_event_closes_blocking_client(monkeypatch):
     cancel_event = threading.Event()
@@ -197,7 +181,7 @@ def test_native_payload_converts_openai_tool_history(monkeypatch):
     assert tool_msg == {"role": "tool", "content": "Spain won 4-0"}
 
 
-def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatch):
+def test_stream_chat_does_not_retry_with_slug_model_id(monkeypatch):
     calls: list[str] = []
 
     class StreamContext:
@@ -209,27 +193,6 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
 
         def __exit__(self, *args):
             return False
-
-    class GoodStreamResponse:
-        is_error = False
-
-        def read(self):
-            return b""
-
-        def raise_for_status(self):
-            return None
-
-        def iter_lines(self):
-            # Native streaming: newline-delimited JSON objects, no `data:` frame.
-            yield json.dumps({"message": {"content": "ok"}, "done": False})
-            yield json.dumps(
-                {
-                    "message": {"content": ""},
-                    "done": True,
-                    "prompt_eval_count": 3,
-                    "eval_count": 1,
-                }
-            )
 
     class FakeClient:
         def __init__(self, timeout):
@@ -244,29 +207,21 @@ def test_stream_chat_retries_with_model_id_when_ollama_tag_is_missing(monkeypatc
         def stream(self, method, url, json):
             calls.append(json["model"])
             request = httpx.Request(method, url)
-            if len(calls) == 1:
-                response = httpx.Response(
-                    404,
-                    json={"error": "model qwen2.5-coder:1.5b not found"},
-                    request=request,
-                )
-            else:
-                response = GoodStreamResponse()
+            response = httpx.Response(
+                404,
+                json={"error": "model qwen2.5-coder:1.5b not found"},
+                request=request,
+            )
             return StreamContext(response)
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
 
     client = LLMClient(_selection())
-    events = list(client.stream_chat([{"role": "user", "content": "hola"}]))
+    with pytest.raises(LLMModelNotFoundError):
+        list(client.stream_chat([{"role": "user", "content": "hola"}]))
 
-    assert isinstance(events[0], StreamToken)
-    assert events[0].text == "ok"
-    assert isinstance(events[-1], LLMResponse)
-    assert events[-1].content == "ok"
-    assert events[-1].usage is not None
-    assert events[-1].usage.total_tokens == 4
-    assert calls == ["qwen2.5-coder:1.5b", "qwen2.5-coder-1.5b"]
-    assert client.selection.ollama_tag == "qwen2.5-coder-1.5b"
+    assert calls == ["qwen2.5-coder:1.5b"]
+    assert client.selection.ollama_tag == "qwen2.5-coder:1.5b"
 
 
 def test_native_stream_collects_tool_calls(monkeypatch):
@@ -295,9 +250,7 @@ def test_native_stream_collects_tool_calls(monkeypatch):
                 {
                     "message": {
                         "content": "",
-                        "tool_calls": [
-                            {"function": {"name": "ls", "arguments": {"path": "."}}}
-                        ],
+                        "tool_calls": [{"function": {"name": "ls", "arguments": {"path": "."}}}],
                     },
                     "done": True,
                     "prompt_eval_count": 5,
@@ -325,9 +278,7 @@ def test_native_stream_collects_tool_calls(monkeypatch):
 
     final = events[-1]
     assert isinstance(final, LLMResponse)
-    assert final.tool_calls == [
-        {"function": {"name": "ls", "arguments": {"path": "."}}}
-    ]
+    assert final.tool_calls == [{"function": {"name": "ls", "arguments": {"path": "."}}}]
 
 
 def test_openai_backend_still_uses_v1_endpoint(monkeypatch):

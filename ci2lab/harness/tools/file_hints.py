@@ -6,6 +6,20 @@ from pathlib import Path
 
 
 def format_missing_file_error(cwd: str, resolved: Path) -> str:
+    """Build an error message for a non-existent file path.
+
+    The message names the missing path and, when possible, lists up to ten
+    ``.py`` files in the workspace root to help the caller locate the intended
+    file before retrying.
+
+    Args:
+        cwd: The current working directory whose root is scanned for hints.
+        resolved: The resolved path that was found not to exist.
+
+    Returns:
+        A human-readable error string describing the missing file and a hint to
+        read the exact path before editing.
+    """
     base = Path(cwd).resolve()
     message = f"Error: file does not exist: {resolved}"
     try:

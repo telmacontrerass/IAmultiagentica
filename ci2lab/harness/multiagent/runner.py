@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
+from typing import Any, TypedDict
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -29,6 +30,16 @@ ROLE_MAX_ROUNDS: dict[AgentRole, int] = {
     AgentRole.VALIDATOR: 8,
     AgentRole.REVIEWER: 6,
     AgentRole.SECURITY_REVIEWER: 6,
+    # Peer-review lenses: enough rounds to read the manuscript and emit findings.
+    AgentRole.INTAKE_REVIEWER: 10,
+    AgentRole.SCOPE_REVIEWER: 8,
+    AgentRole.NOVELTY_REVIEWER: 10,
+    AgentRole.METHODOLOGY_REVIEWER: 8,
+    AgentRole.FIELD_EXPERT_REVIEWER: 8,
+    AgentRole.ADVERSARIAL_REVIEWER: 8,
+    AgentRole.FORMAT_REVIEWER: 8,
+    AgentRole.GROUNDEDNESS_VERIFIER: 6,
+    AgentRole.REVISION_PLANNER: 6,
 }
 
 
@@ -59,6 +70,21 @@ def _role_anchor_from_spec(spec: RoleSpec) -> str:
     )
 
 
+def _allowed_tools_line(config: AgentConfig, spec: RoleSpec) -> str:
+    """Concrete, comma-separated list of the tools this subagent may call.
+
+    Prefer the effective allow-list on the config (it already folds in any
+    parent skill restriction); fall back to the role's own set. Listing the
+    real names — not just a yes/no — keeps weaker local models from reaching
+    for a tool they were never granted, and counteracts the static fenced tool
+    catalog, which advertises every tool regardless of role.
+    """
+    tools = config.skill_allowed_tools
+    if tools is None:
+        tools = spec.allowed_tools
+    return ", ".join(sorted(tools)) if tools else "none (no tools — reason in prose only)"
+
+
 def _prompt_allowed_tools(role: AgentRole, config: AgentConfig) -> frozenset[str]:
     if config.skill_allowed_tools is None:
         return ROLE_SPECS[role].allowed_tools
@@ -67,11 +93,7 @@ def _prompt_allowed_tools(role: AgentRole, config: AgentConfig) -> frozenset[str
 
 def _strip_unavailable_todo_guidance(prompt: str) -> str:
     """Remove global todo_write instructions from phases that cannot use it."""
-    lines = [
-        line
-        for line in prompt.splitlines()
-        if "todo_write" not in line
-    ]
+    lines = [line for line in prompt.splitlines() if "todo_write" not in line]
     text = "\n".join(lines)
     start = text.find("\n### todo_write\n")
     if start == -1:
@@ -114,13 +136,39 @@ def build_subagent_system_prompt(
     base_prompt = build_system_prompt(selection, config.cwd)
     if "todo_write" not in allowed_tools:
         base_prompt = _strip_unavailable_todo_guidance(base_prompt)
+    allowed_tools_line = (
+        ", ".join(sorted(allowed_tools))
+        if allowed_tools
+        else "none (no tools - reason in prose only)"
+    )
+    # A read-only role has no way to hand a file to the next role, so it must be
+    # told to return its findings as text instead of trying to persist them —
+    # the failure mode where the researcher tried to write a scratch file the
+    # downstream roles then could not find.
+    if spec.can_write:
+        write_directive = (
+            "You CAN write files. Apply the change with your edit tools; do not merely describe it."
+        )
+    else:
+        write_directive = (
+            "You CANNOT write files — no write tool is available to you. Never "
+            "attempt `write_file`/`edit_file`, and never plan to stash results in "
+            "a scratch file for another role. The ONLY thing the next role "
+            "receives is the text you return, so put every result, quote, and "
+            "finding the rest of the run needs directly in your final response."
+        )
     return (
         f"{base_prompt}\n\n"
         "## Subagent Role\n"
         f"- Role: {spec.role.value}\n"
         f"- Description: {spec.description}\n"
-        f"- Can write files: {'yes' if spec.can_write else 'no'}\n\n"
+        f"- Can write files: {'yes' if spec.can_write else 'no'}\n"
+        f"- Tools you may call: {allowed_tools_line}\n\n"
         f"{_allowed_tools_section(allowed_tools)}\n\n"
+        "## Tool Boundary\n"
+        f"{write_directive}\n"
+        "Calling a tool outside the list above is not possible and will be "
+        "rejected; stay within it.\n\n"
         "## Role Instructions\n"
         f"{spec.system_instructions}\n\n"
         "## Role Anchor\n"
@@ -135,30 +183,34 @@ def build_subagent_system_prompt(
 
 
 def _preview_text(text: str, *, limit: int = TRACE_PREVIEW_CHARS) -> str:
+    """Return ``text`` truncated to ``limit`` characters with a marker when longer."""
     if len(text) <= limit:
         return text
     return text[:limit] + "… (truncated)"
 
 
 def _read_json(path: Path) -> dict | None:
+    """Read and parse a JSON file, returning ``None`` on any read/parse error."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    """Read a JSON Lines file into a list of dicts, returning ``[]`` on any error."""
     try:
         return [
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
 def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | None]:
+    """Map a run-summary dict to a ``(status, error)`` pair for the subagent result."""
     if not summary:
         return "completed", None
     raw_status = str(summary.get("status") or "success")
@@ -175,7 +227,26 @@ def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | Non
     return "failed", str(error) if error is not None else raw_status
 
 
-def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
+class _SubAgentRunArtifacts(TypedDict):
+    """Structured subagent run artifacts loaded from a run directory."""
+
+    status: str
+    error: str | None
+    duration_ms: int | None
+    rounds: int | None
+    tool_calls: list[dict[str, Any]]
+
+
+def _load_subagent_run_artifacts(run_dir: str | None) -> _SubAgentRunArtifacts:
+    """Load a subagent's run artifacts (status, timing, tool calls) from ``run_dir``.
+
+    Args:
+        run_dir: The subagent's run directory, or ``None`` when none was created.
+
+    Returns:
+        A dict with ``status``, ``error``, ``duration_ms``, ``rounds``, and
+        ``tool_calls`` keys; defaults are returned when ``run_dir`` is missing.
+    """
     if not run_dir:
         return {
             "status": "completed",
@@ -207,7 +278,9 @@ def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
         "status": status,
         "error": error,
         "duration_ms": int(float(duration_s) * 1000) if duration_s is not None else None,
-        "rounds": int(summary.get("rounds", 0)) if summary and summary.get("rounds") is not None else None,
+        "rounds": int(summary.get("rounds", 0))
+        if summary and summary.get("rounds") is not None
+        else None,
         "tool_calls": tool_calls,
     }
 
@@ -293,13 +366,13 @@ def run_subagent(
         output=output,
         status=str(trace_data["status"]),
         attempt=attempt,
-        error=trace_data["error"],  # type: ignore[index]
+        error=trace_data["error"],
         role_anchor=subagent_config.role_anchor,
         allowed_tools=sorted(subagent_config.skill_allowed_tools or ()),
         can_write=spec.can_write,
         input_prompt=_preview_text(task_prompt),
         subagent_run_dir=subagent_config.last_run_dir,
-        tool_calls=list(trace_data["tool_calls"]),  # type: ignore[index]
-        duration_ms=trace_data["duration_ms"],  # type: ignore[index]
-        rounds=trace_data["rounds"],  # type: ignore[index]
+        tool_calls=list(trace_data["tool_calls"]),
+        duration_ms=trace_data["duration_ms"],
+        rounds=trace_data["rounds"],
     )
