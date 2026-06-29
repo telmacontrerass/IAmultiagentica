@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from ci2lab.harness.security.policy import outcome_for_tool_output
 from ci2lab.harness.security.write_permissions import WRITE_TOOLS
 from ci2lab.harness.tools.bash import _format_bash_block_message
@@ -33,6 +35,29 @@ _SHELL_TOOL_EQUIVALENT: dict[str, tuple[str, ...]] = {
     "find": ("glob",),
     "grep": ("grep",),
 }
+
+_BASH_VERDICT_RE = re.compile(r"^\s*(?:PASS|FAIL)\s*:", re.IGNORECASE)
+_BASH_PSEUDO_TOOL_RE = re.compile(
+    r"^\s*(?:git_status|git_diff|read_file|write_file|edit_file|apply_patch|todo_write)\b",
+    re.IGNORECASE,
+)
+
+
+def _strict_role_bash_channels(config: AgentConfig) -> bool:
+    anchor = (config.role_anchor or "").lower()
+    return any(
+        f"acting as {role}" in anchor
+        for role in ("validator", "reviewer", "security_reviewer", "researcher")
+    )
+
+
+def _invalid_role_bash_command(command: str) -> str | None:
+    stripped = command.strip()
+    if _BASH_VERDICT_RE.search(stripped):
+        return "verdict_text"
+    if _BASH_PSEUDO_TOOL_RE.search(stripped):
+        return "pseudo_tool"
+    return None
 
 
 def _skill_block_hint(name: str, allowed_canon: set[str]) -> str:
@@ -93,6 +118,20 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
     # redirected to the real tool.
     if name == "bash":
         command = str(call.arguments.get("command", ""))
+        if _strict_role_bash_channels(config):
+            invalid_reason = _invalid_role_bash_command(command)
+            if invalid_reason:
+                return ToolResult(
+                    tool_name=name,
+                    content=(
+                        "Error: invalid_tool_via_bash. Validation/review roles "
+                        "must emit PASS:/FAIL: as plain final text and must call "
+                        "dedicated harness tools directly, not through bash."
+                    ),
+                    is_error=True,
+                    call_id=call.call_id,
+                    outcome="invalid_tool_via_bash",
+                )
         redirected = tool_call_from_bash_command(command, call_id=call.call_id)
         if redirected is not None and redirected.name != "bash":
             return execute_tool(redirected, config)
