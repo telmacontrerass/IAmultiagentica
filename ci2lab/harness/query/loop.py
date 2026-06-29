@@ -85,7 +85,7 @@ from ci2lab.harness.vision import (
 from ci2lab.harness.vision_exercise import (
     EXERCISE_TRANSCRIPTION_PROMPT,
     enrich_turn_content_with_exercise_skill,
-    is_exercise_review_request,
+    is_visual_document_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -645,7 +645,7 @@ def _prepare_turn_content(
 
     # Exercise scans pack small digits (47 vs 4.7, 58.4 vs 58,19) that small
     # vision models misread at low resolution, so render those pages sharply.
-    render_dpi = 250 if is_exercise_review_request(user_prompt) else 96
+    render_dpi = 250 if is_visual_document_request(user_prompt) else 96
     expanded_paths: list[str] = []
     pdf_temp_dirs: list[Path] = []
     for raw_path in cfg.image_paths:
@@ -676,7 +676,7 @@ def _prepare_turn_content(
                 image_timeout = compute_llm_timeout(1, has_pdf=vision_has_pdf)
                 vl_prompt = (
                     EXERCISE_TRANSCRIPTION_PROMPT
-                    if is_exercise_review_request(user_prompt)
+                    if is_visual_document_request(user_prompt)
                     else None
                 )
                 enriched = user_prompt

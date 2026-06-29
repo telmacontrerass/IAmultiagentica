@@ -36,8 +36,9 @@ from ci2lab.harness.vision import (
     is_vision_model,
 )
 from ci2lab.harness.vision_exercise import (
-    REVIEW_HANDWRITTEN_EXERCISE_SKILL,
     is_exercise_review_request,
+    is_transcription_request,
+    select_visual_skill,
 )
 
 
@@ -197,10 +198,10 @@ def _extract_inline_images(
                 f"to this message. Do NOT call read_document or any file tool on "
                 f"'{name}' — the content is already visible in the attached images "
                 f"or in the vision-model transcription injected below. "
-                f"The harness will load the `{REVIEW_HANDWRITTEN_EXERCISE_SKILL}` "
-                f"skill workflow when you ask to transcribe or check calculations. "
-                f"Follow that skill: classify whether each error affects the result, "
-                f"and rework the exercise when it does.]"
+                f"The harness loads a visual-document skill automatically: a "
+                f"transcription skill when you ask to transcribe/read it, or the "
+                f"review skill when you ask to check or audit calculations. Follow "
+                f"whichever skill is injected.]"
             )
         else:
             console.print(f"[dim]Image detected: {name}[/dim]")
@@ -493,8 +494,9 @@ def run_repl(
         # absolute paths and bare filenames relative to the workspace.
         prompt, detected_images = _extract_inline_images(line, config, selection)
 
-        if detected_images and is_exercise_review_request(line):
-            console.print(f"[dim]Will apply skill: {REVIEW_HANDWRITTEN_EXERCISE_SKILL}[/dim]")
+        _visual_skill = select_visual_skill(line) if detected_images else None
+        if _visual_skill is not None:
+            console.print(f"[dim]Will apply skill: {_visual_skill}[/dim]")
 
         # Re-attach the last PDF/images on follow-up turns so the model re-reads
         # the pages instead of relying on its earlier (possibly wrong) summary.
@@ -574,12 +576,15 @@ def run_repl(
                     project_id=config.project_id,
                 )
             last_error_message = None
-            # Issue 4(A): deterministically save the review to a .md file so the
-            # audit/table/math survive outside the terminal (and can become a PDF
-            # later). Scoped to exercise-review turns to avoid writing a file for
-            # every chat message.
-            if final_text and detected_images and is_exercise_review_request(line):
-                _export_review_markdown(final_text, config.cwd, detected_images)
+            # Deterministically save the model's answer to a .md file so the
+            # transcription (or audit/math) survives outside the terminal.
+            # Scoped to visual-document turns to avoid writing a file for every
+            # chat message.
+            if final_text and detected_images:
+                if is_exercise_review_request(line):
+                    _export_review_markdown(final_text, config.cwd, detected_images)
+                elif is_transcription_request(line):
+                    _export_transcription_markdown(final_text, config.cwd, detected_images)
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
             last_error_message = exc.user_message
@@ -608,6 +613,17 @@ def _latex_to_plaintext(text: str) -> str:
     s = text
     # Fractions first, before braces are stripped: \frac{a}{b} -> (a)/(b)
     s = re.sub(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", s)
+    # Matrix/array environments: turn \begin{bmatrix}..\end{bmatrix} into plain
+    # brackets so the leftover-command strip below doesn't leave "bmatrix".
+    # Run before the row/column separators and the generic backslash strip.
+    s = re.sub(r"\\begin\s*\{[^{}]*\}", "[", s)
+    s = re.sub(r"\\end\s*\{[^{}]*\}", "]", s)
+    # Row separator "\\" (optionally with a [len] spec) -> "; ", before the
+    # spacing rule below can chew a backslash off the pair. Eat surrounding
+    # whitespace so "0 \\ 1" becomes "0; 1", not "0 ; 1".
+    s = re.sub(r"\s*\\\\(?:\[[^\]]*\])?\s*", "; ", s)
+    # Column separator "&" -> ", " (eat surrounding whitespace)
+    s = re.sub(r"\s*&\s*", ", ", s)
     # Symbol commands -> Unicode
     symbols = {
         r"\^\\circ": "°",
@@ -642,6 +658,7 @@ def _latex_to_plaintext(text: str) -> str:
     # Subscripts / superscripts
     s = re.sub(r"_\{([^{}]*)\}", r"\1", s)  # _{18} -> 18
     s = re.sub(r"\^\{([^{}]*)\}", r"^\1", s)  # ^{2}  -> ^2
+    s = s.replace("^*", "*")  # B^* -> B*, B_c^* -> B_c*
     s = re.sub(r"_(\d)", r"\1", s)  # _2    -> 2 (digits only, so
     #                                              snake_case words are untouched)
     # Math delimiters \( \) \[ \] and $...$
@@ -655,31 +672,62 @@ def _latex_to_plaintext(text: str) -> str:
     return s
 
 
-def _export_review_markdown(
+def _export_markdown(
     final_text: str,
     cwd: str,
     source_paths: list[str],
+    *,
+    title: str,
+    subdir: str,
+    suffix: str,
+    label: str,
 ) -> None:
-    """Save an exercise-review answer to ``<cwd>/reviews/<stem>_review_<ts>.md``.
+    """Save a model answer to ``<cwd>/<subdir>/<stem>_<suffix>_<ts>.md``.
 
     Deterministic post-step: the harness writes the file itself, so it does not
-    depend on the model remembering to call a write tool. Failures are reported
-    but never abort the turn.
+    depend on the model remembering to call a write tool. LaTeX is flattened to
+    plain text on the way out. Failures are reported but never abort the turn.
     """
     from datetime import datetime
 
     stem = Path(source_paths[0]).stem if source_paths else "exercise"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     sources = ", ".join(Path(p).name for p in source_paths) if source_paths else "(none)"
-    header = f"# Exercise review: {stem}\n\n- Source: {sources}\n- Generated: {ts}\n\n---\n\n"
+    header = f"# {title}: {stem}\n\n- Source: {sources}\n- Generated: {ts}\n\n---\n\n"
     try:
-        out_dir = Path(cwd) / "reviews"
+        out_dir = Path(cwd) / subdir
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{stem}_review_{ts}.md"
+        out_path = out_dir / f"{stem}_{suffix}_{ts}.md"
         out_path.write_text(header + _latex_to_plaintext(final_text), encoding="utf-8")
-        console.print(f"[dim]Review exported: {out_path}[/dim]")
+        console.print(f"[dim]{label} exported: {out_path}[/dim]")
     except OSError as exc:
-        console.print(f"[yellow]Could not export review markdown: {exc}[/yellow]")
+        console.print(f"[yellow]Could not export {label.lower()} markdown: {exc}[/yellow]")
+
+
+def _export_review_markdown(final_text: str, cwd: str, source_paths: list[str]) -> None:
+    """Save an exercise-review answer to ``<cwd>/reviews/<stem>_review_<ts>.md``."""
+    _export_markdown(
+        final_text,
+        cwd,
+        source_paths,
+        title="Exercise review",
+        subdir="reviews",
+        suffix="review",
+        label="Review",
+    )
+
+
+def _export_transcription_markdown(final_text: str, cwd: str, source_paths: list[str]) -> None:
+    """Save a transcription to ``<cwd>/transcriptions/<stem>_transcription_<ts>.md``."""
+    _export_markdown(
+        final_text,
+        cwd,
+        source_paths,
+        title="Transcription",
+        subdir="transcriptions",
+        suffix="transcription",
+        label="Transcription",
+    )
 
 
 def _project_prompt(config: AgentConfig, prompt: str) -> str:

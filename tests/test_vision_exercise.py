@@ -7,8 +7,11 @@ from ci2lab.harness.tools.skill_tool import invoke_skill
 from ci2lab.harness.types import AgentConfig
 from ci2lab.harness.vision_exercise import (
     REVIEW_HANDWRITTEN_EXERCISE_SKILL,
+    TRANSCRIBE_DOCUMENT_SKILL,
     enrich_turn_content_with_exercise_skill,
     is_exercise_review_request,
+    is_transcription_request,
+    select_visual_skill,
     should_apply_exercise_review_skill,
 )
 
@@ -80,6 +83,52 @@ def test_enrich_turn_content_with_exercise_skill_multimodal():
     assert enriched[0]["type"] == "text"
     assert enriched[0]["text"].startswith("# Skill: review_handwritten_exercise")
     assert enriched[1]["type"] == "image_url"
+
+
+def test_bare_transcribe_is_transcription_not_review():
+    prompt = "Transcribe FinalAlgebra_iMAT.pdf"
+    assert is_transcription_request(prompt) is True
+    assert is_exercise_review_request(prompt) is False
+    assert select_visual_skill(prompt) == TRANSCRIBE_DOCUMENT_SKILL
+
+
+def test_transcribe_plus_check_routes_to_review():
+    # Audit intent wins over plain transcription when both are present.
+    prompt = "Transcribe and check each calculation step by step"
+    assert is_transcription_request(prompt) is True
+    assert is_exercise_review_request(prompt) is True
+    assert select_visual_skill(prompt) == REVIEW_HANDWRITTEN_EXERCISE_SKILL
+
+
+def test_select_visual_skill_none_for_unrelated():
+    assert select_visual_skill("List the Python files in this repo") is None
+
+
+def test_builtin_transcribe_document_skill_available():
+    skills = load_skills(".")
+    assert TRANSCRIBE_DOCUMENT_SKILL in skills
+    skill = skills[TRANSCRIBE_DOCUMENT_SKILL]
+    assert skill.source == "builtin"
+    assert skill.allowed_tools == ["todo_write", "extract_visual_document"]
+
+
+def test_invoke_transcribe_document_skill_contract():
+    cfg = AgentConfig(cwd=".")
+    prompt = invoke_skill(cfg, TRANSCRIBE_DOCUMENT_SKILL, "FinalAlgebra_iMAT.pdf")
+    assert cfg.skill_allowed_tools == frozenset({"todo_write", "extract_visual_document"})
+    assert "Transcription" in prompt
+    # Transcription-only: it must not pull in the audit/solve machinery.
+    assert "Audit" not in prompt
+    assert "Corrected solution" not in prompt
+
+
+def test_enrich_routes_to_transcribe_skill():
+    user_prompt = "Transcribe the handwritten pages of FinalAlgebra_iMAT.pdf"
+    content = user_prompt + "\n\n[Image: page_001.png]\nf(x) = ..."
+    enriched, allowed = enrich_turn_content_with_exercise_skill(user_prompt, content, ".")
+    assert isinstance(enriched, str)
+    assert enriched.startswith("# Skill: transcribe_document")
+    assert allowed == frozenset({"todo_write", "extract_visual_document"})
 
 
 def test_enrich_turn_content_skips_unrelated_prompt():

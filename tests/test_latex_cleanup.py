@@ -33,3 +33,17 @@ def test_snake_case_words_are_not_mangled():
 def test_no_backslash_commands_left():
     out = clean(r"\left[ 8\text{CO}_2 \right] \quad \rightarrow \quad X")
     assert "\\" not in out
+
+
+def test_bmatrix_environment_flattened():
+    src = r"M = \begin{bmatrix} 1 & 1 & 0 \\ 1 & -1 & 6 \end{bmatrix}"
+    out = clean(src)
+    # The literal "bmatrix" word must not survive, and rows/cols become readable.
+    assert "bmatrix" not in out
+    assert "\\" not in out
+    assert "&" not in out
+    assert out == "M = [ 1, 1, 0; 1, -1, 6 ]"
+
+
+def test_dual_basis_superscript_star():
+    assert clean("B^* and B_c^*") == "B* and B_c*"
