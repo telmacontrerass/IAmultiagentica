@@ -50,17 +50,12 @@ def test_default_engine_is_claude_experimental():
 
 
 def test_opencode_engine_normalized():
-    assert (
-        normalize_security_engine("opencode")
-        == SecurityEngineName.OPENCODE_EXPERIMENTAL.value
-    )
+    assert normalize_security_engine("opencode") == SecurityEngineName.OPENCODE_EXPERIMENTAL.value
 
 
 def test_ci2lab_blocks_external_read(workspace: Path, outside_secret: Path):
     config = AgentConfig(cwd=str(workspace), security_engine="ci2lab")
-    gate = evaluate_tool_gate(
-        "read_file", {"path": str(outside_secret)}, config
-    )
+    gate = evaluate_tool_gate("read_file", {"path": str(outside_secret)}, config)
     assert gate.blocked
     assert gate.outcome == "blocked_by_workspace"
 

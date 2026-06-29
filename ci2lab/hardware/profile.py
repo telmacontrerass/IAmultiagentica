@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import psutil
 
-from ci2lab.contracts import HardwareProfile, HardwareTier
+from ci2lab.contracts import HardwareProfile, HardwareTier, InferenceMode
 
 _CPU_TOTAL_FACTOR = 0.45
 _CPU_AVAILABLE_FACTOR = 0.6
@@ -28,7 +28,7 @@ def scan_hardware() -> HardwareProfile:
     cpu_cores = os.cpu_count() or psutil.cpu_count(logical=True) or 1
 
     gpu = _detect_gpu(os_name=os_name)
-    inference_mode = "gpu" if gpu["vram_available_gb"] >= 4 else "cpu"
+    inference_mode: InferenceMode = "gpu" if gpu["vram_available_gb"] >= 4 else "cpu"
     if gpu["gpu_vendor"] == "apple" and ram_total_gb >= 8:
         inference_mode = "gpu"
 
@@ -60,7 +60,7 @@ def scan_hardware() -> HardwareProfile:
         inference_budget_gb=budgets["inference_budget_gb"],
         inference_budget_theoretical_gb=budgets["inference_budget_theoretical_gb"],
         inference_budget_available_gb=budgets["inference_budget_available_gb"],
-        memory_pressure=budgets["memory_pressure"],
+        memory_pressure=bool(budgets["memory_pressure"]),
         hardware_tier=hardware_tier,
         raw=gpu["raw"],
     )
@@ -84,9 +84,7 @@ def _compute_inference_budgets(
         available = max(0.0, ram_available_gb * _CPU_AVAILABLE_FACTOR)
         budget = max(0.0, available, theoretical)
 
-    memory_pressure = (
-        theoretical > 0.0 and available < theoretical * _MEMORY_PRESSURE_RATIO
-    )
+    memory_pressure = theoretical > 0.0 and available < theoretical * _MEMORY_PRESSURE_RATIO
 
     return {
         "inference_budget_theoretical_gb": round(theoretical, 2),

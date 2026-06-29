@@ -8,10 +8,11 @@ import re
 import shutil
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from ci2lab.harness.tools.filesystem import read_document, read_file
 from ci2lab.harness.tools.secret_files import is_sensitive_path
@@ -46,16 +47,27 @@ PROJECT_KINDS = frozenset({"knowledge", "paper_review"})
 
 
 def projects_root() -> Path:
+    """Return the root directory for all projects, creating it if needed."""
     root = Path.home() / ".ci2lab" / "projects"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _valid_project_id(project_id: str) -> bool:
+    """Return whether ``project_id`` matches the allowed identifier pattern."""
     return bool(project_id) and bool(re.fullmatch(r"[a-z0-9][a-z0-9_-]{5,63}", project_id))
 
 
 def project_dir(project_id: str) -> Path | None:
+    """Resolve a project's directory, guarding against path traversal.
+
+    Args:
+        project_id: The project identifier to resolve.
+
+    Returns:
+        The project directory under :func:`projects_root`, or ``None`` if the id
+        is invalid or would escape the projects root.
+    """
     if not _valid_project_id(project_id):
         return None
     root = projects_root().resolve()
@@ -66,6 +78,7 @@ def project_dir(project_id: str) -> Path | None:
 
 
 def _connect(path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with row access and foreign keys enabled."""
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
@@ -74,6 +87,7 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 @contextmanager
 def _database(path: Path) -> Iterator[sqlite3.Connection]:
+    """Yield a transactional SQLite connection, committing then closing it."""
     connection = _connect(path)
     try:
         with connection:
@@ -84,10 +98,7 @@ def _database(path: Path) -> Iterator[sqlite3.Connection]:
 
 def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
     """Tag legacy rows and make project ownership queryable inside each DB."""
-    columns = {
-        str(row["name"])
-        for row in db.execute("PRAGMA table_info(sources)").fetchall()
-    }
+    columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(sources)").fetchall()}
     if "project_id" not in columns:
         db.execute("ALTER TABLE sources ADD COLUMN project_id TEXT")
     db.execute(
@@ -98,10 +109,7 @@ def _ensure_source_ownership(db: sqlite3.Connection, project_id: str) -> None:
 
 def _ensure_project_metadata(db: sqlite3.Connection) -> None:
     """Add optional metadata columns to legacy ``project`` tables in place."""
-    columns = {
-        str(row["name"])
-        for row in db.execute("PRAGMA table_info(project)").fetchall()
-    }
+    columns = {str(row["name"]) for row in db.execute("PRAGMA table_info(project)").fetchall()}
     for name, sqltype in PROJECT_METADATA_COLUMNS.items():
         if name not in columns:
             db.execute(f"ALTER TABLE project ADD COLUMN {name} {sqltype}")
@@ -109,7 +117,14 @@ def _ensure_project_metadata(db: sqlite3.Connection) -> None:
 
 
 def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
-    now = datetime.now(timezone.utc).isoformat()
+    """Create the project/sources schema and upsert the project row.
+
+    Args:
+        path: Path to the project's SQLite database file.
+        project_id: Identifier of the project being initialised.
+        name: Display name to store for the project.
+    """
+    now = datetime.now(UTC).isoformat()
     with _database(path) as db:
         db.executescript(
             """
@@ -142,6 +157,7 @@ def _initialize_database(path: Path, *, project_id: str, name: str) -> None:
 
 
 def _clean_meta_value(value: Any) -> str:
+    """Normalise whitespace and truncate a metadata value to 300 characters."""
     return " ".join(str(value or "").split()).strip()[:300]
 
 
@@ -156,6 +172,22 @@ def create_project(
     article_type: str | None = None,
     reviewer_profile_id: str | None = None,
 ) -> dict[str, Any]:
+    """Create a new isolated project and its on-disk database.
+
+    Args:
+        name: Display name (1-100 characters after whitespace normalisation).
+        owner_id: Optional researcher id that owns the project.
+        kind: Project kind; one of :data:`PROJECT_KINDS`.
+        paper_title: Optional manuscript title for paper-review projects.
+        field: Optional research field metadata.
+        target_venue: Optional target publication venue.
+        article_type: Optional article-type metadata.
+        reviewer_profile_id: Optional default reviewer profile id.
+
+    Returns:
+        ``{"ok": True, "project": ...}`` on success, otherwise
+        ``{"ok": False, "error": ...}`` with a user-facing message.
+    """
     clean_name = " ".join(str(name or "").split()).strip()
     if not clean_name:
         return {"ok": False, "error": "Project name is required."}
@@ -207,7 +239,7 @@ def update_project_metadata(project_id: str, payload: dict[str, Any]) -> dict[st
     if not assignments:
         return {"ok": True, "project": get_project(project_id)}
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     set_clause = ", ".join(f"{column} = ?" for column in assignments)
     values = list(assignments.values())
     with _database(path / "project.sqlite3") as db:
@@ -220,6 +252,16 @@ def update_project_metadata(project_id: str, payload: dict[str, Any]) -> dict[st
 
 
 def get_project(project_id: str) -> dict[str, Any] | None:
+    """Return a project's full record including source counts and metadata.
+
+    Args:
+        project_id: Identifier of the project to load.
+
+    Returns:
+        A dict describing the project (id, name, timestamps, source stats,
+        workspace path and metadata columns), or ``None`` when the project does
+        not exist or its database cannot be read.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return None
@@ -280,13 +322,18 @@ def list_projects(owner_id: str | None = None) -> list[dict[str, Any]]:
 
 
 def rename_project(project_id: str, name: str) -> dict[str, Any]:
+    """Rename a project, validating the new name length.
+
+    Returns:
+        ``{"ok": True, "project": ...}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     clean_name = " ".join(str(name or "").split()).strip()
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
     if not clean_name or len(clean_name) > 100:
         return {"ok": False, "error": "Use a project name between 1 and 100 characters."}
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _database(path / "project.sqlite3") as db:
         db.execute(
             "UPDATE project SET name = ?, updated_at = ? WHERE id = ?",
@@ -296,6 +343,11 @@ def rename_project(project_id: str, name: str) -> dict[str, Any]:
 
 
 def delete_project(project_id: str) -> dict[str, Any]:
+    """Delete a project, its workspace, and any sessions scoped to it.
+
+    Returns:
+        ``{"ok": True, "project_id": ...}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not path.is_dir() or get_project(project_id) is None:
         return {"ok": False, "error": "Project not found."}
@@ -313,6 +365,11 @@ def delete_project(project_id: str) -> dict[str, Any]:
 
 
 def list_project_sources(project_id: str) -> dict[str, Any]:
+    """List a project's indexed source files, newest first.
+
+    Returns:
+        ``{"ok": True, "sources": [...]}`` on success, otherwise an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -342,6 +399,19 @@ def list_project_sources(project_id: str) -> dict[str, Any]:
 
 
 def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Decode, store and index a base64-encoded source file into a project.
+
+    Validates the name, format, size and sensitivity, writes the file under the
+    project's ``sources`` directory, extracts text, and records a source row.
+
+    Args:
+        project_id: Identifier of the target project.
+        payload: Upload payload with ``"name"`` and ``"content_base64"`` keys.
+
+    Returns:
+        ``{"ok": True, "source": ..., "project": ...}`` on success, otherwise
+        ``{"ok": False, "error": ...}`` with a user-facing message.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -389,7 +459,7 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
         return {"ok": False, "error": f"Could not index the source: {content}"}
 
     source_id = f"src_{uuid.uuid4().hex[:12]}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _database(path / "project.sqlite3") as db:
         db.execute(
             """
@@ -427,6 +497,12 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
 
 
 def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
+    """Remove a source from a project, deleting its row and stored file.
+
+    Returns:
+        ``{"ok": True, "source_id": ..., "project": ...}`` on success, otherwise
+        an error dict.
+    """
     path = project_dir(project_id)
     if path is None or not (path / "project.sqlite3").is_file():
         return {"ok": False, "error": "Project not found."}
@@ -447,7 +523,7 @@ def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
         )
         db.execute(
             "UPDATE project SET updated_at = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), project_id),
+            (datetime.now(UTC).isoformat(), project_id),
         )
     target = (path / row["relative_path"]).resolve()
     if target.is_relative_to(path.resolve()):
@@ -456,17 +532,44 @@ def delete_project_source(project_id: str, source_id: str) -> dict[str, Any]:
 
 
 def _terms(text: str) -> set[str]:
+    """Tokenise text into a set of lowercased terms, dropping common stopwords."""
     return {
         token
         for token in re.findall(r"[\wÀ-ÿ]{3,}", text.lower())
-        if token not in {
-            "para", "como", "este", "esta", "that", "with", "from", "have",
-            "sobre", "entre", "the", "and", "una", "uno", "unos", "unas",
+        if token
+        not in {
+            "para",
+            "como",
+            "este",
+            "esta",
+            "that",
+            "with",
+            "from",
+            "have",
+            "sobre",
+            "entre",
+            "the",
+            "and",
+            "una",
+            "uno",
+            "unos",
+            "unas",
         }
     }
 
 
 def _chunks(text: str, size: int = 3500, overlap: int = 350) -> list[str]:
+    """Split text into overlapping character windows for retrieval.
+
+    Args:
+        text: Source text to chunk.
+        size: Maximum characters per chunk.
+        overlap: Number of trailing characters repeated at the start of the next
+            chunk to preserve context across boundaries.
+
+    Returns:
+        The list of chunks (empty when the text is blank).
+    """
     clean = re.sub(r"\n{3,}", "\n\n", text).strip()
     if not clean:
         return []
@@ -554,6 +657,17 @@ def project_manuscript_text(project_id: str) -> tuple[str, str]:
 
 
 def project_prompt(project_id: str, prompt: str) -> str:
+    """Wrap a user prompt with the project's name and relevant source excerpts.
+
+    Args:
+        project_id: Identifier of the active project.
+        prompt: The user's original prompt.
+
+    Returns:
+        The prompt unchanged when the project is missing; otherwise the prompt
+        augmented with project framing and (when available) a
+        ``<project_sources>`` context block.
+    """
     project = get_project(project_id)
     if project is None:
         return prompt

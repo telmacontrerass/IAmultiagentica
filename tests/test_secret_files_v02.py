@@ -69,9 +69,7 @@ def test_claude_experimental_gate_blocks_real_secrets(workspace: Path, name: str
 
 
 @pytest.mark.parametrize("name", _ALLOWED_NAMES)
-def test_claude_experimental_gate_allows_false_positive_names(
-    workspace: Path, name: str
-):
+def test_claude_experimental_gate_allows_false_positive_names(workspace: Path, name: str):
     target = workspace / name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("visible\n", encoding="utf-8")

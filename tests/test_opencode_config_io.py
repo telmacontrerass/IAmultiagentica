@@ -193,7 +193,9 @@ def test_export_warning_external_allow(capsys):
 def test_config_comparator_generates_csv_md(workspace: Path, tmp_path: Path):
     cfg = tmp_path / "opencode_dev.json"
     cfg.write_text(
-        json.dumps(export_opencode_format(bundle_from_preset("opencode_dev").normalized_permission)),
+        json.dumps(
+            export_opencode_format(bundle_from_preset("opencode_dev").normalized_permission)
+        ),
         encoding="utf-8",
     )
     bundle = load_opencode_config_bundle(cfg)
@@ -209,7 +211,11 @@ def test_config_comparator_generates_csv_md(workspace: Path, tmp_path: Path):
 def test_comparator_risk_note_external_allow(workspace: Path, tmp_path: Path):
     cfg = tmp_path / "risky.json"
     cfg.write_text(
-        json.dumps(export_opencode_format(bundle_from_preset("opencode_external_allowed").normalized_permission)),
+        json.dumps(
+            export_opencode_format(
+                bundle_from_preset("opencode_external_allowed").normalized_permission
+            )
+        ),
         encoding="utf-8",
     )
     bundle = load_opencode_config_bundle(cfg)

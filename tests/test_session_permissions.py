@@ -12,7 +12,6 @@ from ci2lab.security.audit import clear_audit_log, get_audit_log
 from ci2lab.security.engine import evaluate_tool_gate
 from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
 from ci2lab.security.session_permissions import (
-    ApprovalFingerprint,
     bind_active_session,
     build_approval_fingerprint,
     clear_session_permissions,

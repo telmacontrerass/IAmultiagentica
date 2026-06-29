@@ -42,7 +42,9 @@ def test_update_and_delete_researcher(monkeypatch, tmp_path):
     _use_temp_registry(monkeypatch, tmp_path)
     created = researchers.create_researcher({"name": "Reviewer One"})["researcher"]
 
-    updated = researchers.update_researcher(created["id"], {"name": "Reviewer One", "fields": ["AI safety"]})
+    updated = researchers.update_researcher(
+        created["id"], {"name": "Reviewer One", "fields": ["AI safety"]}
+    )
     assert updated["ok"] is True
     assert updated["researcher"]["fields"] == ["AI safety"]
     assert updated["researcher"]["created_at"] == created["created_at"]

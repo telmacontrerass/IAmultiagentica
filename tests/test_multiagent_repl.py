@@ -1,8 +1,8 @@
 from unittest.mock import patch
 
 from ci2lab.harness import AgentConfig, default_selection
-from ci2lab.harness.session import load_session
 from ci2lab.harness.repl import _TransientProgress, run_repl
+from ci2lab.harness.session import load_session
 
 
 def test_repl_multi_agent_routes_each_prompt_to_orchestrator(tmp_path, monkeypatch):
@@ -11,10 +11,13 @@ def test_repl_multi_agent_routes_each_prompt_to_orchestrator(tmp_path, monkeypat
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
 
     with (
-        patch("ci2lab.harness.repl.read_prompt_line", side_effect=[
-            "implement a task",
-            "/exit",
-        ]),
+        patch(
+            "ci2lab.harness.repl.read_prompt_line",
+            side_effect=[
+                "implement a task",
+                "/exit",
+            ],
+        ),
         patch("ci2lab.harness.repl.run_multi_agent", return_value="final multi") as run_multi_agent,
         patch("ci2lab.harness.repl.run_agent") as run_agent,
         patch("ci2lab.harness.repl.console.print"),
@@ -35,10 +38,13 @@ def test_repl_classic_mode_still_uses_run_agent(tmp_path, monkeypatch):
     monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
 
     with (
-        patch("ci2lab.harness.repl.read_prompt_line", side_effect=[
-            "implement a task",
-            "/exit",
-        ]),
+        patch(
+            "ci2lab.harness.repl.read_prompt_line",
+            side_effect=[
+                "implement a task",
+                "/exit",
+            ],
+        ),
         patch("ci2lab.harness.repl.run_multi_agent") as run_multi_agent,
         patch("ci2lab.harness.repl.run_agent") as run_agent,
         patch("ci2lab.harness.repl.console.print"),
@@ -103,9 +109,7 @@ def test_transient_progress_reuses_one_line_and_clears_it():
         patch.stopall()
 
     status.assert_called_once()
-    assert status.call_args.args[0] == (
-        "[dim italic cyan]Planning the work...[/dim italic cyan]"
-    )
+    assert status.call_args.args[0] == ("[dim italic cyan]Planning the work...[/dim italic cyan]")
     handle.start.assert_called_once()
     handle.update.assert_called_once_with(
         "[dim italic cyan]Checking the result...[/dim italic cyan]"

@@ -22,17 +22,21 @@ from pathlib import Path
 
 from ci2lab.harness.types import AgentConfig
 
-_QWEN_VL_EXTRACTOR_TAG = "qwen2.5vl:7b"
-_SUPPORTED_IMAGE_EXTENSIONS = frozenset({
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".bmp",
-    ".tiff",
-    ".tif",
-})
+#: Fixed Ollama tag of the vision-language model used for document extraction.
+_QWEN_VL_EXTRACTOR_TAG: str = "qwen2.5vl:7b"
+#: Image file extensions accepted by :func:`extract_visual_document_tool`.
+_SUPPORTED_IMAGE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tiff",
+        ".tif",
+    }
+)
 
 
 def analyze_image_tool(
@@ -42,17 +46,17 @@ def analyze_image_tool(
 ) -> str:
     """Analyze a local image file and return a detailed description.
 
-    Parameters
-    ----------
-    image_path:
-        Absolute or workspace-relative path to the image.
-    cfg:
-        Active AgentConfig — used to resolve the vision model and backend URL.
-    model_override:
-        Optional Ollama tag that overrides both ``cfg.vision_model`` and
-        the main model selection.
+    Args:
+        image_path: Absolute or workspace-relative path to the image. Relative
+            paths are resolved against ``cfg.cwd``.
+        cfg: Active agent configuration — used to resolve the vision model and
+            backend URL.
+        model_override: Optional Ollama tag that overrides both
+            ``cfg.vision_model`` and the main model selection.
 
-    Returns a human-readable description string, never raises.
+    Returns:
+        A human-readable description string, or a bracketed status/error message
+        when vision is disabled or no vision model can be resolved. Never raises.
     """
     from ci2lab.harness.vision import analyze_image, is_vision_model
 
@@ -84,11 +88,7 @@ def analyze_image_tool(
             "~/.ci2lab/settings.json or use a vision-capable main model]"
         )
 
-    backend_url = (
-        cfg.selection.backend_url
-        if cfg.selection
-        else "http://localhost:11434/v1"
-    )
+    backend_url = cfg.selection.backend_url if cfg.selection else "http://localhost:11434/v1"
 
     return analyze_image(resolved, backend_url, vision_tag)
 
@@ -100,7 +100,19 @@ def extract_visual_document_tool(
     """Extract handwritten/visual document content with a fixed VL model.
 
     This tool is extraction-only: it transcribes what appears on images/PDF pages
-    and leaves correctness checks to the main reasoning model.
+    and leaves correctness checks to the main reasoning model. PDFs are rendered
+    to per-page images first; text-based PDFs are deferred to ``read_document``.
+
+    Args:
+        document_path: Absolute or workspace-relative path to a PDF or image.
+            Relative paths are resolved against ``cfg.cwd``.
+        cfg: Active agent configuration — used to resolve the backend URL.
+
+    Returns:
+        The transcribed content (one section per page/image) on success, or a
+        bracketed status/error message when vision is disabled, the document is
+        missing, the PDF is text-based, no pages render, or the file type is
+        unsupported. Never raises for these expected conditions.
     """
     from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
     from ci2lab.harness.vision import analyze_image, compute_llm_timeout, pdf_to_images
@@ -120,11 +132,7 @@ def extract_visual_document_tool(
     if not path.exists():
         return f"[Document not found: {resolved}]"
 
-    backend_url = (
-        cfg.selection.backend_url
-        if cfg.selection
-        else "http://localhost:11434/v1"
-    )
+    backend_url = cfg.selection.backend_url if cfg.selection else "http://localhost:11434/v1"
     vision_tag = _QWEN_VL_EXTRACTOR_TAG
 
     suffix = path.suffix.lower()
@@ -169,12 +177,14 @@ def extract_visual_document_tool(
             timeout=timeout,
             prompt=EXERCISE_TRANSCRIPTION_PROMPT,
         )
-        return "\n\n".join([
-            f"Document: {path.name}",
-            f"Extractor model: {vision_tag}",
-            "Instruction: extraction only (no correctness judgment).",
-            f"[Image 1]\n{desc}",
-        ])
+        return "\n\n".join(
+            [
+                f"Document: {path.name}",
+                f"Extractor model: {vision_tag}",
+                "Instruction: extraction only (no correctness judgment).",
+                f"[Image 1]\n{desc}",
+            ]
+        )
 
     return (
         "[Unsupported file type for extract_visual_document. "

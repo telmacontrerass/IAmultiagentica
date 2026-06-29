@@ -24,6 +24,7 @@ Pure module (no model calls, no I/O) so the budgeting is fully unit-testable.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ci2lab.harness.multiagent.manuscript import ManuscriptIndex, Segment
@@ -65,15 +66,26 @@ STANDARD_TIERS = (8192, 16384, 32768, 65536, 131072)
 
 
 def estimate_tokens(text: str) -> int:
+    """Estimate the token count of ``text`` using the char-per-token ratio."""
     return int(len(text or "") / CHARS_PER_TOKEN)
 
 
 def _seg_block(segment: Segment) -> str:
+    """Render one segment as its anchored ``[A#] text`` block."""
     return f"[{segment.anchor}] {segment.display}"
 
 
 def manuscript_budget(context_length: int) -> tuple[int, int]:
-    """Return ``(budget_chars, manuscript_tokens)`` for one reviewer call."""
+    """Return ``(budget_chars, manuscript_tokens)`` for one reviewer call.
+
+    Args:
+        context_length: The model's full context window in tokens.
+
+    Returns:
+        A ``(budget_chars, manuscript_tokens)`` pair giving how many manuscript
+        characters and tokens may safely go into one reviewer call. Both are
+        ``<= 0`` when even the fixed overhead does not fit.
+    """
     context_length = max(0, int(context_length or 0))
     input_tokens = context_length - OUTPUT_RESERVE_TOKENS
     quality_tokens = input_tokens * USABLE_FRACTION
@@ -83,8 +95,17 @@ def manuscript_budget(context_length: int) -> tuple[int, int]:
     return int(manuscript_tokens * CHARS_PER_TOKEN), manuscript_tokens
 
 
-def plan_chunks(segments, budget_chars: int) -> list[list[Segment]]:
-    """Greedily pack whole segments into chunks no larger than ``budget_chars``."""
+def plan_chunks(segments: Iterable[Segment], budget_chars: int) -> list[list[Segment]]:
+    """Greedily pack whole segments into chunks no larger than ``budget_chars``.
+
+    Args:
+        segments: The manuscript segments to pack, in order.
+        budget_chars: The maximum number of characters per chunk.
+
+    Returns:
+        A list of segment lists, each fitting within ``budget_chars`` (a single
+        oversized segment may exceed it, since segments are never split here).
+    """
     chunks: list[list[Segment]] = []
     current: list[Segment] = []
     used = 0
@@ -102,10 +123,12 @@ def plan_chunks(segments, budget_chars: int) -> list[list[Segment]]:
 
 
 def chunk_anchored_text(segments: list[Segment]) -> str:
+    """Render a chunk of segments as a blank-line-separated anchored text block."""
     return "\n\n".join(_seg_block(segment) for segment in segments)
 
 
 def total_manuscript_chars(index: ManuscriptIndex) -> int:
+    """Return the total anchored character length of every segment in ``index``."""
     return sum(len(_seg_block(segment)) + 2 for segment in index.segments)
 
 
@@ -114,9 +137,8 @@ def recommended_context_for(total_chars: int) -> int:
     needed_per_chunk_chars = max(1, total_chars / RECOMMEND_TARGET_CHUNKS)
     needed_manuscript_tokens = needed_per_chunk_chars / CHARS_PER_TOKEN
     needed_context = (
-        (needed_manuscript_tokens + FIXED_OVERHEAD_TOKENS) / USABLE_FRACTION
-        + OUTPUT_RESERVE_TOKENS
-    )
+        needed_manuscript_tokens + FIXED_OVERHEAD_TOKENS
+    ) / USABLE_FRACTION + OUTPUT_RESERVE_TOKENS
     for tier in STANDARD_TIERS:
         if tier >= needed_context:
             return tier
@@ -136,7 +158,16 @@ class Feasibility:
 
 
 def assess_feasibility(index: ManuscriptIndex, context_length: int) -> Feasibility:
-    """Decide whether to review (and in how many chunks) or recommend a bigger model."""
+    """Decide whether to review (and in how many chunks) or recommend a bigger model.
+
+    Args:
+        index: The prepared manuscript index to review.
+        context_length: The model's context window in tokens.
+
+    Returns:
+        A :class:`Feasibility` describing whether the review can proceed, the
+        chunk plan, and the recommended minimum context when it cannot.
+    """
     budget_chars, manuscript_tokens = manuscript_budget(context_length)
     total_chars = total_manuscript_chars(index)
 
@@ -173,9 +204,7 @@ def assess_feasibility(index: ManuscriptIndex, context_length: int) -> Feasibili
         n_chunks=n_chunks,
         budget_chars=budget_chars,
         manuscript_tokens=manuscript_tokens,
-        reason=(
-            f"Manuscript fits in {n_chunks} chunk(s) within the model's usable context."
-        ),
+        reason=(f"Manuscript fits in {n_chunks} chunk(s) within the model's usable context."),
         recommended_min_context=0,
     )
 

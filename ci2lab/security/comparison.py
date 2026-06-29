@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,20 @@ _CSV_COLUMNS = [
 
 @dataclass(frozen=True)
 class ComparisonCase:
+    """A single cross-engine comparison case and its expected decisions.
+
+    Attributes:
+        case_id: Stable identifier for the case.
+        description: Human-readable description.
+        tool: Tool name exercised by the case.
+        args: Arguments passed to the tool.
+        expected_ci2lab: Expected decision for the ci2lab engine.
+        expected_opencode: Map of permission-config key to expected decision.
+        expected_claude: Same as above for the claude_experimental engine.
+        notes: Free-form notes.
+        risk_note: Advisory risk note for the case.
+    """
+
     case_id: str
     description: str
     tool: str
@@ -52,6 +66,27 @@ class ComparisonCase:
 
 @dataclass
 class ComparisonRow:
+    """One evaluated row: a case run against a specific engine and config.
+
+    Attributes:
+        case_id: Identifier of the source case.
+        description: Human-readable description.
+        engine: Engine the case was evaluated against.
+        permission_config: Name of the permission config used.
+        tool: Tool name exercised.
+        target_or_command: Target path or command label.
+        expected_decision: Decision the case expected.
+        actual_decision: Decision actually produced.
+        matched_rule: Rule that produced the decision, if any.
+        passed: True when expected and actual decisions match.
+        notes: Free-form notes.
+        external_directory: True if the target was outside the workspace.
+        hard_guards_enabled: True if hard guards applied.
+        experimental: True if produced by an experimental engine.
+        risk_note: Advisory risk note for the row.
+        permission_layer_enabled: True if the permission layer applied.
+    """
+
     case_id: str
     description: str
     engine: str
@@ -75,6 +110,13 @@ def _gate_decision(
     args: dict[str, Any],
     config: AgentConfig,
 ) -> tuple[str, str | None, bool, bool, bool, bool, str | None]:
+    """Evaluate the gate and flatten its result into a comparison tuple.
+
+    Returns:
+        A tuple of (decision, matched_rule, external_directory,
+        hard_guards_enabled, experimental, permission_layer_enabled,
+        risk_note).
+    """
     gate = evaluate_tool_gate(tool, args, config)
     if gate.blocked:
         decision = "deny"
@@ -101,6 +143,11 @@ def _opencode_decision(
     rules: OpenCodePermissionConfig,
     auto_confirm: bool,
 ) -> tuple[str, str | None, bool]:
+    """Evaluate the OpenCode permission layer and flatten the decision.
+
+    Returns:
+        A tuple of (decision, matched_rule, external_directory).
+    """
     decision = evaluate_opencode_tool(
         tool,
         args,
@@ -115,6 +162,7 @@ def _opencode_decision(
 
 
 def _target_label(args: dict[str, Any]) -> str:
+    """Return a short label for a tool call's command or path target."""
     if "command" in args:
         return str(args["command"])
     if "path" in args:
@@ -128,6 +176,7 @@ def _risk_note_for_row(
     case: ComparisonCase,
     external_directory: bool,
 ) -> str:
+    """Derive an advisory risk note for a comparison row."""
     if case.risk_note:
         return case.risk_note
     if case.notes:
@@ -135,10 +184,7 @@ def _risk_note_for_row(
     if engine == "opencode_experimental" and external_directory:
         return "opencode may allow external paths depending on external_directory"
     if engine == "claude_experimental" and external_directory:
-        return (
-            "claude_experimental ignores external_directory=allow; "
-            "hard workspace blocks"
-        )
+        return "claude_experimental ignores external_directory=allow; hard workspace blocks"
     if engine == "ci2lab" and external_directory:
         return "ci2lab always blocks paths outside the workspace"
     return ""
@@ -185,6 +231,16 @@ def build_comparison_cases(
     outside_path: Path,
     env_path: Path,
 ) -> list[ComparisonCase]:
+    """Build the standard matrix of cross-engine comparison cases.
+
+    Args:
+        workspace: Path to the workspace root.
+        outside_path: Path of an external file used by external-access cases.
+        env_path: Path of a ``.env`` file used by secret-policy cases.
+
+    Returns:
+        The list of comparison cases.
+    """
     inside = workspace / "inside.txt"
     return [
         ComparisonCase(
@@ -331,6 +387,18 @@ def run_comparison(
     auto_confirm: bool = False,
     cases: list[ComparisonCase] | None = None,
 ) -> list[ComparisonRow]:
+    """Run the comparison matrix across all engines and configs.
+
+    Args:
+        workspace: Path to the workspace root.
+        outside_path: External file path; defaulted next to the workspace.
+        env_path: ``.env`` file path; defaulted inside the workspace.
+        auto_confirm: If True, ``ask`` resolves to ``allow`` where applicable.
+        cases: Optional explicit cases; built by default.
+
+    Returns:
+        The evaluated comparison rows.
+    """
     ws = workspace.resolve()
     outside = outside_path or (ws.parent / "outside" / "secret.txt")
     dotenv = env_path or (ws / ".env")
@@ -471,6 +539,7 @@ def run_comparison(
 
 
 def row_to_dict(row: ComparisonRow) -> dict[str, Any]:
+    """Serialize a :class:`ComparisonRow` to a flat dict for CSV/JSON output."""
     return {
         "case_id": row.case_id,
         "description": row.description,
@@ -490,6 +559,7 @@ def row_to_dict(row: ComparisonRow) -> dict[str, Any]:
 
 
 def format_comparison_table(rows: list[ComparisonRow]) -> str:
+    """Render the comparison rows as a plain-text aligned table."""
     headers = [
         "case_id",
         "description",
@@ -538,6 +608,15 @@ def format_comparison_table(rows: list[ComparisonRow]) -> str:
 
 
 def format_comparison_markdown(rows: list[ComparisonRow], *, generated_at: str) -> str:
+    """Render the comparison rows as a Markdown report.
+
+    Args:
+        rows: Evaluated comparison rows.
+        generated_at: Timestamp string shown in the report header.
+
+    Returns:
+        The Markdown document as a string.
+    """
     passed = sum(1 for r in rows if r.passed)
     lines = [
         "# Security engine comparison",
@@ -551,10 +630,7 @@ def format_comparison_markdown(rows: list[ComparisonRow], *, generated_at: str) 
     ]
     for row in rows:
         data = row_to_dict(row)
-        cells = [
-            str(data[c]).replace("|", "\\|").replace("\n", " ")
-            for c in _CSV_COLUMNS
-        ]
+        cells = [str(data[c]).replace("|", "\\|").replace("\n", " ") for c in _CSV_COLUMNS]
         cells[-2] = "PASS" if row.passed else "FAIL"
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
@@ -562,6 +638,16 @@ def format_comparison_markdown(rows: list[ComparisonRow], *, generated_at: str) 
 
 @dataclass(frozen=True)
 class ComparisonExportResult:
+    """Paths produced when exporting a comparison report.
+
+    Attributes:
+        output_dir: Directory containing the exported artifacts.
+        csv_path: Path to the CSV report.
+        markdown_path: Path to the Markdown report.
+        ci2lab_config_path: Path to the ci2lab config snapshot.
+        opencode_config_path: Path to the opencode config snapshot.
+    """
+
     output_dir: Path
     csv_path: Path
     markdown_path: Path
@@ -577,7 +663,7 @@ def export_comparison_report(
 ) -> ComparisonExportResult:
     """Write CSV, Markdown and config snapshots under runs/security_comparison/."""
     ws = workspace.resolve()
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     out_dir = ws / runs_dir / "security_comparison" / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -595,7 +681,7 @@ def export_comparison_report(
             row_copy["passed"] = "PASS" if data["passed"] else "FAIL"
             writer.writerow(row_copy)
 
-    generated_at = datetime.now(timezone.utc).isoformat()
+    generated_at = datetime.now(UTC).isoformat()
     md_path.write_text(
         format_comparison_markdown(rows, generated_at=generated_at),
         encoding="utf-8",

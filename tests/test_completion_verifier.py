@@ -11,10 +11,15 @@ from ci2lab.harness.types import AgentConfig, ToolResult
 def _write_call(cid, path, content):
     return LLMResponse(
         content="",
-        tool_calls=[{
-            "id": cid,
-            "function": {"name": "write_file", "arguments": f'{{"path": "{path}", "content": "{content}"}}'},
-        }],
+        tool_calls=[
+            {
+                "id": cid,
+                "function": {
+                    "name": "write_file",
+                    "arguments": f'{{"path": "{path}", "content": "{content}"}}',
+                },
+            }
+        ],
     )
 
 
@@ -34,7 +39,10 @@ def test_verifier_failure_injects_fix_message_then_finishes():
     # about the verifier fix flow, not about context management.
     selection.context_length = 1_000_000
     config = AgentConfig(
-        cwd=".", stream=False, auto_confirm=True, run_log_enabled=False,
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
         verify_completion=True,
     )
     # Round 1: write a file then claim done. Verifier FAILs. Round 2: write again
@@ -71,7 +79,10 @@ def test_verifier_failure_injects_fix_message_then_finishes():
 def test_verifier_not_run_without_effectful_work():
     selection = default_selection("test:1b")
     config = AgentConfig(
-        cwd=".", stream=False, auto_confirm=True, run_log_enabled=False,
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
         verify_completion=True,
     )
     answer = LLMResponse(content="The loop lives in loop.py.", tool_calls=[])

@@ -16,8 +16,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-_PANDOC_TIMEOUT_SECONDS = 120
-_SOFFICE_TIMEOUT_SECONDS = 180
+_PANDOC_TIMEOUT_SECONDS: int = 120
+_SOFFICE_TIMEOUT_SECONDS: int = 180
 
 _PANDOC_MISSING = (
     "Error: cannot convert because `pandoc` is missing from PATH. "
@@ -30,16 +30,18 @@ _PDF2DOCX_MISSING = (
 )
 
 # LaTeX engines that DO accept arbitrary Unicode (unlike pdflatex).
-_UNICODE_LATEX_ENGINES = ("xelatex", "lualatex", "tectonic")
+_UNICODE_LATEX_ENGINES: tuple[str, ...] = ("xelatex", "lualatex", "tectonic")
 # Engines that render via HTML/CSS (without LaTeX).
-_HTML_PDF_ENGINES = ("weasyprint", "wkhtmltopdf", "prince")
+_HTML_PDF_ENGINES: tuple[str, ...] = ("weasyprint", "wkhtmltopdf", "prince")
 
 
 def _pandoc_path() -> str | None:
+    """Return the resolved ``pandoc`` executable path, or ``None`` if absent."""
     return shutil.which("pandoc")
 
 
 def _soffice_path() -> str | None:
+    """Return the first available LibreOffice executable path, or ``None``."""
     for name in ("soffice", "libreoffice", "soffice.bin"):
         found = shutil.which(name)
         if found:
@@ -48,7 +50,15 @@ def _soffice_path() -> str | None:
 
 
 def _validate_docx(source_path: Path) -> str | None:
-    """Return an error message if the .docx is not a valid Word OOXML file."""
+    """Return an error message if the .docx is not a valid Word OOXML file.
+
+    Args:
+        source_path: Path to the candidate ``.docx`` file.
+
+    Returns:
+        ``None`` if the file is a valid OOXML package, otherwise an
+        ``"Error: ..."`` message explaining why it is not.
+    """
     if not zipfile.is_zipfile(source_path):
         return (
             f"Error: '{source_path.name}' is not a valid .docx (not an "
@@ -69,7 +79,17 @@ def _validate_docx(source_path: Path) -> str | None:
 
 
 def _convert_with_soffice(soffice: str, source_path: Path, output_path: Path) -> str | None:
-    """Convert with headless LibreOffice. Returns None on success, or an error."""
+    """Convert with headless LibreOffice. Returns None on success, or an error.
+
+    Args:
+        soffice: Path to the LibreOffice/``soffice`` executable.
+        source_path: Path to the source ``.docx`` file.
+        output_path: Destination ``.pdf`` path; parent dirs are created.
+
+    Returns:
+        ``None`` on success, otherwise a short error string describing the
+        LibreOffice failure.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         try:
             result = subprocess.run(
@@ -105,7 +125,19 @@ def _convert_with_soffice(soffice: str, source_path: Path, output_path: Path) ->
 def _convert_with_pandoc(
     pandoc: str, source_path: Path, output_path: Path, engine: str | None
 ) -> str | None:
-    """Convert with pandoc using a specific PDF engine. None on success."""
+    """Convert with pandoc using a specific PDF engine. None on success.
+
+    Args:
+        pandoc: Path to the ``pandoc`` executable.
+        source_path: Path to the source ``.docx`` file.
+        output_path: Destination ``.pdf`` path.
+        engine: PDF engine to pass via ``--pdf-engine``, or ``None`` to let
+            pandoc pick its default engine.
+
+    Returns:
+        ``None`` on success, otherwise a short error string describing the
+        pandoc failure.
+    """
     cmd = [pandoc, str(source_path), "-o", str(output_path)]
     if engine:
         cmd.append(f"--pdf-engine={engine}")
@@ -129,7 +161,21 @@ def _convert_with_pandoc(
 
 
 def docx_to_pdf(cwd: str, source: str, output: str) -> str:
-    """Convert a .docx file to .pdf trying several engines for robustness."""
+    """Convert a .docx file to .pdf trying several engines for robustness.
+
+    Engines are tried in order: LibreOffice first (best fidelity and Unicode
+    support without LaTeX), then pandoc with Unicode-safe LaTeX/HTML engines,
+    falling back to pandoc's default ``pdflatex``.
+
+    Args:
+        cwd: The current working directory used to resolve paths.
+        source: Workspace-relative path to the source ``.docx`` file.
+        output: Workspace-relative destination path for the ``.pdf``.
+
+    Returns:
+        A success message naming the engine used, or an ``"Error: ..."`` message
+        if validation fails or no engine could produce a PDF.
+    """
     from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 
     try:
@@ -165,6 +211,7 @@ def docx_to_pdf(cwd: str, source: str, output: str) -> str:
     pandoc = _pandoc_path()
     if pandoc:
         engines: list[str | None] = []
+        engine: str | None
         for engine in (*_UNICODE_LATEX_ENGINES, *_HTML_PDF_ENGINES):
             if shutil.which(engine):
                 engines.append(engine)
@@ -194,7 +241,18 @@ def docx_to_pdf(cwd: str, source: str, output: str) -> str:
 
 
 def pdf_to_docx(cwd: str, source: str, output: str) -> str:
-    """Convert a .pdf file to .docx using pdf2docx."""
+    """Convert a .pdf file to .docx using pdf2docx.
+
+    Args:
+        cwd: The current working directory used to resolve paths.
+        source: Workspace-relative path to the source ``.pdf`` file.
+        output: Workspace-relative destination path for the ``.docx``.
+
+    Returns:
+        A success message describing the created file, or an ``"Error: ..."``
+        message if validation fails, ``pdf2docx`` is missing, or conversion
+        fails.
+    """
     from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 
     try:
@@ -221,7 +279,7 @@ def pdf_to_docx(cwd: str, source: str, output: str) -> str:
         cv = Converter(str(source_path))
         cv.convert(str(output_path), start=0, end=None)
         cv.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not convert {source_path.name}: {exc}"
 
     size = output_path.stat().st_size

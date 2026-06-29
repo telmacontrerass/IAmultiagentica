@@ -98,9 +98,7 @@ def test_source_rows_are_tagged_with_their_own_project_id(monkeypatch, tmp_path)
     )
 
     with sqlite3.connect(Path(project["workspace"]) / "project.sqlite3") as db:
-        stored_project_id = db.execute(
-            "SELECT project_id FROM sources"
-        ).fetchone()[0]
+        stored_project_id = db.execute("SELECT project_id FROM sources").fetchone()[0]
 
     assert stored_project_id == project["id"]
 
@@ -227,7 +225,10 @@ def test_project_manuscript_text_picks_largest_source(monkeypatch, tmp_path):
     project = projects.create_project("Paper", kind="paper_review")["project"]
     projects.add_project_source(
         project["id"],
-        {"name": "guidelines.txt", "content_base64": base64.b64encode(b"Short author guidelines.").decode()},
+        {
+            "name": "guidelines.txt",
+            "content_base64": base64.b64encode(b"Short author guidelines.").decode(),
+        },
     )
     projects.add_project_source(
         project["id"],

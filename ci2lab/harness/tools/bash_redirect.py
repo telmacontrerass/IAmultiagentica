@@ -13,49 +13,64 @@ Covers two cases:
 from __future__ import annotations
 
 import shlex
+from typing import Any
 
 from ci2lab.harness.types import ToolCall
 
+#: Native tool names that have no shell equivalent and may appear in a bash block.
 # Native tools that do not exist as a shell command (e.g. read_file on Windows).
-_REDIRECTABLE_TOOLS = frozenset({
-    "read_file",
-    "read_document",
-    "write_file",
-    "edit_file",
-    "apply_patch",
-    "file_info",
-    "tree",
-    "inspect_file",
-    "todo_write",
-    "ask_user",
-    "notebook_edit",
-    "skill",
-})
+_REDIRECTABLE_TOOLS: frozenset[str] = frozenset(
+    {
+        "read_file",
+        "read_document",
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "file_info",
+        "tree",
+        "inspect_file",
+        "todo_write",
+        "ask_user",
+        "notebook_edit",
+        "skill",
+    }
+)
 
+#: Shell metacharacters signalling real command composition (no translation).
 # Shell characters that indicate real composition (pipes, redirections,
 # subshells, chaining). If they appear outside a simple case, we don't translate.
-_SHELL_CONTROL = ("&&", "||", ";", ">", "<", "$(", "`", "&")
+_SHELL_CONTROL: tuple[str, ...] = ("&&", "||", ";", ">", "<", "$(", "`", "&")
 
-_GLOB_CHARS = ("*", "?", "[")
+#: Characters that mark a token as a glob pattern.
+_GLOB_CHARS: tuple[str, ...] = ("*", "?", "[")
 
 
 def _looks_glob(token: str) -> bool:
+    """Return ``True`` if ``token`` contains any glob metacharacter."""
     return any(ch in token for ch in _GLOB_CHARS)
 
 
 def _safe_split(segment: str) -> list[str] | None:
+    """Split ``segment`` into shell tokens, falling back to whitespace split."""
     try:
         return shlex.split(segment, posix=True)
     except ValueError:
         return segment.split()
 
 
-def _translate_simple_shell(command: str) -> tuple[str, dict] | None:
+def _translate_simple_shell(command: str) -> tuple[str, dict[str, Any]] | None:
     """Translate a simple POSIX command to the equivalent tool.
 
     Returns (tool_name, args) or None if there is no safe equivalence.
     For pipelines `ls ... | grep X` it uses only the first segment: that way the
     model receives the full listing and can continue.
+
+    Args:
+        command: A shell command line that may be a simple POSIX command.
+
+    Returns:
+        A ``(tool_name, arguments)`` pair for the equivalent native tool, or
+        ``None`` if no safe translation exists.
     """
     stripped = command.strip()
     if not stripped:
@@ -110,7 +125,7 @@ def _translate_simple_shell(command: str) -> tuple[str, dict] | None:
         if not operands:
             return None
         pattern = operands[0]
-        args: dict = {"pattern": pattern}
+        args: dict[str, Any] = {"pattern": pattern}
         if ignore_case:
             args["ignore_case"] = True
         if len(operands) > 1:
@@ -125,7 +140,8 @@ def _translate_simple_shell(command: str) -> tuple[str, dict] | None:
     return None
 
 
-def _build_call(tool_name: str, tool_args: dict, call_id: str | None) -> ToolCall:
+def _build_call(tool_name: str, tool_args: dict[str, Any], call_id: str | None) -> ToolCall:
+    """Construct a :class:`ToolCall`, preserving ``call_id`` when supplied."""
     from ci2lab.harness.parsing import _new_call
 
     call = _new_call(tool_name, tool_args)
@@ -144,6 +160,14 @@ def tool_call_from_bash_command(
     Only covers tool names that are NOT real shell commands. The translation
     of genuine POSIX commands (`ls`, `grep`, ...) lives in `shell_command_to_tool`
     and is only applied when the skill blocks `bash`.
+
+    Args:
+        command: The raw ``command`` string from a bash tool call.
+        call_id: Optional id to attach to the produced tool call.
+
+    Returns:
+        A redirected :class:`ToolCall` for the native tool, or ``None`` if the
+        command does not name a redirectable tool.
     """
     from ci2lab.harness.parsing import _fenced_body_to_args, _map_name
 
@@ -168,6 +192,14 @@ def shell_command_to_tool(
 
     Intended as a safety net when a skill does not allow `bash`: that way the model
     moves forward using the permitted tool instead of looping.
+
+    Args:
+        command: A simple POSIX command line to translate.
+        call_id: Optional id to attach to the produced tool call.
+
+    Returns:
+        A :class:`ToolCall` for the equivalent native tool, or ``None`` if there
+        is no safe translation.
     """
     translated = _translate_simple_shell(command)
     if translated is None:
@@ -177,7 +209,15 @@ def shell_command_to_tool(
 
 
 def redirect_bash_call(call: ToolCall) -> ToolCall:
-    """If `bash` actually invokes another tool (`bash read_file ...`), redirect it."""
+    """If `bash` actually invokes another tool (`bash read_file ...`), redirect it.
+
+    Args:
+        call: The incoming tool call to inspect.
+
+    Returns:
+        The redirected :class:`ToolCall` if the bash command names a native
+        tool, otherwise the original ``call`` unchanged.
+    """
     if call.name != "bash":
         return call
     command = str(call.arguments.get("command", ""))

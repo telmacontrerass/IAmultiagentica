@@ -6,17 +6,19 @@ import argparse
 import os
 from pathlib import Path
 
-from ci2lab.console import console
 from ci2lab.cli.runtime import _build_config, _resolve_selection
 from ci2lab.config import Ci2LabConfig
+from ci2lab.console import console
 
 
 def _looks_like_ci2lab_repo(path: str) -> bool:
+    """Return True when ``path`` looks like the ci2lab source checkout itself."""
     root = Path(path).resolve()
     return (root / "ci2lab").is_dir() and (root / "pyproject.toml").is_file()
 
 
 def _workspace_startup_hint(args: argparse.Namespace, cwd: str) -> None:
+    """Print a one-time tip about ``--workspace`` when running inside the repo."""
     if args.workspace or args.cwd:
         return
     if os.environ.get("CI2LAB_WORKSPACE_HINT"):
@@ -29,6 +31,21 @@ def _workspace_startup_hint(args: argparse.Namespace, cwd: str) -> None:
 
 
 def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
+    """Run a single agent turn for ``prompt`` and exit.
+
+    Resolves the model and config, optionally resumes a saved session, reports
+    model/tool/workspace context and then runs either the multi-agent
+    orchestrator or the single ReAct agent.
+
+    Args:
+        prompt: The user request to execute.
+        args: Parsed CLI arguments (session, multi-agent flag, images, etc.).
+        runtime: The merged runtime configuration.
+
+    Returns:
+        Process exit code: ``0`` on success, the :class:`LLMError` exit code on
+        an LLM failure, or ``130`` if interrupted.
+    """
     from ci2lab.harness import run_agent
     from ci2lab.harness.llm_errors import LLMError
     from ci2lab.harness.session import load_session
@@ -52,6 +69,7 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
 
     if config.image_paths:
         from ci2lab.harness.vision import is_vision_model
+
         n = len(config.image_paths)
         label = "image" if n == 1 else "images"
         console.print(f"[bold]Images:[/bold] {n} {label} attached")
@@ -89,6 +107,16 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
 
 
 def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
+    """Start the interactive chat REPL.
+
+    Args:
+        args: Parsed CLI arguments (session id and multi-agent flag).
+        runtime: The merged runtime configuration.
+
+    Returns:
+        Process exit code: ``0`` on success, the :class:`LLMError` exit code on
+        an LLM failure, or ``130`` if interrupted.
+    """
     from ci2lab.harness.llm_errors import LLMError
     from ci2lab.harness.repl import run_repl
 

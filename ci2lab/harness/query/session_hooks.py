@@ -15,6 +15,17 @@ def maybe_save_session(
     messages: list[dict[str, Any]],
     selection: ModelSelection,
 ) -> None:
+    """Persist the current session to disk when a session id is configured.
+
+    No-ops when ``cfg.session_id`` is unset. Otherwise writes the conversation
+    and run metadata via :func:`save_session` and prints the saved path.
+
+    Args:
+        cfg: The active agent configuration, providing the session id, working
+            directory, token usage and project id.
+        messages: The conversation history to persist.
+        selection: The resolved model selection, supplying the model tag.
+    """
     if not cfg.session_id:
         return
     path = save_session(

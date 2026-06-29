@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,10 +46,12 @@ def researchers_path() -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    """Return the current UTC timestamp as an ISO-8601 string."""
+    return datetime.now(UTC).isoformat()
 
 
 def _load_registry() -> list[dict[str, Any]]:
+    """Load the researcher registry, returning an empty list on any failure."""
     path = researchers_path()
     if not path.is_file():
         return []
@@ -63,6 +65,7 @@ def _load_registry() -> list[dict[str, Any]]:
 
 
 def _save_registry(rows: list[dict[str, Any]]) -> None:
+    """Persist the full researcher registry to disk as pretty-printed JSON."""
     researchers_path().write_text(
         json.dumps(rows, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -70,10 +73,17 @@ def _save_registry(rows: list[dict[str, Any]]) -> None:
 
 
 def _clean_text(value: Any, *, limit: int) -> str:
+    """Normalise whitespace and truncate a text value to ``limit`` characters."""
     return " ".join(str(value or "").split()).strip()[:limit]
 
 
 def _clean_list(value: Any) -> list[str]:
+    """Normalise a string or sequence into a de-duplicated list of clean items.
+
+    Comma-separated strings are split; each item has whitespace collapsed and is
+    truncated to :data:`MAX_ITEM_CHARS`. Blanks and duplicates are dropped and
+    the result is capped at :data:`MAX_LIST_ITEMS`.
+    """
     if isinstance(value, str):
         items = [part.strip() for part in value.split(",")]
     elif isinstance(value, (list, tuple)):
@@ -91,6 +101,10 @@ def _clean_list(value: Any) -> list[str]:
 
 
 def _clean_lens_preferences(value: Any) -> dict[str, str]:
+    """Keep only known lens keys mapped to valid emphasis levels.
+
+    Unknown keys and levels outside :data:`LENS_LEVELS` are dropped.
+    """
     if not isinstance(value, dict):
         return {}
     prefs: dict[str, str] = {}
@@ -102,6 +116,7 @@ def _clean_lens_preferences(value: Any) -> dict[str, str]:
 
 
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Sanitise a raw researcher payload into the stored profile field set."""
     return {
         "name": _clean_text(payload.get("name"), limit=MAX_NAME_CHARS),
         "email": _clean_text(payload.get("email"), limit=MAX_ITEM_CHARS),
@@ -114,6 +129,15 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def create_researcher(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create and persist a new researcher profile.
+
+    Args:
+        payload: Raw profile fields (name, email, fields, venues, style, etc.).
+
+    Returns:
+        ``{"ok": True, "researcher": ...}`` on success, otherwise an error dict
+        (a non-empty name is required).
+    """
     fields = _normalize_payload(payload or {})
     if not fields["name"]:
         return {"ok": False, "error": "A researcher name is required."}
@@ -128,6 +152,7 @@ def create_researcher(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_researcher(researcher_id: str) -> dict[str, Any] | None:
+    """Return the researcher profile with ``researcher_id``, or ``None``."""
     researcher_id = str(researcher_id or "").strip()
     if not researcher_id:
         return None
@@ -138,11 +163,21 @@ def get_researcher(researcher_id: str) -> dict[str, Any] | None:
 
 
 def list_researchers() -> list[dict[str, Any]]:
+    """Return all researcher profiles sorted case-insensitively by name."""
     rows = _load_registry()
     return sorted(rows, key=lambda item: str(item.get("name", "")).lower())
 
 
 def update_researcher(researcher_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Replace an existing researcher's fields, preserving ``created_at``.
+
+    Args:
+        researcher_id: Identifier of the profile to update.
+        payload: Raw replacement fields (a non-empty name is required).
+
+    Returns:
+        ``{"ok": True, "researcher": ...}`` on success, otherwise an error dict.
+    """
     researcher_id = str(researcher_id or "").strip()
     rows = _load_registry()
     fields = _normalize_payload(payload or {})
@@ -163,6 +198,12 @@ def update_researcher(researcher_id: str, payload: dict[str, Any]) -> dict[str, 
 
 
 def delete_researcher(researcher_id: str) -> dict[str, Any]:
+    """Delete the researcher profile with ``researcher_id``.
+
+    Returns:
+        ``{"ok": True, "researcher_id": ...}`` on success, otherwise an error
+        dict when no matching profile exists.
+    """
     researcher_id = str(researcher_id or "").strip()
     rows = _load_registry()
     remaining = [row for row in rows if row.get("id") != researcher_id]
@@ -207,9 +248,7 @@ def researcher_context_block(profile: dict[str, Any]) -> str:
         "Adapt the review's depth, emphasis, and tone to this reviewer's field "
         "and style, but keep a rigorous, standard peer review. This profile never "
         "licenses inventing content: every claim about the paper still requires a "
-        "verbatim quote and anchor.\n"
-        + "\n".join(lines)
-        + "\n</reviewer_profile>"
+        "verbatim quote and anchor.\n" + "\n".join(lines) + "\n</reviewer_profile>"
     )
 
 

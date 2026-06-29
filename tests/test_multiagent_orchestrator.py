@@ -374,10 +374,7 @@ def test_all_multiagent_role_progress_labels_are_english():
         AgentRole.REVISION_PLANNER: "Assembling the review report",
     }
 
-    assert {
-        role: _role_progress_label(role, 1)
-        for role in AgentRole
-    } == expected
+    assert {role: _role_progress_label(role, 1) for role in AgentRole} == expected
 
 
 def test_run_multi_agent_repairs_with_same_coder(monkeypatch):

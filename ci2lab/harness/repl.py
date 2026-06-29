@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.panel import Panel
 
+if TYPE_CHECKING:
+    from rich.status import Status
+
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
-from ci2lab.harness.tools.filesystem_parts.documents import pdf_has_extractable_text, pdf_needs_vision
-from ci2lab.harness.vision import (
-    extract_image_paths,
-    find_image_candidates,
-    is_vision_model,
-    pdf_to_images,
-)
 from ci2lab.harness.llm_errors import LLMError
 from ci2lab.harness.multiagent import run_multi_agent
 from ci2lab.harness.query.loop import run_agent
@@ -26,10 +23,18 @@ from ci2lab.harness.session import (
     new_session_id,
     save_session,
 )
-from ci2lab.harness.terminal_input import read_prompt_line
 from ci2lab.harness.skills.loader import load_skills
+from ci2lab.harness.terminal_input import read_prompt_line
+from ci2lab.harness.tools.filesystem_parts.documents import (
+    pdf_has_extractable_text,
+)
 from ci2lab.harness.tools.skill_tool import invoke_skill_for_repl
 from ci2lab.harness.types import AgentConfig
+from ci2lab.harness.vision import (
+    extract_image_paths,
+    find_image_candidates,
+    is_vision_model,
+)
 from ci2lab.harness.vision_exercise import (
     REVIEW_HANDWRITTEN_EXERCISE_SKILL,
     is_exercise_review_request,
@@ -40,9 +45,11 @@ class _TransientProgress:
     """Render one replaceable status line and remove it when work finishes."""
 
     def __init__(self) -> None:
-        self._status = None
+        """Initialise the progress holder with no active status line."""
+        self._status: Status | None = None
 
     def update(self, label: str) -> None:
+        """Show or update the status line with *label*; clear it if empty."""
         if not label:
             self.clear()
             return
@@ -57,6 +64,7 @@ class _TransientProgress:
             self._status.update(rendered)
 
     def clear(self) -> None:
+        """Stop and remove the active status line if one is showing."""
         if self._status is not None:
             active_progress.clear(self._status)
             self._status.stop()
@@ -65,8 +73,8 @@ class _TransientProgress:
 
 def _extract_inline_images(
     line: str,
-    config: "AgentConfig",
-    selection: "ModelSelection",
+    config: AgentConfig,
+    selection: ModelSelection,
 ) -> tuple[str, list[str]]:
     """Detect image paths in *line*, print feedback, return (prompt, paths).
 
@@ -77,6 +85,16 @@ def _extract_inline_images(
     When an image-like name is mentioned but the file does not exist, a
     "not found — did you mean?" warning is printed immediately so the user
     can correct the typo before the bad turn pollutes the session history.
+
+    Args:
+        line: The raw user input line that may contain image file paths.
+        config: Active agent configuration (provides ``cwd`` and vision flags).
+        selection: The active model selection used to check vision capability.
+
+    Returns:
+        A ``(prompt, paths)`` tuple where ``prompt`` is the user text with image
+        paths stripped and any context notes prepended, and ``paths`` is the list
+        of resolved image paths to attach (empty if none are usable).
     """
     import difflib
     from pathlib import Path
@@ -92,10 +110,11 @@ def _extract_inline_images(
 
     try:
         workspace_images = [
-            f.name for f in Path(config.cwd).iterdir()
-            if f.is_file() and f.suffix.lower() in {
-                ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".pdf"
-            }
+            f.name
+            for f in Path(config.cwd).iterdir()
+            if f.is_file()
+            and f.suffix.lower()
+            in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".pdf"}
         ]
     except OSError:
         workspace_images = []
@@ -115,8 +134,7 @@ def _extract_inline_images(
             and pdf_has_extractable_text(candidate_path)
         ):
             console.print(
-                f"[dim]PDF detected: {name} — text document "
-                f"(use read_document, not vision)[/dim]"
+                f"[dim]PDF detected: {name} — text document (use read_document, not vision)[/dim]"
             )
             not_found_notes.append(
                 f"[Context: '{name}' is a text-based PDF. Use read_document to "
@@ -126,9 +144,7 @@ def _extract_inline_images(
 
         suggestions = difflib.get_close_matches(name, workspace_images, n=2, cutoff=0.55)
         if suggestions:
-            hint = "  Did you mean: " + ", ".join(
-                f"[bold]{s}[/bold]" for s in suggestions
-            )
+            hint = "  Did you mean: " + ", ".join(f"[bold]{s}[/bold]" for s in suggestions)
             console.print(f"[yellow]'{name}' not found in workspace.[/yellow]{hint}")
             note = (
                 f"[Context: '{name}' was mentioned as an image but does not exist "
@@ -161,10 +177,11 @@ def _extract_inline_images(
             # Show page count so the user knows how many pages will be processed.
             try:
                 import fitz
+
                 _doc = fitz.open(p)
                 _n = len(_doc)
                 _doc.close()
-                _shown = min(_n, 10)
+                _shown: int | str = min(_n, 10)
                 _suffix = f" ({_shown} of {_n} pages)" if _n > 1 else " (1 page)"
             except Exception:
                 _shown = "?"
@@ -205,7 +222,7 @@ def _extract_inline_images(
             "and no fallback vision_model is configured — image ignored.[/yellow]\n"
             "[dim]Tip: restart with a vision model "
             "(e.g. ci2lab --model qwen2.5vl:7b chat) "
-            "or add  vision_model: \"llava\"  to ~/.ci2lab/settings.json[/dim]"
+            'or add  vision_model: "llava"  to ~/.ci2lab/settings.json[/dim]'
         )
         return cleaned, []
 
@@ -219,6 +236,26 @@ def run_repl(
     session_id: str | None = None,
     multi_agent: bool = False,
 ) -> None:
+    """Run the interactive REPL loop until the user exits.
+
+    Reads prompts in a loop, dispatching slash commands (``/save``, ``/resume``,
+    ``/skills``, etc.), detecting inline image attachments, and forwarding each
+    turn to either the classic single-agent runner or the multi-agent
+    orchestrator. Session history is persisted as turns complete.
+
+    Args:
+        selection: The model selection driving the run (tag, tool mode, etc.).
+        config: Active agent configuration, mutated in place with the session id
+            and per-turn image attachments.
+        session_id: Optional id of an existing session to resume; a new id is
+            generated when omitted.
+        multi_agent: When ``True``, route turns through the multi-agent
+            orchestrator instead of the classic single-agent loop.
+
+    Returns:
+        None. The function returns when the user exits or an unresumable session
+        is requested.
+    """
     sid = session_id or new_session_id()
     config.session_id = sid
 
@@ -247,27 +284,28 @@ def run_repl(
         project = get_project(config.project_id)
         if project:
             project_line = (
-                f"Project: {project['name']} "
-                f"({project['source_count']} persistent sources)\n"
+                f"Project: {project['name']} ({project['source_count']} persistent sources)\n"
             )
 
-    console.print(Panel(
-        f"[bold]ci2lab REPL[/bold]\n"
-        f"{project_line}"
-        f"Model: {selection.ollama_tag}\n"
-        f"Tool mode: {selection.tool_mode}\n"
-        f"Mode: {'multi-agent' if multi_agent else 'classic'}\n"
-        f"CWD: {config.cwd}\n"
-        f"Session: {sid}\n\n"
-        "Type your request. [bold]Ctrl+V[/bold] pastes; [bold]Enter[/bold] sends; "
-        "[bold]Alt+Enter[/bold] new line.\n"
-        "Commands: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
-        "[bold]/delete[/bold], [bold]/sessions[/bold], [bold]/resume ID[/bold], "
-        "[bold]/retry[/bold], [bold]/why[/bold], "
-        "[bold]/skills[/bold], [bold]/skill-name[/bold]",
-        title="Local agent",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]ci2lab REPL[/bold]\n"
+            f"{project_line}"
+            f"Model: {selection.ollama_tag}\n"
+            f"Tool mode: {selection.tool_mode}\n"
+            f"Mode: {'multi-agent' if multi_agent else 'classic'}\n"
+            f"CWD: {config.cwd}\n"
+            f"Session: {sid}\n\n"
+            "Type your request. [bold]Ctrl+V[/bold] pastes; [bold]Enter[/bold] sends; "
+            "[bold]Alt+Enter[/bold] new line.\n"
+            "Commands: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
+            "[bold]/delete[/bold], [bold]/sessions[/bold], [bold]/resume ID[/bold], "
+            "[bold]/retry[/bold], [bold]/why[/bold], "
+            "[bold]/skills[/bold], [bold]/skill-name[/bold]",
+            title="Local agent",
+            border_style="blue",
+        )
+    )
 
     while True:
         try:
@@ -330,9 +368,11 @@ def run_repl(
                 )
             continue
         if line.lower() == "/clear":
-            history = [
-                {"role": "system", "content": history[0]["content"]}
-            ] if history and history[0].get("role") == "system" else None
+            history = (
+                [{"role": "system", "content": history[0]["content"]}]
+                if history and history[0].get("role") == "system"
+                else None
+            )
             session_vision_paths = []
             console.print("[dim]History cleared (system kept).[/dim]")
             continue
@@ -382,8 +422,7 @@ def run_repl(
                     body = invoke_skill_for_repl(config, skill_name, skill_args)
                     user_request = skill_args.strip()
                     if (
-                        user_request.startswith("http://")
-                        or user_request.startswith("https://")
+                        user_request.startswith("http://") or user_request.startswith("https://")
                     ) and " " not in user_request:
                         user_request = f"URL: {user_request}"
                     prompt = (
@@ -455,9 +494,7 @@ def run_repl(
         prompt, detected_images = _extract_inline_images(line, config, selection)
 
         if detected_images and is_exercise_review_request(line):
-            console.print(
-                f"[dim]Will apply skill: {REVIEW_HANDWRITTEN_EXERCISE_SKILL}[/dim]"
-            )
+            console.print(f"[dim]Will apply skill: {REVIEW_HANDWRITTEN_EXERCISE_SKILL}[/dim]")
 
         # Re-attach the last PDF/images on follow-up turns so the model re-reads
         # the pages instead of relying on its earlier (possibly wrong) summary.
@@ -571,15 +608,8 @@ def _export_review_markdown(
 
     stem = Path(source_paths[0]).stem if source_paths else "exercise"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sources = (
-        ", ".join(Path(p).name for p in source_paths) if source_paths else "(none)"
-    )
-    header = (
-        f"# Exercise review: {stem}\n\n"
-        f"- Source: {sources}\n"
-        f"- Generated: {ts}\n\n"
-        "---\n\n"
-    )
+    sources = ", ".join(Path(p).name for p in source_paths) if source_paths else "(none)"
+    header = f"# Exercise review: {stem}\n\n- Source: {sources}\n- Generated: {ts}\n\n---\n\n"
     try:
         out_dir = Path(cwd) / "reviews"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -591,6 +621,7 @@ def _export_review_markdown(
 
 
 def _project_prompt(config: AgentConfig, prompt: str) -> str:
+    """Wrap *prompt* with project context when a project is active, else return it."""
     if not config.project_id:
         return prompt
     from ci2lab.ui.projects import project_prompt

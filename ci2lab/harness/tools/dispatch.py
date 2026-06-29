@@ -1,8 +1,16 @@
-"""Tool name → implementation dispatch table."""
+"""Tool name → implementation dispatch table.
+
+Maps each canonical tool name to a handler ``lambda cfg, a: ...`` that unpacks
+the validated argument dict ``a`` (and pulls run-scoped settings off the
+:class:`~ci2lab.harness.types.AgentConfig` ``cfg``) before calling the concrete
+tool implementation. The executor looks the handler up by name and invokes it;
+every handler returns the tool's textual result.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ci2lab.harness.tools import ask_user as ask_user_tool
 from ci2lab.harness.tools import bash as bash_tool
@@ -10,16 +18,16 @@ from ci2lab.harness.tools import calc as calc_tool
 from ci2lab.harness.tools import convert as convert_tool
 from ci2lab.harness.tools import docx as docx_tool
 from ci2lab.harness.tools import filesystem as fs
-from ci2lab.harness.tools import git_tools
+from ci2lab.harness.tools import git_tools, skill_tool, vision_tool
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import patch as patch_tool
-from ci2lab.harness.tools import skill_tool
 from ci2lab.harness.tools import todo as todo_tool
-from ci2lab.harness.tools import vision_tool
 from ci2lab.harness.tools import web as web_tool
 from ci2lab.harness.types import AgentConfig
 
+#: Canonical tool name -> handler. Each handler takes the run config and the
+#: validated argument dict and returns the tool's textual result.
 DISPATCH: dict[str, Callable[..., str]] = {
     "bash": lambda cfg, a: bash_tool.run_bash(
         cfg.cwd,
@@ -45,9 +53,7 @@ DISPATCH: dict[str, Callable[..., str]] = {
         a.get("ignore_case", False),
         a.get("max_results", 50),
     ),
-    "glob": lambda cfg, a: fs.glob_search(
-        cfg.cwd, a["pattern"], a.get("path", ".")
-    ),
+    "glob": lambda cfg, a: fs.glob_search(cfg.cwd, a["pattern"], a.get("path", ".")),
     "write_file": lambda cfg, a: fs.write_file(cfg.cwd, a["path"], a["content"]),
     "write_docx": lambda cfg, a: docx_tool.write_docx(cfg.cwd, a["path"], a["content"]),
     "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
@@ -132,6 +138,17 @@ def execute_mcp_call(
     tool: str,
     arguments: dict[str, Any],
 ) -> str:
+    """Invoke a tool exposed by a connected MCP server.
+
+    Args:
+        config: Active agent configuration; its ``cwd`` scopes the MCP manager.
+        server: Name of the configured MCP server to route the call to.
+        tool: Name of the tool to invoke on that server.
+        arguments: Argument mapping forwarded to the remote tool.
+
+    Returns:
+        The textual result returned by the MCP server.
+    """
     from ci2lab.harness.mcp.session import get_mcp_manager
 
     mgr = get_mcp_manager(config.cwd, connect=True)
@@ -139,6 +156,7 @@ def execute_mcp_call(
 
 
 def _run_delegate(config: AgentConfig, args: dict[str, Any]) -> str:
+    """Run a sub-agent delegation, defaulting to ``explore`` mode."""
     from ci2lab.harness.tools.delegate import run_delegation
 
     return run_delegation(
@@ -149,6 +167,7 @@ def _run_delegate(config: AgentConfig, args: dict[str, Any]) -> str:
 
 
 def _run_fill_docx(config: AgentConfig, args: dict[str, Any]) -> str:
+    """Fill a .docx template, coercing template/output/fields to strings."""
     from ci2lab.harness.tools.docx_writer import fill_docx_template
 
     return fill_docx_template(

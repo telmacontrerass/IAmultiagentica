@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ci2lab.harness.types import ToolResult
 
 _HTTP_ERROR_CODES = {"400", "401", "403", "404", "429", "500", "502", "503"}
 
 
-def summarize_args(args: dict) -> str:
-    """Short one-line summary of a tool call's arguments for the console."""
+def summarize_args(args: dict[str, Any]) -> str:
+    """Short one-line summary of a tool call's arguments for the console.
+
+    Args:
+        args: The tool call's argument mapping.
+
+    Returns:
+        A truncated, human-readable summary of the most salient argument, or an
+        empty string when no recognized key is present.
+    """
     if "command" in args:
         cmd = args["command"]
         return cmd[:60] + ("..." if len(cmd) > 60 else "")
@@ -32,6 +42,14 @@ def web_fetch_failed_nudge(results: list[ToolResult]) -> str | None:
 
     The model tends to construct URLs from memory (which are often wrong or
     blocked). When that happens, nudge it to use web_search instead.
+
+    Args:
+        results: The tool results produced this round.
+
+    Returns:
+        A nudge string steering the model toward ``web_search`` when a
+        ``web_fetch`` call failed with a recognized HTTP error code, or ``None``
+        when no such failure is present.
     """
     for result in results:
         if result.tool_name != "web_fetch" or not result.is_error:

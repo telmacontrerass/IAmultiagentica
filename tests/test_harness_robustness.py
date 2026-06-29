@@ -16,10 +16,10 @@ from ci2lab.harness.tools.filesystem_parts.browse import grep_search
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import AgentConfig, ToolCall
 
-
 # ---------------------------------------------------------------------------
 # shell_command_to_tool: translation of POSIX commands to tools
 # ---------------------------------------------------------------------------
+
 
 def test_ls_dir_translates_to_ls_tool():
     call = shell_command_to_tool("ls Test/")
@@ -99,9 +99,7 @@ def test_bash_ls_redirected_under_restricted_skill(tmp_path: Path):
     (tmp_path / "Test" / "doc.docx").write_bytes(b"x")
     cfg = AgentConfig(cwd=str(tmp_path), skill_allowed_tools=_RESEARCHER_TOOLS)
     # `bash` is not allowed, but `bash ls Test` must be translated to `ls`.
-    result = execute_tool(
-        ToolCall(name="bash", arguments={"command": "ls Test"}), cfg
-    )
+    result = execute_tool(ToolCall(name="bash", arguments={"command": "ls Test"}), cfg)
     assert not result.is_error
     assert "doc.docx" in result.content
 
@@ -120,6 +118,7 @@ def test_blocked_tool_message_suggests_alternative(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # grep: fallback for patterns that are not valid regexes (glob style)
 # ---------------------------------------------------------------------------
+
 
 def test_grep_invalid_regex_falls_back_to_literal(tmp_path: Path):
     (tmp_path / "a.txt").write_text("contains **/*.docx here", encoding="utf-8")

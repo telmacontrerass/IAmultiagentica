@@ -110,6 +110,7 @@ def _print_global_help() -> None:
 
 
 def _add_agent_flags(p: argparse.ArgumentParser) -> None:
+    """Add the shared agent/chat flags (model, tool mode, workspace, etc.) to a parser."""
     p.add_argument(
         "--model",
         default=None,
@@ -179,6 +180,12 @@ def _add_agent_flags(p: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level ``ci2lab`` argument parser with all subcommands.
+
+    Returns:
+        The fully configured :class:`argparse.ArgumentParser`, including agent
+        flags, the command subparsers and their per-command options.
+    """
     parser = argparse.ArgumentParser(
         prog="ci2lab",
         description="Local multi-model agent with an agentic harness",

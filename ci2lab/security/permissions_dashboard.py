@@ -28,19 +28,19 @@ _TABLE_COLUMNS = (
     "outcome",
 )
 
-_EXTERNAL_WARNING = (
-    "UNSAFE: external_directory=true — access outside the workspace"
-)
+_EXTERNAL_WARNING = "UNSAFE: external_directory=true — access outside the workspace"
 
-_DENIED_OUTCOMES = frozenset({
-    "blocked",
-    "blocked_by_workspace",
-    "blocked_by_secret_policy",
-    "blocked_by_security_profile",
-    "blocked_by_config",
-    "denied",
-    "error",
-})
+_DENIED_OUTCOMES = frozenset(
+    {
+        "blocked",
+        "blocked_by_workspace",
+        "blocked_by_secret_policy",
+        "blocked_by_security_profile",
+        "blocked_by_config",
+        "denied",
+        "error",
+    }
+)
 
 
 def load_audit_events(path: str | Path) -> list[dict[str, Any]]:
@@ -50,22 +50,16 @@ def load_audit_events(path: str | Path) -> list[dict[str, Any]]:
         raise FileNotFoundError(f"Audit file does not exist: {audit_path}")
 
     events: list[dict[str, Any]] = []
-    for line_no, raw in enumerate(
-        audit_path.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    for line_no, raw in enumerate(audit_path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Invalid JSON in {audit_path}:{line_no}: {exc}"
-            ) from exc
+            raise ValueError(f"Invalid JSON in {audit_path}:{line_no}: {exc}") from exc
         if not isinstance(record, dict):
-            raise ValueError(
-                f"Line {line_no} in {audit_path}: must be a JSON object."
-            )
+            raise ValueError(f"Line {line_no} in {audit_path}: must be a JSON object.")
         events.append(_normalize_event(record))
     return events
 
@@ -102,6 +96,15 @@ def find_event_by_id(
     events: list[dict[str, Any]],
     event_id: str,
 ) -> dict[str, Any] | None:
+    """Return the event whose id matches ``event_id``, or None.
+
+    Args:
+        events: Normalized audit events to search.
+        event_id: Event id to look up (case-insensitive).
+
+    Returns:
+        The matching event dict, or None if not found.
+    """
     needle = event_id.strip().lower()
     for ev in events:
         if str(ev.get("event_id", "")).lower() == needle:
@@ -110,7 +113,15 @@ def find_event_by_id(
 
 
 def parse_target_to_args(tool: str, target: str) -> dict[str, Any]:
-    """Reconstruct minimal args from the audit's tool + target."""
+    """Reconstruct minimal tool args from an audit event's tool and target.
+
+    Args:
+        tool: Tool name from the audit event.
+        target: Target string, which may be a literal dict or a plain value.
+
+    Returns:
+        An arguments dict suitable for gate evaluation.
+    """
     text = target.strip()
     if text.startswith("{") and text.endswith("}"):
         try:
@@ -123,6 +134,7 @@ def parse_target_to_args(tool: str, target: str) -> dict[str, Any]:
 
 
 def _gate_target_for_eval(tool: str, args: dict[str, Any]) -> str:
+    """Pick the single target string a dry gate evaluation needs for ``tool``."""
     if tool in {"bash", "shell"}:
         return str(args.get("command", ""))
     if tool in {"grep", "glob"}:
@@ -141,9 +153,7 @@ def approval_from_audit_event(
     warnings: list[str] = []
     engine = str(event.get("security_engine", ""))
     if engine == "ci2lab":
-        raise ValueError(
-            "approve-session does not apply to ci2lab; use permission-layer engines."
-        )
+        raise ValueError("approve-session does not apply to ci2lab; use permission-layer engines.")
     if not uses_permission_layer(engine):
         raise ValueError(f"Unsupported engine for approve-session: {engine!r}")
 
@@ -156,21 +166,16 @@ def approval_from_audit_event(
                 "Cannot approve: hard block (workspace/secret/bash/profile). "
                 "Changing the permission config will not bypass it."
             )
-        raise ValueError(
-            "Cannot approve: the event was denied by a permission rule."
-        )
+        raise ValueError("Cannot approve: the event was denied by a permission rule.")
     if decision != "ask" and approval_choice != "deny_once":
         raise ValueError(
-            "approve-session only applies to events with decision=ask "
-            "or approval_choice=deny_once."
+            "approve-session only applies to events with decision=ask or approval_choice=deny_once."
         )
 
     tool = event.get("tool")
     target = event.get("target")
     if not tool or target is None or str(target).strip() == "":
-        raise ValueError(
-            "Missing tool/target fields to build the fingerprint."
-        )
+        raise ValueError("Missing tool/target fields to build the fingerprint.")
 
     external = bool(event.get("external_directory"))
     if external:
@@ -188,6 +193,7 @@ def approval_from_audit_event(
 
 
 def _is_outside_workspace_event(event: dict[str, Any]) -> bool:
+    """Return whether an audit event represents an outside-workspace block."""
     reason = str(event.get("reason", ""))
     matched = str(event.get("matched_rule") or "")
     outcome = str(event.get("outcome") or "")
@@ -203,6 +209,7 @@ def _is_outside_workspace_event(event: dict[str, Any]) -> bool:
 
 
 def _is_secret_event(event: dict[str, Any]) -> bool:
+    """Return whether an audit event represents a secret-file block."""
     matched = str(event.get("matched_rule") or "")
     reason = str(event.get("reason", ""))
     outcome = str(event.get("outcome") or "")
@@ -220,7 +227,16 @@ def build_retry_plan(
     *,
     workspace: str,
 ) -> dict[str, Any]:
-    """Retry plan without executing tools."""
+    """Build a retry plan for an audit event without executing any tools.
+
+    Args:
+        event: The original audit event to analyze.
+        workspace: Path to the workspace root for dry gate evaluations.
+
+    Returns:
+        A dict with the original event, dry-run decisions per engine,
+        recommendations and warnings.
+    """
     tool = str(event.get("tool", ""))
     target = str(event.get("target", ""))
     args = parse_target_to_args(tool, target)
@@ -258,8 +274,7 @@ def build_retry_plan(
             [
                 "Hard block on a sensitive file (secret policy).",
                 "Retrying with ci2lab will remain denied.",
-                "Allowing reads/writes of secrets is not recommended "
-                "except under explicit audit.",
+                "Allowing reads/writes of secrets is not recommended except under explicit audit.",
                 "No unsafe config is generated by default.",
             ]
         )
@@ -268,8 +283,7 @@ def build_retry_plan(
             [
                 "It was blocked by the hard workspace policy (outside_workspace).",
                 "Retrying it with ci2lab will remain denied.",
-                "Only opencode_experimental with external_directory=allow "
-                "could permit it.",
+                "Only opencode_experimental with external_directory=allow could permit it.",
                 "That is UNSAFE — do not use in production.",
             ]
         )
@@ -290,7 +304,9 @@ def build_retry_plan(
         str(event.get("decision", "")).lower() == "deny"
     ):
         matched = str(event.get("matched_rule") or "")
-        if matched.startswith("hard:") or orig_engine == "claude_experimental" and matched.startswith("hard:"):
+        if matched.startswith("hard:") or (
+            orig_engine == "claude_experimental" and matched.startswith("hard:")
+        ):
             recommendations.extend(
                 [
                     "Hard block: cannot be bypassed with permission config or --yes.",
@@ -306,19 +322,14 @@ def build_retry_plan(
                 ]
             )
     else:
-        recommendations.append(
-            "Review decision, reason and matched_rule of the original event."
-        )
-        recommendations.append(
-            f"If you retry with ci2lab: decision={ci2lab_gate['decision']}."
-        )
+        recommendations.append("Review decision, reason and matched_rule of the original event.")
+        recommendations.append(f"If you retry with ci2lab: decision={ci2lab_gate['decision']}.")
         recommendations.append(
             f"If you retry with opencode_experimental (defaults): "
             f"decision={opencode_gate['decision']}."
         )
         recommendations.append(
-            f"If you retry with claude_experimental (defaults): "
-            f"decision={claude_gate['decision']}."
+            f"If you retry with claude_experimental (defaults): decision={claude_gate['decision']}."
         )
 
     return {
@@ -345,6 +356,7 @@ def build_retry_plan(
 
 
 def format_retry_plan(plan: dict[str, Any]) -> str:
+    """Render a retry plan (from :func:`build_retry_plan`) as readable text."""
     orig = plan["original"]
     lines = [
         f"Retry plan for event {plan.get('event_id')}",
@@ -434,6 +446,14 @@ def resolve_audit_source(
 
 
 def summarize_permissions(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate audit events into summary counters.
+
+    Args:
+        events: Normalized audit events to summarize.
+
+    Returns:
+        A dict of totals and breakdowns by decision, engine and tool.
+    """
     if not events:
         return {
             "total_events": 0,
@@ -489,6 +509,7 @@ def summarize_permissions(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _is_denied_event(event: dict[str, Any]) -> bool:
+    """Return whether an audit event represents a denied/blocked decision."""
     if str(event.get("decision", "")).lower() == "deny":
         return True
     outcome = str(event.get("outcome", "")).lower()
@@ -496,14 +517,17 @@ def _is_denied_event(event: dict[str, Any]) -> bool:
 
 
 def filter_denied_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only the denied/blocked events from ``events``."""
     return [ev for ev in events if _is_denied_event(ev)]
 
 
 def filter_asked_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only the events whose decision was ``ask``."""
     return [ev for ev in events if str(ev.get("decision", "")).lower() == "ask"]
 
 
 def _truncate(text: str, max_len: int) -> str:
+    """Collapse newlines and truncate ``text`` to ``max_len`` chars with an ellipsis."""
     text = text.replace("\n", " ")
     if len(text) <= max_len:
         return text

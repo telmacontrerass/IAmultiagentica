@@ -26,6 +26,18 @@ from ci2lab.cli.runtime import _resolve_runtime_config
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and dispatch to the matching CLI command handler.
+
+    With no arguments this opens the interactive start menu on a TTY, otherwise
+    it prints global help. A bare request with no recognized command is treated
+    as an implicit ``agent`` invocation.
+
+    Args:
+        argv: Argument list to parse. When ``None``, ``sys.argv[1:]`` is used.
+
+    Returns:
+        Process exit code returned by the dispatched command (``0`` on success).
+    """
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     if not raw_argv:
         parser = build_parser()
@@ -118,6 +130,16 @@ def _expand_tools_shortcut(raw_argv: list[str]) -> list[str]:
 
 
 def _tools_args(model: str | None, rest: list[str]) -> list[str]:
+    """Build the normalized argv for a ``tools`` shortcut invocation.
+
+    Args:
+        model: Optional model tag to pass via ``--model``.
+        rest: Remaining tokens; when present they form an ``agent`` prompt,
+            otherwise the shortcut launches ``chat``.
+
+    Returns:
+        The expanded argument list with fenced tool mode and streaming disabled.
+    """
     args: list[str] = []
     if model:
         args.extend(["--model", model])

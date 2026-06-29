@@ -30,6 +30,19 @@ def read_file(
     *,
     security_engine: str = "ci2lab",
 ) -> str:
+    """Read a text/document file and return numbered lines.
+
+    Args:
+        cwd: The workspace root used to resolve and bound ``path``.
+        path: The file to read, absolute or relative to ``cwd``.
+        offset: 1-based line number to start reading from.
+        limit: Maximum number of lines to return, or ``None`` for the default.
+        security_engine: Identifier of the security engine to consult.
+
+    Returns:
+        The numbered file contents, or an ``"Error: ..."`` message when the path
+        is invalid, missing, or blocked by the sensitive-file policy.
+    """
     resolved, err = resolve_for_access(path, cwd, security_engine=security_engine)
     if err:
         return err
@@ -45,7 +58,16 @@ def read_file(
 
 
 def read_document(cwd: str, path: str) -> str:
-    """Read a document-like file and return structured extracted text."""
+    """Read a document-like file and return structured extracted text.
+
+    Args:
+        cwd: The workspace root used to resolve and bound ``path``.
+        path: The document to read, absolute or relative to ``cwd``.
+
+    Returns:
+        The extracted text with metadata, or an ``"Error: ..."`` message when
+        the path is invalid, missing, or blocked by the sensitive-file policy.
+    """
     resolved, err = resolve_or_error(path, cwd)
     if err:
         return err
@@ -58,6 +80,20 @@ def read_document(cwd: str, path: str) -> str:
 
 
 def ls(cwd: str, path: str = ".") -> str:
+    """List the immediate, non-hidden contents of a directory.
+
+    Directories are listed first (with a trailing ``/``), then files annotated
+    with their human-readable size. Entries whose name starts with ``.`` are
+    omitted.
+
+    Args:
+        cwd: The workspace root used to resolve and bound ``path``.
+        path: The directory to list, absolute or relative to ``cwd``.
+
+    Returns:
+        A newline-joined listing rooted at the resolved directory, or an
+        ``"Error: ..."`` message when the path is invalid or not a directory.
+    """
     resolved, err = resolve_or_error(path or ".", cwd)
     if err:
         return err
@@ -81,14 +117,44 @@ def ls(cwd: str, path: str = ".") -> str:
 
 # Dependency/build directories that flood pattern searches with noise and are
 # almost never what the user means. Skipped unless the pattern names them.
-_GLOB_NOISE_DIRS = frozenset({
-    ".git", ".venv", "venv", "env", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".ruff_cache", "node_modules", "site-packages",
-    ".tox", ".idea", ".vscode", "dist", "build", ".eggs",
-})
+_GLOB_NOISE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "node_modules",
+        "site-packages",
+        ".tox",
+        ".idea",
+        ".vscode",
+        "dist",
+        "build",
+        ".eggs",
+    }
+)
 
 
 def glob_search(cwd: str, pattern: str, path: str = ".") -> str:
+    """Find files matching a glob ``pattern`` beneath a base directory.
+
+    Results are sorted most-recently-modified first and capped at 100 entries.
+    Dependency/build directories in :data:`_GLOB_NOISE_DIRS` are skipped unless
+    the pattern itself names one of them.
+
+    Args:
+        cwd: The workspace root used to resolve paths and compute relatives.
+        pattern: A glob pattern (e.g. ``**/*.py``) evaluated against ``base``.
+        path: The base directory to search, absolute or relative to ``cwd``.
+
+    Returns:
+        A newline-joined list of matching paths relative to ``cwd``, a
+        no-matches notice, or an ``"Error: ..."`` message for an invalid base.
+    """
     base, err = resolve_or_error(path or ".", cwd)
     if err:
         return err
@@ -99,8 +165,7 @@ def glob_search(cwd: str, pattern: str, path: str = ".") -> str:
     matches = [
         match
         for match in base.glob(pattern)
-        if pattern_names_noise
-        or not any(part in _GLOB_NOISE_DIRS for part in match.parts)
+        if pattern_names_noise or not any(part in _GLOB_NOISE_DIRS for part in match.parts)
     ]
     matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     if not matches:
@@ -119,6 +184,23 @@ def grep_search(
     ignore_case: bool = False,
     max_results: int = 50,
 ) -> str:
+    """Search file contents for a regex ``pattern`` and report matching lines.
+
+    Sensitive files are skipped and counted in a trailing notice. If ``pattern``
+    is not a valid regex it is searched as literal text and a note is prepended.
+
+    Args:
+        cwd: The workspace root used to resolve paths and compute relatives.
+        pattern: A regular expression (or literal text on regex-compile failure).
+        path: The file or directory to search, absolute or relative to ``cwd``.
+        glob_pattern: Optional glob to restrict which files are scanned.
+        ignore_case: When ``True``, match case-insensitively.
+        max_results: Maximum number of matching lines to return.
+
+    Returns:
+        ``path:line:text`` matches joined by newlines (optionally with fallback
+        and skip notices), a no-matches notice, or an ``"Error: ..."`` message.
+    """
     base, err = resolve_or_error(path or ".", cwd)
     if err:
         return err
@@ -168,6 +250,18 @@ def grep_single_file(
     regex: re.Pattern[str],
     max_results: int,
 ) -> str:
+    """Search a single file for ``regex`` and format matching lines.
+
+    Args:
+        file_path: The file to scan.
+        root: Root used to render paths relative in the output.
+        regex: The compiled pattern to match against each line.
+        max_results: Maximum number of matching lines to return.
+
+    Returns:
+        ``rel:line:text`` matches joined by newlines, or a no-matches notice
+        when nothing matches or the file cannot be read as text.
+    """
     results: list[str] = []
     try:
         rel = file_path.relative_to(root)
@@ -195,6 +289,19 @@ def grep_scan_tree(
     glob_pattern: str | None,
     max_results: int,
 ) -> tuple[list[str], int]:
+    """Recursively search a directory tree for ``regex`` matches.
+
+    Args:
+        base: The directory to walk recursively.
+        root: Root used to render paths relative in the output.
+        regex: The compiled pattern to match against each line.
+        glob_pattern: Optional glob restricting which files are scanned.
+        max_results: Maximum number of matching lines to collect.
+
+    Returns:
+        A ``(results, skipped)`` pair: the formatted ``rel:line:text`` matches
+        and the count of sensitive files skipped by policy.
+    """
     results: list[str] = []
     skipped = 0
     for file_path in base.rglob("*"):
@@ -221,4 +328,3 @@ def grep_scan_tree(
                 if len(results) >= max_results:
                     return results, skipped
     return results, skipped
-

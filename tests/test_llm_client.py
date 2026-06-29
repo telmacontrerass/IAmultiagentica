@@ -6,8 +6,8 @@ import httpx
 import pytest
 
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.harness.llm_client import LLMClient, LLMResponse
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMModelNotFoundError
-from ci2lab.harness.llm_client import LLMClient, LLMResponse, StreamToken
 
 
 def _selection(**overrides) -> ModelSelection:
@@ -85,6 +85,7 @@ def test_chat_sends_num_ctx_to_native_endpoint(monkeypatch):
     assert captured["payload"]["options"]["num_predict"] == 4096
     # The OpenAI-only fields must not leak into the native request.
     assert "max_tokens" not in captured["payload"]
+
 
 def test_chat_cancel_event_closes_blocking_client(monkeypatch):
     cancel_event = threading.Event()
@@ -249,9 +250,7 @@ def test_native_stream_collects_tool_calls(monkeypatch):
                 {
                     "message": {
                         "content": "",
-                        "tool_calls": [
-                            {"function": {"name": "ls", "arguments": {"path": "."}}}
-                        ],
+                        "tool_calls": [{"function": {"name": "ls", "arguments": {"path": "."}}}],
                     },
                     "done": True,
                     "prompt_eval_count": 5,
@@ -279,9 +278,7 @@ def test_native_stream_collects_tool_calls(monkeypatch):
 
     final = events[-1]
     assert isinstance(final, LLMResponse)
-    assert final.tool_calls == [
-        {"function": {"name": "ls", "arguments": {"path": "."}}}
-    ]
+    assert final.tool_calls == [{"function": {"name": "ls", "arguments": {"path": "."}}}]
 
 
 def test_openai_backend_still_uses_v1_endpoint(monkeypatch):

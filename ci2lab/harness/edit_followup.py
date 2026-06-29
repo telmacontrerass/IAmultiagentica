@@ -33,6 +33,15 @@ _SUCCESS_HINT = (
 
 
 def edit_signature(call: ToolCall) -> EditSignature | None:
+    """Return the identifying signature of an ``edit_file`` call.
+
+    Args:
+        call: The tool call to inspect.
+
+    Returns:
+        A ``(path, old_string, new_string)`` tuple identifying the edit, or
+        ``None`` if the call is not an ``edit_file`` call or has no ``path``.
+    """
     if call.name != "edit_file":
         return None
     path = str(call.arguments.get("path", ""))
@@ -46,7 +55,19 @@ def edit_signature(call: ToolCall) -> EditSignature | None:
 
 
 def edit_already_applied(cwd: str, path: str, old_string: str, new_string: str) -> bool:
-    """True if old_string is gone and new_string is present (same edit repeated)."""
+    """True if old_string is gone and new_string is present (same edit repeated).
+
+    Args:
+        cwd: Workspace root used to resolve ``path``.
+        path: Path to the file the edit targets.
+        old_string: Text the edit expects to replace.
+        new_string: Replacement text the edit would insert.
+
+    Returns:
+        ``True`` if the file exists, ``old_string`` is absent, and
+        ``new_string`` is already present (so the edit has effectively been
+        applied); ``False`` otherwise, including on read errors.
+    """
     if not new_string:
         return False
     try:
@@ -62,7 +83,18 @@ def edit_already_applied(cwd: str, path: str, old_string: str, new_string: str) 
 
 
 def stale_old_string_hint(cwd: str, path: str, old_string: str) -> str | None:
-    """When old_string is no longer on disk, show the current content."""
+    """When old_string is no longer on disk, show the current content.
+
+    Args:
+        cwd: Workspace root used to resolve ``path``.
+        path: Path to the file the edit targets.
+        old_string: Text the edit expected to find in the file.
+
+    Returns:
+        A hint string showing a preview of the current file content and how to
+        recover, or ``None`` when ``old_string`` is empty, the file cannot be
+        read, or ``old_string`` is still present on disk.
+    """
     if not old_string:
         return None
     try:
@@ -86,6 +118,7 @@ def stale_old_string_hint(cwd: str, path: str, old_string: str) -> str | None:
 
 
 def _is_successful_edit(result: ToolResult) -> bool:
+    """Return ``True`` if ``result`` is a successful ``edit_file`` outcome."""
     return (
         not result.is_error
         and result.tool_name == "edit_file"
@@ -94,6 +127,7 @@ def _is_successful_edit(result: ToolResult) -> bool:
 
 
 def _dedupe_hints(hints: list[str]) -> list[str]:
+    """Return ``hints`` with duplicates removed, preserving first-seen order."""
     seen: set[str] = set()
     unique: list[str] = []
     for hint in hints:
@@ -104,6 +138,7 @@ def _dedupe_hints(hints: list[str]) -> list[str]:
 
 
 def _has(content: str, *needles: str) -> bool:
+    """Return ``True`` if any of ``needles`` is a substring of ``content``."""
     return any(needle in content for needle in needles)
 
 
@@ -115,7 +150,22 @@ def process_edit_round(
     user_prompt: str,
     completed_edits: set[EditSignature],
 ) -> str | None:
-    """Record successful edits and return hints for the model's next turn."""
+    """Record successful edits and return hints for the model's next turn.
+
+    Args:
+        calls: Tool calls issued in the round, paired positionally with
+            ``results``.
+        results: Tool results for ``calls``, in the same order.
+        cwd: Workspace root used to resolve edit paths.
+        user_prompt: The user's prompt, scanned for a mentioned file path used
+            to enrich hints.
+        completed_edits: Mutable set of edit signatures already applied; updated
+            in place with newly successful edits.
+
+    Returns:
+        A newline-joined string of deduplicated hints to surface to the model,
+        or ``None`` when there is nothing to add.
+    """
     hints: list[str] = []
     had_successful_edit = False
     had_redundant_retry = False
@@ -154,8 +204,7 @@ def process_edit_round(
 
         if _has(content, "old_string not found"):
             if sig and (
-                sig in completed_edits
-                or edit_already_applied(cwd, sig[0], sig[1], sig[2])
+                sig in completed_edits or edit_already_applied(cwd, sig[0], sig[1], sig[2])
             ):
                 hints.append(_ALREADY_APPLIED_HINT)
                 had_redundant_retry = True

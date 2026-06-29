@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
+from typing import Any, TypedDict
 
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
@@ -99,8 +100,7 @@ def build_subagent_system_prompt(
     # downstream roles then could not find.
     if spec.can_write:
         write_directive = (
-            "You CAN write files. Apply the change with your edit tools; do not "
-            "merely describe it."
+            "You CAN write files. Apply the change with your edit tools; do not merely describe it."
         )
     else:
         write_directive = (
@@ -135,30 +135,34 @@ def build_subagent_system_prompt(
 
 
 def _preview_text(text: str, *, limit: int = TRACE_PREVIEW_CHARS) -> str:
+    """Return ``text`` truncated to ``limit`` characters with a marker when longer."""
     if len(text) <= limit:
         return text
     return text[:limit] + "… (truncated)"
 
 
 def _read_json(path: Path) -> dict | None:
+    """Read and parse a JSON file, returning ``None`` on any read/parse error."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    """Read a JSON Lines file into a list of dicts, returning ``[]`` on any error."""
     try:
         return [
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
 def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | None]:
+    """Map a run-summary dict to a ``(status, error)`` pair for the subagent result."""
     if not summary:
         return "completed", None
     raw_status = str(summary.get("status") or "success")
@@ -175,7 +179,26 @@ def _trace_status_from_run_summary(summary: dict | None) -> tuple[str, str | Non
     return "failed", str(error) if error is not None else raw_status
 
 
-def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
+class _SubAgentRunArtifacts(TypedDict):
+    """Structured subagent run artifacts loaded from a run directory."""
+
+    status: str
+    error: str | None
+    duration_ms: int | None
+    rounds: int | None
+    tool_calls: list[dict[str, Any]]
+
+
+def _load_subagent_run_artifacts(run_dir: str | None) -> _SubAgentRunArtifacts:
+    """Load a subagent's run artifacts (status, timing, tool calls) from ``run_dir``.
+
+    Args:
+        run_dir: The subagent's run directory, or ``None`` when none was created.
+
+    Returns:
+        A dict with ``status``, ``error``, ``duration_ms``, ``rounds``, and
+        ``tool_calls`` keys; defaults are returned when ``run_dir`` is missing.
+    """
     if not run_dir:
         return {
             "status": "completed",
@@ -207,7 +230,9 @@ def _load_subagent_run_artifacts(run_dir: str | None) -> dict[str, object]:
         "status": status,
         "error": error,
         "duration_ms": int(float(duration_s) * 1000) if duration_s is not None else None,
-        "rounds": int(summary.get("rounds", 0)) if summary and summary.get("rounds") is not None else None,
+        "rounds": int(summary.get("rounds", 0))
+        if summary and summary.get("rounds") is not None
+        else None,
         "tool_calls": tool_calls,
     }
 
@@ -293,13 +318,13 @@ def run_subagent(
         output=output,
         status=str(trace_data["status"]),
         attempt=attempt,
-        error=trace_data["error"],  # type: ignore[index]
+        error=trace_data["error"],
         role_anchor=subagent_config.role_anchor,
         allowed_tools=sorted(subagent_config.skill_allowed_tools or ()),
         can_write=spec.can_write,
         input_prompt=_preview_text(task_prompt),
         subagent_run_dir=subagent_config.last_run_dir,
-        tool_calls=list(trace_data["tool_calls"]),  # type: ignore[index]
-        duration_ms=trace_data["duration_ms"],  # type: ignore[index]
-        rounds=trace_data["rounds"],  # type: ignore[index]
+        tool_calls=list(trace_data["tool_calls"]),
+        duration_ms=trace_data["duration_ms"],
+        rounds=trace_data["rounds"],
     )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -13,6 +13,15 @@ from ci2lab.config import DEFAULT_BACKEND_URL
 
 
 def ollama_base_url(backend_url: str) -> str:
+    """Return the Ollama base URL, stripping a trailing ``/v1`` and slashes.
+
+    Args:
+        backend_url: The configured backend URL, which may point at the
+            OpenAI-compatible ``/v1`` endpoint.
+
+    Returns:
+        The native Ollama base URL (e.g. ``http://127.0.0.1:11434``).
+    """
     return backend_url.removesuffix("/v1").rstrip("/")
 
 
@@ -47,6 +56,17 @@ def fetch_installed_models(
     *,
     timeout: float = 3.0,
 ) -> tuple[list[dict[str, Any]], str | None]:
+    """Fetch the locally installed models from the Ollama ``/api/tags`` endpoint.
+
+    Args:
+        backend_url: Backend URL to query (the ``/v1`` suffix is stripped).
+        timeout: Per-request timeout in seconds.
+
+    Returns:
+        A tuple ``(models, error)``. ``models`` is a list of dicts with
+        ``name``/``size``/``modified_at`` keys; on failure it is empty and
+        ``error`` holds the exception message. ``error`` is ``None`` on success.
+    """
     try:
         with httpx.Client(timeout=timeout) as client:
             response = client.get(f"{ollama_base_url(backend_url)}/api/tags")
@@ -60,7 +80,7 @@ def fetch_installed_models(
                 }
                 for model in models
             ], None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return [], str(exc)
 
 
@@ -69,11 +89,33 @@ def fetch_installed_model_names(
     *,
     timeout: float = 3.0,
 ) -> tuple[set[str], str | None]:
+    """Fetch just the set of installed model names.
+
+    Args:
+        backend_url: Backend URL to query (the ``/v1`` suffix is stripped).
+        timeout: Per-request timeout in seconds.
+
+    Returns:
+        A tuple ``(names, error)`` where ``names`` is the set of installed model
+        names and ``error`` is ``None`` on success or the message on failure.
+    """
     installed, error = fetch_installed_models(backend_url, timeout=timeout)
     return {item["name"] for item in installed if item.get("name")}, error
 
 
 def is_catalog_model_installed(ollama_tag: str, installed_names: set[str]) -> bool:
+    """Return True if a catalog tag matches any installed model name.
+
+    Matches an exact tag as well as installed names that extend the tag with a
+    quantization suffix (``tag-...``) or a digest (``tag@...``).
+
+    Args:
+        ollama_tag: The catalog model's Ollama tag.
+        installed_names: The set of locally installed model names.
+
+    Returns:
+        ``True`` when an installed name corresponds to ``ollama_tag``.
+    """
     tag = ollama_tag.strip().lower()
     if not tag:
         return False
