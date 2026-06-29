@@ -1182,6 +1182,204 @@ def test_validation_contract_for_simple_file_creation():
     assert contract.scope_check_required is True
 
 
+def test_validation_contract_includes_written_artifact_path():
+    plan = _result(AgentRole.PLANNER, "Create the exercise solution.")
+    research = _result(AgentRole.RESEARCHER, "Exercise requires Python.")
+    implementation = _result(
+        AgentRole.GENERALIST_CODER,
+        "Created the requested solution.",
+        tool_calls=[
+            {
+                "tool": "write_file",
+                "ok": True,
+                "arguments": {"path": "exercise_1/main.py", "content": "print('ok')\n"},
+                "output_preview": "Wrote exercise_1/main.py",
+            }
+        ],
+    )
+
+    contract = build_validation_contract(
+        "Complete exercise 1 from the PDF.",
+        plan,
+        research,
+        implementation,
+    )
+
+    assert "exercise_1/main.py" in contract.expected_artifacts
+    assert "read_file" in contract.required_evidence_tools
+
+
+def test_validator_reads_file_written_by_coder(tmp_path, monkeypatch):
+    calls: list[AgentRole] = []
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        if role == AgentRole.GENERALIST_CODER:
+            target = tmp_path / "notes" / "artifact.txt"
+            target.parent.mkdir()
+            target.write_text("ARTIFACT_OK\n", encoding="utf-8")
+            return _result(
+                role,
+                "Created notes/artifact.txt.",
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {
+                            "path": "notes/artifact.txt",
+                            "content": "ARTIFACT_OK\n",
+                        },
+                        "output_preview": "Wrote notes/artifact.txt",
+                    }
+                ],
+            )
+        outputs = {
+            AgentRole.PLANNER: "Plan: create notes/artifact.txt.",
+            AgentRole.RESEARCHER: "No existing target inspected.",
+            AgentRole.REVIEWER: "Review complete.",
+        }
+        return _result(role, outputs.get(role, "ok"), attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create notes/artifact.txt with ARTIFACT_OK.",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+        ),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+
+    assert AgentRole.GENERALIST_CODER in calls
+    assert any(
+        call["tool"] == "read_file"
+        and call["arguments"] == {"path": "notes/artifact.txt"}
+        and call["ok"]
+        for call in validator["tool_calls"]
+    )
+
+
+def test_invalid_python_written_by_coder_fails_validation(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role in CODER_ROLES:
+            target = tmp_path / "exercise_1" / "main.py"
+            target.parent.mkdir()
+            target.write_text("def main(\n    pass\n", encoding="utf-8")
+            return _result(
+                role,
+                "Created exercise_1/main.py.",
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {
+                            "path": "exercise_1/main.py",
+                            "content": "def main(\n    pass\n",
+                        },
+                        "output_preview": "Wrote exercise_1/main.py",
+                    }
+                ],
+            )
+        outputs = {
+            AgentRole.PLANNER: "Plan: create exercise_1/main.py.",
+            AgentRole.RESEARCHER: "Exercise requires Python.",
+            AgentRole.REVIEWER: "Review complete.",
+        }
+        return _result(role, outputs.get(role, "ok"), attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create exercise_1/main.py for exercise 1.",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+            auto_confirm=True,
+        ),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+
+    assert trace["status"] == "validation_failed"
+    assert any(call["tool"] == "read_file" for call in validator["tool_calls"])
+    assert any(
+        call["tool"] == "bash"
+        and "py_compile" in call["arguments"]["command"]
+        and not call["ok"]
+        for call in validator["tool_calls"]
+    )
+
+
+def test_python_artifact_validation_falls_back_without_bash(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role in CODER_ROLES:
+            target = tmp_path / "exercise_1" / "main.py"
+            target.parent.mkdir()
+            target.write_text("def main(\n    pass\n", encoding="utf-8")
+            return _result(
+                role,
+                "Created exercise_1/main.py.",
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {
+                            "path": "exercise_1/main.py",
+                            "content": "def main(\n    pass\n",
+                        },
+                        "output_preview": "Wrote exercise_1/main.py",
+                    }
+                ],
+            )
+        outputs = {
+            AgentRole.PLANNER: "Plan: create exercise_1/main.py.",
+            AgentRole.RESEARCHER: "Exercise requires Python.",
+            AgentRole.REVIEWER: "Review complete.",
+        }
+        return _result(role, outputs.get(role, "ok"), attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    run_multi_agent(
+        "Create exercise_1/main.py for exercise 1.",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+            skill_allowed_tools=frozenset({"read_file", "write_file"}),
+        ),
+        max_repair_attempts=0,
+    )
+
+    trace = _multiagent_trace(tmp_path)
+    validator = next(phase for phase in trace["phases"] if phase["role"] == "validator")
+
+    assert trace["status"] == "validation_failed"
+    assert [call["tool"] for call in validator["tool_calls"]] == ["read_file"]
+    assert validator["tool_calls"][0]["ok"] is False
+    assert "Python syntax error" in validator["tool_calls"][0]["error_preview"]
+
+
 def test_simple_file_validation_contract_does_not_give_bash_to_validator():
     plan = _result(AgentRole.PLANNER, "Create notes/todo.txt only.")
     research = _result(AgentRole.RESEARCHER, "No existing file inspected.")

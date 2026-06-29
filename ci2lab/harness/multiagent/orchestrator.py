@@ -7,6 +7,7 @@ explicitly enabled by a later CLI/config integration.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -316,6 +317,8 @@ _BASH_PSEUDO_TOOL_RE = re.compile(
     r"^\s*(?:git_status|git_diff|read_file|write_file|edit_file|apply_patch|todo_write)\b",
     re.IGNORECASE,
 )
+_PATCH_TARGET_RE = re.compile(r"^\+\+\+\s+b/(.+)$", re.MULTILINE)
+_NUMBERED_LINE_RE = re.compile(r"^\s*\d+\|(.*)$")
 
 
 def _combined_output(*results: SubAgentResult | None) -> str:
@@ -351,6 +354,21 @@ def _tool_target(entry: dict[str, object]) -> str:
         if value:
             return str(value)
     return "(target unknown)"
+
+
+def _write_artifact_paths(implementation: SubAgentResult) -> list[str]:
+    paths: list[str] = []
+    for entry in implementation.tool_calls:
+        if not _tool_ok(entry) or _tool_name(entry) not in _WRITE_EVIDENCE_TOOLS:
+            continue
+        args = _tool_args(entry)
+        path = args.get("path") or args.get("output") or args.get("target")
+        if path:
+            paths.append(str(path))
+            continue
+        patch = str(args.get("patch") or "")
+        paths.extend(match.group(1).strip() for match in _PATCH_TARGET_RE.finditer(patch))
+    return _unique_preserving_order([p for p in paths if p and p != "(target unknown)"])
 
 
 def _tool_output_preview(entry: dict[str, object], *, limit: int = 180) -> str:
@@ -1500,6 +1518,8 @@ def _finalize_if_evidence_satisfied(
     verdict: str,
 ) -> SubAgentResult:
     """Prefer real satisfied evidence over later/narrative validator drift."""
+    if result.status == "failed":
+        return result
     if not _required_tools_satisfied(result, required_tools):
         return result
     result.status = "completed"
@@ -1576,14 +1596,15 @@ def _can_use_deterministic_validation(
     implementation: SubAgentResult,
 ) -> bool:
     tools = set(contract.required_evidence_tools)
-    if not tools or "bash" in tools:
+    if not tools:
         return False
-    if not tools <= {"read_file", "git_status", "git_diff"}:
+    if "bash" in tools and not _only_py_compile_commands(contract.test_commands):
+        return False
+    if not tools <= {"read_file", "git_status", "git_diff", "bash"}:
         return False
     if "read_file" not in tools:
         return True
-    expected_path = contract.expected_artifacts[0] if contract.expected_artifacts else None
-    if expected_path and (Path(config.cwd) / expected_path).exists():
+    if any((Path(config.cwd) / path).exists() for path in contract.expected_artifacts):
         return True
     expected_content = next(
         (
@@ -1596,11 +1617,18 @@ def _can_use_deterministic_validation(
     for entry in implementation.tool_calls:
         if _entry_satisfies_readback(
             entry,
-            expected_path=expected_path,
+            expected_path=contract.expected_artifacts[0] if contract.expected_artifacts else None,
             expected_content=expected_content,
         ):
             return True
     return False
+
+
+def _only_py_compile_commands(commands: list[str]) -> bool:
+    return bool(commands) and all(
+        command.strip().startswith("python -m py_compile ")
+        for command in commands
+    )
 
 
 def _entry_satisfies_readback(
@@ -1619,8 +1647,11 @@ def _entry_satisfies_readback(
 def _implementation_readback_entry(
     contract: ValidationContract,
     implementation: SubAgentResult,
+    expected_path: str | None = None,
 ) -> dict[str, object] | None:
-    expected_path = contract.expected_artifacts[0] if contract.expected_artifacts else None
+    expected_path = expected_path or (
+        contract.expected_artifacts[0] if contract.expected_artifacts else None
+    )
     expected_content = next(
         (
             value
@@ -1643,6 +1674,32 @@ def _implementation_readback_entry(
     )
 
 
+def _strip_numbered_lines(text: str) -> str:
+    lines: list[str] = []
+    for line in (text or "").splitlines():
+        match = _NUMBERED_LINE_RE.match(line)
+        lines.append(match.group(1) if match else line)
+    return "\n".join(lines)
+
+
+def _python_readback_error(path: str, content: str) -> str | None:
+    source = _strip_numbered_lines(content)
+    if not source.strip() or source.strip() == "(empty file)":
+        return f"{path}: Python file is empty."
+    try:
+        ast.parse(source, filename=path)
+    except SyntaxError as exc:
+        return f"{path}: Python syntax error: {exc.msg}."
+    return None
+
+
+def _py_compile_failed(output: str) -> bool:
+    text = output or ""
+    return "SyntaxError" in text or bool(
+        re.search(r"\[exit code (?!0\])\d+\]", text)
+    )
+
+
 def _deterministic_validation_result(
     contract: ValidationContract,
     task_prompt: str,
@@ -1662,15 +1719,68 @@ def _deterministic_validation_result(
         ),
         None,
     )
+    artifact_failures: list[str] = []
     for name in contract.required_evidence_tools:
-        if name == "read_file" and expected_path:
-            prior_readback = _implementation_readback_entry(contract, implementation)
-            if prior_readback and not (Path(config.cwd) / expected_path).exists():
-                tool_entries.append(dict(prior_readback))
-                continue
-            arguments = {"path": expected_path}
+        if name == "read_file" and contract.expected_artifacts:
+            for artifact_path in contract.expected_artifacts:
+                prior_readback = _implementation_readback_entry(
+                    contract,
+                    implementation,
+                    expected_path=artifact_path,
+                )
+                if prior_readback and not (Path(config.cwd) / artifact_path).exists():
+                    entry = dict(prior_readback)
+                    content = str(entry.get("output_preview") or "")
+                    if artifact_path.endswith(".py"):
+                        py_error = _python_readback_error(artifact_path, content)
+                        if py_error:
+                            entry["ok"] = False
+                            entry["error_preview"] = py_error
+                            artifact_failures.append(py_error)
+                    tool_entries.append(entry)
+                    continue
+                arguments = {"path": artifact_path}
+                call = ToolCall(name=name, arguments=arguments)
+                result = execute_tool(call, read_only_config)
+                ok = not result.is_error
+                py_error = None
+                if artifact_path == expected_path and expected_content and expected_content not in result.content:
+                    ok = False
+                if artifact_path.endswith(".py") and "bash" not in set(config.skill_allowed_tools or ()):
+                    py_error = _python_readback_error(artifact_path, result.content)
+                    if py_error:
+                        ok = False
+                        artifact_failures.append(py_error)
+                error_preview = None
+                if not ok:
+                    error_preview = py_error or result.content[:600]
+                tool_entries.append({
+                    "tool": name,
+                    "ok": ok,
+                    "outcome": result.outcome,
+                    "arguments": call.arguments,
+                    "output_preview": result.content[:600],
+                    "error_preview": error_preview,
+                })
+            continue
         elif name in {"git_status", "git_diff"}:
             arguments = {"path": "."}
+        elif name == "bash" and _only_py_compile_commands(contract.test_commands):
+            for command in contract.test_commands:
+                call = ToolCall(name=name, arguments={"command": command})
+                result = execute_tool(call, read_only_config)
+                ok = not result.is_error and not _py_compile_failed(result.content)
+                if not ok:
+                    artifact_failures.append(result.content[:300])
+                tool_entries.append({
+                    "tool": name,
+                    "ok": ok,
+                    "outcome": result.outcome,
+                    "arguments": call.arguments,
+                    "output_preview": result.content[:600],
+                    "error_preview": result.content[:600] if not ok else None,
+                })
+            continue
         else:
             continue
         call = ToolCall(name=name, arguments=arguments)
@@ -1689,14 +1799,20 @@ def _deterministic_validation_result(
 
     successful = {_tool_name(entry) for entry in tool_entries if _tool_ok(entry)}
     required = set(contract.required_evidence_tools) - {"bash"}
-    if required <= successful:
+    if required <= successful and not artifact_failures:
         status = "completed"
         output = "PASS: required validation evidence tools completed successfully."
         error = None
     else:
         missing = ", ".join(sorted(required - successful))
         status = "failed"
-        output = f"FAIL: missing successful validation evidence: {missing}."
+        details = "; ".join(artifact_failures)
+        if missing and details:
+            output = f"FAIL: missing successful validation evidence: {missing}. {details}"
+        elif details:
+            output = f"FAIL: artifact validation failed. {details}"
+        else:
+            output = f"FAIL: missing successful validation evidence: {missing}."
         error = output
 
     return SubAgentResult(
@@ -1835,7 +1951,11 @@ def build_validation_contract(
     )
     plan_text = plan.output if plan else ""
     research_text = research.output if research else ""
-    expected_paths = _extract_prompt_paths(user_prompt, plan_text, implementation.output)
+    written_paths = _write_artifact_paths(implementation)
+    expected_paths = _unique_preserving_order(
+        _extract_prompt_paths(user_prompt, plan_text, implementation.output)
+        + written_paths
+    )
     expected_content = _extract_expected_content(user_prompt)
     test_commands = _extract_test_commands(user_prompt, plan_text, research_text)
     scope_required = _requires_change_scope_evidence(user_prompt, plan_text)
@@ -1851,6 +1971,8 @@ def build_validation_contract(
     if expected_paths:
         required_tools.append("read_file")
         checks.append("Read each expected artifact and verify it exists.")
+    if written_paths:
+        checks.append("Read back each artifact written by the implementer.")
     if expected_content:
         checks.append(f"Verify expected content/property: {expected_content}")
     if test_commands:
@@ -1918,6 +2040,18 @@ def _validator_config_for_contract(
 ) -> AgentConfig:
     """Restrict validator tools to the contract; include bash only for real tests."""
     tools = set(contract.required_evidence_tools)
+    python_artifacts = [
+        path for path in contract.expected_artifacts if path.lower().endswith(".py")
+    ]
+    if python_artifacts:
+        for path in python_artifacts:
+            command = f"python -m py_compile {path.replace(chr(34), '')}"
+            if command not in contract.test_commands:
+                contract.test_commands.append(command)
+        if config.skill_allowed_tools is None or "bash" in config.skill_allowed_tools:
+            tools.add("bash")
+            if "bash" not in contract.required_evidence_tools:
+                contract.required_evidence_tools.append("bash")
     if contract.test_commands:
         tools.add("bash")
     else:
