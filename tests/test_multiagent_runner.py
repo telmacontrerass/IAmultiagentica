@@ -104,6 +104,69 @@ def test_subagent_system_prompt_includes_english_role_purpose():
     assert "Expected output:" in prompt
 
 
+def test_coder_prompt_without_bash_forbids_shell_creation_commands():
+    selection = default_selection("test:1b")
+    config = build_subagent_config(
+        AgentRole.PYTHON_CODER,
+        AgentConfig(cwd="."),
+    )
+
+    prompt = build_subagent_system_prompt(
+        AgentRole.PYTHON_CODER,
+        selection,
+        config,
+    )
+
+    assert "## Allowed Tools For This Phase" in prompt
+    assert "`bash` is not available in this phase" in prompt
+    assert "Do not use `bash`, `mkdir`, `cd`, `touch`, or `tree`" in prompt
+    allowed_line = prompt.split("## Allowed Tools For This Phase", 1)[1].split(
+        "\n\n", 1
+    )[0]
+    assert "`bash`" not in allowed_line
+
+
+def test_coder_prompt_without_todo_write_removes_absolute_todo_requirement():
+    selection = default_selection("test:1b")
+    config = build_subagent_config(
+        AgentRole.PYTHON_CODER,
+        AgentConfig(cwd="."),
+    )
+
+    prompt = build_subagent_system_prompt(
+        AgentRole.PYTHON_CODER,
+        selection,
+        config,
+    )
+
+    assert (
+        "For any task with more than one step, plan it with `todo_write` BEFORE acting"
+        not in prompt
+    )
+    assert "## Allowed Tools For This Phase" in prompt
+    assert "`todo_write` is not available in this phase" in prompt
+
+
+def test_validator_prompt_lists_git_status_and_git_diff_when_allowed():
+    selection = default_selection("test:1b")
+    config = build_subagent_config(
+        AgentRole.VALIDATOR,
+        AgentConfig(cwd="."),
+    )
+
+    prompt = build_subagent_system_prompt(
+        AgentRole.VALIDATOR,
+        selection,
+        config,
+    )
+    allowed_line = prompt.split("## Allowed Tools For This Phase", 1)[1].split(
+        "\n\n", 1
+    )[0]
+
+    assert "`git_status`" in allowed_line
+    assert "`git_diff`" in allowed_line
+
+
 def test_run_subagent_uses_isolated_system_context_and_role_tools():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=True, session_id="session-1")

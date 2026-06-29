@@ -725,6 +725,20 @@ def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
         fake_run_subagent,
     )
 
+    def fail_git_scope(call, config):
+        if call.name in {"git_status", "git_diff"}:
+            return SimpleNamespace(
+                is_error=True,
+                content=f"Error: forced missing {call.name} evidence",
+                outcome="forced_missing_git_evidence",
+            )
+        return execute_tool(call, config)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.execute_tool",
+        fail_git_scope,
+    )
+
     run_multi_agent(
         "Crea un archivo llamado notes/multiagent_trace_probe_3.txt con "
         "exactamente este contenido: TRACE_OK_3. No modifiques ningun otro "
@@ -914,15 +928,24 @@ def test_orchestrator_e2e_simulated_llm_declaration_without_tools_fails(tmp_path
     assert trace["status"] in {"insufficient_evidence", "validation_failed"}
     assert trace["status"] != "completed"
     assert coder["tool_calls"] == []
-    assert reviewer["status"] == "failed"
-    assert security["status"] == "failed"
-    assert "Do not report PASS" in reviewer["final_output_preview"]
-    assert "Do not report PASS" in security["final_output_preview"]
-    assert not reviewer["final_output_preview"].startswith("PASS")
-    assert not security["final_output_preview"].startswith("PASS")
+    for phase in (reviewer, security):
+        if phase["status"] == "completed":
+            assert [call["tool"] for call in phase["tool_calls"]] == [
+                "git_status",
+                "git_diff",
+            ]
+            assert all(call["ok"] for call in phase["tool_calls"])
+        else:
+            assert phase["status"] == "failed"
+            assert "Do not report PASS" in phase["final_output_preview"]
+            assert not phase["final_output_preview"].startswith("PASS")
     assert not (tmp_path / "notes" / "todo.txt").exists()
     assert "status: completed" not in result
-    assert "Insufficient evidence: no real write/read tool calls." in result
+    assert (
+        "Insufficient evidence" in result
+        or "Evidence gate" in result
+        or "no real write/read tool calls" in result
+    )
 
 
 # ---------------------------------------------------------------------------

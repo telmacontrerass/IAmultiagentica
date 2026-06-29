@@ -59,6 +59,50 @@ def _role_anchor_from_spec(spec: RoleSpec) -> str:
     )
 
 
+def _prompt_allowed_tools(role: AgentRole, config: AgentConfig) -> frozenset[str]:
+    if config.skill_allowed_tools is None:
+        return ROLE_SPECS[role].allowed_tools
+    return frozenset(config.skill_allowed_tools)
+
+
+def _strip_unavailable_todo_guidance(prompt: str) -> str:
+    """Remove global todo_write instructions from phases that cannot use it."""
+    lines = [
+        line
+        for line in prompt.splitlines()
+        if "todo_write" not in line
+    ]
+    text = "\n".join(lines)
+    start = text.find("\n### todo_write\n")
+    if start == -1:
+        return text
+    end = text.find("\n### ask_user\n", start)
+    if end == -1:
+        return text[:start].rstrip()
+    return (text[:start].rstrip() + text[end:]).strip()
+
+
+def _allowed_tools_section(allowed_tools: frozenset[str]) -> str:
+    listed = ", ".join(f"`{tool}`" for tool in sorted(allowed_tools)) or "(none)"
+    notes = [
+        "Only the tools in this list are available in this subagent phase. "
+        "If a tool is not listed here, do not use it even if general tool "
+        "documentation elsewhere in this prompt mentions it.",
+    ]
+    if "todo_write" not in allowed_tools:
+        notes.append(
+            "`todo_write` is not available in this phase. Do not create or "
+            "update a todo plan; keep any plan in plain final text if needed."
+        )
+    if "bash" not in allowed_tools:
+        notes.append(
+            "`bash` is not available in this phase. Do not use `bash`, "
+            "`mkdir`, `cd`, `touch`, or `tree`; use the listed native tools "
+            "instead."
+        )
+    return "## Allowed Tools For This Phase\n" + f"{listed}\n\n" + "\n".join(notes)
+
+
 def build_subagent_system_prompt(
     role: AgentRole,
     selection: ModelSelection,
@@ -66,13 +110,17 @@ def build_subagent_system_prompt(
 ) -> str:
     """Build an isolated system prompt for a role-specific subagent."""
     spec = ROLE_SPECS[role]
+    allowed_tools = _prompt_allowed_tools(role, config)
     base_prompt = build_system_prompt(selection, config.cwd)
+    if "todo_write" not in allowed_tools:
+        base_prompt = _strip_unavailable_todo_guidance(base_prompt)
     return (
         f"{base_prompt}\n\n"
         "## Subagent Role\n"
         f"- Role: {spec.role.value}\n"
         f"- Description: {spec.description}\n"
         f"- Can write files: {'yes' if spec.can_write else 'no'}\n\n"
+        f"{_allowed_tools_section(allowed_tools)}\n\n"
         "## Role Instructions\n"
         f"{spec.system_instructions}\n\n"
         "## Role Anchor\n"
