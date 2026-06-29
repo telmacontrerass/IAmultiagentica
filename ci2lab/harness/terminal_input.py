@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, cast
 
 
 def read_prompt_line(prompt: str = "You> ") -> str:
@@ -43,7 +43,7 @@ def read_prompt_line(prompt: str = "You> ") -> str:
         """Insert a literal newline when Alt+Enter is pressed."""
         event.current_buffer.insert_text("\n")
 
-    session = PromptSession(
+    session = cast(Any, PromptSession)(
         history=InMemoryHistory(),
         multiline=True,
         key_bindings=bindings,

@@ -244,6 +244,40 @@ def test_project_manuscript_text_picks_largest_source(monkeypatch, tmp_path):
     assert "full manuscript" in text
 
 
+def test_project_manuscript_text_reads_pdf_with_document_reader(monkeypatch, tmp_path):
+    _use_temp_projects(monkeypatch, tmp_path)
+    project = projects.create_project("Paper", kind="paper_review")["project"]
+    extracted_texts = iter(
+        [
+            "Indexed text from the PDF.",
+            "Review-time extracted manuscript text from the PDF.",
+        ]
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fake_read_document(cwd: str, path: str) -> str:
+        calls.append((cwd, path))
+        return next(extracted_texts)
+
+    monkeypatch.setattr(projects, "read_document", fake_read_document)
+
+    added = projects.add_project_source(
+        project["id"],
+        {
+            "name": "manuscript.pdf",
+            "content_base64": base64.b64encode(b"%PDF fake paper").decode(),
+        },
+    )
+
+    text, name = projects.project_manuscript_text(project["id"])
+
+    assert added["ok"] is True
+    assert name == "manuscript.pdf"
+    assert text == "Review-time extracted manuscript text from the PDF."
+    assert len(calls) == 2
+    assert calls[1][1] == added["source"]["path"]
+
+
 def test_deleting_source_removes_only_that_project_file(monkeypatch, tmp_path):
     _use_temp_projects(monkeypatch, tmp_path)
     project = projects.create_project("Biology")["project"]
