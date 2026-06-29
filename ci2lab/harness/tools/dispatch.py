@@ -22,6 +22,7 @@ from ci2lab.harness.tools import git_tools, skill_tool, vision_tool
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import patch as patch_tool
+from ci2lab.harness.tools import symcalc as symcalc_tool
 from ci2lab.harness.tools import todo as todo_tool
 from ci2lab.harness.tools import web as web_tool
 from ci2lab.harness.types import AgentConfig
@@ -129,6 +130,7 @@ DISPATCH: dict[str, Callable[..., str]] = {
         cfg,
     ),
     "calc": lambda cfg, a: calc_tool.calc(a["expression"]),
+    "symcalc": lambda cfg, a: symcalc_tool.symcalc(a["expression"]),
 }
 
 

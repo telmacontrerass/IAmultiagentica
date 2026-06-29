@@ -610,11 +610,23 @@ def _latex_to_plaintext(text: str) -> str:
     s = re.sub(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", s)
     # Symbol commands -> Unicode
     symbols = {
-        r"\^\\circ": "°", r"\\circ": "°", r"\\degree": "°",
-        r"\\times": "×", r"\\cdot": "·", r"\\div": "÷",
-        r"\\rightarrow": "→", r"\\to": "→", r"\\Rightarrow": "⇒",
-        r"\\leq": "≤", r"\\geq": "≥", r"\\approx": "≈", r"\\neq": "≠",
-        r"\\pm": "±", r"\\Delta": "Δ", r"\\Sigma": "Σ", r"\\sum": "Σ",
+        r"\^\\circ": "°",
+        r"\\circ": "°",
+        r"\\degree": "°",
+        r"\\times": "×",
+        r"\\cdot": "·",
+        r"\\div": "÷",
+        r"\\rightarrow": "→",
+        r"\\to": "→",
+        r"\\Rightarrow": "⇒",
+        r"\\leq": "≤",
+        r"\\geq": "≥",
+        r"\\approx": "≈",
+        r"\\neq": "≠",
+        r"\\pm": "±",
+        r"\\Delta": "Δ",
+        r"\\Sigma": "Σ",
+        r"\\sum": "Σ",
     }
     for pat, rep in symbols.items():
         s = re.sub(pat, rep, s)
@@ -628,9 +640,9 @@ def _latex_to_plaintext(text: str) -> str:
     # These are the stray "random commas" once the backslash is dropped.
     s = re.sub(r"\\[,;:!\s]", "", s)
     # Subscripts / superscripts
-    s = re.sub(r"_\{([^{}]*)\}", r"\1", s)       # _{18} -> 18
-    s = re.sub(r"\^\{([^{}]*)\}", r"^\1", s)     # ^{2}  -> ^2
-    s = re.sub(r"_(\d)", r"\1", s)               # _2    -> 2 (digits only, so
+    s = re.sub(r"_\{([^{}]*)\}", r"\1", s)  # _{18} -> 18
+    s = re.sub(r"\^\{([^{}]*)\}", r"^\1", s)  # ^{2}  -> ^2
+    s = re.sub(r"_(\d)", r"\1", s)  # _2    -> 2 (digits only, so
     #                                              snake_case words are untouched)
     # Math delimiters \( \) \[ \] and $...$
     s = re.sub(r"\\[()\[\]]", "", s)

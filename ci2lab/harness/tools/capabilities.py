@@ -27,6 +27,7 @@ from ci2lab.harness.tools.schemas_parts.registry import TOOL_NAMES
 READ_ONLY_TOOLS = frozenset(
     {
         "calc",
+        "symcalc",
         "read_file",
         "read_document",
         "ls",

@@ -2,7 +2,7 @@
 name: review_handwritten_exercise
 description: Transcribe handwritten or scanned exercise work, audit calculations with impact analysis, and rework problems when errors change the answer.
 when_to_use: User provides a handwritten/scanned PDF or image and asks to transcribe, check calculations, or find mistakes step by step.
-allowed-tools: todo_write extract_visual_document calc
+allowed-tools: todo_write extract_visual_document calc symcalc
 disable-model-invocation: false
 ---
 # Goal
@@ -43,12 +43,16 @@ For **each** suspected issue, record a row with these fields:
 
 Use `todo_write` to track: Transcription → Audit table → Corrected solution (if needed).
 
-# Phase 2a — Compute with the `calc` tool, never by hand
-Do **not** evaluate multi-term arithmetic in your head — a wrong intermediate makes you flag a correct student. For every numeric line (each enthalpy sum, each denominator, each final temperature), call `calc` and copy its result verbatim.
+# Phase 2a — Compute with a tool, never by hand
+Do **not** evaluate multi-term arithmetic or any matrix/algebra step in your head — a wrong intermediate makes you flag a correct student. Use a tool and copy its result verbatim.
 
-- Example: `calc("8*(-393520) + 9*(-241820) - (-249910)")` → use the returned value as `h_comb`.
-- Example: `calc("298 + 5074630 / (8*58.4 + 9*47.15 + 47*34.9)")` → use the returned value as `Tca`.
-- **Every `expr = value` line you display must be a line `calc` actually returned.** Do not write an expression whose left side does not evaluate to the right side. If `calc` disagrees with what you were about to write, your expression was wrong — fix the expression, not the value.
+- **`calc`** for scalar arithmetic (sums, products, fractions):
+  - `calc("8*(-393520) + 9*(-241820) - (-249910)")` → use the value as `h_comb`.
+  - `calc("298 + 5074630 / (8*58.4 + 9*47.15 + 47*34.9)")` → use the value as `Tca`.
+- **`symcalc`** for matrices and exact algebra (linear-algebra exercises): row reduction, determinants, kernels, eigenvalues, Jordan form, dot products, radicals:
+  - `symcalc("Matrix([[1,1,0],[1,-1,6]]).rref()")`, `symcalc("Matrix([[1,1,0],[1,-1,6]]).nullspace()")`
+  - `symcalc("Matrix([[2,0,0,1],[0,2,0,0],[0,0,3,1],[0,0,-1,1]]).jordan_form()[1]")`, `symcalc("sqrt(24)")`
+- **Every `expr = value` line you display must be a line the tool actually returned.** Do not write an expression whose left side does not evaluate to the right side. If the tool disagrees with what you were about to write, your expression was wrong — fix the expression, not the value.
 
 # Phase 2b — Physical sanity checks (do BEFORE declaring any error)
 Before you flag the student wrong or report a "corrected" number, check your **own** result against physics. A failed check almost always means *your* sign or arithmetic slip, not the student's.

@@ -49,4 +49,33 @@ RUNTIME_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "symcalc",
+            "description": (
+                "Evaluate a symbolic / matrix expression exactly with a computer "
+                "algebra system (SymPy). Use this for anything beyond scalar "
+                "arithmetic: matrix row reduction, determinants, kernels, "
+                "eigenvalues, Jordan form, dot products, and exact radicals or "
+                "fractions. Examples: "
+                "'Matrix([[1,1,0],[1,-1,6]]).rref()', "
+                "'Matrix([[1,1,0],[1,-1,6]]).nullspace()', "
+                "'Matrix([[2,0,0,1],[0,2,0,0],[0,0,3,1],[0,0,-1,1]]).jordan_form()[1]', "
+                "'sqrt(24)', 'Matrix([1,0,2,1]).dot(Matrix([1,-1,1,0]))'. "
+                "Matrices use SymPy syntax: Matrix([[row1],[row2],...]). "
+                "Arithmetic only — no imports, variables, or arbitrary code."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "SymPy/matrix expression to evaluate exactly.",
+                    },
+                },
+                "required": ["expression"],
+            },
+        },
+    },
 ]

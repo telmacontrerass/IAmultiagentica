@@ -36,13 +36,15 @@ def test_builtin_review_handwritten_exercise_skill_available():
     assert REVIEW_HANDWRITTEN_EXERCISE_SKILL in skills
     skill = skills[REVIEW_HANDWRITTEN_EXERCISE_SKILL]
     assert skill.source == "builtin"
-    assert skill.allowed_tools == ["todo_write", "extract_visual_document", "calc"]
+    assert skill.allowed_tools == ["todo_write", "extract_visual_document", "calc", "symcalc"]
 
 
 def test_invoke_review_handwritten_exercise_skill_contract():
     cfg = AgentConfig(cwd=".")
     prompt = invoke_skill(cfg, REVIEW_HANDWRITTEN_EXERCISE_SKILL, "P1_T1_IE.pdf")
-    assert cfg.skill_allowed_tools == frozenset({"todo_write", "extract_visual_document", "calc"})
+    assert cfg.skill_allowed_tools == frozenset(
+        {"todo_write", "extract_visual_document", "calc", "symcalc"}
+    )
     assert "Audit" in prompt
     assert "affects_result" in prompt
     assert "Corrected solution" in prompt
@@ -60,7 +62,7 @@ def test_enrich_turn_content_with_exercise_skill_prepends_text():
     assert isinstance(enriched, str)
     assert enriched.startswith("# Skill: review_handwritten_exercise")
     assert "User request:" in enriched
-    assert allowed == frozenset({"todo_write", "extract_visual_document", "calc"})
+    assert allowed == frozenset({"todo_write", "extract_visual_document", "calc", "symcalc"})
 
 
 def test_enrich_turn_content_with_exercise_skill_multimodal():

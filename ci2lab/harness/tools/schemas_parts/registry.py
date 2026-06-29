@@ -13,6 +13,7 @@ TOOL_NAMES: frozenset[str] = frozenset(
     {
         "bash",
         "calc",
+        "symcalc",
         "read_file",
         "read_document",
         "ls",
