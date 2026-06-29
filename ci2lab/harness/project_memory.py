@@ -15,10 +15,18 @@ _MEMORY_CANDIDATES = (
 
 
 def load_project_memory(cwd: str) -> str:
-    """
-    Load standing project instructions from the workspace root.
+    """Load standing project instructions from the workspace root.
 
-    Files are merged in order; later files append if not duplicate-heavy.
+    Candidate files (see :data:`_MEMORY_CANDIDATES`) are merged in order; later
+    files are appended until the combined size reaches :data:`MAX_MEMORY_CHARS`,
+    at which point the trailing block is truncated.
+
+    Args:
+        cwd: Workspace root directory to resolve candidate memory files against.
+
+    Returns:
+        The merged project-memory text under a ``## Project memory`` heading, or
+        an empty string when no candidate file exists or has content.
     """
     root = Path(cwd).resolve()
     sections: list[str] = []

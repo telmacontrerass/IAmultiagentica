@@ -20,7 +20,9 @@ def test_classify_model_not_found():
     request = httpx.Request("POST", "http://localhost/v1/chat/completions")
     response = httpx.Response(404, json={"error": "model 'missing:1b' not found"}, request=request)
     exc = httpx.HTTPStatusError("404", request=request, response=response)
-    err = classify_request_error(exc, model="missing:1b", url="http://localhost/v1/chat/completions")
+    err = classify_request_error(
+        exc, model="missing:1b", url="http://localhost/v1/chat/completions"
+    )
     assert isinstance(err, LLMModelNotFoundError)
     assert "ollama pull" in err.user_message
     assert err.exit_code == 3

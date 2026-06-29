@@ -5,24 +5,28 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 
 from ci2lab.security.decisions import DecisionAction, SecurityDecision
 from ci2lab.security.paths import is_within_workspace
 
 PermissionValue = str  # allow | ask | deny
 
-_READ_TOOLS = frozenset({
-    "read_file",
-    "inspect_file",
-    "file_info",
-    "tree",
-    "grep",
-    "glob",
-    "ls",
-})
+_READ_TOOLS = frozenset(
+    {
+        "read_file",
+        "extract_visual_document",
+        "inspect_file",
+        "file_info",
+        "tree",
+        "grep",
+        "glob",
+        "ls",
+    }
+)
 _EDIT_TOOLS = frozenset({"write_file", "edit_file"})
 _BASH_TOOLS = frozenset({"bash", "shell"})
 
@@ -98,10 +102,20 @@ class OpenCodePermissionConfig:
 
     @classmethod
     def default_experimental(cls) -> OpenCodePermissionConfig:
+        """Return a config seeded with the built-in experimental defaults."""
         return cls(rules=dict(_DEFAULT_EXPERIMENTAL_RULES))
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any] | None) -> OpenCodePermissionConfig:
+        """Build a config by merging ``raw`` over the experimental defaults.
+
+        Args:
+            raw: Permission rules to overlay; falsy values fall back to the
+                defaults.
+
+        Returns:
+            A new :class:`OpenCodePermissionConfig` with merged rules.
+        """
         if not raw:
             return cls.default_experimental()
         merged = dict(_DEFAULT_EXPERIMENTAL_RULES)
@@ -114,10 +128,23 @@ class OpenCodePermissionConfig:
 
 
 def parse_opencode_permissions(raw: Mapping[str, Any] | None) -> OpenCodePermissionConfig:
+    """Parse a raw permission mapping into an :class:`OpenCodePermissionConfig`.
+
+    Args:
+        raw: Permission rules to parse; falsy values use the defaults.
+
+    Returns:
+        The parsed permission config.
+    """
     return OpenCodePermissionConfig.from_mapping(raw)
 
 
 def _normalize_permission(value: str) -> PermissionValue:
+    """Normalize and validate a single permission action.
+
+    Raises:
+        ValueError: If ``value`` is not one of allow|ask|deny.
+    """
     v = value.strip().lower()
     if v not in {"allow", "ask", "deny"}:
         raise ValueError(f"invalid permission: {value!r} (use allow|ask|deny)")
@@ -125,6 +152,7 @@ def _normalize_permission(value: str) -> PermissionValue:
 
 
 def _normalize_slashes(text: str) -> str:
+    """Convert backslashes to forward slashes for stable pattern matching."""
     return text.replace("\\", "/")
 
 
@@ -143,22 +171,25 @@ def _path_subjects(path: str) -> list[str]:
 
 
 def _expand_home(pattern: str) -> str:
+    """Expand a leading ``~`` or ``$HOME`` in a glob pattern to the home dir."""
     if pattern.startswith("~/") or pattern == "~":
         return str(Path.home()).replace("\\", "/") + pattern[1:]
     if pattern.startswith("$HOME/") or pattern == "$HOME":
-        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
         home = home.replace("\\", "/")
         return home + pattern[5:] if pattern.startswith("$HOME") else pattern
     return pattern
 
 
 def _pattern_specificity(pattern: str) -> int:
+    """Score a pattern's specificity (more literal chars means more specific)."""
     if pattern in ("*", "**"):
         return 0
     return len(pattern.replace("*", "").replace("?", ""))
 
 
 def _pattern_matches(pattern: str, subject: str) -> bool:
+    """Return whether ``subject`` matches ``pattern`` (case-insensitive glob)."""
     expanded = _expand_home(pattern)
     norm_subject = _normalize_slashes(subject)
     for candidate in (expanded, pattern):
@@ -201,6 +232,7 @@ def _match_best_rule(
 
 
 def _tool_rule_keys(tool_name: str) -> list[str]:
+    """Return the ordered permission-rule keys to try for ``tool_name``."""
     if tool_name in _TOOL_RULE_ALIASES:
         return list(dict.fromkeys(_TOOL_RULE_ALIASES[tool_name]))
     oc = _TOOL_TO_OPENCODE.get(tool_name, tool_name)
@@ -215,12 +247,18 @@ def _resolve_tool_permission(
     tool_name: str,
     subject: str,
 ) -> tuple[PermissionValue | None, str | None]:
+    """Resolve the effective permission for a tool against the rule map.
+
+    Tries tool-specific keys first, then the wildcard ``*`` key.
+
+    Returns:
+        A ``(permission, matched_rule)`` tuple; both are None if no rule
+        applies.
+    """
     for key in _tool_rule_keys(tool_name):
         if key not in rule_map:
             continue
-        perm, matched = _match_best_rule(
-            rule_map[key], subject, rule_prefix=f"{key}:"
-        )
+        perm, matched = _match_best_rule(rule_map[key], subject, rule_prefix=f"{key}:")
         if perm is not None:
             return perm, matched
     if "*" in rule_map:
@@ -237,6 +275,18 @@ def _permission_to_decision(
     matched_rule: str | None = None,
     external_directory: bool = False,
 ) -> SecurityDecision:
+    """Map a resolved permission value to a :class:`SecurityDecision`.
+
+    Args:
+        perm: Resolved permission value, or None to use ``default``.
+        default: Permission applied when ``perm`` is None.
+        context: Short label describing the evaluation context.
+        matched_rule: Identifier of the rule that produced ``perm``.
+        external_directory: True if the target lies outside the workspace.
+
+    Returns:
+        The decision corresponding to allow/ask/deny.
+    """
     effective = perm or default
     if effective == "deny":
         return SecurityDecision(
@@ -263,10 +313,12 @@ def _permission_to_decision(
 
 
 def _bash_subject(command: str) -> str:
+    """Collapse whitespace in a command to a single-spaced match subject."""
     return re.sub(r"\s+", " ", command.strip())
 
 
 def _is_external_path(workspace: str, path: str) -> bool:
+    """Return whether ``path`` resolves outside ``workspace``."""
     return not is_within_workspace(path, workspace)
 
 
@@ -278,10 +330,20 @@ def evaluate_opencode_tool(
     rules: OpenCodePermissionConfig,
     auto_confirm: bool,
 ) -> SecurityDecision:
-    """
-    Evaluate OpenCode permissions without CI2Lab hard-checks.
+    """Evaluate OpenCode permissions for a tool call without CI2Lab hard-checks.
 
-    EXPERIMENTAL / UNSAFE: does not apply workspace confinement or secret policy.
+    EXPERIMENTAL / UNSAFE: does not apply workspace confinement or the secret
+    policy; those are layered separately by the engine when applicable.
+
+    Args:
+        tool_name: Name of the tool being evaluated.
+        args: Arguments passed to the tool.
+        workspace: Path to the workspace root.
+        rules: The permission rules to apply.
+        auto_confirm: If True, ``ask`` decisions resolve to ``allow``.
+
+    Returns:
+        The :class:`SecurityDecision` produced by the permission rules.
     """
     rule_map = rules.rules
     path_tools = _READ_TOOLS | _EDIT_TOOLS
@@ -310,9 +372,7 @@ def evaluate_opencode_tool(
     if tool_name in _BASH_TOOLS:
         cmd = _bash_subject(str(args.get("command", "")))
         perm, matched = _resolve_tool_permission(rule_map, tool_name, cmd)
-        decision = _permission_to_decision(
-            perm, context=f"bash:{cmd[:60]}", matched_rule=matched
-        )
+        decision = _permission_to_decision(perm, context=f"bash:{cmd[:60]}", matched_rule=matched)
         if decision.action is DecisionAction.CONFIRM and auto_confirm:
             return SecurityDecision(
                 action=DecisionAction.ALLOW,
@@ -323,8 +383,10 @@ def evaluate_opencode_tool(
 
     path = str(args.get("path", "."))
     subjects = _path_subjects(path)
-    perm: PermissionValue | None = None
-    matched: str | None = None
+    # Types come from the unpacking of `_resolve_tool_permission` above; these
+    # are plain re-initialisations (annotating again would shadow that binding).
+    perm = None
+    matched = None
     subject = path
     for candidate in subjects:
         perm, matched = _resolve_tool_permission(rule_map, tool_name, candidate)

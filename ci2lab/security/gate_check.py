@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ci2lab.harness.types import AgentConfig
 from ci2lab.security.engine import evaluate_tool_gate, normalize_security_engine
@@ -21,7 +22,15 @@ _PATTERN_TOOLS = frozenset({"grep", "glob"})
 
 
 def build_tool_args(tool: str, target: str) -> dict[str, Any]:
-    """Build minimal arguments for evaluate_tool_gate."""
+    """Build the minimal argument dict needed to gate-check a tool.
+
+    Args:
+        tool: Tool name.
+        target: The path, command or pattern operated on.
+
+    Returns:
+        An arguments dict suitable for :func:`evaluate_tool_gate`.
+    """
     name = tool.strip()
     if name in _BASH_TOOLS:
         return {"command": target}
@@ -31,6 +40,7 @@ def build_tool_args(tool: str, target: str) -> dict[str, Any]:
 
 
 def _gate_to_decision(gate: Any) -> str:
+    """Collapse a gate result into a single ``allow``/``ask``/``deny`` label."""
     if gate.blocked:
         return "deny"
     if gate.needs_confirm:
@@ -39,7 +49,17 @@ def _gate_to_decision(gate: Any) -> str:
 
 
 def load_permission_config(path: str | Path) -> OpenCodePermissionConfig:
-    """Load permission from JSON (compat: delegates to opencode_config_io)."""
+    """Load a permission config from JSON.
+
+    Compatibility wrapper that delegates to
+    :func:`load_opencode_config_bundle`.
+
+    Args:
+        path: Path to the JSON config file.
+
+    Returns:
+        The loaded :class:`OpenCodePermissionConfig`.
+    """
     return load_opencode_config_bundle(path).to_permission_config()
 
 
@@ -55,10 +75,24 @@ def evaluate_security_gate(
     security_profile: str = "standard",
     show_effective_config: bool = False,
 ) -> dict[str, Any]:
-    """
-    Evaluate the security gate without executing the tool.
+    """Evaluate the security gate for a tool without executing it (dry run).
 
-    Raises ValueError if engine/tool are invalid.
+    Args:
+        engine: Engine name or alias; defaults applied when None.
+        workspace: Path to the workspace root.
+        tool: Tool name to evaluate.
+        target: Path, command or pattern operated on.
+        permission_config: Optional permission rules (mapping or config).
+        config_bundle: Optional pre-built config bundle (takes precedence).
+        auto_confirm: If True, ``ask`` decisions resolve to ``allow``.
+        security_profile: Name of the active security profile.
+        show_effective_config: If True, include the effective permission map.
+
+    Returns:
+        A dict describing the gate decision and related metadata.
+
+    Raises:
+        ValueError: If the engine or tool name is invalid.
     """
     normalized_engine = normalize_security_engine(engine)
     tool_name = tool.strip()

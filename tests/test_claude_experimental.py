@@ -15,7 +15,6 @@ from ci2lab.harness.security_profiles import SecurityConfig, resolved_opencode_p
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import AgentConfig, ToolCall
 from ci2lab.security.approval_prompt import (
-    confirm_opencode_ask,
     prompt_opencode_approval,
     uses_modern_permission_prompt,
 )
@@ -30,7 +29,7 @@ from ci2lab.security.engine import (
 )
 from ci2lab.security.gate_check import evaluate_security_gate
 from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
-from ci2lab.security.permissions_dashboard import build_retry_plan, load_audit_events
+from ci2lab.security.permissions_dashboard import build_retry_plan
 from ci2lab.security.session_permissions import (
     bind_active_session,
     build_approval_fingerprint,
@@ -111,9 +110,7 @@ def test_unknown_engine_fails():
         normalize_security_engine("not_a_real_engine")
 
 
-def test_claude_blocks_external_despite_external_allow(
-    workspace: Path, outside_secret: Path
-):
+def test_claude_blocks_external_despite_external_allow(workspace: Path, outside_secret: Path):
     config = AgentConfig(
         cwd=str(workspace),
         security_engine="claude_experimental",
@@ -306,9 +303,7 @@ def test_claude_linux_destructive_permission_deny(
         "umount /mnt",
     ],
 )
-def test_claude_linux_destructive_hard_or_permission_deny(
-    workspace: Path, command: str
-):
+def test_claude_linux_destructive_hard_or_permission_deny(workspace: Path, command: str):
     """High-impact destructive commands: permission deny or hard guard."""
     config = AgentConfig(
         cwd=str(workspace),
@@ -444,9 +439,7 @@ def test_allow_session_no_skip_hard(workspace: Path, outside_secret: Path):
         opencode_permissions=_external_allow_rules(),
         session_id="sess-x",
     )
-    gate = evaluate_tool_gate(
-        "read_file", {"path": str(outside_secret)}, config
-    )
+    gate = evaluate_tool_gate("read_file", {"path": str(outside_secret)}, config)
     assert gate.blocked
 
 
@@ -484,9 +477,7 @@ def test_audit_marks_claude_engine(workspace: Path):
         ),
     )
     entries = get_audit_log()
-    assert any(
-        e.extra.get("security_engine") == "claude_experimental" for e in entries
-    )
+    assert any(e.extra.get("security_engine") == "claude_experimental" for e in entries)
     assert any(e.extra.get("hard_guards_enabled") for e in entries)
 
 
@@ -525,11 +516,7 @@ def test_comparator_includes_claude(workspace: Path, outside_secret: Path):
 
 def test_comparator_three_engines_external(workspace: Path, outside_secret: Path):
     rows = run_comparison(workspace, outside_path=outside_secret)
-    ci2 = next(
-        r
-        for r in rows
-        if r.case_id == "read_external_allow" and r.engine == "ci2lab"
-    )
+    ci2 = next(r for r in rows if r.case_id == "read_external_allow" and r.engine == "ci2lab")
     opn = next(
         r
         for r in rows

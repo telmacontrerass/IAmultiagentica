@@ -109,35 +109,43 @@ def test_research_web_doc_review_offline_deterministic(tmp_path: Path) -> None:
 
     call_count = {"n": 0}
 
-    def fake_chat(messages, *, tools=None):  # noqa: ANN001
+    def fake_chat(messages, *, tools=None):
         call_count["n"] += 1
         if call_count["n"] == 1:
             return LLMResponse(
                 content="",
-                tool_calls=[{
-                    "id": "c1",
-                    "function": {
-                        "name": "skill",
-                        "arguments": json.dumps(
-                            {"skill_name": "research_web_doc_review", "args": url}
-                        ),
-                    },
-                }],
+                tool_calls=[
+                    {
+                        "id": "c1",
+                        "function": {
+                            "name": "skill",
+                            "arguments": json.dumps(
+                                {"skill_name": "research_web_doc_review", "args": url}
+                            ),
+                        },
+                    }
+                ],
             )
         if call_count["n"] == 2:
             return LLMResponse(
                 content="",
-                tool_calls=[{
-                    "id": "c2",
-                    "function": {
-                        "name": "web_fetch",
-                        "arguments": json.dumps({"url": url}),
-                    },
-                }],
+                tool_calls=[
+                    {
+                        "id": "c2",
+                        "function": {
+                            "name": "web_fetch",
+                            "arguments": json.dumps({"url": url}),
+                        },
+                    }
+                ],
             )
         tool_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
         fetched = next(
-            (m.get("content", "") for m in reversed(tool_msgs) if "Fetched http://127.0.0.1:" in str(m.get("content", ""))),
+            (
+                m.get("content", "")
+                for m in reversed(tool_msgs)
+                if "Fetched http://127.0.0.1:" in str(m.get("content", ""))
+            ),
             "",
         )
         return LLMResponse(content=_json_review_from_fetched(fetched, url), tool_calls=[])
@@ -174,7 +182,9 @@ def test_research_web_doc_review_offline_deterministic(tmp_path: Path) -> None:
         "Never cache responses that include user-specific secrets.",
     )
     all_text = json.dumps(parsed, ensure_ascii=False)
-    assert all("http" not in item.lower() or url in item for item in parsed["practical_recommendations"])
+    assert all(
+        "http" not in item.lower() or url in item for item in parsed["practical_recommendations"]
+    )
     assert "wikipedia.org" not in all_text.lower()
     assert "arxiv.org" not in all_text.lower()
     assert any("not covered" in item.lower() for item in parsed["unknowns_or_not_verified"])
@@ -216,45 +226,51 @@ def test_research_web_vs_repo_offline_deterministic(tmp_path: Path) -> None:
     rel_path = "sample_path_handler.py"
     call_count = {"n": 0}
 
-    def fake_chat(messages, *, tools=None):  # noqa: ANN001
+    def fake_chat(messages, *, tools=None):
         call_count["n"] += 1
         if call_count["n"] == 1:
             return LLMResponse(
                 content="",
-                tool_calls=[{
-                    "id": "c1",
-                    "function": {
-                        "name": "skill",
-                        "arguments": json.dumps(
-                            {
-                                "skill_name": "research_web_vs_repo",
-                                "args": f"url={url} file={rel_path}",
-                            }
-                        ),
-                    },
-                }],
+                tool_calls=[
+                    {
+                        "id": "c1",
+                        "function": {
+                            "name": "skill",
+                            "arguments": json.dumps(
+                                {
+                                    "skill_name": "research_web_vs_repo",
+                                    "args": f"url={url} file={rel_path}",
+                                }
+                            ),
+                        },
+                    }
+                ],
             )
         if call_count["n"] == 2:
             return LLMResponse(
                 content="",
-                tool_calls=[{
-                    "id": "c2",
-                    "function": {
-                        "name": "web_fetch",
-                        "arguments": json.dumps({"url": url}),
-                    },
-                }],
+                tool_calls=[
+                    {
+                        "id": "c2",
+                        "function": {
+                            "name": "web_fetch",
+                            "arguments": json.dumps({"url": url}),
+                        },
+                    }
+                ],
             )
         if call_count["n"] == 3:
             return LLMResponse(
                 content="",
-                tool_calls=[{
-                    "id": "c3",
-                    "function": {
-                        "name": "read_file",
-                        "arguments": json.dumps({"path": rel_path}),
-                    },
-                }],
+                tool_calls=[
+                    {
+                        "id": "c3",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": json.dumps({"path": rel_path}),
+                        },
+                    }
+                ],
             )
 
         tool_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
@@ -350,4 +366,3 @@ def test_research_web_vs_repo_offline_deterministic(tmp_path: Path) -> None:
     all_text = json.dumps(parsed, ensure_ascii=False).lower()
     assert "wikipedia.org" not in all_text
     assert "arxiv.org" not in all_text
-

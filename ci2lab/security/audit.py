@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,19 @@ from ci2lab.security.paths import resolve_workspace_path
 
 @dataclass(frozen=True)
 class SecurityAuditEntry:
+    """A single in-memory record of a security decision.
+
+    Attributes:
+        timestamp: ISO-8601 timestamp of the decision.
+        tool: Name of the tool that was evaluated.
+        detail: Target detail (path, command, etc.).
+        decision: Decision label (allow/deny/ask).
+        reason: Machine-readable reason code.
+        confirmed: Whether the user confirmed, if applicable.
+        outcome: Outcome label (executed/blocked/...).
+        extra: Additional metadata recorded with the entry.
+    """
+
     timestamp: str
     tool: str
     detail: str
@@ -25,6 +38,16 @@ class SecurityAuditEntry:
 
 @dataclass
 class AuditPersistContext:
+    """Context controlling where audit records are persisted on disk.
+
+    Attributes:
+        workspace: Path to the workspace root.
+        runs_dir: Name of the runs directory under the workspace.
+        run_id: Identifier of the current run, if any.
+        run_subdir: Subdirectory under ``runs_dir`` for this run, if any.
+        security_engine: Default engine recorded when none is supplied.
+    """
+
     workspace: str
     runs_dir: str = "runs"
     run_id: str | None = None
@@ -37,15 +60,22 @@ _persist_context: AuditPersistContext | None = None
 
 
 def set_audit_persist_context(ctx: AuditPersistContext | None) -> None:
+    """Set the process-wide context used to persist audit records.
+
+    Args:
+        ctx: The persist context to activate, or None to disable persistence.
+    """
     global _persist_context
     _persist_context = ctx
 
 
 def get_audit_persist_context() -> AuditPersistContext | None:
+    """Return the currently active audit persist context, if any."""
     return _persist_context
 
 
 def _audit_jsonl_path(ctx: AuditPersistContext) -> Path:
+    """Resolve the JSONL audit file path within the workspace for ``ctx``."""
     workspace = Path(ctx.workspace).resolve()
     if ctx.run_subdir:
         target = workspace / ctx.runs_dir / ctx.run_subdir / "security_audit.jsonl"
@@ -57,6 +87,7 @@ def _audit_jsonl_path(ctx: AuditPersistContext) -> Path:
 
 
 def _persist_line(record: dict[str, Any]) -> None:
+    """Append one JSON record to the audit file; errors are swallowed."""
     if _persist_context is None:
         return
     try:
@@ -87,6 +118,32 @@ def log_decision(
     session_approval_used: bool | None = None,
     session_approval_scope: str | None = None,
 ) -> SecurityAuditEntry:
+    """Record a security decision in memory and persist it when configured.
+
+    Engine-derived flags (hard guards, permission layer, experimental) are
+    inferred from ``security_engine`` when not passed explicitly.
+
+    Args:
+        tool: Name of the tool that was evaluated.
+        detail: Target detail (path, command, etc.).
+        decision: Decision label (allow/deny/ask).
+        reason: Machine-readable reason code.
+        confirmed: Whether the user confirmed, if applicable.
+        outcome: Outcome label; defaults from the decision when omitted.
+        extra: Additional metadata to merge into the entry.
+        security_engine: Engine name; falls back to the persist context.
+        matched_rule: Identifier of the rule that produced the decision.
+        external_directory: True if the target lies outside the workspace.
+        hard_guards_enabled: Override for the hard-guards flag.
+        permission_layer_enabled: Override for the permission-layer flag.
+        experimental: Override for the experimental flag.
+        run_id: Run id recorded with the persisted record.
+        session_approval_used: True if a cached session approval applied.
+        session_approval_scope: Scope of the session approval, if used.
+
+    Returns:
+        The created :class:`SecurityAuditEntry`.
+    """
     from ci2lab.security.engine import (
         enforce_ci2lab_hard_policy,
         is_experimental_engine,
@@ -108,16 +165,12 @@ def log_decision(
         if permission_layer_enabled is not None
         else uses_permission_layer(engine)
     )
-    is_experimental = (
-        experimental
-        if experimental is not None
-        else is_experimental_engine(engine)
-    )
+    is_experimental = experimental if experimental is not None else is_experimental_engine(engine)
     ext = external_directory if external_directory is not None else False
 
     session_used = session_approval_used if session_approval_used is not None else False
     entry = SecurityAuditEntry(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         tool=tool,
         detail=detail,
         decision=decision,
@@ -165,10 +218,12 @@ def log_decision(
 
 
 def get_audit_log() -> list[SecurityAuditEntry]:
+    """Return a copy of the in-memory audit log."""
     return list(_audit_log)
 
 
 def clear_audit_log() -> None:
+    """Clear the in-memory audit log."""
     _audit_log.clear()
 
 
@@ -178,6 +233,16 @@ def resolve_audit_path_within_workspace(
     runs_dir: str = "runs",
     run_subdir: str | None = None,
 ) -> Path:
+    """Resolve the audit JSONL path for a workspace/run within the workspace.
+
+    Args:
+        workspace: Path to the workspace root.
+        runs_dir: Name of the runs directory under the workspace.
+        run_subdir: Optional run subdirectory under ``runs_dir``.
+
+    Returns:
+        The resolved audit file path inside the workspace.
+    """
     ctx = AuditPersistContext(
         workspace=workspace,
         runs_dir=runs_dir,

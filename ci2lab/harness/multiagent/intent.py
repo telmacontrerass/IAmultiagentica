@@ -69,6 +69,7 @@ class MultiAgentIntent(str, Enum):
     READ_ONLY_ANSWER = "read_only_answer"
     DOCUMENT_TRANSFORM = "document_transform"
     DOCUMENT_SUMMARY = "document_summary"
+    PAPER_REVIEW = "paper_review"
     UNKNOWN = "unknown"
 
 
@@ -153,6 +154,38 @@ _RESEARCH_REVIEW_FLOW = ["researcher", "reviewer"]
 # stalls on it.
 _RESEARCH_WRITE_FLOW = ["researcher", "coder", "reviewer"]
 
+# Scientific peer-review pipeline. Read-only, grounded lenses run in sequence and
+# the revision planner assembles only verified findings. Resolved and executed by
+# the orchestrator's paper-review branch, not the generic phase loop.
+_PAPER_REVIEW_FLOW = [
+    "intake_reviewer",
+    "scope_reviewer",
+    "novelty_reviewer",
+    "methodology_reviewer",
+    "field_expert_reviewer",
+    "adversarial_reviewer",
+    "format_reviewer",
+    "groundedness_verifier",
+    "revision_planner",
+]
+
+
+# Scientific peer-review requests. Checked first so a paper review is not
+# mis-routed to the generic code review-only / read-only plans.
+_PAPER_REVIEW_MARKERS = (
+    "peer review",
+    "peer-review",
+    "review this paper",
+    "review the paper",
+    "review this manuscript",
+    "review the manuscript",
+    "review my paper",
+    "review my manuscript",
+    "referee report",
+    "review for a journal",
+    "review for the journal",
+    "review for a conference",
+)
 
 # --- Dimension 3: write-permission signals --------------------------------
 #
@@ -170,6 +203,7 @@ _GLOBAL_NO_WRITE_MARKERS = (
     "only review",
     "only inspect",
     "only analyze",
+    "without changing",
     "solo revisar",
     "solo revisa",
     "solo analiza",
@@ -194,8 +228,8 @@ _GLOBAL_NO_WRITE_MARKERS = (
     "no edites archivos",
     "no modifiques archivos",
     "no cambies archivos",
-    "without changing",
 )
+
 
 # Scope constraints: writing is allowed, but only within a limited surface.
 # These restrict *which* files may change; they never forbid writing outright.
@@ -282,7 +316,7 @@ _NEGATION_TOKENS = (
 # Y" splits the positive create away from the negated edit).
 _CLAUSE_SPLIT = re.compile(r"[.;,\n]|\bbut\b|\bpero\b|\baunque\b|\bhowever\b")
 
-# Asking to read/summarize a PDF or document.
+# Asking to read/summarize a PDF or document (English and Spanish phrasings).
 _DOCUMENT_SUMMARY_MARKERS = (
     "resume el pdf",
     "resúmeme el pdf",
@@ -301,6 +335,15 @@ _DOCUMENT_SUMMARY_MARKERS = (
     "read the pdf",
     "read the document",
     "summary of the",
+    "resume el pdf",
+    "resúmeme el pdf",
+    "resumeme el pdf",
+    "leer pdf",
+    "lee el pdf",
+    "lee el documento",
+    "resumen",
+    "resúmelo",
+    "resumelo",
 )
 
 # Asking to convert/export a document.
@@ -326,11 +369,17 @@ _READ_ONLY_MARKERS = (
     "sin modificar",
     "solo leer",
     "explain",
-    "analyze",
-    "analyse",
     "what does it mean",
     "what does",
     "without editing",
+    "explícame",
+    "explicame",
+    "explica",
+    "qué significa",
+    "que significa",
+    "sin editar",
+    "sin modificar",
+    "solo leer",
     "read only",
     "read-only",
 )
@@ -494,6 +543,7 @@ _META_MARKERS = (
 
 
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    """Return ``True`` if any marker in ``markers`` is a substring of ``text``."""
     return any(marker in text for marker in markers)
 
 
@@ -533,8 +583,9 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     The decision separates input classification from write permissions:
 
+    * scientific peer-review requests are routed first (read-only lenses);
     * document-domain prompts (summarize / transform) own their write semantics
-      and are routed first;
+      and are routed next;
     * for the code domain the priority is, highest first,
       ``explicit write > scope constraint > global no-write (review-only)``;
     * read/analysis and a safe read-mostly fallback close out the chain.
@@ -544,6 +595,17 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
     """
     text = (user_prompt or "").lower()
 
+    # Scientific peer review is routed first so it is never mis-classified as a
+    # generic code review or read-only answer.
+    if _contains_any(text, _PAPER_REVIEW_MARKERS):
+        return MultiAgentIntentDecision(
+            intent=MultiAgentIntent.PAPER_REVIEW,
+            requires_write=False,
+            allowed_phases=list(_PAPER_REVIEW_FLOW),
+            reason="Prompt asks for a scientific peer review of a manuscript.",
+            confidence="high",
+        )
+
     # Dimension 3 is computed once, up front, then consumed by the routing rules.
     explicit_write = has_explicit_write_intent(text)
     global_no_write = has_global_no_write(text)
@@ -551,11 +613,10 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     # --- Document domain first (its own read/write semantics) --------------
     if _contains_any(text, _DOCUMENT_SUMMARY_MARKERS):
-        # Preserve clause-aware write detection (so scoped constraints do not
-        # negate a real write) while also accepting main's broader document
-        # output verbs such as "complete" and "solve".
+        # "read the pdf and write/solve/complete ..." needs an implementer too —
+        # a file output marker or an explicit (non-negated) write verb means a
+        # coder must run.
         requires_write = explicit_write or _contains_any(text, _WRITE_REQUEST_MARKERS)
-        requires_write = requires_write or _contains_any(text, _CODE_CHANGE_MARKERS)
         reason = "Prompt asks to read/summarize a document."
         if requires_write:
             reason += " It also asks to produce output, so an implementer is included."
@@ -596,11 +657,7 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
 
     # Read/analysis intent (no file changes) is checked before review-only so a
     # genuine "read and explain" prompt is not mislabeled as a code review.
-    if (
-        _contains_any(text, _READ_ONLY_MARKERS)
-        and not explicit_write
-        and not global_no_write
-    ):
+    if _contains_any(text, _READ_ONLY_MARKERS) and not explicit_write:
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.READ_ONLY_ANSWER,
             requires_write=False,
@@ -706,7 +763,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
 
     # 1. Destructive filesystem operations: high risk, confirm before running.
     if dangerous:
-        caps: set[Capability] = {"read_fs", "write_fs", "delete_fs"} | extra_caps
+        caps: set[Capability] = extra_caps | {"read_fs", "write_fs", "delete_fs"}
         if _contains_any(text, _SHELL_DELETE_MARKERS):
             caps.add("run_shell")
         return OrchestrationDecision(
@@ -716,8 +773,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
             allowed_phases=_FULL_FLOW_PHASES,
             needs_confirmation=True,
             reasons=(
-                "Prompt requests a destructive filesystem operation "
-                "(delete/clean/reset/wipe).",
+                "Prompt requests a destructive filesystem operation (delete/clean/reset/wipe).",
                 "intent.py flags the risk and requests confirmation; the "
                 "execution gate still authorizes each tool call.",
             ),
@@ -755,7 +811,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     reasons = (legacy.reason,)
 
     if legacy.intent is MultiAgentIntent.DOCUMENT_SUMMARY:
-        caps = {"read_fs"} | extra_caps
+        caps = extra_caps | {"read_fs"}
         if legacy.requires_write:
             caps.add("write_fs")
         return OrchestrationDecision(
@@ -770,18 +826,17 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     if legacy.intent is MultiAgentIntent.DOCUMENT_TRANSFORM:
         return OrchestrationDecision(
             task_type="file_operation",
-            required_capabilities=frozenset({"read_fs", "write_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs"}),
             risk_level="medium",
             allowed_phases=phases,
             needs_confirmation=False,
-            reasons=reasons
-            + ("Converting/exporting a document writes a new file artifact.",),
+            reasons=(*reasons, "Converting/exporting a document writes a new file artifact."),
         )
 
     if legacy.intent is MultiAgentIntent.REVIEW_ONLY:
         return OrchestrationDecision(
             task_type="review",
-            required_capabilities=frozenset({"read_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs"}),
             risk_level="low",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -791,7 +846,7 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     if legacy.intent is MultiAgentIntent.READ_ONLY_ANSWER:
         return OrchestrationDecision(
             task_type="research",
-            required_capabilities=frozenset({"read_fs"} | extra_caps),
+            required_capabilities=frozenset(extra_caps | {"read_fs"}),
             risk_level="low",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -802,17 +857,15 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
         if _is_file_creation(text):
             return OrchestrationDecision(
                 task_type="file_operation",
-                required_capabilities=frozenset({"read_fs", "write_fs"} | extra_caps),
+                required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs"}),
                 risk_level="medium",
                 allowed_phases=phases,
                 needs_confirmation=False,
-                reasons=reasons + ("Prompt creates/persists a standalone file.",),
+                reasons=(*reasons, "Prompt creates/persists a standalone file."),
             )
         return OrchestrationDecision(
             task_type="code_change",
-            required_capabilities=frozenset(
-                {"read_fs", "write_fs", "edit_code"} | extra_caps
-            ),
+            required_capabilities=frozenset(extra_caps | {"read_fs", "write_fs", "edit_code"}),
             risk_level="medium",
             allowed_phases=phases,
             needs_confirmation=False,
@@ -822,10 +875,9 @@ def classify_orchestration_decision(user_prompt: str) -> OrchestrationDecision:
     # UNKNOWN -> safe, read-mostly research posture.
     return OrchestrationDecision(
         task_type="research",
-        required_capabilities=frozenset({"read_fs"} | extra_caps),
+        required_capabilities=frozenset(extra_caps | {"read_fs"}),
         risk_level="low",
         allowed_phases=phases,
         needs_confirmation=False,
-        reasons=reasons
-        + ("No decisive intent markers; defaulting to a read-only posture.",),
+        reasons=(*reasons, "No decisive intent markers; defaulting to a read-only posture."),
     )

@@ -1,15 +1,14 @@
-import os
 import sys
 import tempfile
 import types
 
 from ci2lab.harness.tools.filesystem import (
-    grep_search,
-    read_file,
-    read_document,
-    write_file,
     edit_file,
+    grep_search,
     ls,
+    read_document,
+    read_file,
+    write_file,
 )
 from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 from ci2lab.harness.tools.registry import execute_tool, normalize_tool_arguments
@@ -156,11 +155,13 @@ def test_read_document_xlsx_extracts_sheets(tmp_path, monkeypatch):
         title = "Grades"
 
         def iter_rows(self, **kwargs):
-            return iter([
-                ("Student", "Exam", None, None),
-                ("A1", 8.5, None, None),
-                (None, None, None, None),
-            ])
+            return iter(
+                [
+                    ("Student", "Exam", None, None),
+                    ("A1", 8.5, None, None),
+                    (None, None, None, None),
+                ]
+            )
 
     class FakeWorkbook:
         worksheets = [FakeSheet()]

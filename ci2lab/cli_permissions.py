@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -35,6 +36,12 @@ console = Console()
 
 
 def add_permissions_parser(sub: argparse._SubParsersAction) -> None:
+    """Register the ``permissions`` subcommand and its nested subparsers.
+
+    Args:
+        sub: The subparsers action returned by the top-level CLI parser, to
+            which the ``permissions`` parser and its child commands are added.
+    """
     permissions_p = sub.add_parser(
         "permissions",
         help="Permissions dashboard: audit and session approvals",
@@ -75,6 +82,7 @@ def add_permissions_parser(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_permissions_flags(p: argparse.ArgumentParser) -> None:
+    """Add the shared workspace/audit/limit/JSON flags to a permissions parser."""
     p.add_argument(
         "--workspace",
         type=Path,
@@ -102,6 +110,19 @@ def _add_permissions_flags(p: argparse.ArgumentParser) -> None:
 
 
 def cmd_permissions(args: argparse.Namespace) -> int:
+    """Dispatch the ``permissions`` subcommand to its handler.
+
+    Routes session and event-action subcommands to dedicated helpers, otherwise
+    loads the audit log and prints the requested view (summary, recent denials,
+    recent ask requests or audit tail).
+
+    Args:
+        args: Parsed CLI arguments, including ``permissions_command`` and the
+            shared workspace/audit/limit/JSON flags.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` on error or missing audit.
+    """
     workspace = Path(args.workspace or os.getcwd()).resolve()
     cmd = args.permissions_command
 
@@ -165,11 +186,12 @@ def cmd_permissions(args: argparse.Namespace) -> int:
 
 
 def _print_summary(
-    events: list,
+    events: list[dict[str, Any]],
     audit_path: Path,
     source: str,
     args: argparse.Namespace,
 ) -> int:
+    """Print (or emit as JSON) the aggregate permissions summary."""
     summary = summarize_permissions(events)
     payload = {
         "audit_file": str(audit_path),
@@ -220,13 +242,14 @@ def _print_summary(
 
 
 def _print_filtered(
-    events: list,
+    events: list[dict[str, Any]],
     *,
     title: str,
     audit_path: Path,
     source: str,
     args: argparse.Namespace,
 ) -> int:
+    """Print (or emit as JSON) the last ``--limit`` events of a filtered view."""
     limit = max(1, args.limit)
     recent = events[-limit:] if len(events) > limit else events
 
@@ -248,11 +271,12 @@ def _print_filtered(
 
 
 def _print_tail(
-    events: list,
+    events: list[dict[str, Any]],
     audit_path: Path,
     source: str,
     args: argparse.Namespace,
 ) -> int:
+    """Print (or emit as JSON) the last ``--limit`` raw audit events."""
     limit = max(1, args.limit)
     tail_events = events[-limit:]
 
@@ -274,7 +298,19 @@ def _print_tail(
 def _load_audit_or_error(
     workspace: Path,
     args: argparse.Namespace,
-) -> tuple[list[dict] | None, Path | None, str | None, int]:
+) -> tuple[list[dict[str, Any]] | None, Path | None, str | None, int]:
+    """Locate and load the audit log, printing an error if it is unavailable.
+
+    Args:
+        workspace: Resolved workspace directory used to locate the audit file.
+        args: Parsed CLI arguments providing ``--audit-file``/``--runs-dir``
+            and ``--json``.
+
+    Returns:
+        A 4-tuple ``(events, audit_path, source, code)``. On success ``code`` is
+        ``0`` and the first three values are populated; on failure ``code`` is
+        ``1`` and the first three values are ``None``.
+    """
     audit_path, source = resolve_audit_source(
         workspace,
         audit_file=args.audit_file,
@@ -306,13 +342,24 @@ def _cmd_event_action(
     cmd: str,
     workspace: Path,
 ) -> int:
+    """Handle the ``retry-plan`` and ``approve-session`` event subcommands.
+
+    Args:
+        args: Parsed CLI arguments, including the target ``event_id``.
+        cmd: Either ``"retry-plan"`` or ``"approve-session"``.
+        workspace: Resolved workspace directory used to locate the audit file.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` on error (missing event,
+        no active session or a rejected approval).
+    """
     events, audit_path, source, code = _load_audit_or_error(workspace, args)
     if code != 0 or events is None:
         return code
 
     event = find_event_by_id(events, args.event_id)
     if event is None:
-        msg = {
+        msg: dict[str, Any] = {
             "error": f"event_id not found: {args.event_id!r}",
             "audit_file": str(audit_path),
             "audit_source": source,
@@ -359,8 +406,10 @@ def _cmd_event_action(
         if args.json:
             console.print_json(json.dumps(msg, ensure_ascii=False, indent=2))
         else:
-            console.print("[yellow]Cannot affect a previous finished process: "
-                          "session approvals are in-memory only.[/yellow]")
+            console.print(
+                "[yellow]Cannot affect a previous finished process: "
+                "session approvals are in-memory only.[/yellow]"
+            )
             console.print(
                 "Use this command only inside an active CI2Lab session, "
                 "or retry manually with retry-plan."
@@ -383,18 +432,23 @@ def _cmd_event_action(
     if args.json:
         console.print_json(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        console.print(
-            f"[green]allow_session recorded[/green] for session {active!r}"
-        )
-        console.print(
-            f"  tool={event.get('tool')} rule={event.get('matched_rule')}"
-        )
+        console.print(f"[green]allow_session recorded[/green] for session {active!r}")
+        console.print(f"  tool={event.get('tool')} rule={event.get('matched_rule')}")
         for warn in warnings:
             console.print(f"[yellow]WARNING:[/yellow] {warn}")
     return 0
 
 
 def _cmd_session(args: argparse.Namespace, cmd: str) -> int:
+    """Handle the in-memory ``session-list`` and ``session-clear`` subcommands.
+
+    Args:
+        args: Parsed CLI arguments, including the optional ``--session`` filter.
+        cmd: Either ``"session-list"`` or ``"session-clear"``.
+
+    Returns:
+        Process exit code (always ``0``).
+    """
     if cmd == "session-clear":
         target = args.session
         clear_session_permissions(target)
@@ -430,9 +484,7 @@ def _cmd_session(args: argparse.Namespace, cmd: str) -> int:
         return 0
 
     console.print("[bold]Session approvals[/bold] (process memory)\n")
-    console.print(
-        "[dim]opencode_experimental only. Does not persist between processes.[/dim]\n"
-    )
+    console.print("[dim]opencode_experimental only. Does not persist between processes.[/dim]\n")
     active = get_active_session_id()
     if active:
         console.print(f"Active session in this process: [cyan]{active}[/cyan]")

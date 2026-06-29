@@ -10,7 +10,6 @@ from ci2lab.security.audit import clear_audit_log
 from ci2lab.security.claude_deterministic_matrix import (
     DISPATCH_PASS,
     GATE_PASS,
-    SECURITY_FAIL,
     matrix_has_security_fail,
     run_dispatch_matrix,
     run_full_deterministic_matrix,
@@ -48,7 +47,9 @@ def test_dispatch_matrix_all_pass(tmp_path: Path):
     results = run_dispatch_matrix(ws.root, ws.outside_secret, write_target)
     assert len(results) == 12
     assert all(r.observed_status == DISPATCH_PASS for r in results), [
-        (r.case_id, r.observed_status, r.notes) for r in results if r.observed_status != DISPATCH_PASS
+        (r.case_id, r.observed_status, r.notes)
+        for r in results
+        if r.observed_status != DISPATCH_PASS
     ]
 
 

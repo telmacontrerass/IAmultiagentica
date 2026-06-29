@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from ci2lab.settings import (
     ToolSettings,
     _merge,
@@ -15,10 +13,10 @@ from ci2lab.settings import (
     subject_for_tool,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_settings(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -29,12 +27,15 @@ def _write_settings(path: Path, data: dict) -> None:
 # subject_for_tool
 # ---------------------------------------------------------------------------
 
+
 class TestSubjectForTool:
     def test_bash_returns_command(self):
         assert subject_for_tool("bash", {"command": "rm -rf ."}) == "rm -rf ."
 
     def test_web_fetch_returns_url(self):
-        assert subject_for_tool("web_fetch", {"url": "https://example.com"}) == "https://example.com"
+        assert (
+            subject_for_tool("web_fetch", {"url": "https://example.com"}) == "https://example.com"
+        )
 
     def test_path_tools_return_path(self):
         for tool in ("read_file", "write_file", "read_document", "ls"):
@@ -50,6 +51,7 @@ class TestSubjectForTool:
 # ---------------------------------------------------------------------------
 # check_tool_allowed — basic semantics
 # ---------------------------------------------------------------------------
+
 
 class TestCheckToolAllowed:
     def test_empty_settings_allows_everything(self):
@@ -71,25 +73,19 @@ class TestCheckToolAllowed:
 
     def test_allow_list_blocks_unmatched_path(self):
         s = ToolSettings(allow={"read_document": ["**/*.pdf", "**/*.docx"]})
-        allowed, reason = check_tool_allowed(
-            s, "read_document", {"path": "secret.env"}
-        )
+        allowed, reason = check_tool_allowed(s, "read_document", {"path": "secret.env"})
         assert allowed is False
         assert "allow" in reason
 
     def test_allow_list_permits_matched_path_with_dir(self):
         s = ToolSettings(allow={"read_document": ["**/*.pdf"]})
-        allowed, _ = check_tool_allowed(
-            s, "read_document", {"path": "docs/report.pdf"}
-        )
+        allowed, _ = check_tool_allowed(s, "read_document", {"path": "docs/report.pdf"})
         assert allowed is True
 
     def test_allow_list_permits_matched_path_bare_filename(self):
         """** must also cover files with no directory (zero segments)."""
         s = ToolSettings(allow={"read_document": ["**/*.pdf"]})
-        allowed, _ = check_tool_allowed(
-            s, "read_document", {"path": "report.pdf"}
-        )
+        allowed, _ = check_tool_allowed(s, "read_document", {"path": "report.pdf"})
         assert allowed is True
 
     def test_allow_prefixed_pattern_does_not_match_outside_prefix(self):
@@ -99,9 +95,7 @@ class TestCheckToolAllowed:
         with a prefix (e.g. '.ci2lab/output/**/*.docx'), allowing any .docx
         regardless of its directory.
         """
-        s = ToolSettings(
-            allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]}
-        )
+        s = ToolSettings(allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]})
         # Path outside the prefix -> must be blocked
         allowed, reason = check_tool_allowed(
             s, "fill_docx_template", {"output": "anywhere/malicious.docx"}
@@ -110,9 +104,7 @@ class TestCheckToolAllowed:
 
     def test_allow_prefixed_pattern_permits_inside_prefix(self):
         """A pattern with a concrete prefix MUST allow paths inside that prefix."""
-        s = ToolSettings(
-            allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]}
-        )
+        s = ToolSettings(allow={"fill_docx_template": [".ci2lab/documents/output/**/*.docx"]})
         allowed, _ = check_tool_allowed(
             s,
             "fill_docx_template",
@@ -148,15 +140,14 @@ class TestCheckToolAllowed:
 
     def test_deny_nested_env_path(self):
         s = ToolSettings(deny={"read_file": ["**/.env"]})
-        allowed, _ = check_tool_allowed(
-            s, "read_file", {"path": "config/.env"}
-        )
+        allowed, _ = check_tool_allowed(s, "read_file", {"path": "config/.env"})
         assert allowed is False
 
 
 # ---------------------------------------------------------------------------
 # Layer merging (_merge)
 # ---------------------------------------------------------------------------
+
 
 class TestMerge:
     def test_deny_accumulates(self):
@@ -168,7 +159,7 @@ class TestMerge:
 
     def test_deny_global_cannot_be_removed_by_project(self):
         g = ToolSettings(deny={"bash": ["rm *"]})
-        p = ToolSettings(deny={})   # project does not define bash deny
+        p = ToolSettings(deny={})  # project does not define bash deny
         merged = _merge(g, p)
         assert "rm *" in merged.deny["bash"]
 
@@ -195,6 +186,7 @@ class TestMerge:
 # ---------------------------------------------------------------------------
 # load_settings — reading from disk
 # ---------------------------------------------------------------------------
+
 
 class TestLoadSettings:
     def test_empty_when_no_files(self, tmp_path, monkeypatch):
@@ -253,7 +245,7 @@ class TestLoadSettings:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
         _write_settings(
             tmp_path / ".ci2lab" / "settings.json",
-            {"deny": {"bash": "rm *"}},   # string instead of list
+            {"deny": {"bash": "rm *"}},  # string instead of list
         )
         s = load_settings(str(tmp_path))
         assert s.deny["bash"] == ["rm *"]
@@ -265,3 +257,20 @@ class TestLoadSettings:
         )
         s = load_settings(str(tmp_path))
         assert not hasattr(s, "ask")
+
+    def test_loads_utf8_bom_settings_file(self, tmp_path, monkeypatch):
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        settings_path = fake_home / ".ci2lab" / "settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        # UTF-8 with BOM (common on Windows PowerShell).
+        settings_path.write_text(
+            json.dumps({"vision_enabled": True, "vision_model": "qwen2.5vl:7b"}),
+            encoding="utf-8-sig",
+        )
+
+        s = load_settings(str(tmp_path))
+        assert s.vision_enabled is True
+        assert s.vision_model == "qwen2.5vl:7b"

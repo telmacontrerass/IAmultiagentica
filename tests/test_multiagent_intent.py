@@ -61,9 +61,7 @@ def test_document_summary_without_write():
 
 
 def test_document_summary_with_explicit_save_includes_coder():
-    decision = classify_multiagent_intent(
-        "Read the PDF and save the summary into a .txt"
-    )
+    decision = classify_multiagent_intent("Read the PDF and save the summary into a .txt")
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
     # Persisting output requires an implementer that can write; a read-only flow
@@ -97,6 +95,24 @@ def test_code_change_includes_coder():
         "validator",
         "reviewer",
     ]
+
+
+def test_peer_review_routes_to_paper_review_flow():
+    decision = classify_multiagent_intent("Please peer review this manuscript for a journal.")
+    assert decision.intent is MultiAgentIntent.PAPER_REVIEW
+    assert decision.requires_write is False
+    assert decision.allowed_phases[0] == "intake_reviewer"
+    assert "revision_planner" in decision.allowed_phases
+    # The code flow's coder/validator must never appear in a review.
+    assert "coder" not in decision.allowed_phases
+    assert "validator" not in decision.allowed_phases
+
+
+def test_peer_review_beats_generic_review_only_markers():
+    # "review the paper" must route to the grounded paper flow, not the code
+    # review-only flow, even though it contains the word "review".
+    decision = classify_multiagent_intent("Review the paper and do not implement anything.")
+    assert decision.intent is MultiAgentIntent.PAPER_REVIEW
 
 
 def test_unknown_fallback_is_low_confidence_read_mostly():
@@ -153,27 +169,21 @@ def test_p0_english_create_with_scope_constraint_is_write_task():
 
 
 def test_p0_implement_fix_with_scope_constraint_is_write_task():
-    decision = classify_multiagent_intent(
-        "Implement this fix, but do not modify unrelated files."
-    )
+    decision = classify_multiagent_intent("Implement this fix, but do not modify unrelated files.")
     assert decision.intent is MultiAgentIntent.CODE_CHANGE
     assert decision.requires_write is True
     assert "coder" in decision.allowed_phases
 
 
 def test_p0_global_no_write_stays_review_only():
-    decision = classify_multiagent_intent(
-        "Review-only task. Do not implement or edit files."
-    )
+    decision = classify_multiagent_intent("Review-only task. Do not implement or edit files.")
     assert decision.intent is MultiAgentIntent.REVIEW_ONLY
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
 
 
 def test_p0_read_and_explain_with_global_no_write_is_not_a_write_task():
-    decision = classify_multiagent_intent(
-        "Lee este archivo y explícame qué hace. No edites nada."
-    )
+    decision = classify_multiagent_intent("Lee este archivo y explícame qué hace. No edites nada.")
     assert decision.requires_write is False
     assert "coder" not in decision.allowed_phases
     assert decision.intent in (
@@ -183,13 +193,11 @@ def test_p0_read_and_explain_with_global_no_write_is_not_a_write_task():
 
 
 def test_p0_read_pdf_and_save_summary_is_document_summary_with_write():
-    decision = classify_multiagent_intent(
-        "Lee el PDF y guarda el resumen en resumen_drones.txt."
-    )
+    decision = classify_multiagent_intent("Lee el PDF y guarda el resumen en resumen_drones.txt.")
     assert decision.intent is MultiAgentIntent.DOCUMENT_SUMMARY
     assert decision.requires_write is True
-    # Persisting a summary needs a coder to create the output artifact, while the
-    # lightweight document flow still skips the validator phase.
+    # Persisting the summary needs a role that can actually write — the
+    # researcher cannot — so a coder is pulled in, but the validator is not.
     assert "coder" in decision.allowed_phases
     assert "validator" not in decision.allowed_phases
 
@@ -203,8 +211,7 @@ def test_p0_read_pdf_and_save_summary_is_document_summary_with_write():
 
 def test_orchestration_create_file_is_file_operation_with_write():
     decision = classify_orchestration_decision(
-        "Crea un archivo llamado prueba.txt con un saludo. "
-        "No modifiques ningún otro archivo."
+        "Crea un archivo llamado prueba.txt con un saludo. No modifiques ningún otro archivo."
     )
     assert isinstance(decision, OrchestrationDecision)
     assert decision.task_type == "file_operation"
@@ -224,9 +231,7 @@ def test_orchestration_review_only_is_review_with_read_fs():
 
 
 def test_orchestration_implement_fix_is_code_change_with_edit_code():
-    decision = classify_orchestration_decision(
-        "Implementa un fix en orchestrator.py"
-    )
+    decision = classify_orchestration_decision("Implementa un fix en orchestrator.py")
     assert decision.task_type == "code_change"
     assert "edit_code" in decision.required_capabilities
     assert "write_fs" in decision.required_capabilities
@@ -339,9 +344,7 @@ def test_document_summary_orchestration_skips_coder(monkeypatch):
 def test_document_summary_with_save_runs_coder(monkeypatch):
     # Saving the summary to a file needs a writer: a coder must run (so the file
     # is actually produced), but no validator is required for a document task.
-    calls = _run_with_capture(
-        monkeypatch, "Read the PDF and save the summary into a .txt"
-    )
+    calls = _run_with_capture(monkeypatch, "Read the PDF and save the summary into a .txt")
     assert AgentRole.GENERALIST_CODER in calls
     assert AgentRole.VALIDATOR not in calls
 
@@ -385,8 +388,10 @@ def test_blocked_planner_does_not_abort_run(monkeypatch):
 
 
 def test_code_change_orchestration_runs_coder(monkeypatch):
+    # A ".py" file in the request routes to the Python implementer (more precise
+    # than the generalist fallback).
     calls = _run_with_capture(monkeypatch, "implement a fix in orchestrator.py")
     assert AgentRole.PLANNER in calls
-    assert AgentRole.GENERALIST_CODER in calls
+    assert AgentRole.PYTHON_CODER in calls
     assert AgentRole.VALIDATOR in calls
     assert AgentRole.REVIEWER in calls

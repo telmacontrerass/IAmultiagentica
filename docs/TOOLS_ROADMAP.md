@@ -1,6 +1,6 @@
 # Ci2Lab tools roadmap
 
-## Current state (25 built-in tools + dynamic MCP)
+## Current state (28 built-in tools + dynamic MCP)
 
 | Tool | Type |
 |------|------|

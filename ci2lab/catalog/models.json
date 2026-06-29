@@ -12,7 +12,7 @@
     "ram_inference_gb": 2.0,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 8192,
+    "context_length": 131072,
     "tier": "edge",
     "benchmark_score": {
       "general": 0.45,
@@ -57,7 +57,7 @@
     "ram_inference_gb": 5.0,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 8192,
+    "context_length": 131072,
     "tier": "edge",
     "benchmark_score": {
       "general": 0.62,
@@ -192,7 +192,7 @@
     "ram_inference_gb": 4.5,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 32768,
+    "context_length": 40960,
     "tier": "edge",
     "benchmark_score": {
       "general": 0.68,
@@ -303,7 +303,7 @@
     "ram_inference_gb": 7.2,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 32768,
+    "context_length": 131072,
     "tier": "workstation",
     "benchmark_score": {
       "general": 0.72,
@@ -593,7 +593,7 @@
     "ram_inference_gb": 2.0,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 32768,
+    "context_length": 40960,
     "tier": "edge",
     "benchmark_score": {
       "general": 0.52,
@@ -658,7 +658,7 @@
     "ram_inference_gb": 25.4,
     "supports_tools": false,
     "tool_mode": "fenced",
-    "context_length": 4096,
+    "context_length": 8192,
     "tier": "enterprise",
     "benchmark_score": {
       "general": 0.88,
@@ -721,7 +721,7 @@
     "ram_inference_gb": 30.3,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 131072,
+    "context_length": 32768,
     "tier": "enterprise",
     "benchmark_score": {
       "general": 0.88,
@@ -826,7 +826,7 @@
     "ram_inference_gb": 65.7,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 4096,
+    "context_length": 131072,
     "tier": "enterprise",
     "benchmark_score": {
       "general": 0.88,
@@ -854,6 +854,57 @@
       "coding": 0.78,
       "reasoning": 0.82,
       "edge": 0.03
+    }
+  },
+  {
+    "id": "llama4-scout",
+    "display_name": "Llama 4 Scout",
+    "family": "llama",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning"
+    ],
+    "ollama_tag": "llama4:scout",
+    "vision": true,
+    "vram_min_gb": 40.0,
+    "ram_inference_gb": 67.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 10000000,
+    "tier": "enterprise",
+    "benchmark_score": {
+      "general": 0.86,
+      "coding": 0.72,
+      "reasoning": 0.78,
+      "edge": 0.05,
+      "vision": 0.85
+    }
+  },
+  {
+    "id": "llama4-maverick",
+    "display_name": "Llama 4 Maverick",
+    "family": "llama",
+    "categories": [
+      "vision",
+      "general",
+      "reasoning",
+      "coding"
+    ],
+    "ollama_tag": "llama4:maverick",
+    "vision": true,
+    "vram_min_gb": 147.0,
+    "ram_inference_gb": 245.0,
+    "supports_tools": true,
+    "tool_mode": "fenced",
+    "context_length": 1048576,
+    "tier": "enterprise",
+    "benchmark_score": {
+      "general": 0.9,
+      "coding": 0.82,
+      "reasoning": 0.86,
+      "edge": 0.02,
+      "vision": 0.88
     }
   },
   {
@@ -973,7 +1024,7 @@
     "ram_inference_gb": 378.0,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 4096,
+    "context_length": 131072,
     "tier": "enterprise",
     "benchmark_score": {
       "general": 0.88,
@@ -1183,7 +1234,7 @@
     "ram_inference_gb": 7.6,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 32768,
+    "context_length": 40960,
     "tier": "workstation",
     "benchmark_score": {
       "general": 0.76,
@@ -1309,7 +1360,7 @@
     "ram_inference_gb": 13.7,
     "supports_tools": true,
     "tool_mode": "fenced",
-    "context_length": 131072,
+    "context_length": 32768,
     "tier": "workstation",
     "benchmark_score": {
       "general": 0.8,

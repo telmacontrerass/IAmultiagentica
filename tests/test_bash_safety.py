@@ -1,5 +1,5 @@
-from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.bash import run_bash
+from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.registry import execute_tool
 from ci2lab.harness.types import AgentConfig, ToolCall
 

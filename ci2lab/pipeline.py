@@ -8,7 +8,8 @@ When chat/agent starts, the catalog tool_mode for that model is applied.
 from __future__ import annotations
 
 import os
-from typing import Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from ci2lab.config import DEFAULT_MODEL, Ci2LabConfig
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
@@ -16,6 +17,9 @@ from ci2lab.hardware import scan_hardware
 from ci2lab.harness.security_profiles import SecurityConfig
 from ci2lab.harness.types import AgentConfig
 from ci2lab.router.selection import build_model_selection
+
+if TYPE_CHECKING:
+    from ci2lab.settings import ToolSettings
 
 # A single tool result may use up to this fraction of the model's context
 # window; the rest is left for the system prompt, prior turns and the model's
@@ -48,23 +52,36 @@ def prepare_session(
     *,
     force_model: str | None = None,
     tool_mode_override: str | None = None,
+    backend: str = "ollama",
     backend_url: str | None = None,
     pull: bool = True,
 ) -> tuple[HardwareProfile | None, ModelSelection]:
-    """
-    Prepares a harness session for the model the user chose.
+    """Prepare a harness session for the model the user chose.
 
-    - Does not auto-select a model from the router (that is `ci2lab models recommend`).
-    - Applies the catalog tool_mode for the chosen tag.
-    - `tool_mode_override` only when the user passes --tool-mode on the CLI.
+    Args:
+        user_prompt: The pending request (unused here; kept for call-site
+            symmetry and future intent-aware behaviour).
+        force_model: Explicit model tag; falls back to ``CI2LAB_MODEL`` then the
+            built-in default. The router never auto-picks a model here — that is
+            ``ci2lab models recommend``.
+        tool_mode_override: Forces ``native``/``fenced`` tool mode (CLI
+            ``--tool-mode``); otherwise the catalog value is used.
+        backend: Inference provider that serves the model (``"ollama"`` or
+            ``"openai"``).
+        backend_url: Base URL of the inference server.
+        pull: When ``True``, ensure the model is present on the server first.
+
+    Returns:
+        The scanned hardware profile and the resolved :class:`ModelSelection`.
     """
     _ = user_prompt
 
     profile = scan_hardware()
-    tag = force_model or os.environ.get("CI2LAB_MODEL", DEFAULT_MODEL)
+    tag: str = force_model or os.environ.get("CI2LAB_MODEL") or DEFAULT_MODEL
     selection = build_model_selection(
         tag,
         tool_mode_override=tool_mode_override,
+        backend=backend,
         backend_url=backend_url,
         profile=profile,
     )
@@ -93,7 +110,7 @@ def build_agent_config(
     auto_confirm: bool | None = None,
     confirm_callback: Callable[[str, str], bool] | None = None,
     image_paths: list[str] | None = None,
-    tool_settings=None,
+    tool_settings: ToolSettings | None = None,
     vision_model: str = "",
     vision_enabled: bool = True,
 ) -> AgentConfig:

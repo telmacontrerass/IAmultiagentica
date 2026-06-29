@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,22 @@ _CONFIG_CSV_COLUMNS = [
 
 @dataclass
 class ConfigComparisonRow:
+    """One row comparing a config's decision for a single case.
+
+    Attributes:
+        case_id: Identifier of the source case.
+        config_name: Name of the config being evaluated.
+        tool: Tool name exercised.
+        target_or_command: Target path or command label.
+        actual_decision: Decision produced by the config.
+        matched_rule: Rule that produced the decision, if any.
+        external_directory: True if the target was outside the workspace.
+        unsupported_tools: Comma-joined unsupported tool keys.
+        warnings: Semicolon-joined config warnings.
+        risk_note: Advisory risk note for the row.
+        passed: True when the row is considered acceptable.
+    """
+
     case_id: str
     config_name: str
     tool: str
@@ -48,6 +64,14 @@ class ConfigComparisonRow:
 
 @dataclass(frozen=True)
 class ConfigComparisonExportResult:
+    """Paths produced when exporting a config-comparison report.
+
+    Attributes:
+        output_dir: Directory containing the exported artifacts.
+        csv_path: Path to the CSV report.
+        markdown_path: Path to the Markdown report.
+    """
+
     output_dir: Path
     csv_path: Path
     markdown_path: Path
@@ -58,6 +82,16 @@ def build_config_comparison_cases(
     outside_path: Path,
     env_path: Path,
 ) -> list[dict[str, Any]]:
+    """Build the case matrix used to compare OpenCode configs.
+
+    Args:
+        workspace: Path to the workspace root.
+        outside_path: External file path for external-access cases.
+        env_path: ``.env`` file path for secret-policy cases.
+
+    Returns:
+        A list of case dicts, each with ``case_id``, ``tool`` and ``args``.
+    """
     inside = workspace / "inside.txt"
     return [
         {
@@ -123,6 +157,7 @@ def build_config_comparison_cases(
 
 
 def _target_label(args: dict[str, Any]) -> str:
+    """Return a short label for a tool call's command or path target."""
     if "command" in args:
         return str(args["command"])
     if "path" in args:
@@ -136,9 +171,8 @@ def _risk_note_for_case(
     external_directory: bool,
     warnings: list[str],
 ) -> str:
-    if case_id == "read_external" and any(
-        "external_directory=allow" in w for w in warnings
-    ):
+    """Derive an advisory risk note for a config-comparison case."""
+    if case_id == "read_external" and any("external_directory=allow" in w for w in warnings):
         return "UNSAFE: external read allowed by config"
     if external_directory and case_id == "read_external":
         return "external path evaluated with external_directory"
@@ -152,6 +186,20 @@ def run_config_comparison(
     outside_path: Path | None = None,
     env_path: Path | None = None,
 ) -> list[ConfigComparisonRow]:
+    """Evaluate each bundle against the case matrix and collect rows.
+
+    Creates fixture files (``.env``, an external file and ``inside.txt``) if
+    they do not already exist.
+
+    Args:
+        bundles: Named config bundles to compare.
+        workspace: Path to the workspace root.
+        outside_path: External file path; defaulted next to the workspace.
+        env_path: ``.env`` file path; defaulted inside the workspace.
+
+    Returns:
+        The evaluated comparison rows.
+    """
     ws = workspace.resolve()
     outside = outside_path or (ws.parent / "outside_cmp" / "secret.txt")
     dotenv = env_path or (ws / ".env")
@@ -213,6 +261,15 @@ def resolve_config_bundles(
     config_paths: list[Path],
     presets: list[str],
 ) -> list[tuple[str, OpenCodeConfigBundle]]:
+    """Resolve config files and presets into named bundles.
+
+    Args:
+        config_paths: Paths to JSON config files to load.
+        presets: Names of built-in presets to include.
+
+    Returns:
+        A list of (name, bundle) pairs, files first then presets.
+    """
     bundles: list[tuple[str, OpenCodeConfigBundle]] = []
     for path in config_paths:
         bundle = load_opencode_config_bundle(path)
@@ -223,6 +280,7 @@ def resolve_config_bundles(
 
 
 def row_to_dict(row: ConfigComparisonRow) -> dict[str, Any]:
+    """Serialize a :class:`ConfigComparisonRow` to a flat dict for output."""
     return {
         "case_id": row.case_id,
         "config_name": row.config_name,
@@ -243,6 +301,15 @@ def format_config_comparison_markdown(
     *,
     generated_at: str,
 ) -> str:
+    """Render config-comparison rows as a Markdown table.
+
+    Args:
+        rows: Evaluated comparison rows.
+        generated_at: Timestamp string shown in the header.
+
+    Returns:
+        The Markdown document as a string.
+    """
     lines = [
         "# OpenCode config comparison",
         "",
@@ -255,10 +322,7 @@ def format_config_comparison_markdown(
     ]
     for row in rows:
         data = row_to_dict(row)
-        cells = [
-            str(data[c]).replace("|", "\\|").replace("\n", " ")
-            for c in _CONFIG_CSV_COLUMNS
-        ]
+        cells = [str(data[c]).replace("|", "\\|").replace("\n", " ") for c in _CONFIG_CSV_COLUMNS]
         cells[-1] = "PASS" if row.passed else "FAIL"
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
@@ -270,8 +334,18 @@ def export_config_comparison_report(
     workspace: Path,
     runs_dir: str = "runs",
 ) -> ConfigComparisonExportResult:
+    """Write the config-comparison CSV and Markdown reports under ``runs``.
+
+    Args:
+        rows: Evaluated comparison rows.
+        workspace: Path to the workspace root.
+        runs_dir: Name of the runs directory under the workspace.
+
+    Returns:
+        A :class:`ConfigComparisonExportResult` with the written paths.
+    """
     ws = workspace.resolve()
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
     out_dir = ws / runs_dir / "opencode_config_comparison" / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "comparison.csv"
@@ -285,7 +359,7 @@ def export_config_comparison_report(
             data["passed"] = "PASS" if row.passed else "FAIL"
             writer.writerow(data)
 
-    generated_at = datetime.now(timezone.utc).isoformat()
+    generated_at = datetime.now(UTC).isoformat()
     md_path.write_text(
         format_config_comparison_markdown(rows, generated_at=generated_at),
         encoding="utf-8",

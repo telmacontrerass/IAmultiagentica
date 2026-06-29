@@ -43,6 +43,7 @@ _VERIFIER_TASK = (
 
 
 def _verdict_is_failure(output: str) -> bool:
+    """Return ``True`` only when the verifier's first line is a clear FAIL."""
     text = (output or "").strip()
     if not text:
         return False  # no verdict -> do not block the task
@@ -58,7 +59,26 @@ def verify_completion(
     user_prompt: str,
     actions: list[str],
 ) -> str | None:
-    """Return concrete gaps to fix, or None when the work passes verification."""
+    """Independently verify task completion with a fresh read-only subagent.
+
+    Spawns a reviewer subagent that inspects the real workspace against the
+    original request, using isolated token accounting. Deliberately
+    conservative: leans toward passing when the verdict is unclear or the
+    verifier could not run.
+
+    Args:
+        config: The active agent configuration (cloned with fresh token usage
+            for the subagent).
+        selection: The resolved model selection for the verifier subagent.
+        user_prompt: The original user request to verify against.
+        actions: Human-readable descriptions of what the agent reports doing
+            this turn.
+
+    Returns:
+        The trimmed verifier output describing concrete gaps to fix when the
+        work clearly fails verification, or ``None`` when it passes, the
+        selection is missing, or the verifier could not run.
+    """
     if selection is None:
         return None
 

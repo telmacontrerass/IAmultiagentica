@@ -20,6 +20,26 @@ def resolve_model(
     force_model_id: str | None = None,
     prefer_installed: bool = True,
 ) -> ModelSelection:
+    """Auto-select the best-fitting model for a prompt.
+
+    Classifies the prompt's intent, scores catalog models against the hardware
+    profile, and returns the top match (or ``force_model_id`` when it fits),
+    with the runners-up attached as alternatives.
+
+    Args:
+        user_prompt: The request used for intent classification.
+        profile: Pre-scanned hardware profile; scanned on demand when omitted.
+        force_model_id: A specific model id/tag to select instead of the top
+            recommendation, provided it fits.
+        prefer_installed: Reserved for future use (currently ignored).
+
+    Returns:
+        The chosen :class:`ModelSelection` with alternatives populated.
+
+    Raises:
+        RuntimeError: If no catalog model fits the hardware, or ``force_model_id``
+            does not fit or does not exist.
+    """
     del prefer_installed
 
     profile = profile or scan_hardware()

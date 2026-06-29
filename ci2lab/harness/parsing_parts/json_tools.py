@@ -18,6 +18,19 @@ JSON_FENCED_RE = re.compile(r"```json\s*\n([\s\S]*?)```", re.IGNORECASE)
 
 
 def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
+    """Convert provider-native tool-call payloads into :class:`ToolCall` objects.
+
+    Handles both the harness's own JSON shape (via :func:`json_object_to_call`)
+    and the OpenAI ``function``-wrapped form, including ``arguments`` supplied as
+    a JSON-encoded string.
+
+    Args:
+        raw_calls: Native tool-call payloads as returned by the model provider.
+
+    Returns:
+        The successfully converted tool calls, preserving input order. Payloads
+        that cannot be resolved are skipped.
+    """
     calls: list[ToolCall] = []
     for item in raw_calls:
         call = json_object_to_call(item)
@@ -39,6 +52,17 @@ def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
 
 
 def parse_json_tool_objects(text: str) -> list[ToolCall]:
+    """Parse tool calls from JSON objects embedded in model text.
+
+    Scans both ```` ```json ```` fenced blocks and the raw text for JSON objects,
+    converting each to a tool call and de-duplicating across both passes.
+
+    Args:
+        text: Model output that may contain JSON-encoded tool calls.
+
+    Returns:
+        The distinct tool calls found, in discovery order.
+    """
     calls: list[ToolCall] = []
     seen: set[tuple[str, str]] = set()
 
@@ -54,4 +78,3 @@ def parse_json_tool_objects(text: str) -> list[ToolCall]:
             calls.append(call)
 
     return calls
-

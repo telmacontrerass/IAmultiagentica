@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, type-check and test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package (with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: python -m ruff check ci2lab tests
+
+      - name: Ruff format check
+        run: python -m ruff format --check ci2lab tests
+
+      - name: Mypy
+        # The whole package type-checks at the baseline bar, with the strict bar
+        # (disallow_untyped_defs) enforced for the packages under
+        # [[tool.mypy.overrides]] in pyproject.toml — a list that grows as more
+        # of the codebase is brought up to standard.
+        run: python -m mypy ci2lab
+
+      - name: Pytest
+        run: python -m pytest -q

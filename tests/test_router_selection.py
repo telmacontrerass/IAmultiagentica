@@ -77,6 +77,55 @@ def test_num_ctx_env_override_caps_context_length(_mock_scan, monkeypatch):
     assert selection.context_length == 16384
 
 
+def _roomy_profile() -> HardwareProfile:
+    """A machine with ample VRAM, enough to hold any catalog window."""
+    return HardwareProfile(
+        ram_total_gb=256.0,
+        ram_available_gb=200.0,
+        vram_total_gb=80.0,
+        vram_available_gb=78.0,
+        gpu_name="Big GPU",
+        gpu_vendor="nvidia",
+        cpu_cores=32,
+        os="linux",
+        inference_mode="gpu",
+        inference_budget_gb=76.0,
+        inference_budget_theoretical_gb=78.0,
+        inference_budget_available_gb=76.0,
+        memory_pressure=False,
+    )
+
+
+def test_context_defaults_to_native_max_when_memory_ample(monkeypatch):
+    monkeypatch.delenv("CI2LAB_NUM_CTX", raising=False)
+    selection = build_model_selection("llama3.2:3b", profile=_roomy_profile())
+    # Native max from the catalog flows through untouched on a roomy machine.
+    assert selection.context_length == 131072
+
+
+def test_context_capped_to_hardware_when_memory_tight(monkeypatch):
+    monkeypatch.delenv("CI2LAB_NUM_CTX", raising=False)
+    # 5.5 GB budget cannot hold the KV cache for the full 131072 window.
+    selection = build_model_selection("llama3.2:3b", profile=_profile())
+    assert 2048 <= selection.context_length < 131072
+    assert selection.context_length % 1024 == 0
+
+
+def test_context_keeps_native_when_model_exceeds_budget(monkeypatch):
+    monkeypatch.delenv("CI2LAB_NUM_CTX", raising=False)
+    # Weights alone (78.6 GB) exceed the 5.5 GB budget, so window capping is
+    # moot — the native window is preserved rather than reported as tiny.
+    selection = build_model_selection("mixtral:8x22b", profile=_profile())
+    assert selection.context_length == 65536
+
+
+def test_num_ctx_override_beats_hardware_cap(monkeypatch):
+    monkeypatch.setenv("CI2LAB_NUM_CTX", "100000")
+    selection = build_model_selection("llama3.2:3b", profile=_profile())
+    # The explicit operator override wins over the hardware-aware cap.
+    assert selection.context_length == 100000
+
+
 @patch("ci2lab.router.selection.scan_hardware", return_value=_profile())
 def test_prepare_session_does_not_auto_pick_router_model(_mock_scan):
     from ci2lab.pipeline import prepare_session

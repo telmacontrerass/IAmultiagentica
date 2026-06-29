@@ -3,10 +3,11 @@ from pathlib import Path
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.contracts.types import ModelSelection
+from ci2lab.hardware.profile import build_cpu_profile_for_testing
 from ci2lab.harness.llm_errors import LLMModelNotFoundError
 from ci2lab.harness.session import load_session, save_session
 from ci2lab.harness.token_usage import TokenUsage
-from ci2lab.hardware.profile import build_cpu_profile_for_testing
+from ci2lab.ui import projects as ui_projects
 from ci2lab.ui.server import (
     UIState,
     _chat,
@@ -16,8 +17,8 @@ from ci2lab.ui.server import (
     _delete_task_payload,
     _finish_delete_task,
     _health_payload,
-    _pull_task_payload,
     _prompt_with_uploaded_files,
+    _pull_task_payload,
     _record_pull_event,
     _session_payload,
     _sessions_payload,
@@ -25,7 +26,6 @@ from ci2lab.ui.server import (
     _tools_payload,
     _upload_file,
 )
-from ci2lab.ui import projects as ui_projects
 
 
 def test_content_type_for_static_assets():
@@ -51,6 +51,38 @@ def test_web_chat_progress_messages_are_in_english():
     )
 
     assert all(message in app_js for message in expected)
+    assert 'const INTERNAL_LANGUAGE = "en";' in app_js
+    assert "NO_AUTO_TRANSLATE_SELECTOR" in app_js
+    assert "#messages" in app_js
+
+
+def test_web_chat_transcript_is_not_auto_translated():
+    root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="messages" class="messages" aria-live="polite" data-no-translate' in index_html
+    assert "message: prompt," in app_js
+    assert "ui_language" not in app_js
+    assert "interface_language" not in app_js
+
+
+def test_web_ui_language_selector_supports_multiple_display_languages():
+    root = Path(__file__).resolve().parents[1] / "ci2lab" / "ui" / "static"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "app.js").read_text(encoding="utf-8")
+
+    assert 'class="language-trigger"' in index_html
+    assert 'class="language-menu"' in index_html
+    assert 'data-language="en">English</button>' in index_html
+    assert 'data-language="es">Español</button>' in index_html
+    assert 'data-language="fr">Français</button>' in index_html
+    assert 'data-language="pt">Português</button>' in index_html
+    assert 'const INTERNAL_LANGUAGE = "en";' in app_js
+    assert 'const SUPPORTED_LANGUAGES = ["en", "es", "fr", "pt"];' in app_js
+    assert "setDisplayLanguage" in app_js
+    assert "FRENCH_TRANSLATIONS" in app_js
+    assert "PORTUGUESE_TRANSLATIONS" in app_js
 
 
 def test_web_ui_exposes_project_library_detail_sources_and_project_chats():
@@ -402,6 +434,89 @@ def test_chat_uses_selected_project_sources_and_workspace(tmp_path, monkeypatch)
     assert stored is not None
     assert stored["messages"][-2]["content"] == "What is acceleration?"
     assert "rate of change of velocity" not in stored["messages"][-2]["content"]
+
+
+def test_paper_review_chat_builds_review_context_from_pdf_reader(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: sessions)
+    project_root = tmp_path / "projects"
+    project_root.mkdir()
+    monkeypatch.setattr(ui_projects, "projects_root", lambda: project_root)
+    project = ui_projects.create_project("Paper", kind="paper_review")["project"]
+    extracted_texts = iter(
+        [
+            "Indexed cached PDF text.",
+            "Review-time extracted PDF manuscript with methods and results.",
+        ]
+    )
+    read_calls: list[tuple[str, str]] = []
+
+    def fake_read_document(cwd: str, path: str) -> str:
+        read_calls.append((cwd, path))
+        return next(extracted_texts)
+
+    monkeypatch.setattr(ui_projects, "read_document", fake_read_document)
+    added = ui_projects.add_project_source(
+        project["id"],
+        {
+            "name": "paper.pdf",
+            "content_base64": base64.b64encode(b"%PDF fake paper").decode(),
+        },
+    )
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+    captured = {}
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_multi_agent(_prompt, _selection, *, config, review_context, **_kwargs):
+        captured["flow"] = config.multiagent_flow
+        captured["source_name"] = review_context.manuscript_source_name
+        captured["anchored_text"] = review_context.index.anchored_text
+        return (
+            "PAPER REVIEW REPORT\n\n"
+            "11. Editorial Rubric Responses\n"
+            "1. Objectives and rationale: detailed correction feedback."
+        )
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_multi_agent", fake_run_multi_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "corrige este paper con la rubrica",
+            "model": "qwen2.5-coder:1.5b",
+            "project_id": project["id"],
+            "mode": "paper_review",
+        },
+    )
+
+    assert added["ok"] is True
+    assert payload["ok"] is True
+    assert "Editorial Rubric Responses" in payload["answer"]
+    assert captured["flow"] == "paper_review"
+    assert captured["source_name"] == "paper.pdf"
+    assert "Review-time extracted PDF manuscript" in captured["anchored_text"]
+    assert "Indexed cached PDF text" not in captured["anchored_text"]
+    assert len(read_calls) == 2
+    assert read_calls[1][1] == added["source"]["path"]
+    assert payload["downloads"]
+    download = payload["downloads"][0]
+    artifact = ui_projects.project_artifact_path(project["id"], download["name"])
+    assert artifact is not None
+    assert artifact.read_text(encoding="utf-8").startswith("PAPER REVIEW REPORT")
+    assert download["download_url"].endswith(f"/artifacts/{download['name']}")
 
 
 def test_chat_rejects_session_from_another_project(tmp_path, monkeypatch):

@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Any
 
-def permission_summary(tool_name: str, args: dict) -> str:
-    """Short summary for the confirmation dialog."""
+
+def permission_summary(tool_name: str, args: dict[str, Any]) -> str:
+    """Short summary for the confirmation dialog.
+
+    Args:
+        tool_name: The name of the tool awaiting confirmation.
+        args: The tool's invocation arguments.
+
+    Returns:
+        A truncated, human-readable summary tailored to ``tool_name`` (falling
+        back to a generic ``str(args)`` rendering for unknown tools).
+    """
     if tool_name == "bash":
         cmd = args.get("command", "")
         return cmd[:120] + ("..." if len(cmd) > 120 else "")
@@ -20,4 +31,3 @@ def permission_summary(tool_name: str, args: dict) -> str:
     if tool_name == "ask_user":
         return str(args.get("question", ""))[:120]
     return str(args)[:80]
-

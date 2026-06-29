@@ -4,6 +4,7 @@ from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
 from ci2lab.harness.vision import (
     count_vision_images_in_messages,
     extract_image_paths,
+    is_vision_model,
     strip_vision_from_messages,
 )
 
@@ -79,3 +80,13 @@ def test_pdf_needs_vision_for_scanned_handwritten_pdf():
 
     if Path(pdf).is_file():
         assert pdf_needs_vision(Path(pdf)) is True
+
+
+def test_is_vision_model_phi4_is_not_vision_by_default():
+    assert is_vision_model("phi4:14b") is False
+    assert is_vision_model("phi-4:14b") is False
+
+
+def test_is_vision_model_phi4_mm_is_vision():
+    assert is_vision_model("phi4-mm:14b") is True
+    assert is_vision_model("phi-4-vision:14b") is True

@@ -12,7 +12,7 @@ from ci2lab.harness.parsing import (
 
 
 def test_parse_fenced_bash():
-    text = 'I am going to list.\n```bash\nls -la\n```'
+    text = "I am going to list.\n```bash\nls -la\n```"
     calls = parse_fenced_blocks(text)
     assert len(calls) == 1
     assert calls[0].name == "bash"
@@ -71,19 +71,21 @@ def test_native_priority():
 
 
 def test_native_strips_null_optional_args():
-    native = [{
-        "id": "c1",
-        "function": {
-            "name": "read_file",
-            "arguments": {"path": "config.txt", "offset": None, "limit": None},
-        },
-    }]
+    native = [
+        {
+            "id": "c1",
+            "function": {
+                "name": "read_file",
+                "arguments": {"path": "config.txt", "offset": None, "limit": None},
+            },
+        }
+    ]
     calls = resolve_tool_calls("", native, tool_mode="native")
     assert calls[0].arguments == {"path": "config.txt"}
 
 
 def test_strip_markup():
-    text = "Hello\n```bash\necho hi\n```\n<invoke name=\"ls\"><parameter name=\"path\">.</parameter></invoke>"
+    text = 'Hello\n```bash\necho hi\n```\n<invoke name="ls"><parameter name="path">.</parameter></invoke>'
     cleaned = strip_tool_markup(text)
     assert "bash" not in cleaned
     assert "invoke" not in cleaned
@@ -104,13 +106,13 @@ def test_no_tools_returns_empty():
 
 def test_parse_json_fenced_bare_edit_file_args():
     text = (
-        '```json\n'
-        '{\n'
+        "```json\n"
+        "{\n"
         '  "path": "Tests.py",\n'
         '  "old_string": "line three",\n'
         '  "new_string": "I don\'t know how many attempts"\n'
-        '}\n'
-        '```'
+        "}\n"
+        "```"
     )
     calls = resolve_tool_calls(text, [], tool_mode="fenced")
     assert len(calls) == 1
@@ -120,16 +122,16 @@ def test_parse_json_fenced_bare_edit_file_args():
 
 def test_parse_json_fenced_command_args_edit_file():
     text = (
-        '```json\n'
-        '{\n'
+        "```json\n"
+        "{\n"
         '  "command": "edit_file",\n'
         '  "args": {\n'
         '    "path": "Tests.py",\n'
         '    "old_string": "line three",\n'
         '    "new_string": "I don\'t know how many attempts"\n'
-        '  }\n'
-        '}\n'
-        '```'
+        "  }\n"
+        "}\n"
+        "```"
     )
     calls = resolve_tool_calls(text, [], tool_mode="fenced")
     assert len(calls) == 1
@@ -140,7 +142,7 @@ def test_parse_json_fenced_command_args_edit_file():
 
 def test_parse_json_fenced_write_file():
     text = (
-        'Here is the tool call:\n```json\n'
+        "Here is the tool call:\n```json\n"
         '{"name": "write_file", "arguments": {"path": "count_to_100.py", '
         '"content": "for i in range(1, 101):\\n    print(i)\\n"}}\n```'
     )
@@ -152,17 +154,16 @@ def test_parse_json_fenced_write_file():
 
 
 def test_parse_inline_json_write_file():
-    text = (
-        '{"name": "write_file", "arguments": {"path": "wordle.py", '
-        '"content": "print(1)"}}'
-    )
+    text = '{"name": "write_file", "arguments": {"path": "wordle.py", "content": "print(1)"}}'
     calls = parse_json_tool_objects(text)
     assert calls[0].name == "write_file"
     assert calls[0].arguments["path"] == "wordle.py"
 
 
 def test_parse_llama_parameters_field():
-    text = '{"name": "read_file", "parameters": {"path": "wordle.py", "offset": "1", "limit": "1000"}}'
+    text = (
+        '{"name": "read_file", "parameters": {"path": "wordle.py", "offset": "1", "limit": "1000"}}'
+    )
     calls = resolve_tool_calls(text, [], tool_mode="native")
     assert calls[0].name == "read_file"
     assert calls[0].arguments["path"] == "wordle.py"
@@ -171,10 +172,7 @@ def test_parse_llama_parameters_field():
 
 
 def test_parse_write_file_inside_bash_fence():
-    text = (
-        "```bash\nwrite_file\n"
-        '{"path": "wordle.py", "content": "print(1)"}\n```'
-    )
+    text = '```bash\nwrite_file\n{"path": "wordle.py", "content": "print(1)"}\n```'
     calls = parse_generic_fenced_blocks(text)
     assert len(calls) == 1
     assert calls[0].name == "write_file"
@@ -199,7 +197,7 @@ def test_unknown_fenced_tag_is_not_executed_as_bash():
     [
         ("```unknown_tool\nx\n```", "unknown_tool"),
         ("```diagnostic\ndir\n```", "diagnostic"),
-        ('```note\npython -c "print(\'BAD\')"\n```', "note"),
+        ("```note\npython -c \"print('BAD')\"\n```", "note"),
     ],
 )
 def test_v01_unknown_fenced_tags_never_become_bash(fence_body, tag):
@@ -233,10 +231,12 @@ def test_shell_fence_tag_still_runs_command_via_generic_parser():
 
 
 def test_write_file_new_string_alias_normalized():
-    native = [{
-        "name": "write_file",
-        "arguments": {"path": "a.py", "new_string": "x = 1"},
-    }]
+    native = [
+        {
+            "name": "write_file",
+            "arguments": {"path": "a.py", "new_string": "x = 1"},
+        }
+    ]
     calls = resolve_tool_calls("", native, tool_mode="native")
     assert calls[0].arguments["content"] == "x = 1"
 
@@ -251,3 +251,20 @@ def test_looks_like_unparsed_tool_attempt():
         '```json\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x"\n```'
     )
     assert not looks_like_unparsed_tool_attempt("just some explanation text")
+
+
+def test_unparsed_key_value_tool_attempt():
+    # Regression: a model emitted the write as `write_file path='...' content='...'`
+    # (key=value prose), no structured parser accepted it, and the loop mistook
+    # the narration for a finished answer. It must now be flagged so the model is
+    # nudged back to a real tool-call format.
+    assert looks_like_unparsed_tool_attempt(
+        "I will save it now.\n"
+        "write_file path='examen.txt' content='[PDF page 1/6]\nConvocatoria...'"
+    )
+    # Function-call style is the same mistake.
+    assert looks_like_unparsed_tool_attempt('read_file(path="examen.txt")')
+    # Merely naming a tool in prose is NOT an attempt — no key=value follows.
+    assert not looks_like_unparsed_tool_attempt(
+        "You can use write_file to persist the summary to disk."
+    )

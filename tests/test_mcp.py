@@ -21,14 +21,16 @@ def workspace_with_mcp(tmp_path: Path) -> Path:
     cfg_dir = tmp_path / ".ci2lab"
     cfg_dir.mkdir()
     cfg_dir.joinpath("mcp.json").write_text(
-        json.dumps({
-            "mcpServers": {
-                "mock": {
-                    "command": sys.executable,
-                    "args": [str(_MOCK_SERVER)],
+        json.dumps(
+            {
+                "mcpServers": {
+                    "mock": {
+                        "command": sys.executable,
+                        "args": [str(_MOCK_SERVER)],
+                    }
                 }
             }
-        }),
+        ),
         encoding="utf-8",
     )
     return tmp_path

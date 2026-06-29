@@ -1,4 +1,12 @@
-"""Invoke workspace skills."""
+"""Invoke workspace skills.
+
+A skill is a named markdown playbook discovered in the workspace. Invoking one
+returns its rendered body (plus a header with name, description and any
+arguments) for injection into the agent context. Two entry points are provided:
+``invoke_skill`` for model-driven invocation (which honours
+``disable_model_invocation``) and ``invoke_skill_for_repl`` for explicit
+user-issued slash commands (which does not).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +15,19 @@ from ci2lab.harness.types import AgentConfig
 
 
 def invoke_skill(config: AgentConfig, skill_name: str, args: str | None = None) -> str:
+    """Resolve a workspace skill by name and render it for the agent.
+
+    Args:
+        config: Active agent configuration; ``config.cwd`` locates the skills
+            and ``config.skill_allowed_tools`` may be narrowed by the skill.
+        skill_name: Name of the skill to invoke.
+        args: Optional user-supplied arguments appended to the rendered header.
+
+    Returns:
+        The rendered skill (header followed by its body) on success, or a
+        human-readable ``Error:`` string if the skill is unknown or is flagged
+        as user-invocable only.
+    """
     skills = load_skills(config.cwd)
     skill = get_skill(skills, skill_name)
     if skill is None:
@@ -35,7 +56,21 @@ def invoke_skill(config: AgentConfig, skill_name: str, args: str | None = None) 
 
 
 def invoke_skill_for_repl(config: AgentConfig, skill_name: str, args: str = "") -> str:
-    """REPL slash command — ignores disable_model_invocation."""
+    """Render a skill for an explicit REPL slash command.
+
+    Unlike :func:`invoke_skill`, this ignores ``disable_model_invocation`` since
+    the invocation is user-initiated.
+
+    Args:
+        config: Active agent configuration; ``config.cwd`` locates the skills
+            and ``config.skill_allowed_tools`` may be narrowed by the skill.
+        skill_name: Name of the skill to invoke.
+        args: Optional arguments appended to the rendered prefix.
+
+    Returns:
+        The rendered skill (prefix followed by its body), or a short
+        ``Unknown skill`` message if no such skill exists.
+    """
     skills = load_skills(config.cwd)
     skill = get_skill(skills, skill_name)
     if skill is None:

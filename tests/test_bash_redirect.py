@@ -1,6 +1,6 @@
+from ci2lab.harness.parsing import parse_generic_fenced_blocks, resolve_tool_calls
 from ci2lab.harness.tools.bash_redirect import tool_call_from_bash_command
 from ci2lab.harness.tools.registry import execute_tool
-from ci2lab.harness.parsing import parse_generic_fenced_blocks, resolve_tool_calls
 from ci2lab.harness.types import AgentConfig, ToolCall
 
 

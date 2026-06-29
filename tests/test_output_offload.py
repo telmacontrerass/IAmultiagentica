@@ -1,7 +1,5 @@
 """Tests for large-tool-output offload and superseded-read pruning."""
 
-from pathlib import Path
-
 from ci2lab.harness.context.compact import (
     SUPERSEDED_READ_STUB,
     prune_superseded_reads,
@@ -39,10 +37,12 @@ def _assistant_read(call_id, path):
     return {
         "role": "assistant",
         "content": "",
-        "tool_calls": [{
-            "id": call_id,
-            "function": {"name": "read_file", "arguments": f'{{"path": "{path}"}}'},
-        }],
+        "tool_calls": [
+            {
+                "id": call_id,
+                "function": {"name": "read_file", "arguments": f'{{"path": "{path}"}}'},
+            }
+        ],
     }
 
 
@@ -57,9 +57,19 @@ def test_superseded_read_is_pruned_keeping_latest():
         {"role": "user", "content": "edit main.py"},
         _assistant_read("c1", "main.py"),
         _tool_result("c1", big),
-        {"role": "assistant", "content": "", "tool_calls": [
-            {"id": "w1", "function": {"name": "write_file", "arguments": '{"path": "main.py", "content": "x"}'}}
-        ]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "w1",
+                    "function": {
+                        "name": "write_file",
+                        "arguments": '{"path": "main.py", "content": "x"}',
+                    },
+                }
+            ],
+        },
         _tool_result("w1", "Wrote main.py"),
         _assistant_read("c2", "main.py"),
         _tool_result("c2", newer),

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def tmp_workspace(tmp_path: Path) -> Path:
@@ -42,11 +43,13 @@ def simple_template(tmp_workspace: Path) -> Path:
 # Tests de fill_docx_template
 # ---------------------------------------------------------------------------
 
+
 class TestFillDocxTemplate:
     def test_basic_substitution(self, tmp_workspace: Path, simple_template: Path) -> None:
         """Substitute placeholders in paragraphs and tables."""
-        from ci2lab.harness.tools.docx_writer import fill_docx_template
         from docx import Document
+
+        from ci2lab.harness.tools.docx_writer import fill_docx_template
 
         output = tmp_workspace / "output.docx"
         result = fill_docx_template(
@@ -71,8 +74,9 @@ class TestFillDocxTemplate:
 
     def test_no_fields(self, tmp_workspace: Path, simple_template: Path) -> None:
         """With no fields the template is copied unchanged."""
-        from ci2lab.harness.tools.docx_writer import fill_docx_template
         from docx import Document
+
+        from ci2lab.harness.tools.docx_writer import fill_docx_template
 
         output = tmp_workspace / "no_fields.docx"
         result = fill_docx_template(
@@ -164,10 +168,9 @@ class TestFillDocxTemplate:
 # Tests de preview_fill_docx
 # ---------------------------------------------------------------------------
 
+
 class TestPreviewFillDocx:
-    def test_valid_preview_shows_fields(
-        self, tmp_workspace: Path, simple_template: Path
-    ) -> None:
+    def test_valid_preview_shows_fields(self, tmp_workspace: Path, simple_template: Path) -> None:
         """The preview shows the template, the output and the fields."""
         from ci2lab.harness.tools.docx_writer import preview_fill_docx
 
@@ -258,10 +261,12 @@ class TestPreviewFillDocx:
 # Tests de _replace_in_paragraph
 # ---------------------------------------------------------------------------
 
+
 class TestReplaceInParagraph:
     def test_simple_replacement(self) -> None:
         pytest.importorskip("docx", reason="python-docx not installed")
         from docx import Document
+
         from ci2lab.harness.tools.docx_writer import _replace_in_paragraph
 
         doc = Document()
@@ -276,6 +281,7 @@ class TestReplaceInParagraph:
     def test_no_match_returns_zero(self) -> None:
         pytest.importorskip("docx", reason="python-docx not installed")
         from docx import Document
+
         from ci2lab.harness.tools.docx_writer import _replace_in_paragraph
 
         doc = Document()

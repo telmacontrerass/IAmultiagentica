@@ -6,34 +6,58 @@ import csv
 import io
 import logging
 from pathlib import Path
+from types import ModuleType
 
-MAX_READ_LINES = 2000
-MAX_PDF_PAGES = 100
-MAX_SPREADSHEET_ROWS = 200
-MAX_SPREADSHEET_COLS = 30
-MAX_PRESENTATION_SLIDES = 200
-MAX_DOCUMENT_CHARS = 120_000
+#: Maximum number of lines returned by a single ``read_file`` call.
+MAX_READ_LINES: int = 2000
+#: Maximum number of PDF pages whose text is extracted.
+MAX_PDF_PAGES: int = 100
+#: Maximum number of spreadsheet rows read per sheet.
+MAX_SPREADSHEET_ROWS: int = 200
+#: Maximum number of spreadsheet columns read per row.
+MAX_SPREADSHEET_COLS: int = 30
+#: Maximum number of presentation slides whose text is extracted.
+MAX_PRESENTATION_SLIDES: int = 200
+#: Maximum number of characters returned for an extracted document.
+MAX_DOCUMENT_CHARS: int = 120_000
 
-TEXT_DOCUMENT_SUFFIXES = frozenset({
-    ".csv",
-    ".json",
-    ".log",
-    ".md",
-    ".rst",
-    ".text",
-    ".tsv",
-    ".txt",
-    ".xml",
-    ".yaml",
-    ".yml",
-})
-OFFICE_DOCUMENT_SUFFIXES = frozenset({".docx", ".pptx", ".xlsx"})
-SUPPORTED_DOCUMENT_SUFFIXES = (
+#: Plain-text document suffixes read directly as UTF-8.
+TEXT_DOCUMENT_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".csv",
+        ".json",
+        ".log",
+        ".md",
+        ".rst",
+        ".text",
+        ".tsv",
+        ".txt",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+)
+#: Office (OOXML) document suffixes requiring a dedicated extractor.
+OFFICE_DOCUMENT_SUFFIXES: frozenset[str] = frozenset({".docx", ".pptx", ".xlsx"})
+#: All document suffixes supported by :func:`extract_document_text`.
+SUPPORTED_DOCUMENT_SUFFIXES: frozenset[str] = (
     TEXT_DOCUMENT_SUFFIXES | OFFICE_DOCUMENT_SUFFIXES | frozenset({".pdf"})
 )
 
 
 def numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str:
+    """Render ``text`` as a numbered, line-bounded slice.
+
+    Args:
+        text: The full text to slice.
+        offset: 1-based line number to start from (clamped to at least 1).
+        limit: Maximum number of lines to include, or ``None`` for
+            :data:`MAX_READ_LINES`.
+
+    Returns:
+        The numbered slice (``"<num>|<line>"`` per row) with a trailing
+        truncation hint when more lines follow, or ``"(empty file)"``.
+    """
     lines = text.splitlines()
     start = max(1, offset if offset is not None else 1)
     end = start + (limit or MAX_READ_LINES) - 1
@@ -45,7 +69,21 @@ def numbered_lines(text: str, offset: int = 1, limit: int | None = None) -> str:
 
 
 def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
-    """Extract text from supported teaching/document formats."""
+    """Extract text from supported teaching/document formats.
+
+    Dispatches on the file suffix to the appropriate extractor (PDF, DOCX,
+    PPTX, XLSX, CSV/TSV, or plain text). Files without a recognised suffix are
+    read as plain text unless ``include_metadata`` requires a known format.
+
+    Args:
+        path: The document to read.
+        include_metadata: When ``True``, prepend a metadata header (name, type,
+            page/section count) and truncate to :data:`MAX_DOCUMENT_CHARS`.
+
+    Returns:
+        The extracted text (optionally with a metadata header), or an
+        ``"Error: ..."`` message for unsupported formats or extraction errors.
+    """
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         facade = _filesystem_facade()
@@ -65,17 +103,11 @@ def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
     elif suffix in {".csv", ".tsv"}:
         text = extract_csv_text(path)
         sections = "1 table"
-    elif suffix in TEXT_DOCUMENT_SUFFIXES or not suffix:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        sections = "plain text"
-    elif not include_metadata:
+    elif suffix in TEXT_DOCUMENT_SUFFIXES or not suffix or not include_metadata:
         text = path.read_text(encoding="utf-8", errors="replace")
         sections = "plain text"
     else:
-        return (
-            f"Error: unsupported format for document reading: "
-            f"{suffix or '(no extension)'}"
-        )
+        return f"Error: unsupported format for document reading: {suffix or '(no extension)'}"
 
     if text.startswith("Error:") or not include_metadata:
         return text
@@ -91,6 +123,15 @@ def extract_document_text(path: Path, *, include_metadata: bool = False) -> str:
 
 
 def truncate_document_text(text: str) -> str:
+    """Truncate ``text`` to :data:`MAX_DOCUMENT_CHARS`, appending a notice.
+
+    Args:
+        text: The extracted document text.
+
+    Returns:
+        The original text when within the limit, otherwise a truncated copy
+        with a trailing truncation notice.
+    """
     if len(text) <= MAX_DOCUMENT_CHARS:
         return text
     return (
@@ -100,16 +141,37 @@ def truncate_document_text(text: str) -> str:
 
 
 def pdf_section_count(path: Path) -> str | None:
+    """Return a ``"<n> pages"`` label for a PDF, or ``None`` on any failure.
+
+    Args:
+        path: The PDF file to inspect.
+
+    Returns:
+        A human-readable page-count label, or ``None`` if ``pypdf`` is missing
+        or the file cannot be read.
+    """
     try:
         from pypdf import PdfReader
 
         return f"{len(PdfReader(str(path)).pages)} pages"
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
 def extract_pdf_text(path: Path) -> str:
-    """Extract text from a PDF file, returning an Error: string on failure."""
+    """Extract text from a PDF file, returning an Error: string on failure.
+
+    Reads up to :data:`MAX_PDF_PAGES` pages, labelling each and noting any
+    remaining pages.
+
+    Args:
+        path: The PDF file to read.
+
+    Returns:
+        The page-labelled extracted text, or an ``"Error: ..."`` message when
+        ``pypdf`` is missing, the file cannot be opened, or no text is
+        extractable (e.g. a scanned PDF).
+    """
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -122,7 +184,7 @@ def extract_pdf_text(path: Path) -> str:
 
     try:
         reader = PdfReader(str(path))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not open the PDF {path}: {exc}"
 
     total_pages = len(reader.pages)
@@ -135,7 +197,7 @@ def extract_pdf_text(path: Path) -> str:
         chunks.append(f"[PDF page {page_number}/{total_pages}]")
         try:
             page_text = page.extract_text() or ""
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             page_text = f"Error extracting text from this page: {exc}"
         page_text = page_text.strip()
         if page_text:
@@ -143,9 +205,7 @@ def extract_pdf_text(path: Path) -> str:
         chunks.append(page_text or "(no extractable text on this page)")
 
     if total_pages > page_count:
-        chunks.append(
-            f"... ({total_pages - page_count} more pages; PDF limit {MAX_PDF_PAGES})"
-        )
+        chunks.append(f"... ({total_pages - page_count} more pages; PDF limit {MAX_PDF_PAGES})")
 
     if not has_extractable_text:
         return (
@@ -161,7 +221,18 @@ def pdf_has_extractable_text(
     min_chars: int = 40,
     max_pages: int = 5,
 ) -> bool:
-    """Return True when the PDF has enough embedded text for ``read_document``."""
+    """Return True when the PDF has enough embedded text for ``read_document``.
+
+    Args:
+        path: The PDF file to inspect.
+        min_chars: Total stripped characters required to consider the PDF
+            text-bearing.
+        max_pages: Maximum number of leading pages to sample.
+
+    Returns:
+        ``True`` once the sampled pages accumulate at least ``min_chars``
+        characters; ``False`` if ``pypdf`` is missing or the file is unreadable.
+    """
     path = Path(path)
 
     try:
@@ -173,14 +244,14 @@ def pdf_has_extractable_text(
 
     try:
         reader = PdfReader(str(path))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
     total_chars = 0
     for index in range(min(len(reader.pages), max_pages)):
         try:
             page_text = (reader.pages[index].extract_text() or "").strip()
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
         total_chars += len(page_text)
         if total_chars >= min_chars:
@@ -189,12 +260,32 @@ def pdf_has_extractable_text(
 
 
 def pdf_needs_vision(path: Path | str) -> bool:
-    """Return True for scanned/image-only PDFs that need a vision model."""
+    """Return True for scanned/image-only PDFs that need a vision model.
+
+    Args:
+        path: The candidate file to inspect.
+
+    Returns:
+        ``True`` when ``path`` is a PDF with no embedded extractable text.
+    """
     path = Path(path)
     return path.suffix.lower() == ".pdf" and not pdf_has_extractable_text(path)
 
 
 def extract_docx_text(path: Path) -> str:
+    """Extract paragraph and table text from a DOCX file.
+
+    Headings are prefixed with their style name and tables are rendered as
+    pipe-separated rows. Falls back to a Markdown extractor when ``python-docx``
+    is unavailable.
+
+    Args:
+        path: The DOCX file to read.
+
+    Returns:
+        The extracted text, a placeholder when the document has no text, or an
+        ``"Error: ..."`` message when the file cannot be opened.
+    """
     try:
         from docx import Document
     except ImportError:
@@ -204,7 +295,7 @@ def extract_docx_text(path: Path) -> str:
 
     try:
         document = Document(str(path))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not open the DOCX {path}: {exc}"
 
     chunks: list[str] = []
@@ -231,6 +322,19 @@ def extract_docx_text(path: Path) -> str:
 
 
 def extract_pptx_text(path: Path) -> tuple[str, str]:
+    """Extract per-slide text from a PPTX presentation.
+
+    Reads up to :data:`MAX_PRESENTATION_SLIDES` slides, labelling each and
+    noting any remaining slides.
+
+    Args:
+        path: The PPTX file to read.
+
+    Returns:
+        A ``(text, sections)`` pair where ``text`` is the slide-labelled text
+        (or an ``"Error: ..."`` message) and ``sections`` is a slide-count
+        label (``"desconocido"`` on failure).
+    """
     try:
         from pptx import Presentation
     except ImportError:
@@ -241,7 +345,7 @@ def extract_pptx_text(path: Path) -> tuple[str, str]:
 
     try:
         presentation = Presentation(str(path))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not open the PPTX {path}: {exc}", "desconocido"
 
     total_slides = len(presentation.slides)
@@ -268,6 +372,20 @@ def extract_pptx_text(path: Path) -> tuple[str, str]:
 
 
 def extract_xlsx_text(path: Path) -> tuple[str, str]:
+    """Extract cell text from an XLSX workbook, one section per sheet.
+
+    Reads up to :data:`MAX_SPREADSHEET_ROWS` rows and
+    :data:`MAX_SPREADSHEET_COLS` columns per sheet, rendering rows as
+    pipe-separated values.
+
+    Args:
+        path: The XLSX file to read.
+
+    Returns:
+        A ``(text, sections)`` pair where ``text`` is the sheet-labelled text
+        (or an ``"Error: ..."`` message) and ``sections`` is a sheet-count
+        label (``"desconocido"`` on failure).
+    """
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -278,7 +396,7 @@ def extract_xlsx_text(path: Path) -> tuple[str, str]:
 
     try:
         workbook = load_workbook(str(path), read_only=True, data_only=True)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"Error: could not open the XLSX {path}: {exc}", "desconocido"
 
     chunks: list[str] = []
@@ -308,6 +426,18 @@ def extract_xlsx_text(path: Path) -> tuple[str, str]:
 
 
 def extract_csv_text(path: Path) -> str:
+    """Extract rows from a CSV/TSV file as pipe-separated text.
+
+    The delimiter is the tab for ``.tsv`` files and otherwise sniffed (falling
+    back to a comma). Reads up to :data:`MAX_SPREADSHEET_ROWS` rows.
+
+    Args:
+        path: The CSV or TSV file to read.
+
+    Returns:
+        The pipe-separated rows joined by newlines, or ``"(empty CSV file)"``
+        when no data rows are present.
+    """
     text = path.read_text(encoding="utf-8", errors="replace")
     delimiter = "\t" if path.suffix.lower() == ".tsv" else None
     sample = text[:4096]
@@ -329,13 +459,22 @@ def extract_csv_text(path: Path) -> str:
 
 
 def trim_empty_tail(values: list[str]) -> list[str]:
+    """Strip each value and drop trailing empty entries.
+
+    Args:
+        values: The raw cell values for a row.
+
+    Returns:
+        The stripped values with empty trailing entries removed.
+    """
     trimmed = [value.strip() for value in values]
     while trimmed and not trimmed[-1]:
         trimmed.pop()
     return trimmed
 
 
-def _filesystem_facade():
+def _filesystem_facade() -> ModuleType:
+    """Return the ``filesystem`` facade module (late import to avoid cycles)."""
     from ci2lab.harness.tools import filesystem
 
     return filesystem

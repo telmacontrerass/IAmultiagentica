@@ -15,7 +15,7 @@ Summary of what **already exists** versus what is **missing** per this handoff.
 | Component | Status | Files / CLI |
 |-----------|--------|-------------|
 | `hardware/profile.py` | Implemented | `scan_hardware()` — RAM, VRAM, GPU, CPU, inference budget |
-| `router/catalog.py` | Implemented | Loads `ci2lab/catalog/models.json` (64 models) |
+| `router/catalog.py` | Implemented | Loads `ci2lab/catalog/models.json` (86 models) |
 | `router/intent.py` | Implemented | Keyword classifier (`coding`, `reasoning`, `rag`, …) |
 | `router/recommend.py` | Implemented | Scoring, `model_fits()`, download plan |
 | `router/selection.py` | Implemented | `build_model_selection()` — **production path** |

@@ -15,10 +15,12 @@ from ci2lab.harness.multiagent.orchestrator import (
     final_run_status,
     has_write_tool_evidence,
     looks_like_untraceable_fs_mutation,
+    research_discovered_write_requirement,
     run_multi_agent,
     should_run_security_review,
     should_skip_implementation,
     subagent_blocked,
+    synthesize_final_answer,
     validation_failed,
     write_task_lacks_evidence,
 )
@@ -45,6 +47,52 @@ def test_choose_coder_role_prefers_specific_evidence():
     research = _result(AgentRole.RESEARCHER, "Frontend behavior.")
 
     assert choose_coder_role(plan, research) == AgentRole.FRONTEND_CODER
+
+
+def test_complete_exercise_does_not_route_to_test_only_coder():
+    # Regression: an "implement/complete" task whose evidence merely mentions
+    # that unit tests are required must NOT be routed to the test-only coder,
+    # which would leave the actual program unwritten. The user prompt has no
+    # test request, so it routes to a real implementer.
+    plan = _result(AgentRole.PLANNER, "Solve Programa 2 PyRecommender in Python.")
+    research = _result(
+        AgentRole.RESEARCHER,
+        "The program must be developed in Python and include unit tests (pytest).",
+    )
+    role = choose_coder_role(
+        plan,
+        research,
+        user_prompt="read the exam pdf and complete exercise 2",
+    )
+    assert role == AgentRole.PYTHON_CODER
+    assert role != AgentRole.TEST_CODER
+
+
+def test_test_centric_user_request_routes_to_test_coder():
+    plan = _result(AgentRole.PLANNER, "Add coverage.")
+    research = _result(AgentRole.RESEARCHER, "Python module foo.py.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="write unit tests for foo")
+        == AgentRole.TEST_CODER
+    )
+
+
+def test_docs_centric_user_request_routes_to_docs_coder():
+    plan = _result(AgentRole.PLANNER, "Edit text.")
+    research = _result(AgentRole.RESEARCHER, "Project files.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="update the README with examples")
+        == AgentRole.DOCS_CODER
+    )
+
+
+def test_implementation_request_without_language_signal_uses_generalist():
+    plan = _result(AgentRole.PLANNER, "Make the requested change.")
+    research = _result(AgentRole.RESEARCHER, "No specific language detected.")
+    assert (
+        choose_coder_role(plan, research, user_prompt="complete the task")
+        == AgentRole.GENERALIST_CODER
+    )
 
 
 def test_should_skip_implementation_for_read_only_pdf_task():
@@ -299,6 +347,134 @@ def test_run_multi_agent_skips_coder_for_read_only_pdf_task(monkeypatch):
     assert "formal writing" in result
 
 
+def test_research_discovered_pdf_exercise_promotes_to_write_flow(monkeypatch):
+    calls: list[tuple[AgentRole, int]] = []
+    outputs = {
+        AgentRole.PLANNER: (
+            "Plan: read the PDF, identify Exercise 2, then perform_exercise_2: "
+            "Carry out the task specified in Exercise 2."
+        ),
+        AgentRole.RESEARCHER: (
+            "Exercise 2 is called Problema de programacion. The task involves "
+            "implementing a program in Python. Constraints: no use of the `in` "
+            "operator; only use of the append method for lists."
+        ),
+        AgentRole.PYTHON_CODER: "Implemented Exercise 2 in Python.",
+        AgentRole.VALIDATOR: "PASS: implementation satisfies the exercise.",
+        AgentRole.REVIEWER: "PASS: evidence confirms the task was completed.",
+    }
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append((role, attempt))
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "read '2025-26.-Examen Diciembre Programación iMAT.pdf' and follow "
+        "the instructions to do exercise 2 (called differently inside the document)",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert calls == [
+        (AgentRole.PLANNER, 1),
+        (AgentRole.RESEARCHER, 1),
+        (AgentRole.PYTHON_CODER, 1),
+        (AgentRole.VALIDATOR, 1),
+        (AgentRole.REVIEWER, 1),
+    ]
+    assert "Selected implementer: python_coder" in result
+    assert "Selected implementer: none" not in result
+
+
+def test_research_discovered_write_requirement_from_code_constraints():
+    plan = _result(AgentRole.PLANNER, "Plan: read PDF and perform exercise 2.")
+    research = _result(
+        AgentRole.RESEARCHER,
+        "The task involves implementing a program in Python. No use of the `in` "
+        "operator. Only use append for lists.",
+    )
+
+    assert research_discovered_write_requirement(
+        "read exam.pdf and follow the instructions to do exercise 2",
+        plan,
+        research,
+    )
+
+
+def test_reviewer_insufficient_evidence_blocks_completed_status():
+    run = MultiAgentRun(user_prompt="Implement the requested exercise.")
+    run.requires_write = True
+    run.selected_coder_role = AgentRole.PYTHON_CODER
+    run.add_result(
+        _result(
+            AgentRole.PYTHON_CODER,
+            "Implemented.",
+            tool_calls=[
+                {
+                    "tool": "write_file",
+                    "ok": True,
+                    "arguments": {"path": "exercise.py"},
+                    "output_preview": "wrote",
+                }
+            ],
+        )
+    )
+    run.add_result(
+        _result(
+            AgentRole.REVIEWER,
+            "However, there is insufficient evidence to confirm if the task "
+            "specified in Exercise 2 was completed.",
+        )
+    )
+
+    assert final_run_status(run) == "review_failed"
+
+
+def test_security_fail_blocks_completed_status_and_final_answer():
+    run = MultiAgentRun(user_prompt="Implement the requested exercise.")
+    run.requires_write = True
+    run.selected_coder_role = AgentRole.PYTHON_CODER
+    run.add_result(
+        _result(
+            AgentRole.PYTHON_CODER,
+            "Implemented.",
+            tool_calls=[
+                {
+                    "tool": "write_file",
+                    "ok": True,
+                    "arguments": {"path": "exercise.py"},
+                    "output_preview": "wrote",
+                }
+            ],
+        )
+    )
+    run.add_result(
+        _result(
+            AgentRole.SECURITY_REVIEWER,
+            "FAIL: unresolved security/permission evidence gaps: git_status, git_diff",
+        )
+    )
+
+    assert final_run_status(run) == "security_failed"
+    assert "status: completed" not in synthesize_final_answer(run)
+
+
+def test_write_required_without_implementer_is_not_completed():
+    run = MultiAgentRun(user_prompt="Implement exercise 2 from the PDF.")
+    run.requires_write = True
+    run.add_result(_result(AgentRole.RESEARCHER, "The task involves implementing Python."))
+
+    final = synthesize_final_answer(run)
+
+    assert "status: implementation_required_but_not_executed" in final
+    assert "Selected implementer: none (implementation required but not executed)" in final
+
+
 def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     calls: list[AgentRole] = []
 
@@ -325,6 +501,40 @@ def test_run_multi_agent_stops_when_researcher_is_blocked(monkeypatch):
     assert "status: blocked" in result
     assert "Blocked role: researcher" in result
     assert "test.pdf was not found" in result
+
+
+def test_blocked_validator_does_not_abort_run(monkeypatch):
+    # Regression: a confused validator that replies "BLOCKED: please provide a
+    # validation step" must not discard the coder's work. The reviewer still
+    # runs and the run finishes completed, not blocked.
+    calls: list[AgentRole] = []
+    outputs = {
+        AgentRole.PLANNER: "Plan: edit ci2lab/harness/example.py",
+        AgentRole.RESEARCHER: "Relevant Python file: ci2lab/harness/example.py",
+        AgentRole.PYTHON_CODER: "Implemented Python change.",
+        AgentRole.VALIDATOR: "BLOCKED: please provide a validation step.",
+        AgentRole.REVIEWER: "Implementation looks correct.",
+    }
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        calls.append(role)
+        return _result(role, outputs[role], attempt=attempt)
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    result = run_multi_agent(
+        "complete exercise 2 in Python",
+        default_selection("test:1b"),
+        config=AgentConfig(cwd=".", run_log_enabled=False),
+    )
+
+    assert AgentRole.REVIEWER in calls  # reviewer was not skipped
+    assert "status: blocked" not in result
+    assert "Blocked role: validator" not in result
+    assert "Implementation looks correct." in result
 
 
 def test_run_multi_agent_prints_subagent_progress(monkeypatch):
@@ -377,12 +587,18 @@ def test_all_multiagent_role_progress_labels_are_english():
         AgentRole.VALIDATOR: "Checking the result",
         AgentRole.REVIEWER: "Reviewing the outcome",
         AgentRole.SECURITY_REVIEWER: "Reviewing security and permissions",
+        AgentRole.INTAKE_REVIEWER: "Diagnosing the manuscript",
+        AgentRole.SCOPE_REVIEWER: "Checking journal fit",
+        AgentRole.NOVELTY_REVIEWER: "Auditing the contribution",
+        AgentRole.METHODOLOGY_REVIEWER: "Reviewing the methodology",
+        AgentRole.FIELD_EXPERT_REVIEWER: "Applying field expectations",
+        AgentRole.ADVERSARIAL_REVIEWER: "Mounting Reviewer 2 objections",
+        AgentRole.FORMAT_REVIEWER: "Checking submission readiness",
+        AgentRole.GROUNDEDNESS_VERIFIER: "Verifying findings against the paper",
+        AgentRole.REVISION_PLANNER: "Assembling the review report",
     }
 
-    assert {
-        role: _role_progress_label(role, 1)
-        for role in AgentRole
-    } == expected
+    assert {role: _role_progress_label(role, 1) for role in AgentRole} == expected
 
 
 def test_run_multi_agent_repairs_with_same_coder(monkeypatch):
@@ -496,15 +712,145 @@ def test_multiagent_trace_records_phase_sequence(tmp_path, monkeypatch):
     run_dirs = sorted((tmp_path / "runs").iterdir())
     trace = json.loads((run_dirs[0] / "multiagent_trace.json").read_text(encoding="utf-8"))
     assert trace["planned_phases"][:2] == ["planner", "researcher"]
-    assert trace["selected_coder_role"] == "generalist_coder"
+    # "Make a Python change" routes to the Python implementer.
+    assert trace["selected_coder_role"] == "python_coder"
     assert trace["executed_phases"][:5] == [
         "planner",
         "researcher",
-        "generalist_coder",
+        "python_coder",
         "validator",
         "reviewer",
     ]
     assert (run_dirs[0] / "multiagent_trace.json").is_file()
+
+
+def test_multiagent_parent_run_persists_workflow_artifacts(tmp_path, monkeypatch):
+    child_counter = 0
+
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        nonlocal child_counter
+        child_counter += 1
+        child_dir = tmp_path / "runs" / f"child_{child_counter:02d}_{role.value}"
+        child_dir.mkdir(parents=True)
+        (child_dir / "run_summary.json").write_text(
+            json.dumps(
+                {
+                    "started_at": f"2026-06-26T00:00:0{child_counter}+00:00",
+                    "ended_at": f"2026-06-26T00:00:1{child_counter}+00:00",
+                    "model": selection.ollama_tag,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (child_dir / "tool_calls.jsonl").write_text("", encoding="utf-8")
+        return _result(
+            role,
+            "pytest passed" if role == AgentRole.VALIDATOR else f"{role.value} output",
+            attempt=attempt,
+            subagent_run_dir=str(child_dir),
+            tool_calls=[
+                {
+                    # The implementer (whichever coder role the router selects)
+                    # records real write evidence; other roles only read.
+                    "tool": "write_file" if "coder" in role.value else "read_file",
+                    "ok": True,
+                    "arguments": {"path": "x.py"},
+                    "output_preview": "ok",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    final = run_multi_agent(
+        "Make a Python change",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+        ),
+    )
+
+    parent_dirs = sorted((tmp_path / "runs").glob("*/run.json"))
+    assert parent_dirs, "parent run.json was not created"
+    parent_dir = parent_dirs[0].parent
+    run_json = json.loads((parent_dir / "run.json").read_text(encoding="utf-8"))
+    summary = json.loads((parent_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert (parent_dir / "final_answer.md").read_text(encoding="utf-8") == final
+    assert (parent_dir / "trace.jsonl").is_file()
+    assert (parent_dir / "multiagent_trace.json").is_file()
+    assert summary["final_status"] == "completed"
+    assert summary["selected_implementer"] == "python_coder"
+    assert summary["phases_executed"][:5] == [
+        "planner",
+        "researcher",
+        "python_coder",
+        "validator",
+        "reviewer",
+    ]
+    assert run_json["prompt"] == "Make a Python change"
+    assert run_json["parent_run_id"] == parent_dir.name
+    assert run_json["child_runs"]
+    assert all("child_run_id" in child for child in run_json["child_runs"])
+    assert all(phase["status"] and phase["output"] for phase in run_json["phases"])
+    phase_run = parent_dir / "phases" / "01_planner" / "run.json"
+    assert phase_run.is_file()
+    assert (parent_dir / "phases" / "01_planner" / "output.md").is_file()
+    assert (parent_dir / "phases" / "01_planner" / "tool_calls.jsonl").is_file()
+
+
+def test_multiagent_parent_run_persists_failed_final_status(tmp_path, monkeypatch):
+    def fake_run_subagent(role, task_prompt, selection, config, *, attempt=1):
+        if role == AgentRole.PLANNER:
+            return _result(role, "Plan: implement x.py")
+        if role == AgentRole.RESEARCHER:
+            return _result(role, "Research: x.py is relevant")
+        if role == AgentRole.GENERALIST_CODER:
+            return _result(
+                role,
+                "Implemented x.py",
+                tool_calls=[
+                    {
+                        "tool": "write_file",
+                        "ok": True,
+                        "arguments": {"path": "x.py"},
+                        "output_preview": "wrote",
+                    }
+                ],
+            )
+        if role == AgentRole.VALIDATOR:
+            return _result(role, "pytest passed")
+        return _result(
+            role,
+            "However, there is insufficient evidence to confirm completion.",
+        )
+
+    monkeypatch.setattr(
+        "ci2lab.harness.multiagent.orchestrator.run_subagent",
+        fake_run_subagent,
+    )
+
+    final = run_multi_agent(
+        "Make a Python change",
+        default_selection("test:1b"),
+        config=AgentConfig(
+            cwd=str(tmp_path),
+            runs_dir=str(tmp_path / "runs"),
+            run_log_enabled=True,
+        ),
+    )
+
+    parent_dir = next((tmp_path / "runs").glob("*/summary.json")).parent
+    summary = json.loads((parent_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert summary["final_status"] == "review_failed"
+    assert "status: review_failed" in final
+    assert (parent_dir / "final_answer.md").read_text(encoding="utf-8") == final
 
 
 def test_multiagent_trace_records_role_anchor_and_allowed_tools(tmp_path, monkeypatch):
@@ -580,10 +926,7 @@ _WRITE_PROMPT = (
 )
 
 _PYTHON_SCRIPT_OUTPUT = (
-    "```python\n"
-    'with open("prueba_multiagente.txt", "w") as f:\n'
-    '    f.write("MULTIAGENTE_OK")\n'
-    "```"
+    '```python\nwith open("prueba_multiagente.txt", "w") as f:\n    f.write("MULTIAGENTE_OK")\n```'
 )
 
 _WRITE_READBACK_TOOL_CALLS = [
@@ -600,6 +943,22 @@ _WRITE_READBACK_TOOL_CALLS = [
         "output_preview": "MULTIAGENTE_OK",
     },
 ]
+
+_SCOPE_TOOL_CALLS = [
+    {
+        "tool": "git_status",
+        "ok": True,
+        "arguments": {"path": "."},
+        "output_preview": "?? prueba_multiagente.txt",
+    },
+    {
+        "tool": "git_diff",
+        "ok": True,
+        "arguments": {"path": "."},
+        "output_preview": "(no tracked-file diff)",
+    },
+]
+
 
 
 def _force_code_change_intent(monkeypatch) -> None:
@@ -682,9 +1041,7 @@ def test_has_write_tool_evidence_requires_successful_write_tool():
     )
     assert not has_write_tool_evidence([failed_write])
 
-    real_write = _result(
-        AgentRole.GENERALIST_CODER, "done", tool_calls=_WRITE_READBACK_TOOL_CALLS
-    )
+    real_write = _result(AgentRole.GENERALIST_CODER, "done", tool_calls=_WRITE_READBACK_TOOL_CALLS)
     assert has_write_tool_evidence([real_write])
 
 
@@ -697,7 +1054,9 @@ def test_write_task_lacks_evidence_for_returned_script_but_not_for_real_write():
     assert final_run_status(script_run) != "completed"
 
     real_run = _write_run(
-        _result(AgentRole.GENERALIST_CODER, "Created via tools.", tool_calls=_WRITE_READBACK_TOOL_CALLS),
+        _result(
+            AgentRole.GENERALIST_CODER, "Created via tools.", tool_calls=_WRITE_READBACK_TOOL_CALLS
+        ),
         "Validation passed.",
     )
     assert not write_task_lacks_evidence(real_run)
@@ -773,11 +1132,25 @@ def test_run_multi_agent_write_task_with_tool_evidence_completes(monkeypatch):
             return _result(role, "No existing target file.")
         if role == AgentRole.GENERALIST_CODER:
             return _result(
-                role, "Created the file with tools.", attempt=attempt,
+                role,
+                "Created the file with tools.",
+                attempt=attempt,
                 tool_calls=_WRITE_READBACK_TOOL_CALLS,
             )
         if role == AgentRole.VALIDATOR:
-            return _result(role, "Validation passed; content is correct.", attempt=attempt)
+            return _result(
+                role,
+                "Validation passed; content and scope are correct.",
+                attempt=attempt,
+                tool_calls=_SCOPE_TOOL_CALLS,
+            )
+        if role in {AgentRole.REVIEWER, AgentRole.SECURITY_REVIEWER}:
+            return _result(
+                role,
+                "Review complete with real status/diff evidence.",
+                attempt=attempt,
+                tool_calls=_SCOPE_TOOL_CALLS,
+            )
         return _result(role, "Review complete.", attempt=attempt)
 
     monkeypatch.setattr(

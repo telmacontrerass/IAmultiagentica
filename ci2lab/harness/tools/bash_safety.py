@@ -6,9 +6,13 @@ import re
 
 from ci2lab.harness.tools.bash_workspace import check_bash_workspace_blocked
 
+#: Compiled (pattern, short description) pairs of always-denied command shapes.
 # (pattern, short description for the user)
 _BLOCKED_RULES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\brm\s+(-[^\s]*f|-\w*f\w*|\S+\s+-rf\b)", re.I), "rm -rf / forced recursive deletion"),
+    (
+        re.compile(r"\brm\s+(-[^\s]*f|-\w*f\w*|\S+\s+-rf\b)", re.I),
+        "rm -rf / forced recursive deletion",
+    ),
     (re.compile(r"\bdel\s+/(?:s|f|q)\b", re.I), "del /s, del /f, or del /q"),
     (re.compile(r"\bformat\s+[a-z]:", re.I), "disk format"),
     (re.compile(r"\bshutdown\b", re.I), "shutdown"),
@@ -54,6 +58,15 @@ def check_bash_blocked(command: str, *, cwd: str | None = None) -> str | None:
 
     The blocklist is always applied, even with --yes.
     If cwd is passed, paths are also validated against the workspace.
+
+    Args:
+        command: The shell command line to inspect.
+        cwd: Optional workspace root; when provided, referenced paths are also
+            validated against it.
+
+    Returns:
+        A short description of the first violated rule, or ``None`` if the
+        command is allowed.
     """
     if not command or not command.strip():
         return None
