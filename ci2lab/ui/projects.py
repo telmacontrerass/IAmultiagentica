@@ -50,10 +50,34 @@ PROJECT_KINDS = frozenset({"knowledge", "paper_review"})
 # Per-project icon. Keep this curated single-colour set in sync with the
 # frontend so glyphs inherit the active theme instead of rendering as emoji.
 DEFAULT_PROJECT_ICON = "▱"
-PROJECT_ICON_CHOICES = frozenset({
-    "▱", "◆", "●", "▲", "■", "◐", "◈", "▣", "⬢", "★", "✦", "✶",
-    "✷", "✸", "✺", "❖", "❂", "✪", "✿", "❀", "❁", "✚", "✜", "❉",
-})
+PROJECT_ICON_CHOICES = frozenset(
+    {
+        "▱",
+        "◆",
+        "●",
+        "▲",
+        "■",
+        "◐",
+        "◈",
+        "▣",
+        "⬢",
+        "★",
+        "✦",
+        "✶",
+        "✷",
+        "✸",
+        "✺",
+        "❖",
+        "❂",
+        "✪",
+        "✿",
+        "❀",
+        "❁",
+        "✚",
+        "✜",
+        "❉",
+    }
+)
 
 
 def projects_root() -> Path:
