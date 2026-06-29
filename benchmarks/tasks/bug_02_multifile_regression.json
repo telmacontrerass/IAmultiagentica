@@ -1,0 +1,26 @@
+{
+  "id": "bug-02",
+  "name": "Multi-file off-by-one regression",
+  "category": "bug",
+  "prompt": "Running `python -m pytest -q test_inclusive.py` fails: `list_inclusive(1, 3)` returns `[1, 2]` but should return `[1, 2, 3]`. Fix the root cause so that test passes WITHOUT breaking any other behaviour in the project. The bug spans more than one file. Do not edit any test file.",
+  "max_rounds": 20,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "rangeutil.py": "def inclusive_range(a, b):\n    \"\"\"Return the integers from a to b inclusive.\"\"\"\n    return list(range(a, b))\n",
+      "summer.py": "from rangeutil import inclusive_range\n\n\ndef sum_inclusive(a, b):\n    return sum(inclusive_range(a, b + 1))\n\n\ndef list_inclusive(a, b):\n    return inclusive_range(a, b)\n",
+      "test_inclusive.py": "from summer import list_inclusive\n\n\ndef test_list_inclusive():\n    assert list_inclusive(1, 3) == [1, 2, 3]\n"
+    }
+  },
+  "hidden_setup": {
+    "files": {
+      "test_inclusive.py": "from summer import list_inclusive\n\n\ndef test_list_inclusive():\n    assert list_inclusive(1, 3) == [1, 2, 3]\n",
+      "test_sum.py": "from summer import sum_inclusive\n\n\ndef test_sum_inclusive():\n    assert sum_inclusive(1, 5) == 15\n"
+    }
+  },
+  "verifier": {
+    "fail_to_pass": ["python -m pytest -q test_inclusive.py"],
+    "pass_to_pass": ["python -m pytest -q test_sum.py"],
+    "forbid_paths": ["test_inclusive.py"]
+  }
+}

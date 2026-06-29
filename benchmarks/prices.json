@@ -1,0 +1,11 @@
+{
+  "_comment": "Per-million-token USD prices used to derive cost from measured tokens (see docs/BENCHMARKING.md 4.2). All USD is imputed from tokens, not an invoice. Local/open models are priced at a reference hosted rate and clearly labelled 'imputed' in results. Update 'as_of' when prices change.",
+  "as_of": "2026-06-29",
+  "default": { "input_per_mtok": 0.0, "output_per_mtok": 0.0, "imputed": true },
+  "models": {
+    "qwen2.5-coder:32b": { "input_per_mtok": 0.18, "output_per_mtok": 0.18, "imputed": true, "source": "reference hosted rate for a 32B open model" },
+    "qwen2.5-coder:14b": { "input_per_mtok": 0.10, "output_per_mtok": 0.10, "imputed": true },
+    "qwen2.5-coder:7b": { "input_per_mtok": 0.07, "output_per_mtok": 0.07, "imputed": true },
+    "llama3.1:8b": { "input_per_mtok": 0.07, "output_per_mtok": 0.07, "imputed": true }
+  }
+}

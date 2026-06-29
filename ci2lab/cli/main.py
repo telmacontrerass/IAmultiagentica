@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from ci2lab.cli.commands.agent import _run_repl, _run_turn
+from ci2lab.cli.commands.bench import _cmd_bench
 from ci2lab.cli.commands.doctor import _cmd_doctor
 from ci2lab.cli.commands.evals import _cmd_evals
 from ci2lab.cli.commands.hardware import _cmd_hardware
@@ -100,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_run(args)
     if args.command == "evals":
         return _cmd_evals(args)
+    if args.command == "bench":
+        return _cmd_bench(args)
     if args.command == "permissions":
         from ci2lab.cli_permissions import cmd_permissions
 

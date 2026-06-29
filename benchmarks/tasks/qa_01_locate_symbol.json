@@ -1,0 +1,21 @@
+{
+  "id": "qa-01",
+  "name": "Locate a symbol in an unseen codebase",
+  "category": "qa",
+  "prompt": "In this Python project, which function computes the shipping discount, in which file is it defined, and what type does it return? Answer with the function name, the file path, and the return type. Do not modify any files.",
+  "max_rounds": 10,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "shop/__init__.py": "",
+      "shop/orders.py": "def order_total(items):\n    \"\"\"Sum the line totals of an order.\"\"\"\n    return sum(i.price * i.qty for i in items)\n\n\ndef apply_coupon(total, coupon):\n    \"\"\"Apply a flat coupon amount to an order total.\"\"\"\n    return max(total - coupon, 0)\n",
+      "shop/pricing/__init__.py": "",
+      "shop/pricing/labels.py": "def discount_label(pct):\n    \"\"\"Human-readable label for a discount percentage.\"\"\"\n    return f\"{pct}% off\"\n",
+      "shop/pricing/discounts.py": "from decimal import Decimal\n\n\ndef _round_money(value):\n    return value.quantize(Decimal(\"0.01\"))\n\n\ndef compute_discount(subtotal, weight_kg):\n    \"\"\"Compute the shipping discount for an order.\n\n    Returns a Decimal amount to subtract from the shipping fee.\n    \"\"\"\n    base = Decimal(subtotal) * Decimal(\"0.05\")\n    if weight_kg > 10:\n        base += Decimal(\"2.50\")\n    return _round_money(base)\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["compute_discount", "discounts.py", "Decimal"]
+  }
+}

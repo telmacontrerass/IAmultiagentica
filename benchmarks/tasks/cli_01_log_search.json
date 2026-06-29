@@ -1,0 +1,17 @@
+{
+  "id": "cli-01",
+  "name": "Find the fatal error code in a large log",
+  "category": "cli",
+  "prompt": "The file `app.log` in this directory contains exactly one line with a fatal error code of the form ERR-XXXX (four digits). Report that error code. Do not modify any files.",
+  "max_rounds": 8,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "app.log": "2026-06-29T08:00:01 INFO  service started pid=1042\n2026-06-29T08:00:02 INFO  loading config from /etc/app.conf\n2026-06-29T08:00:02 DEBUG cache warm: 128 entries\n2026-06-29T08:00:03 INFO  worker-1 online\n2026-06-29T08:00:03 INFO  worker-2 online\n2026-06-29T08:00:04 DEBUG heartbeat ok latency=12ms\n2026-06-29T08:00:05 INFO  request id=8801 status=200\n2026-06-29T08:00:06 INFO  request id=8802 status=200\n2026-06-29T08:00:07 WARN  request id=8803 retry=1\n2026-06-29T08:00:08 INFO  request id=8804 status=200\n2026-06-29T08:00:09 DEBUG gc pause=3ms\n2026-06-29T08:00:10 INFO  request id=8805 status=200\n2026-06-29T08:00:11 INFO  request id=8806 status=200\n2026-06-29T08:00:12 WARN  disk usage 71%\n2026-06-29T08:00:13 INFO  request id=8807 status=200\n2026-06-29T08:00:14 INFO  request id=8808 status=200\n2026-06-29T08:00:15 FATAL database connection lost code=ERR-7731 host=db-3\n2026-06-29T08:00:16 INFO  reconnecting to db-3 attempt=1\n2026-06-29T08:00:17 INFO  request id=8809 status=200\n2026-06-29T08:00:18 DEBUG heartbeat ok latency=14ms\n2026-06-29T08:00:19 INFO  request id=8810 status=200\n2026-06-29T08:00:20 INFO  request id=8811 status=200\n2026-06-29T08:00:21 WARN  request id=8812 retry=2\n2026-06-29T08:00:22 INFO  request id=8813 status=200\n2026-06-29T08:00:23 INFO  request id=8814 status=200\n2026-06-29T08:00:24 DEBUG cache evict 4 entries\n2026-06-29T08:00:25 INFO  request id=8815 status=200\n2026-06-29T08:00:26 INFO  request id=8816 status=200\n2026-06-29T08:00:27 INFO  shutdown signal received\n2026-06-29T08:00:28 INFO  drained 0 in-flight requests\n2026-06-29T08:00:29 INFO  service stopped pid=1042\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["ERR-7731"]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "qa-02",
+  "name": "Trace a CLI flag across files",
+  "category": "qa",
+  "prompt": "Trace how the `--threshold` command-line flag reaches the code that uses it. List, in order, the three files it passes through, from where it is parsed to where it is read. Do not modify any files.",
+  "max_rounds": 12,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "app/__init__.py": "",
+      "app/cli.py": "import argparse\n\nfrom app.config import Config\nfrom app.engine import Engine\n\n\ndef main(argv=None):\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--threshold\", type=float, default=0.5)\n    args = parser.parse_args(argv)\n    config = Config(threshold=args.threshold)\n    return Engine(config).run()\n",
+      "app/config.py": "from dataclasses import dataclass\n\n\n@dataclass\nclass Config:\n    \"\"\"Runtime configuration carried from the CLI to the engine.\"\"\"\n\n    threshold: float\n",
+      "app/engine.py": "class Engine:\n    def __init__(self, config):\n        self.config = config\n\n    def run(self):\n        # The threshold is finally consumed here.\n        if self.config.threshold > 1.0:\n            return \"high\"\n        return \"low\"\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["cli.py", "config.py", "engine.py"],
+    "answer_contains_ordered": true
+  }
+}

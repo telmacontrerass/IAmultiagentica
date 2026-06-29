@@ -1,0 +1,25 @@
+{
+  "id": "bug-01",
+  "name": "Patch a failing unit test (single file)",
+  "category": "bug",
+  "prompt": "Running `python -m pytest -q test_discount.py` in this directory fails:\n\n    def test_full_discount():\n>       assert apply_discount(100, 100) == 0\n    E   ValueError: pct out of range: 100\n\nFind the root cause in `discount.py` and fix it so the test passes. Do not edit any file under a test file (do not change `test_discount.py`).",
+  "max_rounds": 20,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "discount.py": "def apply_discount(price, pct):\n    \"\"\"Reduce price by pct percent. pct is in the closed range [0, 100].\"\"\"\n    if pct < 0 or pct >= 100:\n        raise ValueError(\"pct out of range: \" + str(pct))\n    return price - price * pct / 100\n",
+      "test_discount.py": "from discount import apply_discount\n\n\ndef test_full_discount():\n    assert apply_discount(100, 100) == 0\n"
+    }
+  },
+  "hidden_setup": {
+    "files": {
+      "test_discount.py": "from discount import apply_discount\n\n\ndef test_full_discount():\n    assert apply_discount(100, 100) == 0\n",
+      "test_regression.py": "import pytest\n\nfrom discount import apply_discount\n\n\ndef test_no_discount():\n    assert apply_discount(100, 0) == 100\n\n\ndef test_half():\n    assert apply_discount(100, 50) == 50\n\n\ndef test_negative_raises():\n    with pytest.raises(ValueError):\n        apply_discount(100, -1)\n"
+    }
+  },
+  "verifier": {
+    "fail_to_pass": ["python -m pytest -q test_discount.py"],
+    "pass_to_pass": ["python -m pytest -q test_regression.py"],
+    "forbid_paths": ["test_discount.py"]
+  }
+}

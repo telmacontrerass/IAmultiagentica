@@ -1,0 +1,17 @@
+{
+  "id": "cli-02",
+  "name": "Run a build script and diagnose the failing step",
+  "category": "cli",
+  "prompt": "Run `bash build.sh` in this directory. It fails. Tell me which command failed (name the file it could not find) and the script's exit code. Do not modify any files.",
+  "max_rounds": 10,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "build.sh": "#!/usr/bin/env bash\nset -e\necho \"step 1: compile\"\necho \"step 2: run tests\"\ncat results/summary.txt\necho \"step 3: package\"\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["summary.txt"]
+  }
+}

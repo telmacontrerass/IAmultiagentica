@@ -1,0 +1,22 @@
+{
+  "id": "feat-01",
+  "name": "Implement a function to a hidden spec",
+  "category": "feat",
+  "prompt": "Implement the function `parse_duration(s)` in `durations.py` according to its docstring, so that the project's tests pass. It must parse strings like '90m', '1h30m', '45s', and '1h1m1s' into a total number of seconds, and raise ValueError on invalid input.",
+  "max_rounds": 20,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "durations.py": "def parse_duration(s):\n    \"\"\"Parse a duration string into a total number of seconds.\n\n    Supported units: 'h' (hours), 'm' (minutes), 's' (seconds), combined in that\n    order, e.g. '90m' -> 5400, '1h30m' -> 5400, '45s' -> 45, '1h1m1s' -> 3661.\n    Raise ValueError on input that is not a valid duration.\n    \"\"\"\n    raise NotImplementedError\n"
+    }
+  },
+  "hidden_setup": {
+    "files": {
+      "test_durations.py": "import pytest\n\nfrom durations import parse_duration\n\n\ndef test_minutes():\n    assert parse_duration(\"90m\") == 5400\n\n\ndef test_hours_minutes():\n    assert parse_duration(\"1h30m\") == 5400\n\n\ndef test_seconds():\n    assert parse_duration(\"45s\") == 45\n\n\ndef test_combined():\n    assert parse_duration(\"1h1m1s\") == 3661\n\n\ndef test_invalid():\n    with pytest.raises(ValueError):\n        parse_duration(\"abc\")\n"
+    }
+  },
+  "verifier": {
+    "fail_to_pass": ["python -m pytest -q test_durations.py"],
+    "forbid_paths": ["test_durations.py"]
+  }
+}

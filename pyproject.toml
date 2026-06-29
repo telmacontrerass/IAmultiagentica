@@ -152,6 +152,7 @@ module = [
     "ci2lab.harness.skills.*",
     "ci2lab.harness.token_usage",
     "ci2lab.harness.messages",
+    "ci2lab.bench.*",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

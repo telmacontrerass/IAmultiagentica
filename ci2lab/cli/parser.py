@@ -13,6 +13,7 @@ _CLI_COMMANDS = frozenset(
         "hardware",
         "models",
         "evals",
+        "bench",
         "skills",
         "permissions",
         "ui",
@@ -56,6 +57,7 @@ def _print_global_help() -> None:
         "  ci2lab models install <model>     pull/run/chat commands for a model",
         "  ci2lab models run <model>         Open the model with ollama run",
         "  ci2lab evals run                  Harness evaluations (mock)",
+        "  ci2lab bench run                   Performance benchmarks (live, vs Codex/Claude Code)",
         "  ci2lab permissions summary        Permissions / audit dashboard",
         "  ci2lab ui                         Local web interface",
         "",
@@ -85,9 +87,11 @@ def _print_global_help() -> None:
         "  models install <id|tag> [--json]",
         "  models run <id|tag>",
         "  evals run [--live] [--model TAG] [--task ID] [--tasks-dir PATH]",
+        "  bench run [--agent NAME ...] [--model TAG] [--samples N] [--task ID]",
         "",
-        "Evals (alternative):",
+        "Evals / benchmarks (alternative):",
         "  python -m ci2lab.evals.run        Same as ci2lab evals run (mock)",
+        "  python -m ci2lab.bench.run        Same as ci2lab bench run (live)",
         "",
         "Agent tools (inside chat/agent):",
         "  read_document, read_file, ls, glob, grep, edit_file, write_file, notebook_edit,",
@@ -237,6 +241,25 @@ def build_parser() -> argparse.ArgumentParser:
     evals_run.add_argument("--task", action="append", dest="task_ids", metavar="ID")
     evals_run.add_argument("--model", default=None)
     evals_run.add_argument("--live", action="store_true")
+
+    from ci2lab.bench.adapters import ADAPTER_NAMES
+
+    bench_p = sub.add_parser("bench", help="Performance benchmarks (live)")
+    bench_sub = bench_p.add_subparsers(dest="bench_command")
+    bench_run = bench_sub.add_parser("run", help="Run benchmark tasks from benchmarks/")
+    bench_run.add_argument("--tasks-dir", default=None)
+    bench_run.add_argument("--task", action="append", dest="task_ids", metavar="ID")
+    bench_run.add_argument(
+        "--agent",
+        action="append",
+        dest="agents",
+        choices=list(ADAPTER_NAMES),
+        metavar="NAME",
+    )
+    bench_run.add_argument("--model", default=None)
+    bench_run.add_argument("--samples", type=int, default=5)
+    bench_run.add_argument("--results-dir", default=None)
+    bench_run.add_argument("--prices", default=None)
 
     from ci2lab.cli_permissions import add_permissions_parser
 
