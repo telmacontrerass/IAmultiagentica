@@ -1404,9 +1404,10 @@ def _read_key() -> str:
     if os.name == "nt":
         import msvcrt
 
-        key = msvcrt.getwch()
+        win_msvcrt: Any = msvcrt
+        key = win_msvcrt.getwch()
         if key in ("\x00", "\xe0"):
-            key = msvcrt.getwch()
+            key = win_msvcrt.getwch()
             return {"H": "up", "P": "down"}.get(key, "")
         return _normalize_key(key)
     return _read_posix_key()
