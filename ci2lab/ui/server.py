@@ -189,6 +189,9 @@ from ci2lab.ui.server_parts.uploads import (
     UPLOAD_DIR_NAME,
 )
 from ci2lab.ui.server_parts.uploads import (
+    extract_rubric_pdf as _extract_rubric_pdf,
+)
+from ci2lab.ui.server_parts.uploads import (
     is_upload_path as _is_upload_path,
 )
 from ci2lab.ui.server_parts.uploads import (

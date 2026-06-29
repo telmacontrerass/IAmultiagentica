@@ -2393,8 +2393,31 @@ async function uploadRubrics(event) {
       break;
     }
     try {
-      const text = await readFileAsText(file);
-      state.rubricsDraft.push({ name: file.name, content: text.slice(0, MAX_DOC_CHARS), open: false });
+      let name = file.name;
+      let text = "";
+      if (file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf") {
+        const content = await readFileAsDataUrl(file);
+        const result = await api("/api/researchers/rubric-pdf", {
+          method: "POST",
+          body: JSON.stringify({
+            name: file.name,
+            size: file.size,
+            content_base64: content,
+          }),
+        });
+        if (!result.ok || !result.rubric) {
+          throw new Error(result.error || `Could not extract ${file.name}`);
+        }
+        name = result.rubric.name || file.name;
+        text = result.rubric.content || "";
+      } else {
+        text = await readFileAsText(file);
+      }
+      state.rubricsDraft.push({
+        name,
+        content: text.slice(0, MAX_DOC_CHARS),
+        open: false,
+      });
     } catch (error) {
       addMessage("assistant", error.message || `Could not read ${file.name}`, "error");
     }

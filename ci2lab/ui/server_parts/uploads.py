@@ -42,6 +42,7 @@ SUPPORTED_UPLOAD_SUFFIXES = {
     ".yml",
 }
 DOCUMENT_UPLOAD_SUFFIXES = SUPPORTED_DOCUMENT_SUFFIXES | {".rtf"}
+MAX_EXTRACTED_RUBRIC_CHARS = 50_000
 
 
 def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +109,58 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "path": rel_path,
             "size": len(raw),
             "size_label": format_upload_size(len(raw)),
+        },
+    }
+
+
+def extract_rubric_pdf(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """Temporarily store a rubric PDF and return its extracted text.
+
+    The normal browser text reader cannot decode PDF bytes. This endpoint reuses
+    the guarded upload path and the same local document extractor used by chat,
+    then removes the temporary upload because the extracted rubric is persisted
+    in the researcher profile.
+    """
+    name = str(payload.get("name") or "").strip()
+    if Path(name).suffix.lower() != ".pdf":
+        return {"ok": False, "error": "Only PDF files can use rubric extraction."}
+
+    result = upload_file(state, payload)
+    if not result.get("ok"):
+        return result
+
+    workspace = Path(
+        str(payload.get("workspace") or state.runtime.workspace or os.getcwd())
+    ).resolve()
+    file_info = result["file"]
+    relative_path = str(file_info["path"])
+    target = (workspace / relative_path).resolve()
+    upload_root = (workspace / UPLOAD_DIR_NAME).resolve()
+    try:
+        content = _read_document(str(workspace), relative_path)
+    finally:
+        if target.parent == upload_root:
+            target.unlink(missing_ok=True)
+
+    if content.startswith("Error:"):
+        return {
+            "ok": False,
+            "error": (
+                "Could not extract text from the rubric PDF. "
+                "Use a text-based PDF or upload the rubric as Markdown or text."
+            ),
+        }
+    content = content.strip()
+    if not content:
+        return {
+            "ok": False,
+            "error": "The rubric PDF did not contain extractable text.",
+        }
+    return {
+        "ok": True,
+        "rubric": {
+            "name": Path(name).name[:200] or "rubric.pdf",
+            "content": content[:MAX_EXTRACTED_RUBRIC_CHARS],
         },
     }
 

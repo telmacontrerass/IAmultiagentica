@@ -15,6 +15,7 @@ from ci2lab.ui.server import (
     _content_type,
     _delete_session_payload,
     _delete_task_payload,
+    _extract_rubric_pdf,
     _finish_delete_task,
     _health_payload,
     _prompt_with_uploaded_files,
@@ -264,6 +265,41 @@ def test_upload_file_accepts_office_document_formats(tmp_path):
 
     assert payload["ok"] is True
     assert payload["file"]["path"] == "ci2lab_uploads/topic 1.docx"
+
+
+def test_extract_rubric_pdf_returns_text_and_removes_temporary_file(tmp_path, monkeypatch):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    content = base64.b64encode(b"%PDF fake rubric").decode("ascii")
+    monkeypatch.setattr(
+        "ci2lab.ui.server_parts.uploads._read_document",
+        lambda workspace, path: "Rubric criterion: methods must be reproducible.",
+    )
+
+    payload = _extract_rubric_pdf(
+        state,
+        {"name": "Methods Rubric.PDF", "content_base64": content},
+    )
+
+    assert payload == {
+        "ok": True,
+        "rubric": {
+            "name": "Methods Rubric.PDF",
+            "content": "Rubric criterion: methods must be reproducible.",
+        },
+    }
+    assert not (tmp_path / "ci2lab_uploads" / "methods rubric.pdf").exists()
+
+
+def test_extract_rubric_pdf_rejects_non_pdf(tmp_path):
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+
+    payload = _extract_rubric_pdf(
+        state,
+        {"name": "rubric.txt", "content_base64": base64.b64encode(b"text").decode()},
+    )
+
+    assert payload["ok"] is False
+    assert "Only PDF" in payload["error"]
 
 
 def test_upload_file_rejects_unsupported_suffix(tmp_path):

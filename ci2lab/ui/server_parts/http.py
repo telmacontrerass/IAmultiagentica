@@ -240,6 +240,10 @@ def handler_factory(state: UIState) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/files/upload":
                 self._json(facade._upload_file(state, payload))
                 return
+            if parsed.path == "/api/researchers/rubric-pdf":
+                result = facade._extract_rubric_pdf(state, payload)
+                self._json(result, status=200 if result.get("ok") else 400)
+                return
             if parsed.path == "/api/researchers":
                 result = facade._create_researcher(payload)
                 self._json(result, status=201 if result.get("ok") else 400)

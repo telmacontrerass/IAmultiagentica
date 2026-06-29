@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"$HOME/.ci2lab\" 2>/dev/null | head -30)",
+      "Read(//c/Users/Pablo/.ci2lab/**)",
+      "Bash(xargs cat)",
+      "Bash(sqlite3 project.sqlite3 \".schema\")",
+      "Bash(python3)",
+      "Read(//c/Users/Pablo/.claude/projects/c--Users-Pablo-Programacion-IAmultiagentica/memory/**)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_paper_review_grounding.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_ui_projects.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_paper_review_flow.py tests/test_multiagent_intent.py -q)",
+      "Bash(git add *)",
+      "Bash(git commit -m '@ *)",
+      "Bash(git branch *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(git push *)",
+      "Bash(node --check ci2lab/ui/static/app.js)",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('ci2lab/ui/static/styles.css','utf8'\\);const o=\\(c.match\\(/{/g\\)||[]\\).length,cl=\\(c.match\\(/}/g\\)||[]\\).length;console.log\\('open',o,'close',cl, o===cl?'BALANCED':'UNBALANCED'\\);\")",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('ci2lab/ui/static/styles.css','utf8'\\);let o=0,cl=0;for\\(const ch of c\\){if\\(ch==='{'\\)o++;else if\\(ch==='}'\\)cl++;}console.log\\('CSS braces open',o,'close',cl,o===cl?'BALANCED':'UNBALANCED'\\);\")",
+      "Bash(python -m pytest tests/test_ui_researchers.py -q)",
+      "Bash(python -m pytest tests/test_ui_server.py tests/test_ui_projects.py -q)",
+      "Bash(python -c ' *)",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('ci2lab/ui/static/styles.css','utf8'\\);let o=0,cl=0;for\\(const ch of c\\){if\\(ch==='{'\\)o++;else if\\(ch==='}'\\)cl++;}console.log\\('CSS braces',o,cl,o===cl?'BALANCED':'UNBALANCED'\\);\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('ci2lab/ui/server_parts/api.py',encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('ci2lab/ui/researchers.py',encoding='utf-8'\\).read\\(\\)\\); print\\('PY_OK'\\)\")",
+      "Bash(python -m pytest tests/test_ui_server.py tests/test_ui_projects.py tests/test_ui_researchers.py -q)",
+      "Bash(python -m pytest tests/test_ui_server.py -q)",
+      "Bash(python -m pytest tests/test_ui_projects.py tests/test_ui_server.py -q)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Pablo\\.claude\\projects\\c--Users-Pablo-Programacion-IAmultiagentica\\memory"
+    ]
+  }
+}
