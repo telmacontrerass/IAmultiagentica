@@ -73,3 +73,28 @@ def test_researcher_prompt_is_noop_without_profile(monkeypatch, tmp_path):
     _use_temp_registry(monkeypatch, tmp_path)
     assert researchers.researcher_prompt("", "hello") == "hello"
     assert researchers.researcher_prompt("rsr_missing", "hello") == "hello"
+
+
+def test_instructions_and_rubrics_persist_and_ground_the_prompt(monkeypatch, tmp_path):
+    _use_temp_registry(monkeypatch, tmp_path)
+    created = researchers.create_researcher(
+        {
+            "name": "Dr Ada",
+            "instructions": "Be rigorous.\r\nCheck the statistics.",
+            "rubrics": [
+                {"name": "methods.md", "content": "## Methods\n- reproducible?"},
+                {"name": "", "content": ""},
+                "not a dict",
+            ],
+        }
+    )["researcher"]
+
+    assert created["instructions"] == "Be rigorous.\nCheck the statistics."
+    assert [r["name"] for r in created["rubrics"]] == ["methods.md"]
+
+    prompt = researchers.researcher_prompt(created["id"], "Review this paper.")
+    assert "<reviewer_instructions>" in prompt
+    assert "Be rigorous." in prompt
+    assert 'name="methods.md"' in prompt
+    assert "## Methods" in prompt
+    assert "verbatim quote and anchor" in prompt

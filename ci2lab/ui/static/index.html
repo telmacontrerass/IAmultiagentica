@@ -48,14 +48,10 @@
           </div>
         </div>
 
-        <div class="researcher-switch">
-          <label for="researcherSelect">Researcher</label>
-          <select id="researcherSelect" aria-label="Researcher">
-            <option value="">No researcher</option>
-          </select>
-          <button id="openResearcherProfile" class="researcher-profile-link" type="button">
-            <span aria-hidden="true">⚙</span> Profile
-          </button>
+        <div class="researcher-switcher" id="researcherSwitcher">
+          <div class="researcher-label">Researcher</div>
+          <div class="researcher-card" id="researcherCard"></div>
+          <div class="researcher-dropdown" id="researcherDropdown" role="listbox" aria-label="Researcher" hidden></div>
         </div>
 
         <nav class="side-nav" aria-label="Main navigation">
@@ -89,7 +85,7 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">Local multi-model agent</p>
-            <h2>Interact with Florentino without opening the terminal</h2>
+            <h2>Interact with Florentino without opening the terminal <span class="title-spark" aria-hidden="true">⚡</span></h2>
           </div>
           <div class="top-actions">
             <div class="control-with-help">
@@ -118,7 +114,7 @@
           </div>
         </header>
 
-        <section id="homeView" class="view active-view">
+        <section id="homeView" class="view active-view ci2-page-shell">
           <section id="systemPanel" class="panel system-panel">
             <div class="panel-heading">
               <div>
@@ -166,7 +162,8 @@
               </div>
             </section>
 
-            <section class="system-section recommendation-section">
+            <section class="system-section recommendation-section ci2-has-orbit">
+              <div class="ci2-orbit-deco" aria-hidden="true"></div>
               <div class="section-heading">
                 <div>
                   <p class="eyebrow">Recommended models</p>
@@ -202,9 +199,10 @@
 
         </section>
 
-        <section id="projectsView" class="view" hidden>
+        <section id="projectsView" class="view ci2-page-shell" hidden>
           <section class="projects-page">
-            <div class="projects-page-heading">
+            <div class="projects-page-heading ci2-has-orbit">
+              <div class="ci2-orbit-deco" aria-hidden="true"></div>
               <div>
                 <p class="eyebrow">Independent knowledge spaces</p>
                 <h2>My projects</h2>
@@ -219,6 +217,16 @@
               <div>
                 <label for="projectNameInput">Project name</label>
                 <input id="projectNameInput" maxlength="100" placeholder="For example: Machine learning" />
+              </div>
+              <div class="project-icon-field">
+                <label>Icon</label>
+                <details class="icon-picker" id="projectIconPicker">
+                  <summary class="icon-picker-trigger" title="Choose project icon" aria-label="Choose project icon">
+                    <span id="projectIconValue" class="project-glyph">▱</span>
+                    <span class="icon-picker-caret" aria-hidden="true">▾</span>
+                  </summary>
+                  <div class="icon-grid" id="projectIconGrid" role="listbox" aria-label="Project icon"></div>
+                </details>
               </div>
               <div>
                 <label for="projectKindInput">Project type</label>
@@ -265,14 +273,20 @@
           </section>
         </section>
 
-        <section id="projectDetailView" class="view" hidden>
+        <section id="projectDetailView" class="view ci2-page-shell" hidden>
           <section class="project-detail-page">
-            <div class="project-detail-heading">
+            <div class="project-detail-heading ci2-has-orbit">
+              <div class="ci2-orbit-deco" aria-hidden="true"></div>
               <button id="backToProjects" class="back-link" type="button">
                 <span aria-hidden="true">←</span> My projects
               </button>
               <div class="project-title-row">
-                <div class="project-folder-mark" aria-hidden="true">▱</div>
+                <details class="icon-picker project-detail-icon" id="projectDetailIconPicker">
+                  <summary class="project-folder-mark" title="Change project icon" aria-label="Change project icon">
+                    <span id="projectDetailIconValue" class="project-glyph">▱</span>
+                  </summary>
+                  <div class="icon-grid" id="projectDetailIconGrid" role="listbox" aria-label="Project icon"></div>
+                </details>
                 <div>
                   <p class="eyebrow">Active project</p>
                   <h2 id="projectDetailName">Project</h2>
@@ -319,9 +333,11 @@
           </section>
         </section>
 
-        <section id="researcherView" class="view" hidden>
+        <section id="researcherView" class="view ci2-page-shell" hidden>
           <section class="projects-page">
-            <div class="projects-page-heading">
+            <div class="projects-page-heading ci2-has-orbit">
+              <div class="ci2-orbit-deco" aria-hidden="true"></div>
+              <div class="profile-icon-badge" aria-hidden="true">◑</div>
               <div>
                 <p class="eyebrow">Researcher profile</p>
                 <h2 id="researcherFormTitle">My profile</h2>
@@ -329,7 +345,8 @@
               </div>
             </div>
 
-            <form id="researcherForm" class="project-detail-section researcher-form">
+            <form id="researcherForm" class="researcher-form">
+              <section class="project-detail-section researcher-card">
               <div class="researcher-form-grid">
                 <div>
                   <label for="researcherName">Name</label>
@@ -361,6 +378,55 @@
                 <p class="eyebrow">Emphasis by review lens</p>
                 <div class="researcher-lens-grid" id="researcherLensGrid"></div>
               </div>
+              </section>
+
+              <section class="project-detail-section researcher-card">
+              <div class="researcher-card-heading">
+                <p class="eyebrow">Reviewing material</p>
+                <h3>What the model reviews with</h3>
+                <p>Optional, but powerful. When a researcher is selected, these documents tune the peer review to that person. With no researcher selected the review still works — it just isn't personalised.</p>
+              </div>
+              <div class="researcher-docs-grid">
+                <section class="researcher-doc-panel">
+                  <div class="researcher-doc-head">
+                    <div class="researcher-doc-head-copy">
+                      <p class="eyebrow">Reviewing instructions</p>
+                      <h3>instructions.md</h3>
+                      <p>The base the model reads before reviewing your papers. Upload a document, then read, scroll and edit it right here.</p>
+                    </div>
+                    <label class="source-add-button" for="instructionsUpload" title="Upload instructions">
+                      <span aria-hidden="true">↥</span>
+                      <span>Upload</span>
+                    </label>
+                    <input id="instructionsUpload" class="sr-only" type="file" accept=".md,.markdown,.txt,.text,.rst" />
+                  </div>
+                  <div class="doc-editor" id="instructionsEditor">
+                    <div class="doc-editor-gutter" aria-hidden="true">1</div>
+                    <textarea id="instructionsText" class="doc-editor-area" spellcheck="false" wrap="off" data-no-translate placeholder="Upload instructions.md — or start writing the instructions the model should follow when reviewing your papers."></textarea>
+                  </div>
+                  <div class="researcher-doc-foot">
+                    <span id="instructionsMeta" class="doc-meta">Empty</span>
+                    <button type="button" id="clearInstructions" class="ghost-button doc-clear-button">Clear</button>
+                  </div>
+                </section>
+
+                <section class="researcher-doc-panel">
+                  <div class="researcher-doc-head">
+                    <div class="researcher-doc-head-copy">
+                      <p class="eyebrow">Grading rubrics</p>
+                      <h3>Rubrics</h3>
+                      <p>Upload the rubric(s) you grade with. The model reads them as ground truth for its corrections. Open one to read or edit it; remove it to swap in another.</p>
+                    </div>
+                    <label class="source-add-button" for="rubricsUpload" title="Upload rubrics">
+                      <span aria-hidden="true">↥</span>
+                      <span>Upload</span>
+                    </label>
+                    <input id="rubricsUpload" class="sr-only" type="file" multiple accept=".md,.markdown,.txt,.text,.rst,.csv,.tsv" />
+                  </div>
+                  <div id="rubricsList" class="rubrics-list"></div>
+                </section>
+              </div>
+              </section>
 
               <div class="researcher-form-actions">
                 <button type="button" id="deleteResearcher" class="danger-button">Delete</button>
@@ -373,7 +439,7 @@
           </section>
         </section>
 
-        <section id="chatView" class="view" hidden>
+        <section id="chatView" class="view ci2-page-shell" hidden>
           <section class="chat-panel">
             <div class="chat-topbar">
             <div class="chat-topbar-main">
@@ -436,6 +502,13 @@
               </div>
               <div id="projectSourcesList" class="project-sources-list" hidden></div>
             </section>
+            <div id="reviewModeBar" class="review-mode-bar" data-active="false">
+              <span class="review-mode-dot" aria-hidden="true"></span>
+              <div class="review-mode-copy">
+                <strong id="reviewModeTitle">Generic review</strong>
+                <span id="reviewModeDetail">Select a researcher to peer-review papers as them.</span>
+              </div>
+            </div>
             <div id="messages" class="messages" aria-live="polite" data-no-translate></div>
             <div class="attachment-bar composer-toolbar">
               <details id="promptActionsMenu" class="prompt-actions-menu">

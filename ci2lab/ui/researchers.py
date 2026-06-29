@@ -36,6 +36,9 @@ MAX_NAME_CHARS = 100
 MAX_STYLE_CHARS = 2000
 MAX_LIST_ITEMS = 30
 MAX_ITEM_CHARS = 200
+MAX_DOC_CHARS = 50000
+MAX_DOC_NAME_CHARS = 200
+MAX_RUBRICS = 12
 
 
 def researchers_path() -> Path:
@@ -100,6 +103,31 @@ def _clean_list(value: Any) -> list[str]:
     return cleaned
 
 
+def _clean_document(value: Any, *, limit: int = MAX_DOC_CHARS) -> str:
+    """Clean a multiline reviewing document while preserving its structure."""
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = "".join(ch for ch in text if ch in "\n\t" or ord(ch) >= 0x20)
+    return text[:limit].strip()
+
+
+def _clean_rubrics(value: Any) -> list[dict[str, str]]:
+    """Validate and bound the reviewer rubrics stored in a profile."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    rubrics: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_text(item.get("name"), limit=MAX_DOC_NAME_CHARS)
+        content = _clean_document(item.get("content"))
+        if not content:
+            continue
+        rubrics.append({"name": name or "rubric", "content": content})
+        if len(rubrics) >= MAX_RUBRICS:
+            break
+    return rubrics
+
+
 def _clean_lens_preferences(value: Any) -> dict[str, str]:
     """Keep only known lens keys mapped to valid emphasis levels.
 
@@ -125,6 +153,8 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "reviewing_style": _clean_text(payload.get("reviewing_style"), limit=MAX_STYLE_CHARS),
         "lens_preferences": _clean_lens_preferences(payload.get("lens_preferences")),
         "preferred_guidelines": _clean_list(payload.get("preferred_guidelines")),
+        "instructions": _clean_document(payload.get("instructions")),
+        "rubrics": _clean_rubrics(payload.get("rubrics")),
     }
 
 
@@ -241,15 +271,44 @@ def researcher_context_block(profile: dict[str, Any]) -> str:
     guidelines = profile.get("preferred_guidelines") or []
     if guidelines:
         lines.append(f"- Preferred reporting guidelines/checklists: {', '.join(guidelines)}")
-    if not lines:
+
+    doc_sections: list[str] = []
+    instructions = str(profile.get("instructions") or "").strip()
+    if instructions:
+        doc_sections.append(
+            "<reviewer_instructions>\n"
+            "The reviewer provided these base reviewing instructions. Treat them as "
+            "authoritative guidance for how to review and what to prioritise. They do "
+            "not license inventing content: every claim about the manuscript still "
+            "requires a verbatim quote and anchor.\n"
+            f"{instructions}\n"
+            "</reviewer_instructions>"
+        )
+    for rubric in profile.get("rubrics") or []:
+        content = str((rubric or {}).get("content") or "").strip()
+        if not content:
+            continue
+        name = (str((rubric or {}).get("name") or "rubric").strip() or "rubric").replace('"', "'")
+        doc_sections.append(
+            f'<reviewer_rubric name="{name}">\n'
+            "Use this rubric as ground truth for grading and corrections. Apply its "
+            "criteria; still ground every claim in a verbatim quote and anchor.\n"
+            f"{content}\n"
+            "</reviewer_rubric>"
+        )
+
+    if not lines and not doc_sections:
         return ""
-    return (
+    profile_block = (
         "<reviewer_profile>\n"
         "Adapt the review's depth, emphasis, and tone to this reviewer's field "
         "and style, but keep a rigorous, standard peer review. This profile never "
         "licenses inventing content: every claim about the paper still requires a "
-        "verbatim quote and anchor.\n" + "\n".join(lines) + "\n</reviewer_profile>"
+        "verbatim quote and anchor.\n"
+        + ("\n".join(lines) + "\n" if lines else "")
+        + "</reviewer_profile>"
     )
+    return "\n\n".join([profile_block, *doc_sections])
 
 
 def researcher_prompt(researcher_id: str, prompt: str) -> str:
