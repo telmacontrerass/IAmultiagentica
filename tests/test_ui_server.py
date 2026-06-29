@@ -436,6 +436,78 @@ def test_chat_uses_selected_project_sources_and_workspace(tmp_path, monkeypatch)
     assert "rate of change of velocity" not in stored["messages"][-2]["content"]
 
 
+def test_paper_review_chat_builds_review_context_from_pdf_reader(tmp_path, monkeypatch):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: sessions)
+    project_root = tmp_path / "projects"
+    project_root.mkdir()
+    monkeypatch.setattr(ui_projects, "projects_root", lambda: project_root)
+    project = ui_projects.create_project("Paper", kind="paper_review")["project"]
+    extracted_texts = iter(
+        [
+            "Indexed cached PDF text.",
+            "Review-time extracted PDF manuscript with methods and results.",
+        ]
+    )
+    read_calls: list[tuple[str, str]] = []
+
+    def fake_read_document(cwd: str, path: str) -> str:
+        read_calls.append((cwd, path))
+        return next(extracted_texts)
+
+    monkeypatch.setattr(ui_projects, "read_document", fake_read_document)
+    added = ui_projects.add_project_source(
+        project["id"],
+        {
+            "name": "paper.pdf",
+            "content_base64": base64.b64encode(b"%PDF fake paper").decode(),
+        },
+    )
+    state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path)))
+    monkeypatch.setattr(
+        state,
+        "list_installed_models",
+        lambda: ([{"name": "qwen2.5-coder:1.5b"}], None),
+    )
+    captured = {}
+
+    def fake_prepare_session(*args, **kwargs):
+        return None, ModelSelection(
+            model_id="qwen2.5-coder-1.5b",
+            ollama_tag="qwen2.5-coder:1.5b",
+            display_name="Qwen2.5 Coder 1.5B",
+        )
+
+    def fake_run_multi_agent(_prompt, _selection, *, config, review_context, **_kwargs):
+        captured["flow"] = config.multiagent_flow
+        captured["source_name"] = review_context.manuscript_source_name
+        captured["anchored_text"] = review_context.index.anchored_text
+        return "paper review"
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+    monkeypatch.setattr("ci2lab.ui.server.run_multi_agent", fake_run_multi_agent)
+
+    payload = _chat(
+        state,
+        {
+            "message": "corrige este paper con la rubrica",
+            "model": "qwen2.5-coder:1.5b",
+            "project_id": project["id"],
+            "mode": "paper_review",
+        },
+    )
+
+    assert added["ok"] is True
+    assert payload["ok"] is True
+    assert captured["flow"] == "paper_review"
+    assert captured["source_name"] == "paper.pdf"
+    assert "Review-time extracted PDF manuscript" in captured["anchored_text"]
+    assert "Indexed cached PDF text" not in captured["anchored_text"]
+    assert len(read_calls) == 2
+    assert read_calls[1][1] == added["source"]["path"]
+
+
 def test_chat_rejects_session_from_another_project(tmp_path, monkeypatch):
     sessions = tmp_path / "sessions"
     sessions.mkdir()

@@ -106,7 +106,8 @@ Show the detected characteristics of your machine.
 ```powershell
 ci2lab hardware --json
 ```
-Show the detected hardware as JSON.
+Show the de
+tected hardware as JSON.
 
 ```powershell
 ci2lab models recommend
