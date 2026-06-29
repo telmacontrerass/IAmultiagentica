@@ -1402,9 +1402,9 @@ def _ansi_art() -> str:
 def _read_key() -> str:
     """Read a single normalized key press (``up``/``down``/``enter``/``escape``/``q``)."""
     if os.name == "nt":
-        import msvcrt
+        import importlib
 
-        win_msvcrt: Any = msvcrt
+        win_msvcrt: Any = importlib.import_module("msvcrt")
         key = win_msvcrt.getwch()
         if key in ("\x00", "\xe0"):
             key = win_msvcrt.getwch()
