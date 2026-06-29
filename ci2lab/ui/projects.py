@@ -635,25 +635,42 @@ def project_manuscript_text(project_id: str) -> tuple[str, str]:
         return "", ""
     project = get_project(project_id)
     chosen_id = (project or {}).get("manuscript_source_id") or ""
+
+    def source_text(row: sqlite3.Row) -> tuple[str, str]:
+        name = str(row["name"] or "")
+        relative_path = str(row["relative_path"] or "")
+        if Path(name).suffix.lower() == ".pdf" and relative_path:
+            # Paper-review projects currently receive manuscripts as PDFs. Always
+            # run them through the document reader at review time so the peer
+            # review works on extracted manuscript text, not stale cached content.
+            extracted = read_document(str(path), relative_path)
+            if extracted.startswith("Error:"):
+                return "", name
+            return extracted, name
+        return str(row["content"] or ""), name
+
     with _database(path / "project.sqlite3") as db:
         _ensure_source_ownership(db, project_id)
         if chosen_id:
             row = db.execute(
-                "SELECT name, content FROM sources WHERE id = ? AND project_id = ?",
+                """
+                SELECT name, relative_path, content
+                FROM sources WHERE id = ? AND project_id = ?
+                """,
                 (chosen_id, project_id),
             ).fetchone()
             if row is not None:
-                return str(row["content"] or ""), str(row["name"] or "")
+                return source_text(row)
         row = db.execute(
             """
-            SELECT name, content FROM sources
+            SELECT name, relative_path, content FROM sources
             WHERE project_id = ? ORDER BY size DESC LIMIT 1
             """,
             (project_id,),
         ).fetchone()
     if row is None:
         return "", ""
-    return str(row["content"] or ""), str(row["name"] or "")
+    return source_text(row)
 
 
 def project_prompt(project_id: str, prompt: str) -> str:

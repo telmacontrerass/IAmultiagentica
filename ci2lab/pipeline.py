@@ -77,7 +77,7 @@ def prepare_session(
     _ = user_prompt
 
     profile = scan_hardware()
-    tag = force_model or os.environ.get("CI2LAB_MODEL", DEFAULT_MODEL)
+    tag: str = force_model or os.environ.get("CI2LAB_MODEL") or DEFAULT_MODEL
     selection = build_model_selection(
         tag,
         tool_mode_override=tool_mode_override,

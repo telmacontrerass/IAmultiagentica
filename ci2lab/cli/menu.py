@@ -13,7 +13,7 @@ import webbrowser
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ci2lab.config import Ci2LabConfig
 from ci2lab.console import console
@@ -1177,7 +1177,7 @@ def _select_from_menu_app(
             "selected": "bold ansiyellow",
         }
     )
-    app = Application(
+    app = cast(Any, Application)(
         layout=Layout(Window(content=control, always_hide_cursor=True)),
         key_bindings=bindings,
         full_screen=True,

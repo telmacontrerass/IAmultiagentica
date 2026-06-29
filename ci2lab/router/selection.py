@@ -74,9 +74,11 @@ def build_model_selection(
     context_length = _resolve_context_length(spec, profile)
     provider: Literal["ollama", "openai"] = "ollama" if backend == "ollama" else "openai"
 
-    resolved_backend = backend_url or os.environ.get(
-        "CI2LAB_BACKEND_URL",
-        os.environ.get("CI2LAB_OLLAMA_URL", "http://localhost:11434/v1"),
+    resolved_backend: str = (
+        backend_url
+        or os.environ.get("CI2LAB_BACKEND_URL")
+        or os.environ.get("CI2LAB_OLLAMA_URL")
+        or "http://localhost:11434/v1"
     )
 
     if spec is not None:

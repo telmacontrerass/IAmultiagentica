@@ -175,7 +175,7 @@ def _expand_home(pattern: str) -> str:
     if pattern.startswith("~/") or pattern == "~":
         return str(Path.home()).replace("\\", "/") + pattern[1:]
     if pattern.startswith("$HOME/") or pattern == "$HOME":
-        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or ""
         home = home.replace("\\", "/")
         return home + pattern[5:] if pattern.startswith("$HOME") else pattern
     return pattern
