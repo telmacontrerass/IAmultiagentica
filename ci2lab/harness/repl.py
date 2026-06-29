@@ -556,6 +556,56 @@ def run_repl(
             history = data.get("messages")
 
 
+def _latex_to_plaintext(text: str) -> str:
+    """Best-effort conversion of model LaTeX to plain Unicode/ASCII.
+
+    phi4 often emits LaTeX (``\\text{}``, ``\\frac{}``, ``\\(...\\)``,
+    ``^\\circ``, ``\\,``) even when told not to; a plain Markdown viewer shows
+    those as garbled fragments (``C8H18`` -> ``8{18}``, ``°C`` -> ``^``). This
+    strips the common commands deterministically so the saved ``.md`` is clean
+    regardless of whether the model followed the no-LaTeX instruction. It is not
+    a full LaTeX parser — it targets the constructs this skill actually produces.
+    """
+    import re
+
+    s = text
+    # Fractions first, before braces are stripped: \frac{a}{b} -> (a)/(b)
+    s = re.sub(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"(\1)/(\2)", s)
+    # Symbol commands -> Unicode
+    symbols = {
+        r"\^\\circ": "°", r"\\circ": "°", r"\\degree": "°",
+        r"\\times": "×", r"\\cdot": "·", r"\\div": "÷",
+        r"\\rightarrow": "→", r"\\to": "→", r"\\Rightarrow": "⇒",
+        r"\\leq": "≤", r"\\geq": "≥", r"\\approx": "≈", r"\\neq": "≠",
+        r"\\pm": "±", r"\\Delta": "Δ", r"\\Sigma": "Σ", r"\\sum": "Σ",
+    }
+    for pat, rep in symbols.items():
+        s = re.sub(pat, rep, s)
+    # \text{...}, \mathrm{...}, etc. -> their contents
+    s = re.sub(
+        r"\\(?:text|mathrm|mathbf|mathit|mathsf|operatorname)\s*\{([^{}]*)\}",
+        r"\1",
+        s,
+    )
+    # Spacing commands (\, \; \: \! and backslash-space) -> nothing.
+    # These are the stray "random commas" once the backslash is dropped.
+    s = re.sub(r"\\[,;:!\s]", "", s)
+    # Subscripts / superscripts
+    s = re.sub(r"_\{([^{}]*)\}", r"\1", s)       # _{18} -> 18
+    s = re.sub(r"\^\{([^{}]*)\}", r"^\1", s)     # ^{2}  -> ^2
+    s = re.sub(r"_(\d)", r"\1", s)               # _2    -> 2 (digits only, so
+    #                                              snake_case words are untouched)
+    # Math delimiters \( \) \[ \] and $...$
+    s = re.sub(r"\\[()\[\]]", "", s)
+    s = s.replace("$", "")
+    # Drop any leftover backslash commands (e.g. \left, \right, \quad)
+    s = re.sub(r"\\[a-zA-Z]+", "", s)
+    # Remove now-orphaned braces and collapse runs of spaces
+    s = s.replace("{", "").replace("}", "")
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    return s
+
+
 def _export_review_markdown(
     final_text: str,
     cwd: str,
@@ -584,7 +634,7 @@ def _export_review_markdown(
         out_dir = Path(cwd) / "reviews"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{stem}_review_{ts}.md"
-        out_path.write_text(header + final_text, encoding="utf-8")
+        out_path.write_text(header + _latex_to_plaintext(final_text), encoding="utf-8")
         console.print(f"[dim]Review exported: {out_path}[/dim]")
     except OSError as exc:
         console.print(f"[yellow]Could not export review markdown: {exc}[/yellow]")
