@@ -36,6 +36,22 @@ from ci2lab.ui.server_parts.uploads import DOCUMENT_UPLOAD_SUFFIXES, SUPPORTED_U
 # matches verbatim, so the group labels must stay consistent across both files.
 UI_ACTIONS: list[dict[str, str]] = [
     {
+        "id": "paper_review",
+        "label": "Peer review",
+        "tool": "read_document",
+        "group": "Review",
+        "prompt": (
+            "Act as a rigorous scientific peer reviewer for the attached manuscript. "
+            "Read it in full, then return a structured review: summary, strengths, "
+            "weaknesses, section-by-section comments, and a recommendation. Ground "
+            "every claim in a verbatim quote plus its location in the manuscript — "
+            "never invent content. If a reviewer profile is provided, review in that "
+            "researcher's field and style and apply their instructions and rubric as "
+            "ground truth; if none is provided, give a careful generic review and say "
+            "so."
+        ),
+    },
+    {
         "id": "read_document",
         "label": "Summarize attachment",
         "tool": "read_document",

@@ -14,8 +14,11 @@ const state = {
   projects: [],
   currentProject: null,
   projectSources: [],
+  newProjectIcon: "▱",
   researchers: [],
   currentResearcher: null,
+  researcherMenuOpen: false,
+  rubricsDraft: [],
   allSessions: [],
   lastSystemPayload: null,
   lastToolsPayload: null,
@@ -831,6 +834,7 @@ function translateUi() {
   if (state.lastSystemPayload) renderSystem(state.lastSystemPayload);
   renderModels();
   renderProjects();
+  renderResearchers();
   renderSessions(state.allSessions);
   renderTokenInfo();
   if (state.lastToolsPayload) renderTools(state.lastToolsPayload);
@@ -857,6 +861,9 @@ const els = {
   modelsList: document.querySelector("#modelsList"),
   sessionsList: document.querySelector("#sessionsList"),
   messages: document.querySelector("#messages"),
+  reviewModeBar: document.querySelector("#reviewModeBar"),
+  reviewModeTitle: document.querySelector("#reviewModeTitle"),
+  reviewModeDetail: document.querySelector("#reviewModeDetail"),
   fileInput: document.querySelector("#fileInput"),
   attachmentsList: document.querySelector("#attachmentsList"),
   chatForm: document.querySelector("#chatForm"),
@@ -915,8 +922,9 @@ const els = {
   paperVenueInput: document.querySelector("#paperVenueInput"),
   paperTypeInput: document.querySelector("#paperTypeInput"),
   projectSelect: document.querySelector("#projectSelect"),
-  researcherSelect: document.querySelector("#researcherSelect"),
-  openResearcherProfile: document.querySelector("#openResearcherProfile"),
+  researcherSwitcher: document.querySelector("#researcherSwitcher"),
+  researcherCard: document.querySelector("#researcherCard"),
+  researcherDropdown: document.querySelector("#researcherDropdown"),
   researcherView: document.querySelector("#researcherView"),
   researcherForm: document.querySelector("#researcherForm"),
   researcherFormTitle: document.querySelector("#researcherFormTitle"),
@@ -927,6 +935,13 @@ const els = {
   researcherStyle: document.querySelector("#researcherStyle"),
   researcherGuidelines: document.querySelector("#researcherGuidelines"),
   researcherLensGrid: document.querySelector("#researcherLensGrid"),
+  instructionsUpload: document.querySelector("#instructionsUpload"),
+  instructionsEditor: document.querySelector("#instructionsEditor"),
+  instructionsText: document.querySelector("#instructionsText"),
+  instructionsMeta: document.querySelector("#instructionsMeta"),
+  clearInstructions: document.querySelector("#clearInstructions"),
+  rubricsUpload: document.querySelector("#rubricsUpload"),
+  rubricsList: document.querySelector("#rubricsList"),
   deleteResearcher: document.querySelector("#deleteResearcher"),
   cancelResearcher: document.querySelector("#cancelResearcher"),
   projectContextBar: document.querySelector("#projectContextBar"),
@@ -938,6 +953,12 @@ const els = {
   openProjects: document.querySelector("#openProjects"),
   showProjectCreate: document.querySelector("#showProjectCreate"),
   cancelProjectCreate: document.querySelector("#cancelProjectCreate"),
+  projectIconPicker: document.querySelector("#projectIconPicker"),
+  projectIconValue: document.querySelector("#projectIconValue"),
+  projectIconGrid: document.querySelector("#projectIconGrid"),
+  projectDetailIconPicker: document.querySelector("#projectDetailIconPicker"),
+  projectDetailIconValue: document.querySelector("#projectDetailIconValue"),
+  projectDetailIconGrid: document.querySelector("#projectDetailIconGrid"),
   backToProjects: document.querySelector("#backToProjects"),
   projectDetailName: document.querySelector("#projectDetailName"),
   projectDetailMeta: document.querySelector("#projectDetailMeta"),
@@ -1557,6 +1578,15 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error(`Could not read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
 async function uploadSelectedFiles(event) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
@@ -1784,6 +1814,65 @@ function currentProjectInfo() {
   return state.projects.find((project) => project.id === state.currentProject) || null;
 }
 
+// Single-colour (text-presentation) glyphs for project icons. Keep in sync with
+// PROJECT_ICON_CHOICES in ci2lab/ui/projects.py.
+const DEFAULT_PROJECT_ICON = "▱";
+const PROJECT_ICONS = [
+  "▱", "◆", "●", "▲", "■", "◐", "◈", "▣", "⬢", "★", "✦", "✶",
+  "✷", "✸", "✺", "❖", "❂", "✪", "✿", "❀", "❁", "✚", "✜", "❉",
+];
+
+function projectIcon(project) {
+  const icon = project && project.icon;
+  return icon && PROJECT_ICONS.includes(icon) ? icon : DEFAULT_PROJECT_ICON;
+}
+
+function buildIconGrid(container, current) {
+  if (!container) return;
+  container.innerHTML = PROJECT_ICONS.map((glyph) => `
+    <button
+      type="button"
+      class="icon-option${glyph === current ? " is-selected" : ""}"
+      data-icon="${escapeHtml(glyph)}"
+      role="option"
+      aria-selected="${glyph === current ? "true" : "false"}"
+    ><span class="project-glyph">${escapeHtml(glyph)}</span></button>
+  `).join("");
+}
+
+function renderNewProjectIcon() {
+  const icon = state.newProjectIcon || DEFAULT_PROJECT_ICON;
+  if (els.projectIconValue) els.projectIconValue.textContent = icon;
+  buildIconGrid(els.projectIconGrid, icon);
+}
+
+// Show a picker's glyph grid as a <body>-level fixed popover. Portaling to the
+// body is what makes it reliable: ancestors with transform/filter/overflow
+// (the orbit heading, glass panels) otherwise trap or clip a position:fixed
+// child, so the popover could land off-screen or be invisible.
+function openIconPopover(picker, grid) {
+  if (!picker || !grid) return;
+  const summary = picker.querySelector("summary");
+  if (!summary) return;
+  if (grid.parentElement !== document.body) document.body.appendChild(grid);
+  grid.classList.add("is-visible");
+  const rect = summary.getBoundingClientRect();
+  const width = grid.offsetWidth || 300;
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+  grid.style.top = `${Math.round(rect.bottom + 6)}px`;
+  grid.style.left = `${Math.round(left)}px`;
+}
+
+function hideIconPopover(grid) {
+  if (grid) grid.classList.remove("is-visible");
+}
+
+function iconGridFor(picker) {
+  if (picker === els.projectIconPicker) return els.projectIconGrid;
+  if (picker === els.projectDetailIconPicker) return els.projectDetailIconGrid;
+  return null;
+}
+
 function renderProjects() {
   if (!els.projectsList) return;
   if (!state.projects.length) {
@@ -1800,7 +1889,7 @@ function renderProjects() {
         data-open-project="${escapeHtml(project.id)}"
         tabindex="0"
       >
-        <div class="project-card-folder" aria-hidden="true">▱</div>
+        <div class="project-card-folder" aria-hidden="true">${escapeHtml(projectIcon(project))}</div>
         <div class="project-card-copy">
           <h4>${escapeHtml(project.name)}</h4>
           <p>${escapeHtml(uiText(`${project.source_count} source${project.source_count === 1 ? "" : "s"} · ${project.source_size_label}`))}</p>
@@ -1879,6 +1968,9 @@ function renderProjectDetail() {
   }
   const conversations = projectSessions(project.id);
   els.projectDetailName.textContent = project.name;
+  const detailIcon = projectIcon(project);
+  if (els.projectDetailIconValue) els.projectDetailIconValue.textContent = detailIcon;
+  buildIconGrid(els.projectDetailIconGrid, detailIcon);
   els.projectDetailMeta.textContent = uiText(
     `${project.source_count} source${project.source_count === 1 ? "" : "s"}`
     + ` · ${conversations.length} conversation${conversations.length === 1 ? "" : "s"}`
@@ -1981,7 +2073,12 @@ async function createProject(event) {
   const name = els.projectNameInput?.value.trim();
   if (!name) return;
   const kind = els.projectKindInput?.value || "knowledge";
-  const body = { name, kind, owner_id: state.currentResearcher || null };
+  const body = {
+    name,
+    kind,
+    icon: state.newProjectIcon || DEFAULT_PROJECT_ICON,
+    owner_id: state.currentResearcher || null,
+  };
   if (kind === "paper_review") {
     body.paper_title = els.paperTitleInput?.value.trim() || "";
     body.field = els.paperFieldInput?.value.trim() || "";
@@ -2003,6 +2100,8 @@ async function createProject(event) {
   if (els.paperVenueInput) els.paperVenueInput.value = "";
   if (els.projectKindInput) els.projectKindInput.value = "knowledge";
   if (els.paperMetaFields) els.paperMetaFields.hidden = true;
+  state.newProjectIcon = DEFAULT_PROJECT_ICON;
+  renderNewProjectIcon();
   els.projectCreateForm.hidden = true;
   await refreshProjects();
   await openProjectDetail(result.project.id);
@@ -2027,16 +2126,130 @@ function currentResearcherInfo() {
   return state.researchers.find((item) => item.id === state.currentResearcher) || null;
 }
 
+const RESEARCHER_ICONS = {
+  chevron:
+    '<svg class="researcher-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"'
+    + ' aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  check:
+    '<svg class="researcher-check" width="18" height="18" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"'
+    + ' aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>',
+  user:
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+  arrow:
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  plus:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M12 5v14M5 12h14"/></svg>',
+};
+
+function getInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "—";
+  return parts.map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+}
+
+function setResearcherMenuOpen(open) {
+  state.researcherMenuOpen = Boolean(open);
+  if (els.researcherCard) {
+    els.researcherCard.classList.toggle("is-open", state.researcherMenuOpen);
+  }
+  if (els.researcherDropdown) {
+    els.researcherDropdown.hidden = !state.researcherMenuOpen;
+  }
+  const trigger = els.researcherSwitcher?.querySelector(".researcher-trigger");
+  trigger?.setAttribute("aria-expanded", state.researcherMenuOpen ? "true" : "false");
+}
+
+function _researcherOptionHtml({ id, initials, title, subtitle, selected, muted }) {
+  return `
+    <button
+      type="button"
+      class="researcher-option${selected ? " is-selected" : ""}"
+      role="option"
+      aria-selected="${selected ? "true" : "false"}"
+      data-researcher-option="${escapeHtml(id)}"
+    >
+      <span class="researcher-avatar${muted ? " is-muted" : ""}">${escapeHtml(initials)}</span>
+      <span class="researcher-option-copy">
+        <span class="researcher-option-title">${escapeHtml(title)}</span>
+        <span class="researcher-option-subtitle">${escapeHtml(subtitle)}</span>
+      </span>
+      ${selected ? RESEARCHER_ICONS.check : ""}
+    </button>
+  `;
+}
+
 function renderResearchers() {
-  if (!els.researcherSelect) return;
-  els.researcherSelect.innerHTML = [
-    `<option value="">${escapeHtml(uiText("No researcher"))}</option>`,
-    ...state.researchers.map((researcher) => (
-      `<option value="${escapeHtml(researcher.id)}">${escapeHtml(researcher.name)}</option>`
-    )),
-    `<option value="__new__">${escapeHtml(uiText("+ New researcher…"))}</option>`,
-  ].join("");
-  els.researcherSelect.value = currentResearcherInfo() ? state.currentResearcher : "";
+  if (!els.researcherCard || !els.researcherDropdown) return;
+  const active = currentResearcherInfo();
+  const initials = active ? getInitials(active.name) : "—";
+
+  els.researcherCard.innerHTML = `
+    <button
+      type="button"
+      class="researcher-trigger"
+      data-researcher-action="toggle"
+      aria-haspopup="listbox"
+      aria-expanded="${state.researcherMenuOpen ? "true" : "false"}"
+    >
+      <span class="researcher-main-row">
+        <span class="researcher-avatar${active ? "" : " is-muted"}">${escapeHtml(initials)}</span>
+        <span class="researcher-copy">
+          <span class="researcher-name">${escapeHtml(active ? active.name : uiText("No researcher"))}</span>
+          <span class="researcher-subtitle">${escapeHtml(uiText(active ? "Active researcher" : "Select or create one"))}</span>
+        </span>
+        ${RESEARCHER_ICONS.chevron}
+      </span>
+    </button>
+    ${active ? `
+      <button type="button" class="researcher-profile-row" data-researcher-action="profile">
+        ${RESEARCHER_ICONS.user}
+        <span>${escapeHtml(uiText("Profile"))}</span>
+        ${RESEARCHER_ICONS.arrow}
+      </button>
+    ` : ""}
+  `;
+  els.researcherCard.classList.toggle("is-open", Boolean(state.researcherMenuOpen));
+
+  const options = [
+    _researcherOptionHtml({
+      id: "",
+      initials: "—",
+      title: uiText("No researcher"),
+      subtitle: uiText("Work without a profile"),
+      selected: !active,
+      muted: true,
+    }),
+    ...state.researchers.map((researcher) => {
+      const selected = Boolean(active) && active.id === researcher.id;
+      return _researcherOptionHtml({
+        id: researcher.id,
+        initials: getInitials(researcher.name),
+        title: researcher.name,
+        subtitle: uiText(selected ? "Active researcher" : "Researcher profile"),
+        selected,
+        muted: false,
+      });
+    }),
+  ];
+
+  els.researcherDropdown.innerHTML = `
+    ${options.join("")}
+    <div class="researcher-divider"></div>
+    <button type="button" class="researcher-option researcher-new-action" data-researcher-action="new">
+      <span class="researcher-new-icon">${RESEARCHER_ICONS.plus}</span>
+      <span>${escapeHtml(uiText("New researcher…"))}</span>
+    </button>
+  `;
+  els.researcherDropdown.hidden = !state.researcherMenuOpen;
+  renderReviewMode();
 }
 
 async function refreshResearchers() {
@@ -2056,6 +2269,116 @@ const LENS_PREF_KEYS = [
   ["adversarial", "Reviewer 2"],
   ["format", "Formatting"],
 ];
+
+// Reviewing-document editors (instructions.md + rubrics). These mirror the
+// backend limits in ci2lab/ui/researchers.py so the UI never offers to store
+// more than the registry keeps.
+const MAX_DOC_CHARS = 50000;
+const MAX_RUBRICS = 12;
+
+function _docCounts(text) {
+  text = String(text || "");
+  return { lines: text ? text.split("\n").length : 0, chars: text.length };
+}
+
+// Fill a doc editor's line-number gutter and keep it scroll-aligned with the
+// textarea. Called on input/scroll and after (re)rendering an editor.
+function refreshDocGutter(editorEl) {
+  if (!editorEl) return;
+  const gutter = editorEl.querySelector(".doc-editor-gutter");
+  const area = editorEl.querySelector(".doc-editor-area");
+  if (!gutter || !area) return;
+  const lines = area.value ? area.value.split("\n").length : 1;
+  let text = "";
+  for (let i = 1; i <= lines; i += 1) text += `${i}\n`;
+  gutter.textContent = text;
+  gutter.scrollTop = area.scrollTop;
+}
+
+function _bindDocEditorScroll(editorEl) {
+  const gutter = editorEl?.querySelector(".doc-editor-gutter");
+  const area = editorEl?.querySelector(".doc-editor-area");
+  if (!gutter || !area) return;
+  area.addEventListener("scroll", () => {
+    gutter.scrollTop = area.scrollTop;
+  });
+}
+
+function updateInstructionsMeta() {
+  if (!els.instructionsMeta || !els.instructionsText) return;
+  const { lines, chars } = _docCounts(els.instructionsText.value);
+  els.instructionsMeta.textContent = chars
+    ? `${lines} ${uiText("lines")} · ${chars} ${uiText("chars")}`
+    : uiText("Empty");
+}
+
+function renderRubrics() {
+  if (!els.rubricsList) return;
+  const rubrics = state.rubricsDraft || [];
+  if (!rubrics.length) {
+    els.rubricsList.innerHTML =
+      `<p class="rubrics-empty">${escapeHtml(uiText("No rubrics yet. Upload the rubric(s) the model should grade with."))}</p>`;
+    return;
+  }
+  els.rubricsList.innerHTML = rubrics.map((rubric, index) => {
+    const { lines } = _docCounts(rubric.content);
+    const open = Boolean(rubric.open);
+    return `
+      <article class="rubric-card${open ? " is-open" : ""}" data-rubric-index="${index}">
+        <div class="rubric-card-head">
+          <button type="button" class="rubric-toggle" data-rubric-action="toggle" aria-expanded="${open ? "true" : "false"}">
+            <span class="rubric-caret" aria-hidden="true">▸</span>
+            <span class="rubric-name" data-no-translate>${escapeHtml(rubric.name || "rubric")}</span>
+          </button>
+          <span class="rubric-meta">${lines} ${escapeHtml(uiText("lines"))}</span>
+          <button type="button" class="rubric-remove" data-rubric-action="remove" aria-label="${escapeHtml(uiText("Remove rubric"))}" title="${escapeHtml(uiText("Remove rubric"))}">✕</button>
+        </div>
+        <div class="doc-editor rubric-editor"${open ? "" : " hidden"}>
+          <div class="doc-editor-gutter" aria-hidden="true">1</div>
+          <textarea class="doc-editor-area" spellcheck="false" wrap="off" data-no-translate data-rubric-text="${index}">${escapeHtml(rubric.content)}</textarea>
+        </div>
+      </article>`;
+  }).join("");
+  els.rubricsList.querySelectorAll(".rubric-card.is-open .doc-editor").forEach((editor) => {
+    refreshDocGutter(editor);
+    _bindDocEditorScroll(editor);
+  });
+}
+
+async function uploadInstructions(event) {
+  const file = (event.target.files || [])[0];
+  if (!file) return;
+  try {
+    const text = await readFileAsText(file);
+    if (els.instructionsText) {
+      els.instructionsText.value = text.slice(0, MAX_DOC_CHARS);
+      updateInstructionsMeta();
+      refreshDocGutter(els.instructionsEditor);
+    }
+  } catch (error) {
+    addMessage("assistant", error.message || uiText("Could not read the file."), "error");
+  }
+  event.target.value = "";
+}
+
+async function uploadRubrics(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  for (const file of files) {
+    if ((state.rubricsDraft || []).length >= MAX_RUBRICS) {
+      addMessage("assistant", uiText("You can upload up to 12 rubrics."), "error");
+      break;
+    }
+    try {
+      const text = await readFileAsText(file);
+      state.rubricsDraft.push({ name: file.name, content: text.slice(0, MAX_DOC_CHARS), open: false });
+    } catch (error) {
+      addMessage("assistant", error.message || `Could not read ${file.name}`, "error");
+    }
+  }
+  renderRubrics();
+  event.target.value = "";
+}
 
 function renderLensPrefGrid(prefs) {
   if (!els.researcherLensGrid) return;
@@ -2085,6 +2408,15 @@ function openResearcherProfile({ create = false } = {}) {
   if (els.researcherStyle) els.researcherStyle.value = profile?.reviewing_style || "";
   if (els.researcherGuidelines) els.researcherGuidelines.value = (profile?.preferred_guidelines || []).join(", ");
   renderLensPrefGrid(profile?.lens_preferences);
+  if (els.instructionsText) els.instructionsText.value = profile?.instructions || "";
+  state.rubricsDraft = (profile?.rubrics || []).map((rubric) => ({
+    name: rubric.name || "rubric",
+    content: rubric.content || "",
+    open: false,
+  }));
+  updateInstructionsMeta();
+  refreshDocGutter(els.instructionsEditor);
+  renderRubrics();
   if (els.deleteResearcher) els.deleteResearcher.hidden = !profile;
   renderResearchers();
   switchView("researcherView");
@@ -2103,6 +2435,11 @@ function _collectResearcherForm() {
     reviewing_style: els.researcherStyle?.value.trim() || "",
     preferred_guidelines: els.researcherGuidelines?.value.trim() || "",
     lens_preferences,
+    instructions: els.instructionsText?.value || "",
+    rubrics: (state.rubricsDraft || []).map((rubric) => ({
+      name: rubric.name || "rubric",
+      content: rubric.content || "",
+    })),
   };
 }
 
@@ -2266,6 +2603,7 @@ function renderTools(payload) {
     <button
       type="button"
       class="action-chip"
+      data-action-id="${escapeHtml(action.id)}"
       data-action-prompt="${escapeHtml(action.prompt)}"
       title="${escapeHtml(action.tool)}"
     >
@@ -2346,6 +2684,39 @@ function applyActionPrompt(prompt) {
     els.messageInput.selectionStart = els.messageInput.value.length;
     els.messageInput.selectionEnd = els.messageInput.value.length;
   }, 60);
+}
+
+// Tailor the peer-review quick prompt to whether a researcher is selected. The
+// server already injects the full reviewer profile when a researcher is active;
+// this just makes the intent explicit in the prompt the user sees.
+function buildReviewPrompt(base) {
+  const researcher = currentResearcherInfo();
+  if (researcher) {
+    const fields = (researcher.fields || []).join(", ");
+    const asLine = fields
+      ? `Review as ${researcher.name} (${fields}).`
+      : `Review as ${researcher.name}.`;
+    return `${base}\n\n${asLine} Follow this researcher's reviewing instructions and rubric.`;
+  }
+  return `${base}\n\nNo researcher is selected, so this is a generic (non-personalised) review. Select a researcher to review papers as them.`;
+}
+
+// Keep the chat's review-mode banner in sync with the selected researcher so the
+// user always knows whether the peer review is personalised.
+function renderReviewMode() {
+  if (!els.reviewModeBar) return;
+  const researcher = currentResearcherInfo();
+  els.reviewModeBar.dataset.active = researcher ? "true" : "false";
+  if (els.reviewModeTitle) {
+    els.reviewModeTitle.textContent = researcher
+      ? uiText("Personalised review on")
+      : uiText("Generic review");
+  }
+  if (els.reviewModeDetail) {
+    els.reviewModeDetail.textContent = researcher
+      ? `${uiText("Peer-reviews papers as")} ${researcher.name} — ${uiText("using their profile, instructions and rubric.")}`
+      : uiText("Select a researcher to peer-review papers as them, with their instructions and rubric.");
+  }
 }
 
 function renderOllamaLocation(health) {
@@ -2734,20 +3105,83 @@ function bindEvents() {
   els.projectSelect?.addEventListener("change", async () => {
     await selectProject(els.projectSelect.value, { startChat: true });
   });
-  els.researcherSelect?.addEventListener("change", async () => {
-    const value = els.researcherSelect.value;
-    if (value === "__new__") {
+  els.researcherSwitcher?.addEventListener("click", async (event) => {
+    const target = event.target.closest("[data-researcher-action], [data-researcher-option]");
+    if (!target || !els.researcherSwitcher.contains(target)) return;
+    const action = target.dataset.researcherAction;
+    if (action === "toggle") {
+      setResearcherMenuOpen(!state.researcherMenuOpen);
+      return;
+    }
+    if (action === "profile") {
+      setResearcherMenuOpen(false);
+      openResearcherProfile({ create: false });
+      return;
+    }
+    if (action === "new") {
+      setResearcherMenuOpen(false);
       openResearcherProfile({ create: true });
       return;
     }
-    await selectResearcher(value);
+    if (target.hasAttribute("data-researcher-option")) {
+      setResearcherMenuOpen(false);
+      await selectResearcher(target.getAttribute("data-researcher-option"));
+    }
   });
-  els.openResearcherProfile?.addEventListener("click", () => {
-    openResearcherProfile({ create: !state.currentResearcher });
+  document.addEventListener("pointerdown", (event) => {
+    if (!state.researcherMenuOpen) return;
+    if (els.researcherSwitcher && !els.researcherSwitcher.contains(event.target)) {
+      setResearcherMenuOpen(false);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.researcherMenuOpen) {
+      setResearcherMenuOpen(false);
+      els.researcherSwitcher?.querySelector(".researcher-trigger")?.focus();
+    }
   });
   els.researcherForm?.addEventListener("submit", saveResearcherProfile);
   els.deleteResearcher?.addEventListener("click", deleteResearcherProfile);
   els.cancelResearcher?.addEventListener("click", () => switchView("homeView"));
+
+  // Reviewing-document editors (instructions.md + rubrics).
+  els.instructionsUpload?.addEventListener("change", uploadInstructions);
+  els.rubricsUpload?.addEventListener("change", uploadRubrics);
+  els.instructionsText?.addEventListener("input", () => {
+    updateInstructionsMeta();
+    refreshDocGutter(els.instructionsEditor);
+  });
+  _bindDocEditorScroll(els.instructionsEditor);
+  els.clearInstructions?.addEventListener("click", () => {
+    if (!els.instructionsText) return;
+    els.instructionsText.value = "";
+    updateInstructionsMeta();
+    refreshDocGutter(els.instructionsEditor);
+    els.instructionsText.focus();
+  });
+  els.rubricsList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-rubric-action]");
+    const card = button?.closest("[data-rubric-index]");
+    if (!button || !card) return;
+    const index = Number(card.dataset.rubricIndex);
+    const rubric = state.rubricsDraft[index];
+    if (!rubric) return;
+    if (button.dataset.rubricAction === "remove") {
+      state.rubricsDraft.splice(index, 1);
+      renderRubrics();
+    } else if (button.dataset.rubricAction === "toggle") {
+      rubric.open = !rubric.open;
+      renderRubrics();
+    }
+  });
+  els.rubricsList?.addEventListener("input", (event) => {
+    const area = event.target.closest("[data-rubric-text]");
+    if (!area) return;
+    const index = Number(area.dataset.rubricText);
+    if (!state.rubricsDraft[index]) return;
+    state.rubricsDraft[index].content = area.value;
+    refreshDocGutter(area.closest(".doc-editor"));
+  });
   els.projectKindInput?.addEventListener("change", () => {
     if (els.paperMetaFields) {
       els.paperMetaFields.hidden = els.projectKindInput.value !== "paper_review";
@@ -2755,12 +3189,55 @@ function bindEvents() {
   });
   els.projectCreateForm?.addEventListener("submit", createProject);
   els.showProjectCreate?.addEventListener("click", () => {
+    state.newProjectIcon = DEFAULT_PROJECT_ICON;
+    renderNewProjectIcon();
     els.projectCreateForm.hidden = false;
     els.projectNameInput.focus();
   });
   els.cancelProjectCreate?.addEventListener("click", () => {
     els.projectCreateForm.hidden = true;
     els.projectNameInput.value = "";
+  });
+  // Project icon pickers (create form + project detail heading).
+  els.projectIconGrid?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-icon]");
+    if (!button) return;
+    state.newProjectIcon = button.dataset.icon;
+    renderNewProjectIcon();
+    if (els.projectIconPicker) els.projectIconPicker.open = false;
+  });
+  els.projectDetailIconGrid?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-icon]");
+    if (!button || !state.currentProject) return;
+    if (els.projectDetailIconPicker) els.projectDetailIconPicker.open = false;
+    const result = await api(`/api/projects/${encodeURIComponent(state.currentProject)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ icon: button.dataset.icon }),
+    });
+    if (!result.ok) {
+      addMessage("assistant", result.error || "Could not update the project icon.", "error");
+      return;
+    }
+    await refreshProjects();
+  });
+  // Show/hide the body-level popover as the <details> opens and closes.
+  els.projectIconPicker?.addEventListener("toggle", () => {
+    if (els.projectIconPicker.open) openIconPopover(els.projectIconPicker, els.projectIconGrid);
+    else hideIconPopover(els.projectIconGrid);
+  });
+  els.projectDetailIconPicker?.addEventListener("toggle", () => {
+    if (els.projectDetailIconPicker.open) openIconPopover(els.projectDetailIconPicker, els.projectDetailIconGrid);
+    else hideIconPopover(els.projectDetailIconGrid);
+  });
+  // Close any open icon picker when clicking outside its trigger AND its
+  // (portaled) grid. Without the grid check, clicking a glyph would close the
+  // picker on pointerdown and the glyph's click would never register.
+  document.addEventListener("pointerdown", (event) => {
+    document.querySelectorAll(".icon-picker[open]").forEach((picker) => {
+      const grid = iconGridFor(picker);
+      const insideGrid = grid && grid.contains(event.target);
+      if (!picker.contains(event.target) && !insideGrid) picker.open = false;
+    });
   });
   els.backToProjects?.addEventListener("click", () => switchView("projectsView"));
   els.newProjectChat?.addEventListener("click", async () => {
@@ -2855,7 +3332,10 @@ function bindEvents() {
   els.quickActions?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action-prompt]");
     if (!button) return;
-    applyActionPrompt(button.dataset.actionPrompt || "");
+    const prompt = button.dataset.actionPrompt || "";
+    applyActionPrompt(
+      button.dataset.actionId === "paper_review" ? buildReviewPrompt(prompt) : prompt,
+    );
   });
   els.tokenCounter?.addEventListener("click", () => {
     renderTokenInfo();
@@ -2929,6 +3409,8 @@ updateTokenDisplay();
 updateAgentsModeState({ persist: false });
 renderChatMessages();
 renderAttachments();
+renderResearchers();
+renderNewProjectIcon();
 bindEvents();
 renderTokenInfo();
 switchView(state.activeView || "homeView");

@@ -33,6 +33,7 @@ PROJECT_SOURCE_LIMIT = 100
 PROJECT_METADATA_COLUMNS: dict[str, str] = {
     "owner_id": "TEXT",
     "kind": "TEXT",
+    "icon": "TEXT",
     "paper_title": "TEXT",
     "field": "TEXT",
     "target_venue": "TEXT",
@@ -44,6 +45,14 @@ PROJECT_METADATA_COLUMNS: dict[str, str] = {
 }
 
 PROJECT_KINDS = frozenset({"knowledge", "paper_review"})
+
+# Per-project icon. Keep this curated single-colour set in sync with the
+# frontend so glyphs inherit the active theme instead of rendering as emoji.
+DEFAULT_PROJECT_ICON = "▱"
+PROJECT_ICON_CHOICES = frozenset({
+    "▱", "◆", "●", "▲", "■", "◐", "◈", "▣", "⬢", "★", "✦", "✶",
+    "✷", "✸", "✺", "❖", "❂", "✪", "✿", "❀", "❁", "✚", "✜", "❉",
+})
 
 
 def projects_root() -> Path:
@@ -166,6 +175,7 @@ def create_project(
     *,
     owner_id: str | None = None,
     kind: str = "knowledge",
+    icon: str | None = None,
     paper_title: str | None = None,
     field: str | None = None,
     target_venue: str | None = None,
@@ -178,6 +188,7 @@ def create_project(
         name: Display name (1-100 characters after whitespace normalisation).
         owner_id: Optional researcher id that owns the project.
         kind: Project kind; one of :data:`PROJECT_KINDS`.
+        icon: Optional curated glyph used by the web UI.
         paper_title: Optional manuscript title for paper-review projects.
         field: Optional research field metadata.
         target_venue: Optional target publication venue.
@@ -204,6 +215,7 @@ def create_project(
     metadata = {
         "owner_id": owner_id,
         "kind": kind,
+        "icon": icon,
         "paper_title": paper_title,
         "field": field,
         "target_venue": target_venue,
@@ -234,6 +246,9 @@ def update_project_metadata(project_id: str, payload: dict[str, Any]) -> dict[st
         value = _clean_meta_value(payload.get(column))
         if column == "kind" and value and value.lower() not in PROJECT_KINDS:
             return {"ok": False, "error": "Unknown project kind."}
+        if column == "icon":
+            assignments[column] = value if value in PROJECT_ICON_CHOICES else ""
+            continue
         assignments[column] = value.lower() if column == "kind" else value
 
     if not assignments:

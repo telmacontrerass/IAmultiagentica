@@ -242,6 +242,7 @@ def handler_factory(state: UIState) -> type[BaseHTTPRequestHandler]:
                     str(payload.get("name") or ""),
                     owner_id=payload.get("owner_id"),
                     kind=str(payload.get("kind") or "knowledge"),
+                    icon=payload.get("icon"),
                     paper_title=payload.get("paper_title"),
                     field=payload.get("field"),
                     target_venue=payload.get("target_venue"),
