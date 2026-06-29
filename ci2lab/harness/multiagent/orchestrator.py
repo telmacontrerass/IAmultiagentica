@@ -1645,11 +1645,7 @@ def _deterministic_scope_review_result(
     required_tools = ("git_status", "git_diff")
     prior_results = prior_results or []
     prior_validation = next(
-        (
-            result
-            for result in reversed(prior_results)
-            if result.role == AgentRole.VALIDATOR
-        ),
+        (result for result in reversed(prior_results) if result.role == AgentRole.VALIDATOR),
         None,
     )
     if prior_validation and validation_failed(prior_validation):
