@@ -11,7 +11,7 @@ from dataclasses import replace
 from ci2lab.harness import AgentConfig, default_selection
 from ci2lab.harness.multiagent import context_budget, manuscript
 from ci2lab.harness.multiagent.orchestrator import run_multi_agent
-from ci2lab.harness.multiagent.paper_review import ReviewContext
+from ci2lab.harness.multiagent.paper_review import ReviewContext, build_revision_plan_prompt
 from ci2lab.harness.multiagent.state import AgentRole, SubAgentResult
 
 MANUSCRIPT = """\
@@ -31,6 +31,18 @@ def _context():
         reviewer_block="",
         manuscript_source_name="paper.txt",
     )
+
+
+def test_revision_planner_prompt_requires_explicit_editorial_rubric_answers():
+    prompt = build_revision_plan_prompt(_context(), [])
+
+    assert "Editorial Rubric Responses" in prompt
+    assert "Are the objectives and the rationale" in prompt
+    assert "replicability and/or reproducibility" in prompt
+    assert "statistical analyses, controls, sampling mechanism" in prompt
+    assert "additional tables or figures" in prompt
+    assert "language editing" in prompt
+    assert "For EACH of the 9 rubric questions" in prompt
 
 
 def _output_for(role: AgentRole, attempt: int) -> str:

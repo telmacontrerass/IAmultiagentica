@@ -1244,7 +1244,11 @@ function renderChatMessages() {
       message.role,
       message.text,
       message.extraClass || "",
-      { duration_ms: message.duration_ms, process_log: message.process_log },
+      {
+        duration_ms: message.duration_ms,
+        process_log: message.process_log,
+        downloads: message.downloads,
+      },
     );
   });
 }
@@ -1261,6 +1265,9 @@ function appendMessageNode(role, text, extraClass = "", meta = {}) {
     body.textContent = extraClass.includes("error") || extraClass.includes("stopped") ? uiText(text) : text;
     node.appendChild(body);
   }
+  if (Array.isArray(meta.downloads) && meta.downloads.length) {
+    appendDownloadActions(node, meta.downloads);
+  }
   if (meta.duration_ms) {
     const detail = document.createElement("small");
     detail.className = "message-meta";
@@ -1273,6 +1280,22 @@ function appendMessageNode(role, text, extraClass = "", meta = {}) {
   els.messages.appendChild(node);
   els.messages.scrollTop = els.messages.scrollHeight;
   return node;
+}
+
+function appendDownloadActions(node, downloads = []) {
+  const valid = downloads.filter((item) => item && item.download_url);
+  if (!valid.length) return;
+  const actions = document.createElement("div");
+  actions.className = "message-actions";
+  valid.forEach((item) => {
+    const link = document.createElement("a");
+    link.className = "download-link";
+    link.href = item.download_url;
+    link.download = item.name || "";
+    link.textContent = uiText(item.label || "Download correction report");
+    actions.appendChild(link);
+  });
+  node.appendChild(actions);
 }
 
 function appendProcessLog(node, entries = [], label = "Process") {
@@ -2823,6 +2846,7 @@ async function sendMessage(event) {
         {
           duration_ms: Date.now() - requestStartedAt,
           process_log: result.process_log,
+          downloads: result.downloads,
         },
       );
     } else if (result.ok) {

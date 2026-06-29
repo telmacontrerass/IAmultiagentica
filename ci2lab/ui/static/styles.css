@@ -918,6 +918,30 @@ textarea:focus {
   border-bottom-left-radius: 4px;
 }
 
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--blue-line);
+  border-radius: 4px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.download-link:hover {
+  border-color: var(--blue);
+}
+
 .message.session-info {
   width: 100%;
   max-width: 100%;

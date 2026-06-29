@@ -50,6 +50,47 @@ REFUSAL_MESSAGE = (
     "paper-review project and run the review again."
 )
 
+EDITORIAL_RUBRIC_QUESTIONS: tuple[str, ...] = (
+    "1. Are the objectives and the rationale of the study clearly stated? "
+    "Provide numbered suggestions to improve clarity.",
+    "2. If applicable, is the application/theory/method/study reported in "
+    "sufficient detail to allow for replicability and/or reproducibility? "
+    "Provide numbered suggestions to improve replicability/reproducibility.",
+    "3. If applicable, are statistical analyses, controls, sampling mechanism, "
+    "and statistical reporting (P-values, CIs, effect sizes) appropriate and "
+    "well described? State whether additional peer review by a statistician is "
+    "needed and provide numbered suggestions.",
+    "4. Could the manuscript benefit from additional tables or figures, or from "
+    "improving or removing existing ones? Provide specific numbered suggestions.",
+    "5. If applicable, are the interpretation of results and study conclusions "
+    "supported by the data? Provide numbered suggestions to improve, tone down, "
+    "or expand interpretations/conclusions.",
+    "6. Have the authors clearly emphasized the strengths of their "
+    "study/theory/methods/argument? Provide numbered suggestions.",
+    "7. Have the authors clearly stated the limitations of their "
+    "study/theory/methods/argument? List limitations to add or emphasize.",
+    "8. Does the manuscript structure, flow, or writing need improving "
+    "(subheadings, shortening, reorganization, or moving details)? Provide "
+    "numbered suggestions.",
+    "9. Could the manuscript benefit from language editing? Answer Yes/No and "
+    "explain what kind of editing is needed.",
+)
+
+
+def _editorial_rubric_block() -> str:
+    """Render the journal-style correction rubric supplied by the user."""
+    return (
+        "<editorial_correction_rubric>\n"
+        "The final feedback MUST explicitly and separately answer every question "
+        "below. For each question, use only manuscript-grounded evidence and "
+        "produce concrete, numbered correction instructions for the author. If a "
+        "question is not applicable, say so and explain why. If the extracted "
+        "paper text is insufficient to answer, mark it as 'manual check needed' "
+        "instead of guessing.\n"
+        + "\n".join(f"- {question}" for question in EDITORIAL_RUBRIC_QUESTIONS)
+        + "\n</editorial_correction_rubric>"
+    )
+
 
 def _meta_block(ctx: ReviewContext) -> str:
     """Render the ``<review_brief>`` block from the context's paper metadata."""
@@ -90,7 +131,7 @@ def _base_prompt(
     part_label: str = "",
 ) -> str:
     """Assemble a reviewer prompt with task, brief, manuscript, and output contract."""
-    parts = [task.strip(), _meta_block(ctx)]
+    parts = [task.strip(), _meta_block(ctx), _editorial_rubric_block()]
     if ctx.reviewer_block:
         parts.append(ctx.reviewer_block)
     if extra:
@@ -112,7 +153,7 @@ def _findings_prompt(ctx: ReviewContext, *, task: str, extra: str = "") -> str:
     own quotes and anchors), so the full manuscript must not be re-injected — that
     is what would overflow the window on a long paper.
     """
-    parts = [task.strip(), _meta_block(ctx)]
+    parts = [task.strip(), _meta_block(ctx), _editorial_rubric_block()]
     if ctx.reviewer_block:
         parts.append(ctx.reviewer_block)
     if extra:
@@ -288,9 +329,18 @@ def build_revision_plan_prompt(ctx: ReviewContext, verified: list[Finding]) -> s
         "8. Manuscript Maturity (engineering_report | early_manuscript | submission_candidate | near_ready)\n"
         "9. Required Changes Before Submission (Priority 1/2/3)\n"
         "10. Verdict (Acceptable now? No/Almost/Yes; recommended action: accept | "
-        "minor revision | major revision | reject | not-a-paper-yet)\n\n"
+        "minor revision | major revision | reject | not-a-paper-yet)\n"
+        "11. Editorial Rubric Responses\n"
+        "    For EACH of the 9 rubric questions, include:\n"
+        "    - Answer: Yes / No / Partly / Not applicable / Manual check needed\n"
+        "    - Evidence: [A#] anchor(s) and verbatim quote(s), or the verified absence terms\n"
+        "    - Detailed correction instructions: numbered, concrete actions the author must take\n"
+        "12. Reviewer Comments to Author (complete, sendable feedback; do not summarize)\n"
+        "13. Confidential Comments to Editor (if any; otherwise write '(none)')\n\n"
         "Adapt tone/emphasis to the reviewer profile and the field/venue, but keep "
-        "the structure stable so reviews are comparable across versions."
+        "the structure stable so reviews are comparable across versions. The chat "
+        "answer is the complete feedback the user sees, so do not abbreviate or "
+        "replace sections with a summary."
     )
     return _findings_prompt(ctx, task=task, extra=findings_block)
 

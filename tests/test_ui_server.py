@@ -483,7 +483,11 @@ def test_paper_review_chat_builds_review_context_from_pdf_reader(tmp_path, monke
         captured["flow"] = config.multiagent_flow
         captured["source_name"] = review_context.manuscript_source_name
         captured["anchored_text"] = review_context.index.anchored_text
-        return "paper review"
+        return (
+            "PAPER REVIEW REPORT\n\n"
+            "11. Editorial Rubric Responses\n"
+            "1. Objectives and rationale: detailed correction feedback."
+        )
 
     monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
     monkeypatch.setattr("ci2lab.ui.server.run_multi_agent", fake_run_multi_agent)
@@ -500,12 +504,19 @@ def test_paper_review_chat_builds_review_context_from_pdf_reader(tmp_path, monke
 
     assert added["ok"] is True
     assert payload["ok"] is True
+    assert "Editorial Rubric Responses" in payload["answer"]
     assert captured["flow"] == "paper_review"
     assert captured["source_name"] == "paper.pdf"
     assert "Review-time extracted PDF manuscript" in captured["anchored_text"]
     assert "Indexed cached PDF text" not in captured["anchored_text"]
     assert len(read_calls) == 2
     assert read_calls[1][1] == added["source"]["path"]
+    assert payload["downloads"]
+    download = payload["downloads"][0]
+    artifact = ui_projects.project_artifact_path(project["id"], download["name"])
+    assert artifact is not None
+    assert artifact.read_text(encoding="utf-8").startswith("PAPER REVIEW REPORT")
+    assert download["download_url"].endswith(f"/artifacts/{download['name']}")
 
 
 def test_chat_rejects_session_from_another_project(tmp_path, monkeypatch):

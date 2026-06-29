@@ -35,6 +35,9 @@ from ci2lab.ui.projects import (
     list_projects as _list_projects,
 )
 from ci2lab.ui.projects import (
+    project_artifact_path as _project_artifact_path,
+)
+from ci2lab.ui.projects import (
     project_manuscript_text as _project_manuscript_text,
 )
 from ci2lab.ui.projects import (

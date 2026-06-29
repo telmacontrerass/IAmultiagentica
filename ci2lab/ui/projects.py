@@ -26,6 +26,7 @@ from ci2lab.ui.server_parts.uploads import (
 
 PROJECT_CONTEXT_CHARS = 24_000
 PROJECT_SOURCE_LIMIT = 100
+PROJECT_ARTIFACTS_DIR = "artifacts"
 
 # Optional per-project metadata. Knowledge projects leave these empty; a
 # paper-review project ("kind" == "paper_review") uses them to center everything
@@ -84,6 +85,54 @@ def project_dir(project_id: str) -> Path | None:
     if path.parent != root:
         return None
     return path
+
+
+def _safe_artifact_name(name: str) -> str:
+    """Return a conservative download artifact filename."""
+    raw = Path(name).name.strip().replace("\x00", "")
+    stem = Path(raw).stem[:90] or "paper-review-report"
+    suffix = Path(raw).suffix.lower()[:16] or ".md"
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-_") or "paper-review-report"
+    safe_suffix = re.sub(r"[^A-Za-z0-9.]+", "", suffix) or ".md"
+    return f"{safe_stem}{safe_suffix}"
+
+
+def save_project_artifact(project_id: str, name: str, content: str) -> dict[str, Any]:
+    """Write a downloadable artifact inside a project and return public metadata."""
+    path = project_dir(project_id)
+    if path is None or not (path / "project.sqlite3").is_file():
+        return {"ok": False, "error": "Project not found."}
+    safe_name = _safe_artifact_name(name)
+    artifacts_dir = path / PROJECT_ARTIFACTS_DIR
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    target = unique_upload_path(artifacts_dir, safe_name)
+    target.write_text(content, encoding="utf-8")
+    relative_path = target.relative_to(path).as_posix()
+    return {
+        "ok": True,
+        "artifact": {
+            "name": target.name,
+            "path": relative_path,
+            "size": target.stat().st_size,
+            "size_label": format_upload_size(target.stat().st_size),
+            "download_url": f"/api/projects/{project_id}/artifacts/{target.name}",
+        },
+    }
+
+
+def project_artifact_path(project_id: str, artifact_name: str) -> Path | None:
+    """Resolve a downloadable artifact path for the HTTP layer."""
+    path = project_dir(project_id)
+    if path is None:
+        return None
+    safe_name = _safe_artifact_name(artifact_name)
+    if safe_name != artifact_name:
+        return None
+    artifact = (path / PROJECT_ARTIFACTS_DIR / safe_name).resolve()
+    artifacts_dir = (path / PROJECT_ARTIFACTS_DIR).resolve()
+    if artifact.parent != artifacts_dir or not artifact.is_file():
+        return None
+    return artifact
 
 
 def _connect(path: Path) -> sqlite3.Connection:

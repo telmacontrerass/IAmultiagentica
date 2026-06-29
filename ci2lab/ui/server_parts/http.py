@@ -175,6 +175,13 @@ def handler_factory(state: UIState) -> type[BaseHTTPRequestHandler]:
                 payload = facade._list_project_sources(project_id)
                 self._json(payload, status=200 if payload.get("ok") else 404)
                 return
+            if parsed.path.startswith("/api/projects/") and "/artifacts/" in parsed.path:
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) == 5:
+                    project_id = unquote(parts[2]).strip()
+                    artifact_name = unquote(parts[4]).strip()
+                    self._serve_project_artifact(project_id, artifact_name)
+                    return
             if parsed.path.startswith("/api/projects/"):
                 project_id = unquote(parsed.path.rsplit("/", 1)[-1]).strip()
                 project = facade._get_project(project_id)
@@ -354,6 +361,24 @@ def handler_factory(state: UIState) -> type[BaseHTTPRequestHandler]:
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_project_artifact(self, project_id: str, artifact_name: str) -> None:
+            """Serve a project artifact as a browser download."""
+            artifact = _facade()._project_artifact_path(project_id, artifact_name)
+            if artifact is None:
+                self._json({"error": "Artifact not found"}, status=404)
+                return
+            body = artifact.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{artifact.name}"',
+            )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

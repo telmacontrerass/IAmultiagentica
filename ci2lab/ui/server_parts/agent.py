@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMError
@@ -18,6 +19,7 @@ from ci2lab.ui.projects import (
     project_dir,
     project_manuscript_text,
     project_prompt,
+    save_project_artifact,
 )
 from ci2lab.ui.researchers import get_researcher, researcher_context_block
 from ci2lab.ui.server_parts.uploads import normalize_attachments, prompt_with_uploaded_files
@@ -160,6 +162,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
         agent.project_id = project_id or None
         agent.researcher_id = researcher_id or None
         agent.multiagent_flow = "paper_review" if paper_review_mode else None
+        downloads: list[dict[str, Any]] = []
         if multi_agent:
             # Only forward review_context on the paper-review path so the generic
             # multi-agent call signature stays unchanged for everything else.
@@ -172,6 +175,22 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 on_progress=record_progress,
                 **review_kwargs,
             )
+            if (
+                paper_review_mode
+                and project
+                and answer.strip()
+                and "PAPER REVIEW NOT POSSIBLE" not in answer
+            ):
+                artifact = _save_paper_review_download(project_id, answer)
+                if artifact:
+                    downloads.append(artifact)
+                    answer = (
+                        f"{answer}\n\n---\n\n"
+                        "Download option: the complete correction report has also "
+                        f"been saved as `{artifact['name']}`. Use the download "
+                        "button below, or open this local URL:\n"
+                        f"{artifact['download_url']}"
+                    )
             save_completed_session(
                 session_id=session_id,
                 messages=messages,
@@ -216,6 +235,7 @@ def chat(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "process_log": progress_events,
             "project_id": project_id or None,
             "researcher_id": researcher_id or None,
+            "downloads": downloads,
         }
     except (ChatCancelled, LLMCancelledError):
         return {
@@ -413,6 +433,20 @@ def save_completed_session(
         )
     except Exception:
         return
+
+
+def _save_paper_review_download(project_id: str, answer: str) -> dict[str, Any] | None:
+    """Persist the full paper-review feedback as a downloadable Markdown report."""
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    result = save_project_artifact(
+        project_id,
+        f"paper-review-corrections-{stamp}.md",
+        answer.rstrip() + "\n",
+    )
+    if not result.get("ok"):
+        return None
+    artifact = result.get("artifact")
+    return artifact if isinstance(artifact, dict) else None
 
 
 def _agent_dependencies() -> tuple[Callable[..., Any], ...]:
