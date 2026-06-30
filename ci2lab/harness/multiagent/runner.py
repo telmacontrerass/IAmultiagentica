@@ -252,6 +252,7 @@ def build_subagent_config(
         role_anchor=build_role_anchor(role),
         delegation_depth=config.delegation_depth + 1,
         verify_completion=False,
+        verify_final_answer=False,
     )
 
 

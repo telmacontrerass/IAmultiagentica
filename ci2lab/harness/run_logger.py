@@ -307,6 +307,7 @@ class RunLogger:
             "auto_confirm": self.agent_config.auto_confirm,
             "write_tools_enabled": self.agent_config.write_tools_enabled,
             "require_diff_preview": self.agent_config.require_diff_preview,
+            "verify_final_answer": self.agent_config.verify_final_answer,
             "rounds": self._rounds_completed,
             "tool_call_count": len(self._tool_entries),
             "tools_used": tools_used,
@@ -427,6 +428,7 @@ def build_config_snapshot(
             "runs_dir": agent_config.runs_dir,
             "write_tools_enabled": agent_config.write_tools_enabled,
             "require_diff_preview": agent_config.require_diff_preview,
+            "verify_final_answer": agent_config.verify_final_answer,
         },
         "selection": {
             "model_id": selection.model_id,

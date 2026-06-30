@@ -142,6 +142,7 @@ def build_agent_config(
         write_tools_enabled=runtime.write_tools_enabled,
         require_diff_preview=runtime.require_diff_preview,
         verify_completion=runtime.verify_completion,
+        verify_final_answer=runtime.verify_final_answer,
         confirm_callback=confirm_callback,
         security_engine=sec.engine,
         security_profile=sec.profile,

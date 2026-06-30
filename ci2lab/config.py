@@ -33,6 +33,7 @@ DEFAULT_LOG_RUNS = True
 DEFAULT_WRITE_TOOLS_ENABLED = True
 DEFAULT_REQUIRE_DIFF_PREVIEW = True
 DEFAULT_VERIFY_COMPLETION = False
+DEFAULT_VERIFY_FINAL_ANSWER = True
 
 _CONFIG_FILENAMES = ("ci2lab.yaml", "ci2lab.yml", "ci2lab.json")
 
@@ -54,6 +55,7 @@ class Ci2LabConfig:
     write_tools_enabled: bool = DEFAULT_WRITE_TOOLS_ENABLED
     require_diff_preview: bool = DEFAULT_REQUIRE_DIFF_PREVIEW
     verify_completion: bool = DEFAULT_VERIFY_COMPLETION
+    verify_final_answer: bool = DEFAULT_VERIFY_FINAL_ANSWER
     security: SecurityConfig = field(default_factory=SecurityConfig)
     permission: dict[str, Any] = field(default_factory=dict)
     """OpenCode-style root-level permission (opencode_experimental only)."""
@@ -74,6 +76,7 @@ def _coerce_value(key: str, raw: str) -> Any:
         "write_tools_enabled",
         "require_diff_preview",
         "verify_completion",
+        "verify_final_answer",
     }:
         return _parse_bool(text)
     if key == "no_log":
@@ -202,6 +205,8 @@ def _from_env(config: Ci2LabConfig) -> Ci2LabConfig:
         mapping["require_diff_preview"] = False
     if os.environ.get("CI2LAB_VERIFY_COMPLETION", "").lower() in {"1", "true", "yes"}:
         mapping["verify_completion"] = True
+    if os.environ.get("CI2LAB_VERIFY_FINAL_ANSWER", "").lower() in {"0", "false", "no"}:
+        mapping["verify_final_answer"] = False
     return _apply_mapping(config, mapping)
 
 

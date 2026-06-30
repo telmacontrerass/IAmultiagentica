@@ -31,6 +31,12 @@ from ci2lab.console import console
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
 from ci2lab.harness.context import manage_context, trim_messages
 from ci2lab.harness.edit_followup import EditSignature, process_edit_round
+from ci2lab.harness.grounding_review import (
+    FINAL_ANSWER_REVIEW_MAX_PER_TURN,
+    EvidenceLedger,
+    guarded_uncertain_answer,
+    review_final_answer,
+)
 from ci2lab.harness.hooks import emit_hook_event
 from ci2lab.harness.llm_client import LLMClient
 from ci2lab.harness.llm_errors import LLMCancelledError, LLMError, classify_request_error
@@ -286,6 +292,10 @@ _VERIFIER_FIX_MESSAGE = (
     "found issues that must be fixed before this is done:\n\n{issues}\n\n"
     "Fix these now with the appropriate tools, then finish. If a point is wrong, "
     "explain why instead of guessing."
+)
+_FINAL_ANSWER_REVIEW_MESSAGE = (
+    "{instruction}\n\n"
+    "Original user request:\n{user_prompt}"
 )
 _DESCRIBED_NOT_WRITTEN_NUDGE = (
     "You described the change in prose but did not apply it — nothing was written "
@@ -877,6 +887,8 @@ def run_agent(
     # means there is nothing to independently check.
     effectful_actions: list[str] = []
     verifier_runs = 0
+    final_answer_review_runs = 0
+    evidence_ledger = EvidenceLedger(user_prompt=user_prompt)
     # The model created a task plan with `todo_write` during this run. Only then
     # does the loop hold it to that plan on finish — so a stale todos.json from a
     # prior run (or a task that never planned) can never block finalization.
@@ -1159,6 +1171,35 @@ def run_agent(
                         effectful_actions = []
                         maybe_save_session(cfg, history, selection)
                         continue
+                if (
+                    final_text
+                    and cfg.verify_final_answer
+                    and final_answer_review_runs < FINAL_ANSWER_REVIEW_MAX_PER_TURN
+                ):
+                    review = review_final_answer(final_text, evidence_ledger)
+                    if not review.ok:
+                        final_answer_review_runs += 1
+                        _print_model_step(content, already_streamed=streamed_this_round)
+                        console.print(
+                            "[yellow]Final-answer groundedness review found unsupported "
+                            "claims; asking the model to verify before answering.[/yellow]"
+                        )
+                        append_assistant_turn(history, final_text or content)
+                        history.append(
+                            {
+                                "role": "user",
+                                "content": _FINAL_ANSWER_REVIEW_MESSAGE.format(
+                                    instruction=review.instruction,
+                                    user_prompt=user_prompt,
+                                ),
+                            }
+                        )
+                        maybe_save_session(cfg, history, selection)
+                        continue
+                if final_text and cfg.verify_final_answer:
+                    review = review_final_answer(final_text, evidence_ledger)
+                    if not review.ok:
+                        final_text = guarded_uncertain_answer(review)
                 _emit_progress("Finalizing the answer...", on_progress)
                 _emit_progress("", on_progress)
                 if final_text and streamed_this_round:
@@ -1341,6 +1382,13 @@ def run_agent(
                         started_at=started_at,
                         ended_at=ended_at,
                     )
+                evidence_ledger.add(
+                    call.name,
+                    call.arguments,
+                    result.content,
+                    ok=not result.is_error,
+                    outcome=result.outcome,
+                )
                 if result.is_error:
                     console.print(f"[red]  ✗ {result.content[:200]}[/red]")
                 else:
@@ -1459,6 +1507,10 @@ def run_agent(
             maybe_save_session(cfg, history, selection)
 
         if final_text:
+            if cfg.verify_final_answer:
+                review = review_final_answer(final_text, evidence_ledger)
+                if not review.ok:
+                    final_text = guarded_uncertain_answer(review)
             for warning in emit_hook_event(
                 cfg,
                 "after_final_answer",

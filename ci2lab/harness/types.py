@@ -94,6 +94,12 @@ class AgentConfig:
     original request; on failure the agent is asked to fix it. Opt-in: on weak
     local models the verifier can false-reject, so it stays off by default."""
 
+    verify_final_answer: bool = True
+    """If True, every final answer is checked against deterministic evidence
+    collected during the turn before it is returned to the user. Claims about
+    current facts, files, commands, sources, URLs, or workspace mutations must
+    be grounded in the prompt or successful tool results."""
+
     security_profile: str = "standard"
     """Security profile (strict, standard, dev, audit)."""
 
