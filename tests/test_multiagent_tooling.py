@@ -662,7 +662,7 @@ def test_should_repair_with_coder_for_incorrect_file_content():
     assert should_repair_with_coder(validation)
 
 
-def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
+def test_tool_evidence_but_missing_file_does_not_run_coder_attempt_2(
     tmp_path,
     monkeypatch,
 ):
@@ -732,7 +732,7 @@ def test_file_correct_but_missing_git_evidence_does_not_run_coder_attempt_2(
     assert calls.count((AgentRole.GENERALIST_CODER, 1)) == 1
     assert (AgentRole.GENERALIST_CODER, 2) not in calls
     trace = _multiagent_trace(tmp_path)
-    assert trace["status"] == "validation_failed"
+    assert trace["status"] == "insufficient_evidence"
 
 
 def test_file_correct_but_validator_role_violation_does_not_run_coder_attempt_2(

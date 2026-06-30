@@ -51,7 +51,17 @@ from ci2lab.harness.multiagent.paper_review import (
 )
 from ci2lab.harness.multiagent.roles import ROLE_SPECS
 from ci2lab.harness.multiagent.runner import build_subagent_config, run_subagent
-from ci2lab.harness.multiagent.state import AgentRole, MultiAgentRun, SubAgentResult
+from ci2lab.harness.multiagent.state import (
+    CONTRACT_VALIDATION_SCHEMA_VERSION,
+    EVIDENCE_SCHEMA_VERSION,
+    FAILURE_CLASSIFICATION_SCHEMA_VERSION,
+    AgentRole,
+    ContractValidation,
+    EvidenceEntry,
+    FailureClassification,
+    MultiAgentRun,
+    SubAgentResult,
+)
 from ci2lab.harness.run_logger import RunLogger
 from ci2lab.harness.tools.executor_parts.core import execute_tool
 from ci2lab.harness.types import AgentConfig, ToolCall
@@ -301,6 +311,21 @@ _FILE_CONTENT_CONTRACT_CONTENT_RE = re.compile(
     r"\s*:\s*(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\r\n.]+))",
     re.IGNORECASE,
 )
+_ONLY_MODIFY_PATH_RE = re.compile(
+    r"\b(?:only\s+modify|solo\s+modifica)\s+[`\"']?([A-Za-z0-9_./\\-]+)[`\"']?",
+    re.IGNORECASE,
+)
+_WORK_ONLY_FOLDER_RE = re.compile(
+    r"\b(?:work\s+only\s+inside\s+folder|trabaja\s+dentro\s+de\s+la\s+carpeta)\s+"
+    r"[`\"']?([A-Za-z0-9_./\\-]+)[`\"']?",
+    re.IGNORECASE,
+)
+_NO_OTHER_FILE_RE = re.compile(
+    r"\b(?:do\s+not\s+modify\s+any\s+other\s+file|"
+    r"no\s+modifiques\s+ning(?:u|\u00fa)n\s+otro\s+archivo)\b",
+    re.IGNORECASE,
+)
+_DIFF_PATH_RE = re.compile(r"^diff --git a/(.+?) b/(.+)$")
 
 _CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset(
     {
@@ -868,6 +893,15 @@ def _phase_trace(result: SubAgentResult) -> dict[str, object]:
         }
         for entry in result.tool_calls
     ]
+    evidence_entries = [
+        EvidenceEntry.from_tool_call(
+            entry,
+            role=result.role,
+            phase=result.role,
+            source_run=result.subagent_run_dir,
+        ).to_dict()
+        for entry in tool_calls
+    ]
     return {
         "role": result.role.value,
         "phase": result.role.value,
@@ -884,6 +918,7 @@ def _phase_trace(result: SubAgentResult) -> dict[str, object]:
         ),
         "input_prompt_hash": _hash_text(result.task),
         "tool_calls": tool_calls,
+        "evidence_entries": evidence_entries,
         "final_output_preview": _preview_text(
             result.output,
             limit=TRACE_OUTPUT_PREVIEW_CHARS,
@@ -949,6 +984,15 @@ def _trace_payload(
         "tool_mode": selection.tool_mode,
         "workspace": config.cwd,
         "git_baseline": run.git_baseline,
+        "evidence_schema_version": EVIDENCE_SCHEMA_VERSION,
+        "contract_validation_schema_version": CONTRACT_VALIDATION_SCHEMA_VERSION,
+        "contract_validation": (
+            run.contract_validation.to_dict() if run.contract_validation else None
+        ),
+        "failure_classification_schema_version": FAILURE_CLASSIFICATION_SCHEMA_VERSION,
+        "failure_classification": (
+            run.failure_classification.to_dict() if run.failure_classification else None
+        ),
         "intent": run.intent,
         "requires_write": run.requires_write,
         "intent_reason": run.intent_reason,
@@ -1432,6 +1476,12 @@ def final_run_status(run: MultiAgentRun) -> str:
     with no real write-tool evidence is downgraded to ``insufficient_evidence``;
     only then is the run a clean ``completed``.
     """
+    if (
+        run.contract_validation
+        and run.contract_validation.kind == "exact_file_content"
+        and run.contract_validation.status != "completed"
+    ):
+        return run.contract_validation.status
     last_validation = run.latest_for(AgentRole.VALIDATOR)
     if last_validation and validation_failed(last_validation):
         return "validation_failed"
@@ -1446,6 +1496,114 @@ def final_run_status(run: MultiAgentRun) -> str:
     if write_task_lacks_evidence(run):
         return "insufficient_evidence"
     return "completed"
+
+
+def _contract_failure_class(contract: ContractValidation) -> str:
+    failures = " ".join(contract.failures).lower()
+    missing = set(contract.missing_evidence)
+    if contract.scope_status == "failed" or contract.scope_failures:
+        return "scope_violation"
+    if "expected artifact is missing" in failures:
+        return "missing_artifact"
+    if "content does not match" in failures:
+        return "content_mismatch"
+    if "write_file" in missing:
+        return "missing_write_evidence"
+    if "read_file" in missing:
+        return "missing_readback_evidence"
+    if contract.status == "insufficient_evidence":
+        return "insufficient_evidence"
+    if contract.status == "validation_failed":
+        return "validator_failed"
+    return "unknown_failure"
+
+
+def _phase_for_failure(run: MultiAgentRun, status: str) -> SubAgentResult | None:
+    role_by_status = {
+        "validation_failed": AgentRole.VALIDATOR,
+        "review_failed": AgentRole.REVIEWER,
+        "security_failed": AgentRole.SECURITY_REVIEWER,
+    }
+    role = role_by_status.get(status)
+    if role is not None:
+        return run.latest_for(role)
+    for result in reversed(run.results):
+        if result.status in {
+            "role_violation",
+            "invalid_tool_via_bash",
+            "timeout",
+            "failed",
+            "blocked",
+        }:
+            return result
+    return None
+
+
+def classify_failure_classification(run: MultiAgentRun) -> FailureClassification | None:
+    """Return a small structured reason for non-completed multi-agent status."""
+    if run.error:
+        return FailureClassification(
+            status="failed",
+            failure_class="unknown_failure",
+            failure_reason=_shorten(run.error, limit=400),
+            failed_phase=run.failed_phase,
+            repairable=False,
+            related_evidence=sorted(_run_successful_tools(run)),
+            details={"run_error": run.error},
+        )
+    status = final_run_status(run)
+    if status == "completed":
+        return None
+
+    contract = run.contract_validation
+    if contract and contract.kind == "exact_file_content" and contract.status != "completed":
+        failure_class = _contract_failure_class(contract)
+        reason_parts = contract.failures or contract.notes or [contract.status]
+        return FailureClassification(
+            status=status,
+            failure_class=failure_class,
+            failure_reason="; ".join(reason_parts),
+            failed_phase=run.selected_coder_role.value if run.selected_coder_role else None,
+            repairable=failure_class in {"content_mismatch", "missing_artifact"},
+            related_evidence=contract.observed_evidence + contract.missing_evidence,
+            contract_kind=contract.kind,
+            details={
+                "contract_status": contract.status,
+                "missing_evidence": contract.missing_evidence,
+                "failures": contract.failures,
+            },
+        )
+
+    failed_result = _phase_for_failure(run, status)
+    failed_phase = failed_result.role.value if failed_result else run.failed_phase
+    if failed_result and failed_result.status == "role_violation":
+        failure_class = "role_violation"
+    elif status == "validation_failed":
+        failure_class = "validator_failed"
+    elif status == "review_failed":
+        failure_class = "review_failed"
+    elif status == "security_failed":
+        failure_class = "security_failed"
+    elif status == "insufficient_evidence":
+        failure_class = "insufficient_evidence"
+    else:
+        failure_class = "unknown_failure"
+    reason = ""
+    if failed_result:
+        reason = failed_result.error or failed_result.output
+    if not reason:
+        reason = status
+    return FailureClassification(
+        status=status,
+        failure_class=failure_class,
+        failure_reason=_shorten(reason, limit=400),
+        failed_phase=failed_phase,
+        repairable=status == "validation_failed"
+        and bool(failed_result and should_repair_with_coder(failed_result)),
+        related_evidence=sorted(_run_successful_tools(run)),
+        contract_kind=contract.kind if contract else None,
+        details={"run_status": status},
+    )
 
 
 def should_run_security_review(run: MultiAgentRun) -> bool:
@@ -1977,6 +2135,298 @@ def _run_has_expected_content_readback(run: MultiAgentRun) -> bool:
             if expected in preview:
                 return True
     return False
+
+
+def _exact_file_content_contract(user_prompt: str) -> tuple[str, str] | None:
+    """Return the narrow exact file/content contract from a user prompt."""
+    file_match = _FILE_CONTENT_CONTRACT_FILE_RE.search(user_prompt or "")
+    content_match = _FILE_CONTENT_CONTRACT_CONTENT_RE.search(user_prompt or "")
+    if not file_match or not content_match:
+        return None
+    content = next((group for group in content_match.groups() if group), None)
+    if not content:
+        return None
+    return file_match.group(1).rstrip(".,;"), content.rstrip(".,;")
+
+
+def _path_matches_tool_target(entry: dict[str, object], expected_path: str) -> bool:
+    target = _tool_target(entry)
+    if target == "(target unknown)":
+        return False
+    return target.replace("\\", "/") == expected_path.replace("\\", "/")
+
+
+def _has_exact_write_evidence(entries: list[dict[str, object]], path: str) -> bool:
+    return any(
+        _tool_ok(entry)
+        and _tool_name(entry) in _WRITE_EVIDENCE_TOOLS
+        and _path_matches_tool_target(entry, path)
+        for entry in entries
+    )
+
+
+def _has_exact_readback_evidence(
+    entries: list[dict[str, object]],
+    *,
+    path: str,
+    content: str,
+) -> bool:
+    return any(
+        _tool_ok(entry)
+        and _tool_name(entry) in _READBACK_EVIDENCE_TOOLS
+        and _path_matches_tool_target(entry, path)
+        and content in _tool_output_preview(entry, limit=2000)
+        for entry in entries
+    )
+
+
+def _normalize_scope_path(path: str) -> str:
+    return path.strip().strip("`\"'.,;").replace("\\", "/").lstrip("./")
+
+
+def _infer_write_scope(
+    user_prompt: str,
+    *,
+    expected_path: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Infer narrow explicit write scope from the user prompt."""
+    text = user_prompt or ""
+    paths: list[str] = []
+    roots: list[str] = []
+    if expected_path and _NO_OTHER_FILE_RE.search(text):
+        paths.append(_normalize_scope_path(expected_path))
+    for match in _ONLY_MODIFY_PATH_RE.finditer(text):
+        paths.append(_normalize_scope_path(match.group(1)))
+    for match in _WORK_ONLY_FOLDER_RE.finditer(text):
+        roots.append(_normalize_scope_path(match.group(1)).rstrip("/") + "/")
+    return _unique_preserving_order(paths), _unique_preserving_order(roots)
+
+
+def _parse_git_status_paths(output: str) -> list[str]:
+    paths: list[str] = []
+    for raw_line in (output or "").splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            continue
+        if not (len(line) > 3 and line[2] == " " and line[:2].strip()):
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.rsplit(" -> ", 1)[-1]
+        path = _normalize_scope_path(path)
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _parse_git_diff_paths(output: str) -> list[str]:
+    paths: list[str] = []
+    for raw_line in (output or "").splitlines():
+        match = _DIFF_PATH_RE.match(raw_line.strip())
+        if not match:
+            continue
+        for value in match.groups():
+            path = _normalize_scope_path(value)
+            if path and path != "/dev/null":
+                paths.append(path)
+    return paths
+
+
+def _observed_changed_paths_from_evidence(entries: list[dict[str, object]]) -> list[str]:
+    paths: list[str] = []
+    for entry in entries:
+        if not _tool_ok(entry):
+            continue
+        output = str(entry.get("output_preview") or entry.get("output") or "")
+        if _tool_name(entry) == "git_status":
+            paths.extend(_parse_git_status_paths(output))
+        elif _tool_name(entry) == "git_diff":
+            paths.extend(_parse_git_diff_paths(output))
+    return _unique_preserving_order(paths)
+
+
+def _path_allowed_by_scope(
+    path: str,
+    *,
+    allowed_paths: list[str],
+    allowed_roots: list[str],
+) -> bool:
+    normalized = _normalize_scope_path(path)
+    if normalized in allowed_paths:
+        return True
+    return any(normalized.startswith(root) for root in allowed_roots)
+
+
+def _scope_status(
+    *,
+    allowed_paths: list[str],
+    allowed_roots: list[str],
+    observed_paths: list[str],
+    has_scope_evidence: bool,
+) -> tuple[str | None, list[str]]:
+    if not allowed_paths and not allowed_roots:
+        return None, []
+    if not has_scope_evidence:
+        return "not_evaluated", []
+    if not observed_paths:
+        return "passed", []
+    violations = [
+        path
+        for path in observed_paths
+        if not _path_allowed_by_scope(
+            path,
+            allowed_paths=allowed_paths,
+            allowed_roots=allowed_roots,
+        )
+    ]
+    if violations:
+        return "failed", [f"changed path outside allowed scope: {path}" for path in violations]
+    return "passed", []
+
+
+def classify_exact_file_content_contract(
+    run: MultiAgentRun,
+    config: AgentConfig,
+) -> ContractValidation | None:
+    """Classify the narrow "create file with exact content" contract, if present."""
+    contract = _exact_file_content_contract(run.user_prompt)
+    if contract is None:
+        return None
+
+    expected_path, expected_content = contract
+    full_path = Path(config.cwd) / expected_path
+    exists = full_path.exists()
+    observed_content: str | None = None
+    read_error: str | None = None
+    if exists:
+        try:
+            observed_content = full_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            read_error = str(exc)
+    content_matches = observed_content == expected_content
+
+    entries = _evidence_entries(run.results)
+    write_evidence = _has_exact_write_evidence(entries, expected_path)
+    readback_evidence = _has_exact_readback_evidence(
+        entries,
+        path=expected_path,
+        content=expected_content,
+    )
+    allowed_write_paths, allowed_write_roots = _infer_write_scope(
+        run.user_prompt,
+        expected_path=expected_path,
+    )
+    observed_changed_paths = _observed_changed_paths_from_evidence(entries)
+    has_scope_evidence = any(
+        _tool_ok(entry) and _tool_name(entry) in _CHANGE_SCOPE_EVIDENCE_TOOLS
+        for entry in entries
+    )
+    scope_status, scope_failures = _scope_status(
+        allowed_paths=allowed_write_paths,
+        allowed_roots=allowed_write_roots,
+        observed_paths=observed_changed_paths,
+        has_scope_evidence=has_scope_evidence,
+    )
+    observed_evidence = []
+    if write_evidence:
+        observed_evidence.append("write_file")
+    if readback_evidence:
+        observed_evidence.append("read_file")
+    if has_scope_evidence:
+        observed_evidence.append("scope")
+    required_evidence = ["write_file", "read_file"]
+    if scope_status is not None:
+        required_evidence.append("scope")
+    missing_evidence = [
+        name
+        for name, present in (
+            ("write_file", write_evidence),
+            ("read_file", readback_evidence),
+            ("scope", scope_status is None or scope_status in {"passed", "failed"}),
+        )
+        if not present
+    ]
+
+    failures: list[str] = []
+    notes: list[str] = []
+    last_validation = run.latest_for(AgentRole.VALIDATOR)
+    validator_failed = bool(last_validation and validation_failed(last_validation))
+    validator_text = (
+        "\n".join((last_validation.output, last_validation.error or "")).lower()
+        if last_validation
+        else ""
+    )
+    validator_functional_failure = validator_failed and any(
+        marker in validator_text for marker in _ACTIONABLE_IMPLEMENTATION_FAILURE_MARKERS
+    )
+
+    if read_error:
+        failures.append(f"could not read expected artifact: {read_error}")
+    if exists and not content_matches:
+        failures.append("expected artifact content does not match")
+    if validator_functional_failure:
+        failures.append("validator reported functional contract failure")
+    if not exists:
+        failures.append("expected artifact is missing")
+    failures.extend(scope_failures)
+    for item in missing_evidence:
+        notes.append(f"missing required evidence: {item}")
+
+    if scope_status == "not_evaluated":
+        notes.append("missing required scope evidence: git_status or git_diff")
+
+    if scope_status == "failed":
+        status = "validation_failed"
+    elif scope_status == "not_evaluated":
+        status = "insufficient_evidence"
+    elif exists and content_matches and not missing_evidence and not validator_functional_failure:
+        status = "completed"
+    elif exists and (not content_matches or validator_functional_failure):
+        status = "validation_failed"
+    elif exists and content_matches and missing_evidence:
+        status = "tool_trace_failed"
+    else:
+        status = "insufficient_evidence"
+
+    observed_artifact: dict[str, object] = {
+        "path": expected_path,
+        "exists": exists,
+        "content_matches": content_matches if observed_content is not None else False,
+    }
+    if observed_content is not None:
+        observed_artifact["content_hash"] = hashlib.sha256(
+            observed_content.encode("utf-8")
+        ).hexdigest()
+    if read_error:
+        observed_artifact["read_error"] = read_error
+
+    return ContractValidation(
+        kind="exact_file_content",
+        status=status,
+        expected_artifacts=[
+            {
+                "path": expected_path,
+                "content_hash": hashlib.sha256(expected_content.encode("utf-8")).hexdigest(),
+                "content_preview": _shorten(expected_content, limit=120),
+            }
+        ],
+        observed_artifacts=[observed_artifact],
+        required_evidence=required_evidence,
+        observed_evidence=observed_evidence,
+        missing_evidence=missing_evidence,
+        failures=failures,
+        notes=notes,
+        allowed_write_paths=allowed_write_paths,
+        allowed_write_roots=allowed_write_roots,
+        observed_changed_paths=observed_changed_paths,
+        scope_status=scope_status,
+        scope_failures=scope_failures,
+    )
+
+
+def _refresh_contract_validation(run: MultiAgentRun, config: AgentConfig) -> None:
+    run.contract_validation = classify_exact_file_content_contract(run, config)
+    run.failure_classification = classify_failure_classification(run)
 
 
 def _ignored_invalid_tool_warnings(run: MultiAgentRun) -> list[str]:
@@ -2863,6 +3313,7 @@ def run_multi_agent(
             )
             research = _apply_role_guardrails(research, state)
             if subagent_blocked(research):
+                _refresh_contract_validation(state, cfg)
                 state.final_answer = synthesize_final_answer(state)
                 return state.final_answer
             if "coder" not in planned_phases and research_discovered_write_requirement(
@@ -2890,6 +3341,7 @@ def run_multi_agent(
                 on_progress=on_progress,
             )
             if subagent_blocked(implementation):
+                _refresh_contract_validation(state, cfg)
                 state.final_answer = synthesize_final_answer(state)
                 return state.final_answer
 
@@ -2991,6 +3443,7 @@ def run_multi_agent(
                         on_progress=on_progress,
                     )
                     if subagent_blocked(implementation):
+                        _refresh_contract_validation(state, cfg)
                         state.final_answer = synthesize_final_answer(state)
                         return state.final_answer
 
@@ -3110,6 +3563,7 @@ def run_multi_agent(
             )
             review = _apply_role_guardrails(review, state)
             if subagent_blocked(review):
+                _refresh_contract_validation(state, cfg)
                 state.final_answer = synthesize_final_answer(state)
                 return state.final_answer
 
@@ -3163,6 +3617,7 @@ def run_multi_agent(
                 )
                 security_review = _apply_role_guardrails(security_review, state)
                 if subagent_blocked(security_review):
+                    _refresh_contract_validation(state, cfg)
                     state.final_answer = synthesize_final_answer(state)
                     return state.final_answer
             else:
@@ -3175,6 +3630,7 @@ def run_multi_agent(
                     )
                 )
 
+        _refresh_contract_validation(state, cfg)
         state.final_answer = synthesize_final_answer(state)
         return state.final_answer
     except Exception as exc:
@@ -3187,6 +3643,7 @@ def run_multi_agent(
         if on_progress:
             on_progress("")
         ended_at = datetime.now(UTC)
+        _refresh_contract_validation(state, cfg)
         if run_log and run_log.run_dir is not None:
             _persist_multiagent_parent_run(
                 run_log.run_dir,
