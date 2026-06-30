@@ -79,11 +79,16 @@ class EvidenceLedger:
 
     @property
     def has_web_evidence(self) -> bool:
-        return any(record.ok and record.tool_name in {"web_search", "web_fetch"} for record in self.records)
+        return any(
+            record.ok and record.tool_name in {"web_search", "web_fetch"} for record in self.records
+        )
 
     @property
     def has_runtime_evidence(self) -> bool:
-        return any(record.ok and record.tool_name in {"bash", "git_status", "git_diff"} for record in self.records)
+        return any(
+            record.ok and record.tool_name in {"bash", "git_status", "git_diff"}
+            for record in self.records
+        )
 
     @property
     def has_mutation_evidence(self) -> bool:

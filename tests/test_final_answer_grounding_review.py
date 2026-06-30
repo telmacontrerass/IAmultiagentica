@@ -18,7 +18,9 @@ def test_current_fact_requires_evidence():
 def test_uncertainty_is_allowed_without_evidence():
     ledger = EvidenceLedger(user_prompt="who is the current CEO?")
 
-    result = review_final_answer("I cannot verify the current CEO from the available evidence.", ledger)
+    result = review_final_answer(
+        "I cannot verify the current CEO from the available evidence.", ledger
+    )
 
     assert result.ok is True
 
@@ -75,8 +77,7 @@ def test_loop_reviews_final_answer_before_accepting_ungrounded_repo_claim():
     assert result == "ci2lab/ui/server.py defines the UI server."
     all_sent = [m for call in client.chat.call_args_list for m in call.args[0]]
     assert any(
-        "default groundedness review blocked" in str(m.get("content", "")).lower()
-        for m in all_sent
+        "default groundedness review blocked" in str(m.get("content", "")).lower() for m in all_sent
     )
 
 

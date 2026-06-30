@@ -1176,11 +1176,7 @@ def test_fenced_mode_reinjects_tool_results_as_text_for_next_round(tmp_path):
     )
     target = tmp_path / "notes" / "example.txt"
     write = LLMResponse(
-        content=(
-            "```write_file\n"
-            '{"path": "notes/example.txt", "content": "OK"}\n'
-            "```"
-        ),
+        content=('```write_file\n{"path": "notes/example.txt", "content": "OK"}\n```'),
         tool_calls=[],
     )
     read = LLMResponse(

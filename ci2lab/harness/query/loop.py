@@ -293,10 +293,7 @@ _VERIFIER_FIX_MESSAGE = (
     "Fix these now with the appropriate tools, then finish. If a point is wrong, "
     "explain why instead of guessing."
 )
-_FINAL_ANSWER_REVIEW_MESSAGE = (
-    "{instruction}\n\n"
-    "Original user request:\n{user_prompt}"
-)
+_FINAL_ANSWER_REVIEW_MESSAGE = "{instruction}\n\nOriginal user request:\n{user_prompt}"
 _DESCRIBED_NOT_WRITTEN_NUDGE = (
     "You described the change in prose but did not apply it — nothing was written "
     "to disk. The request needs a file created or edited, so call `write_file` "
@@ -1398,9 +1395,7 @@ def run_agent(
 
             append_tool_results(history, results)
             fenced_results_to_reinject = [
-                result
-                for result in results
-                if result.tool_name in _FENCED_RESULT_REINJECTION_TOOLS
+                result for result in results if result.tool_name in _FENCED_RESULT_REINJECTION_TOOLS
             ]
             if (
                 selection.tool_mode == "fenced"
