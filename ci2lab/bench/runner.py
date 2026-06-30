@@ -177,6 +177,7 @@ def _run_one(
         final_answer=result.final_answer,
         changed_paths=changed,
     )
+    solved = verdict.solved and result.status not in {"error", "timeout"}
 
     if result.cost_usd is None:
         pricing_model = str(result.raw.get("model") or model)
@@ -190,13 +191,137 @@ def _run_one(
         "category": task.category,
         "agent": agent_name,
         "sample": sample,
-        "solved": verdict.solved,
+        "solved": solved,
+        "functional_success": verdict.solved,
         "failure_reasons": verdict.failure_reasons,
         "model": model,
         "workspace": str(workspace),
         **result.to_dict(),
     }
+    record.update(
+        _evidence_metrics(
+            task,
+            result=result,
+            functional_success=verdict.solved,
+            changed_paths=changed,
+        )
+    )
     return record
+
+
+def _evidence_metrics(
+    task: BenchTask,
+    *,
+    result: Any,
+    functional_success: bool,
+    changed_paths: list[str],
+) -> dict[str, Any]:
+    trace = _read_multiagent_trace(result.transcript_path)
+    tool_entries = _tool_entries_from_artifacts(result.transcript_path, trace)
+    tool_names = [str(entry.get("tool") or "") for entry in tool_entries]
+    write_present = any(name in _WRITE_TOOLS for name in tool_names)
+    readback_present = any(name in _READBACK_TOOLS for name in tool_names)
+    scope_present = any(name in {"git_status", "git_diff"} for name in tool_names)
+    expectations = task.evidence_expectations
+    required_checks: list[bool] = []
+    if expectations.get("write_evidence_present") is True:
+        required_checks.append(write_present)
+    if expectations.get("readback_evidence_present") is True:
+        required_checks.append(readback_present)
+    if expectations.get("scope_evidence_present") is True:
+        required_checks.append(scope_present)
+    evidence_success = all(required_checks) if required_checks else None
+    failure = _failure_classification(trace)
+    status = str(result.status or "")
+    looks_successful = status in {"success", "completed"} or "completed" in result.final_answer.lower()
+    false_positive = bool(
+        looks_successful
+        and (not functional_success or (evidence_success is False))
+    )
+    return {
+        "evidence_success": evidence_success,
+        "false_positive": false_positive,
+        "write_evidence_present": write_present,
+        "readback_evidence_present": readback_present,
+        "scope_evidence_present": scope_present,
+        "failure_classification": failure.get("failure_class") if failure else None,
+        "failure_classification_detail": failure,
+        "tool_violation_count": _tool_violation_count(tool_entries, trace),
+        "changed_paths": changed_paths,
+    }
+
+
+_WRITE_TOOLS = frozenset(
+    {"write_file", "edit_file", "apply_patch", "write_docx", "docx_to_pdf", "notebook_edit"}
+)
+_READBACK_TOOLS = frozenset({"read_file", "read_document", "grep", "inspect_file"})
+
+
+def _read_multiagent_trace(transcript_path: str | None) -> dict[str, Any]:
+    if not transcript_path:
+        return {}
+    path = Path(transcript_path) / "multiagent_trace.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _tool_entries_from_artifacts(
+    transcript_path: str | None,
+    trace: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if trace:
+        entries: list[dict[str, Any]] = []
+        for phase in trace.get("phases") or []:
+            if not isinstance(phase, dict):
+                continue
+            role = str(phase.get("role") or "")
+            for entry in phase.get("tool_calls") or []:
+                if isinstance(entry, dict):
+                    enriched = dict(entry)
+                    enriched["role"] = role
+                    entries.append(enriched)
+        return entries
+    if not transcript_path:
+        return []
+    path = Path(transcript_path) / "tool_calls.jsonl"
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                rows.append(item)
+    return rows
+
+
+def _failure_classification(trace: dict[str, Any]) -> dict[str, Any]:
+    value = trace.get("failure_classification")
+    return value if isinstance(value, dict) else {}
+
+
+def _tool_violation_count(tool_entries: list[dict[str, Any]], trace: dict[str, Any]) -> int:
+    count = sum(
+        1
+        for entry in tool_entries
+        if str(entry.get("outcome") or "")
+        in {"blocked_by_skill", "blocked_by_config", "invalid_tool_via_bash", "role_violation"}
+    )
+    for phase in trace.get("phases") or []:
+        if isinstance(phase, dict) and phase.get("status") in {
+            "role_violation",
+            "invalid_tool_via_bash",
+        }:
+            count += 1
+    return count
 
 
 def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -212,6 +337,10 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         tokens = [float(r["total_tokens"]) for r in group if r["total_tokens"] is not None]
         costs = [float(r["cost_usd"]) for r in group if r["cost_usd"] is not None]
         latencies = [float(r["wall_clock_s"]) for r in group if r["wall_clock_s"] is not None]
+        functional = sum(1 for r in group if r.get("functional_success"))
+        evidence_values = [r.get("evidence_success") for r in group if r.get("evidence_success") is not None]
+        evidence = sum(1 for value in evidence_values if value)
+        false_positives = sum(1 for r in group if r.get("false_positive"))
         rows.append(
             {
                 "task_id": task_id,
@@ -220,6 +349,11 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "solved": c,
                 "pass_at_1": round(c / n, 4) if n else 0.0,
                 "pass_at_k": round(pass_at_k(n, c, min(DEFAULT_K_REPORT, n)), 4),
+                "functional_success_rate": round(functional / n, 4) if n else 0.0,
+                "evidence_success_rate": (
+                    round(evidence / len(evidence_values), 4) if evidence_values else None
+                ),
+                "false_positive_count": false_positives,
                 "mean_total_tokens": _opt_round(mean(tokens), 1),
                 "mean_cost_usd": _opt_round(mean(costs), 6),
                 "median_latency_s": _opt_round(median(latencies), 2),

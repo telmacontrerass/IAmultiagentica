@@ -83,6 +83,26 @@ def test_load_tasks_filter_by_id() -> None:
     assert [t.id for t in tasks] == ["cli-01"]
 
 
+def test_benchtask_loads_evidence_expectations() -> None:
+    task = BenchTask.from_dict(
+        {
+            "id": "h3",
+            "name": "H3",
+            "category": "feat",
+            "prompt": "p",
+            "evidence_expectations": {
+                "write_evidence_present": True,
+                "readback_evidence_present": True,
+            },
+        }
+    )
+
+    assert task.evidence_expectations == {
+        "write_evidence_present": True,
+        "readback_evidence_present": True,
+    }
+
+
 def test_load_tasks_missing_dir_raises(tmp_path) -> None:
     with pytest.raises(FileNotFoundError):
         load_tasks(tmp_path / "does-not-exist")

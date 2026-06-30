@@ -1,0 +1,20 @@
+{
+  "id": "h3-exact-file-content",
+  "name": "Exact file content",
+  "category": "feat",
+  "prompt": "Create a file named notes/h3_exact.txt with exactly this content: H3_EXACT_OK.",
+  "max_rounds": 12,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "README.md": "H3 smoke workspace.\n"
+    }
+  },
+  "verifier": {
+    "command": "python -c \"from pathlib import Path; assert Path('notes/h3_exact.txt').read_text(encoding='utf-8') == 'H3_EXACT_OK'\""
+  },
+  "evidence_expectations": {
+    "write_evidence_present": true,
+    "readback_evidence_present": true
+  }
+}

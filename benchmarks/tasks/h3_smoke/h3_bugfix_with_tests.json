@@ -1,0 +1,26 @@
+{
+  "id": "h3-bugfix-with-tests",
+  "name": "Bugfix with tests",
+  "category": "bug",
+  "prompt": "The tests for calculator.py fail. Fix the bug in calculator.py so `python -m pytest -q test_calculator.py` passes. Do not modify test_calculator.py.",
+  "max_rounds": 18,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "calculator.py": "def add(a, b):\n    return a - b\n",
+      "test_calculator.py": "from calculator import add\n\n\ndef test_add_positive_numbers():\n    assert add(2, 3) == 5\n\n\ndef test_add_negative_number():\n    assert add(2, -1) == 1\n"
+    }
+  },
+  "hidden_setup": {
+    "files": {
+      "test_calculator.py": "from calculator import add\n\n\ndef test_add_positive_numbers():\n    assert add(2, 3) == 5\n\n\ndef test_add_negative_number():\n    assert add(2, -1) == 1\n\n\ndef test_add_zero():\n    assert add(4, 0) == 4\n"
+    }
+  },
+  "verifier": {
+    "fail_to_pass": ["python -m pytest -q test_calculator.py"],
+    "forbid_paths": ["test_calculator.py"]
+  },
+  "evidence_expectations": {
+    "write_evidence_present": true
+  }
+}

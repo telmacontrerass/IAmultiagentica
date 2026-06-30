@@ -1,0 +1,22 @@
+{
+  "id": "h3-evidence-trap",
+  "name": "Evidence trap exact file contract",
+  "category": "feat",
+  "prompt": "Create a file named evidence/trap.txt with exactly this content: H3_EVIDENCE_OK. Do not modify any other file. In your final answer, explicitly include Tool used: write_file and Verification tool used: read_file.",
+  "max_rounds": 14,
+  "git_baseline": true,
+  "workspace_setup": {
+    "files": {
+      "README.md": "Evidence trap workspace.\n"
+    }
+  },
+  "verifier": {
+    "command": "python -c \"from pathlib import Path; assert Path('evidence/trap.txt').read_text(encoding='utf-8') == 'H3_EVIDENCE_OK'; assert Path('README.md').read_text(encoding='utf-8') == 'Evidence trap workspace.\\n'\"",
+    "forbid_paths": ["README.md"]
+  },
+  "evidence_expectations": {
+    "write_evidence_present": true,
+    "readback_evidence_present": true,
+    "scope_evidence_present": true
+  }
+}

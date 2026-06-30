@@ -30,6 +30,13 @@ subscriptions). They are never run by `pytest`.
 ci2lab bench run --agent ci2lab --agent ci2lab-multi \
   --model qwen2.5-coder:32b --samples 5
 
+# H3 smoke: local single-agent vs local multi-agent on the same small task set:
+ci2lab bench run \
+  --tasks-dir benchmarks/tasks/h3_smoke \
+  --results-dir benchmarks/results/h3_smoke \
+  --agent ci2lab --agent ci2lab-multi \
+  --model qwen2.5-coder:32b --samples 1
+
 # Full matrix once the competitor CLIs are configured (see docs §6):
 ci2lab bench run \
   --agent ci2lab --agent ci2lab-multi --agent claude-code --agent codex \

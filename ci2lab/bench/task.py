@@ -113,6 +113,7 @@ class BenchTask:
     max_rounds: int = 15
     timeout_seconds: int = 600
     k_samples: int | None = None
+    evidence_expectations: dict[str, bool] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BenchTask:
@@ -153,6 +154,7 @@ class BenchTask:
             max_rounds=int(data.get("max_rounds", 15)),
             timeout_seconds=int(data.get("timeout_seconds", 600)),
             k_samples=data.get("k_samples"),
+            evidence_expectations=dict(data.get("evidence_expectations") or {}),
         )
 
 

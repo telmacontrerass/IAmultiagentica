@@ -25,6 +25,7 @@ __all__ = ["Ci2labAdapter"]
 
 _RUN_STATUS_MAP = {
     "success": STATUS_SUCCESS,
+    "completed": STATUS_SUCCESS,
     "max_rounds": "max_rounds",
     "interrupted": STATUS_ERROR,
     "llm_error": STATUS_ERROR,
@@ -100,10 +101,10 @@ class Ci2labAdapter:
         tool_calls: int | None = None
         rounds: int | None = None
         if run_dir is not None:
-            tool_calls = len(load_tool_calls_jsonl(run_dir / "tool_calls.jsonl"))
+            tool_calls = _count_tool_calls(run_dir)
             rounds, run_status = _read_run_json(run_dir)
             if status == STATUS_SUCCESS and run_status:
-                status = _RUN_STATUS_MAP.get(run_status, STATUS_SUCCESS)
+                status = _RUN_STATUS_MAP.get(run_status, run_status)
 
         return RunResult(
             final_answer=final or "",
@@ -142,7 +143,43 @@ def _read_run_json(run_dir: Path) -> tuple[int | None, str | None]:
     rounds = data.get("rounds")
     if rounds is None:
         rounds = data.get("rounds_completed")
-    status = data.get("status")
+    if rounds is None:
+        phases = data.get("phases")
+        if isinstance(phases, list):
+            phase_rounds = [
+                phase.get("rounds")
+                for phase in phases
+                if isinstance(phase, dict) and isinstance(phase.get("rounds"), int)
+            ]
+            rounds = sum(phase_rounds) if phase_rounds else None
+    status = data.get("status") or data.get("final_status")
+    if status is None:
+        decision = data.get("orchestration_decision_final")
+        if isinstance(decision, dict):
+            status = decision.get("final_status")
     return (int(rounds) if isinstance(rounds, int) else None), (
         str(status) if status is not None else None
     )
+
+
+def _count_tool_calls(run_dir: Path) -> int | None:
+    """Count tool calls in either single-agent or multi-agent run artifacts."""
+    direct = run_dir / "tool_calls.jsonl"
+    if direct.is_file():
+        direct_count = len(load_tool_calls_jsonl(direct))
+        if direct_count:
+            return direct_count
+    trace = run_dir / "multiagent_trace.json"
+    if trace.is_file():
+        try:
+            data = json.loads(trace.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        phases = data.get("phases")
+        if isinstance(phases, list):
+            return sum(
+                len(phase.get("tool_calls") or [])
+                for phase in phases
+                if isinstance(phase, dict)
+            )
+    return len(load_tool_calls_jsonl(direct)) if direct.is_file() else None

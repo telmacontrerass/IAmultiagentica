@@ -10,6 +10,8 @@ from ci2lab.bench.metrics import (
     median,
     pass_at_k,
 )
+from ci2lab.bench.runner import _evidence_metrics
+from ci2lab.bench.task import BenchTask
 
 
 def test_pass_at_k_extremes() -> None:
@@ -79,3 +81,60 @@ def test_runresult_to_dict_roundtrip() -> None:
     assert data["status"] == "success"
     assert data["total_tokens"] == 15
     assert "raw" not in data
+
+
+def test_evidence_metrics_from_multiagent_trace(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "multiagent_trace.json").write_text(
+        """
+{
+  "failure_classification": {"failure_class": "scope_violation"},
+  "phases": [
+    {
+      "role": "generalist_coder",
+      "status": "completed",
+      "tool_calls": [
+        {"tool": "write_file", "ok": true},
+        {"tool": "read_file", "ok": true},
+        {"tool": "git_status", "ok": true}
+      ]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    task = BenchTask.from_dict(
+        {
+            "id": "h3",
+            "name": "H3",
+            "category": "feat",
+            "prompt": "p",
+            "evidence_expectations": {
+                "write_evidence_present": True,
+                "readback_evidence_present": True,
+                "scope_evidence_present": True,
+            },
+        }
+    )
+    result = RunResult(
+        final_answer="completed",
+        status="completed",
+        wall_clock_s=1.0,
+        transcript_path=str(run_dir),
+    )
+
+    metrics = _evidence_metrics(
+        task,
+        result=result,
+        functional_success=True,
+        changed_paths=["notes/out.txt"],
+    )
+
+    assert metrics["evidence_success"] is True
+    assert metrics["false_positive"] is False
+    assert metrics["write_evidence_present"] is True
+    assert metrics["readback_evidence_present"] is True
+    assert metrics["scope_evidence_present"] is True
+    assert metrics["failure_classification"] == "scope_violation"
