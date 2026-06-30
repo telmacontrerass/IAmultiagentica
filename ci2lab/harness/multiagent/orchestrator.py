@@ -287,6 +287,20 @@ _READBACK_EVIDENCE_TOOLS = frozenset(
         "inspect_file",
     }
 )
+_FILE_CONTENT_CONTRACT_FILE_RE = re.compile(
+    r"\b(?:create|crea|crear)\b[\s\S]{0,120}?"
+    r"\b(?:file|archivo|fichero)\s+(?:named|called|llamado|llamada)\s+"
+    r"[`\"']?([A-Za-z0-9_./\\-]+)[`\"']?",
+    re.IGNORECASE,
+)
+_FILE_CONTENT_CONTRACT_CONTENT_RE = re.compile(
+    r"(?:with\s+exactly\s+(?:this\s+)?content|"
+    r"con\s+exactamente\s+este\s+contenido|"
+    r"expected\s+exact\s+content|"
+    r"contenido\s+exacto\s+esperado)"
+    r"\s*:\s*(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\r\n.]+))",
+    re.IGNORECASE,
+)
 
 _CHANGE_SCOPE_EVIDENCE_TOOLS = frozenset(
     {
@@ -1490,6 +1504,24 @@ def _build_research_prompt(user_prompt: str, plan: SubAgentResult | None) -> str
     )
 
 
+def _file_content_contract_instruction(user_prompt: str) -> str:
+    """Return extra implementer guidance for explicit file/content contracts."""
+    if not _FILE_CONTENT_CONTRACT_FILE_RE.search(user_prompt or ""):
+        return ""
+    if not _FILE_CONTENT_CONTRACT_CONTENT_RE.search(user_prompt or ""):
+        return ""
+    return (
+        "File creation contract detected:\n"
+        "- First write the requested file using `write_file`.\n"
+        "- Then verify it by reading the same path with `read_file`.\n"
+        "- Do not claim completion unless the readback content matches the "
+        "requested exact content.\n"
+        "- In your final answer, explicitly include:\n"
+        "  Tool used: write_file\n"
+        "  Verification tool used: read_file"
+    )
+
+
 def _build_implementation_prompt(
     user_prompt: str,
     plan: SubAgentResult | None,
@@ -1506,6 +1538,8 @@ def _build_implementation_prompt(
     research_text = (
         research.output if research is not None else ("No research output was produced.")
     )
+    contract_instruction = _file_content_contract_instruction(user_prompt)
+    contract_block = f"{contract_instruction}\n\n" if contract_instruction else ""
     return (
         "Follow the execution plan and the researcher findings. "
         "Implement only the tasks assigned to your implementer role. Do not "
@@ -1534,7 +1568,7 @@ def _build_implementation_prompt(
         "blocks. Create every file the task calls for (the program/solution it "
         "asks you to build, and any tests it explicitly requests), and do not "
         "claim the task is complete until those files exist with real content.\n\n"
-        f"User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
+        f"{contract_block}User task:\n{user_prompt}\n\nPlan:\n{plan_text}\n\n"
         f"Research:\n{research_text}"
     )
 
@@ -2172,6 +2206,8 @@ def _build_repair_prompt(
     validation: SubAgentResult,
 ) -> str:
     """Build the repair prompt that asks the implementer to fix a validation failure."""
+    contract_instruction = _file_content_contract_instruction(user_prompt)
+    contract_block = f"{contract_instruction}\n\n" if contract_instruction else ""
     return (
         "The validator reported a failure. Repair the implementation while "
         "staying within the same implementer role and the planner's assigned "
@@ -2184,7 +2220,7 @@ def _build_repair_prompt(
         "a tool. Make the change with `write_file`/`edit_file`/`apply_patch` and "
         "read it back with `read_file`; never return a script that calls "
         '`open(path, "w")` as the solution.\n\n'
-        f"User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
+        f"{contract_block}User task:\n{user_prompt}\n\nPlan:\n{plan.output}\n\n"
         f"Research:\n{research.output}\n\nPrevious implementation:\n"
         f"{previous_implementation.output}\n\nValidation failure:\n"
         f"{validation.output}"

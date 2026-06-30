@@ -1091,6 +1091,48 @@ def test_implementation_and_repair_prompts_require_traceable_write_tools():
     assert 'open(path, "w")' in repair_prompt
 
 
+def test_file_content_contract_instruction_is_added_to_implementation_prompt():
+    plan = _result(AgentRole.PLANNER, "Create the requested file.")
+    research = _result(AgentRole.RESEARCHER, "No existing file.")
+    prompt = _build_implementation_prompt(
+        "Create a file named notes/example.txt with exactly this content: OK",
+        plan,
+        research,
+    )
+
+    assert "File creation contract detected:" in prompt
+    assert "write_file" in prompt
+    assert "read_file" in prompt
+    assert "Tool used: write_file" in prompt
+    assert "Verification tool used: read_file" in prompt
+
+
+def test_file_content_contract_instruction_is_not_added_to_general_write_prompt():
+    plan = _result(AgentRole.PLANNER, "Make the requested change.")
+    research = _result(AgentRole.RESEARCHER, "Relevant file: app.py")
+    prompt = _build_implementation_prompt("Add tests and fix the bug", plan, research)
+
+    assert "File creation contract detected:" not in prompt
+    assert "Tool used: write_file" not in prompt
+    assert "Verification tool used: read_file" not in prompt
+
+
+def test_file_content_contract_instruction_is_added_to_repair_prompt():
+    plan = _result(AgentRole.PLANNER, "Create the requested file.")
+    research = _result(AgentRole.RESEARCHER, "No existing file.")
+    repair_prompt = _build_repair_prompt(
+        _WRITE_PROMPT,
+        plan,
+        research,
+        _result(AgentRole.GENERALIST_CODER, "I described the file."),
+        _result(AgentRole.VALIDATOR, "Insufficient evidence."),
+    )
+
+    assert "File creation contract detected:" in repair_prompt
+    assert "Tool used: write_file" in repair_prompt
+    assert "Verification tool used: read_file" in repair_prompt
+
+
 def test_run_multi_agent_write_task_without_tool_evidence_is_not_completed(monkeypatch):
     _force_code_change_intent(monkeypatch)
 
