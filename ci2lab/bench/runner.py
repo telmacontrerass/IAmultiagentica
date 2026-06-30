@@ -341,6 +341,7 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         evidence_values = [r.get("evidence_success") for r in group if r.get("evidence_success") is not None]
         evidence = sum(1 for value in evidence_values if value)
         false_positives = sum(1 for r in group if r.get("false_positive"))
+        tool_violations = sum(r.get("tool_violation_count") or 0 for r in group)
         rows.append(
             {
                 "task_id": task_id,
@@ -354,6 +355,7 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     round(evidence / len(evidence_values), 4) if evidence_values else None
                 ),
                 "false_positive_count": false_positives,
+                "tool_violation_count": tool_violations,
                 "mean_total_tokens": _opt_round(mean(tokens), 1),
                 "mean_cost_usd": _opt_round(mean(costs), 6),
                 "median_latency_s": _opt_round(median(latencies), 2),
@@ -391,6 +393,7 @@ def print_summary_table(summary: BenchRunSummary) -> None:
     table.add_column("Tokens", justify="right")
     table.add_column("USD", justify="right")
     table.add_column("Latency", justify="right")
+    table.add_column("ToolViol", justify="right")
     for row in summary.by_task_agent:
         table.add_row(
             row["task_id"],
@@ -400,6 +403,7 @@ def print_summary_table(summary: BenchRunSummary) -> None:
             _fmt(row["mean_total_tokens"]),
             _fmt(row["mean_cost_usd"]),
             _fmt(row["median_latency_s"]),
+            str(row.get("tool_violation_count", 0)),
         )
     console.print(table)
 
