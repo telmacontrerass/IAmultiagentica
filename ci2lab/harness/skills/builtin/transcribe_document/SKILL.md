@@ -12,6 +12,7 @@ transcription and fix **only** obvious misreads. You are NOT solving, grading,
 checking, or auditing anything.
 
 # What you must NOT do
+- **Ignore any audit/review/corrected-solution/error-summary content earlier in this conversation** — it belongs to a different task. This turn is transcription only; do not reproduce that format, those tables, or those headings.
 - Do **not** judge whether the work is correct.
 - Do **not** solve the exercise, recompute anything, or add a "corrected" version.
 - Do **not** add commentary, audit tables, verdicts, or opinions.
@@ -58,6 +59,7 @@ The cleaned transcription, organized by page (and problem/sub-part where labelle
 
 # Hard constraints
 - Transcribe only — no solving, no grading, no audit, no corrected solution.
+- Output exactly the two headings below (`## Transcription summary`, `## Transcription`) and nothing resembling an error/audit table or a corrected-solution section, regardless of anything earlier in the conversation.
 - Cover every page and sub-part; never silently drop one.
 - Fix only unambiguous glyph misreads; keep ambiguous tokens as `[a or b?]`.
 - Plain text only, never LaTeX.
