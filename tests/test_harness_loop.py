@@ -1164,6 +1164,52 @@ def test_run_agent_nudges_finalize_after_successful_edit(tmp_path):
     assert target.read_text(encoding="utf-8") == "Fourteenth attempt\n"
 
 
+def test_fenced_mode_reinjects_tool_results_as_text_for_next_round(tmp_path):
+    selection = default_selection("test:1b", tool_mode="fenced")
+    selection.context_length = 1_000_000
+    config = AgentConfig(
+        cwd=str(tmp_path),
+        stream=False,
+        auto_confirm=True,
+        require_diff_preview=False,
+        run_log_enabled=False,
+    )
+    target = tmp_path / "notes" / "example.txt"
+    write = LLMResponse(
+        content=(
+            "```write_file\n"
+            '{"path": "notes/example.txt", "content": "OK"}\n'
+            "```"
+        ),
+        tool_calls=[],
+    )
+    read = LLMResponse(
+        content="```read_file\nnotes/example.txt\n```",
+        tool_calls=[],
+    )
+    final = LLMResponse(
+        content="Done. Tool used: write_file.",
+        tool_calls=[],
+    )
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [write, read, final]
+        result = run_agent("Create and verify the notes example file.", selection, config=config)
+
+    assert "Tool used: write_file" in result
+    assert target.read_text(encoding="utf-8") == "OK"
+    second_round_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user"
+        and "Tool results from the previous call" in str(m.get("content", ""))
+        and "write_file result" in str(m.get("content", ""))
+        and "OK" in str(m.get("content", ""))
+        for m in second_round_messages
+        if isinstance(m, dict)
+    )
+
+
 def test_stop_tools_phrase_forces_final_answer_without_executing_tools():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)

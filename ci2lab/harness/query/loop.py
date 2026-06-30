@@ -142,6 +142,13 @@ _STOP_TOOLS_NUDGE = (
 _WEB_CAPABILITY_NUDGE = (
     "You can use `web_search` for live info without a URL, then `web_fetch` for selected sources."
 )
+_FENCED_RESULT_REINJECTION_TOOLS = {
+    "write_file",
+    "edit_file",
+    "apply_patch",
+    "write_docx",
+    "notebook_edit",
+}
 _CONTRACT_EXPECTED_FILE_RE = re.compile(
     r"(?:Expected file|archivo esperado)\s*:\s*`?([A-Za-z0-9_./\\-]+)`?"
     r"|(?:archivo|file|fichero)\s+(?:llamado|named|called)\s+"
@@ -157,6 +164,29 @@ _CONTRACT_INLINE_CONTENT_RE = re.compile(
     r"\bcon\s+exactamente\s+(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s.`\"']+))",
     re.IGNORECASE,
 )
+
+
+def _append_fenced_tool_results(
+    messages: list[dict[str, Any]],
+    results: list[ToolResult],
+) -> None:
+    """Reinject write/edit tool results as plain text for fenced-mode models."""
+    if not results:
+        return
+    blocks = []
+    for result in results:
+        status = "ERROR" if result.is_error else "OK"
+        blocks.append(f"[{status}] {result.tool_name} result:\n{result.content}")
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Tool results from the previous call:\n\n"
+                + "\n\n".join(blocks)
+                + "\n\nUse these results before deciding the next step."
+            ),
+        }
+    )
 
 
 def _contract_expected_from_prompt(user_prompt: str) -> tuple[str, str] | None:
@@ -1319,6 +1349,17 @@ def run_agent(
                 results.append(result)
 
             append_tool_results(history, results)
+            fenced_results_to_reinject = [
+                result
+                for result in results
+                if result.tool_name in _FENCED_RESULT_REINJECTION_TOOLS
+            ]
+            if (
+                selection.tool_mode == "fenced"
+                and not llm_response.tool_calls
+                and fenced_results_to_reinject
+            ):
+                _append_fenced_tool_results(history, fenced_results_to_reinject)
             # Keep only the freshest anchors: drop the previous round's before
             # re-appending, so the prompt is restated once, not once per round.
             _strip_anchors(history)
