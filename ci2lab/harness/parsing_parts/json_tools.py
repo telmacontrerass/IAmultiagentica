@@ -17,6 +17,21 @@ from ci2lab.harness.types import ToolCall
 JSON_FENCED_RE = re.compile(r"```json\s*\n([\s\S]*?)```", re.IGNORECASE)
 
 
+def _calls_from_json_value(value: Any) -> list[ToolCall]:
+    """Recursively find tool-call shaped objects in nested JSON values."""
+    calls: list[ToolCall] = []
+    if isinstance(value, dict):
+        call = json_object_to_call(value)
+        if call:
+            calls.append(call)
+        for nested in value.values():
+            calls.extend(_calls_from_json_value(nested))
+    elif isinstance(value, list):
+        for item in value:
+            calls.extend(_calls_from_json_value(item))
+    return calls
+
+
 def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
     """Convert provider-native tool-call payloads into :class:`ToolCall` objects.
 
@@ -68,13 +83,13 @@ def parse_json_tool_objects(text: str) -> list[ToolCall]:
 
     for block in JSON_FENCED_RE.finditer(text):
         for obj in extract_json_objects(block.group(1)):
-            call = json_object_to_call(obj)
-            if call and remember_call(call, seen):
-                calls.append(call)
+            for call in _calls_from_json_value(obj):
+                if remember_call(call, seen):
+                    calls.append(call)
 
     for obj in extract_json_objects(text):
-        call = json_object_to_call(obj)
-        if call and remember_call(call, seen):
-            calls.append(call)
+        for call in _calls_from_json_value(obj):
+            if remember_call(call, seen):
+                calls.append(call)
 
     return calls

@@ -171,6 +171,18 @@ def test_parse_llama_parameters_field():
     assert calls[0].arguments["limit"] == 1000
 
 
+def test_parse_llama_nested_tool_calls_with_parameters():
+    text = (
+        '{"tool_calls": [{"name": "write_file", "parameters": '
+        '{"path": "notes/example.txt", "content": "OK"}}]}'
+    )
+    calls = parse_json_tool_objects(text)
+    assert len(calls) == 1
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["path"] == "notes/example.txt"
+    assert calls[0].arguments["content"] == "OK"
+
+
 def test_parse_write_file_inside_bash_fence():
     text = '```bash\nwrite_file\n{"path": "wordle.py", "content": "print(1)"}\n```'
     calls = parse_generic_fenced_blocks(text)
