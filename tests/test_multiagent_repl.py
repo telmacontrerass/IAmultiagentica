@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from ci2lab.harness import AgentConfig, default_selection
-from ci2lab.harness.repl import _TransientProgress, run_repl
+from ci2lab.harness.repl import _export_project_paper_review, _TransientProgress, run_repl
 from ci2lab.harness.session import load_session
 
 
@@ -30,6 +30,40 @@ def test_repl_multi_agent_routes_each_prompt_to_orchestrator(tmp_path, monkeypat
     assert kwargs["config"] is cfg
     assert callable(kwargs["on_progress"])
     run_agent.assert_not_called()
+
+
+def test_repl_forwards_grounded_review_context(tmp_path, monkeypatch):
+    cfg = AgentConfig(cwd=str(tmp_path), stream=False, run_log_enabled=False)
+    selection = default_selection("user-selected:7b")
+    review_context = object()
+    monkeypatch.setattr("ci2lab.harness.session.sessions_dir", lambda: tmp_path)
+
+    with (
+        patch("ci2lab.harness.repl.read_prompt_line", side_effect=["Review it", "/exit"]),
+        patch("ci2lab.harness.repl.run_multi_agent", return_value="PAPER REVIEW REPORT") as run,
+        patch("ci2lab.harness.repl.console.print"),
+    ):
+        run_repl(
+            selection,
+            cfg,
+            session_id="review-session",
+            multi_agent=True,
+            review_context=review_context,  # type: ignore[arg-type]
+        )
+
+    assert run.call_args.kwargs["review_context"] is review_context
+
+
+def test_terminal_paper_review_export_saves_project_artifact():
+    with patch(
+        "ci2lab.ui.projects.save_project_artifact",
+        return_value={"ok": True, "artifact": {"name": "paper-review.md"}},
+    ) as save:
+        _export_project_paper_review("PAPER REVIEW REPORT\nVerified.", "prj_123456789abc")
+
+    assert save.call_args.args[0] == "prj_123456789abc"
+    assert save.call_args.args[1].startswith("paper-review-corrections-")
+    assert save.call_args.args[2] == "PAPER REVIEW REPORT\nVerified.\n"
 
 
 def test_repl_classic_mode_still_uses_run_agent(tmp_path, monkeypatch):

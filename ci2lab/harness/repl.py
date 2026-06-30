@@ -10,6 +10,8 @@ from rich.panel import Panel
 if TYPE_CHECKING:
     from rich.status import Status
 
+    from ci2lab.harness.multiagent.paper_review import ReviewContext
+
 from ci2lab.console import active_progress, console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.llm_errors import LLMError
@@ -236,6 +238,7 @@ def run_repl(
     *,
     session_id: str | None = None,
     multi_agent: bool = False,
+    review_context: ReviewContext | None = None,
 ) -> None:
     """Run the interactive REPL loop until the user exits.
 
@@ -252,6 +255,8 @@ def run_repl(
             generated when omitted.
         multi_agent: When ``True``, route turns through the multi-agent
             orchestrator instead of the classic single-agent loop.
+        review_context: Addressable manuscript index and reviewer metadata for
+            an explicitly grounded scientific peer-review project.
 
     Returns:
         None. The function returns when the user exits or an unresumable session
@@ -440,6 +445,7 @@ def run_repl(
                                 selection,
                                 config=config,
                                 on_progress=progress.update,
+                                review_context=review_context,
                             )
                             if final_text:
                                 console.print(final_text)
@@ -532,6 +538,7 @@ def run_repl(
                     selection,
                     config=config,
                     on_progress=progress.update,
+                    review_context=review_context,
                 )
                 if final_text:
                     console.print(final_text)
@@ -576,6 +583,13 @@ def run_repl(
                     project_id=config.project_id,
                 )
             last_error_message = None
+            if (
+                final_text
+                and config.project_id
+                and config.multiagent_flow == "paper_review"
+                and "PAPER REVIEW NOT POSSIBLE" not in final_text
+            ):
+                _export_project_paper_review(final_text, config.project_id)
             # Deterministically save the model's answer to a .md file so the
             # transcription (or audit/math) survives outside the terminal.
             # Scoped to visual-document turns to avoid writing a file for every
@@ -596,6 +610,25 @@ def run_repl(
         data = load_session(sid)
         if data:
             history = data.get("messages")
+
+
+def _export_project_paper_review(final_text: str, project_id: str) -> None:
+    """Persist a terminal paper-review result as a project Markdown artifact."""
+    from datetime import UTC, datetime
+
+    from ci2lab.ui.projects import save_project_artifact
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    result = save_project_artifact(
+        project_id,
+        f"paper-review-corrections-{stamp}.md",
+        final_text.rstrip() + "\n",
+    )
+    artifact = result.get("artifact") if result.get("ok") else None
+    if isinstance(artifact, dict):
+        console.print(f"[green]Paper-review report saved:[/green] {artifact.get('name')}")
+    elif not result.get("ok"):
+        console.print(f"[yellow]Could not save paper-review report: {result.get('error')}[/yellow]")
 
 
 def _latex_to_plaintext(text: str) -> str:

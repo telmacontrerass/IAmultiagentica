@@ -5054,3 +5054,24 @@ body {
   background: var(--surface-strong);
   border-color: var(--border);
 }
+
+/* =========================================================
+   Researcher profile guidance note (name-only profile; the
+   instructions.md + rubrics carry everything else).
+   ========================================================= */
+
+.researcher-guidance {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: 8px;
+  background: var(--soft);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.researcher-guidance strong {
+  color: var(--ink);
+}

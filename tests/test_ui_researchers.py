@@ -16,17 +16,18 @@ def test_create_and_list_researcher(monkeypatch, tmp_path):
     result = researchers.create_researcher(
         {
             "name": "Dr Ada",
-            "fields": "multi-agent systems, software engineering",
-            "reviewing_style": "tough on methodology",
-            "lens_preferences": {"methodology": "high", "format": "low", "bogus": "nope"},
+            "instructions": "Review rigorously; check the statistics.",
+            "rubrics": [{"name": "methods.md", "content": "## Methods\n- reproducible?"}],
         }
     )
     assert result["ok"] is True
     researcher = result["researcher"]
     assert researcher["id"].startswith("rsr_")
-    assert researcher["fields"] == ["multi-agent systems", "software engineering"]
-    # Only known lens keys with valid levels survive.
-    assert researcher["lens_preferences"] == {"methodology": "high", "format": "low"}
+    assert researcher["instructions"] == "Review rigorously; check the statistics."
+    assert [r["name"] for r in researcher["rubrics"]] == ["methods.md"]
+    # The profile is now just name + documents; structured fields are gone.
+    assert "fields" not in researcher
+    assert "lens_preferences" not in researcher
 
     listing = researchers.list_researchers()
     assert [r["id"] for r in listing] == [researcher["id"]]
@@ -43,10 +44,10 @@ def test_update_and_delete_researcher(monkeypatch, tmp_path):
     created = researchers.create_researcher({"name": "Reviewer One"})["researcher"]
 
     updated = researchers.update_researcher(
-        created["id"], {"name": "Reviewer One", "fields": ["AI safety"]}
+        created["id"], {"name": "Reviewer One", "instructions": "Be fair but firm."}
     )
     assert updated["ok"] is True
-    assert updated["researcher"]["fields"] == ["AI safety"]
+    assert updated["researcher"]["instructions"] == "Be fair but firm."
     assert updated["researcher"]["created_at"] == created["created_at"]
 
     deleted = researchers.delete_researcher(created["id"])
@@ -58,13 +59,13 @@ def test_update_and_delete_researcher(monkeypatch, tmp_path):
 def test_researcher_prompt_appends_profile_block(monkeypatch, tmp_path):
     _use_temp_registry(monkeypatch, tmp_path)
     created = researchers.create_researcher(
-        {"name": "Dr Ada", "fields": ["software engineering"], "reviewing_style": "rigorous"}
+        {"name": "Dr Ada", "instructions": "Focus on software engineering rigor."}
     )["researcher"]
 
     prompt = researchers.researcher_prompt(created["id"], "Review this paper.")
     assert "Review this paper." in prompt
     assert "reviewer_profile" in prompt
-    assert "software engineering" in prompt
+    assert "software engineering rigor" in prompt
     # The profile must never be a license to invent.
     assert "verbatim quote and anchor" in prompt
 

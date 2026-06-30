@@ -929,12 +929,6 @@ const els = {
   researcherForm: document.querySelector("#researcherForm"),
   researcherFormTitle: document.querySelector("#researcherFormTitle"),
   researcherName: document.querySelector("#researcherName"),
-  researcherEmail: document.querySelector("#researcherEmail"),
-  researcherFields: document.querySelector("#researcherFields"),
-  researcherVenues: document.querySelector("#researcherVenues"),
-  researcherStyle: document.querySelector("#researcherStyle"),
-  researcherGuidelines: document.querySelector("#researcherGuidelines"),
-  researcherLensGrid: document.querySelector("#researcherLensGrid"),
   instructionsUpload: document.querySelector("#instructionsUpload"),
   instructionsEditor: document.querySelector("#instructionsEditor"),
   instructionsText: document.querySelector("#instructionsText"),
@@ -2284,15 +2278,6 @@ async function refreshResearchers() {
   renderResearchers();
 }
 
-const LENS_PREF_KEYS = [
-  ["scope", "Journal fit"],
-  ["novelty", "Contribution & novelty"],
-  ["methodology", "Methodology"],
-  ["field_expert", "Field-specific"],
-  ["adversarial", "Reviewer 2"],
-  ["format", "Formatting"],
-];
-
 // Reviewing-document editors (instructions.md + rubrics). These mirror the
 // backend limits in ci2lab/ui/researchers.py so the UI never offers to store
 // more than the registry keeps.
@@ -2426,21 +2411,6 @@ async function uploadRubrics(event) {
   event.target.value = "";
 }
 
-function renderLensPrefGrid(prefs) {
-  if (!els.researcherLensGrid) return;
-  prefs = prefs || {};
-  els.researcherLensGrid.innerHTML = LENS_PREF_KEYS.map(([key, label]) => {
-    const value = prefs[key] || "";
-    const options = ["", "low", "medium", "high"].map((level) => {
-      const text = level || uiText("default");
-      const selected = level === value ? " selected" : "";
-      return `<option value="${level}"${selected}>${escapeHtml(text)}</option>`;
-    }).join("");
-    return `<label class="researcher-lens-item">${escapeHtml(uiText(label))}` +
-      `<select data-lens="${key}">${options}</select></label>`;
-  }).join("");
-}
-
 function openResearcherProfile({ create = false } = {}) {
   const profile = create ? null : currentResearcherInfo();
   state.researcherFormMode = profile ? "edit" : "new";
@@ -2448,12 +2418,6 @@ function openResearcherProfile({ create = false } = {}) {
     els.researcherFormTitle.textContent = uiText(profile ? "Edit profile" : "New researcher");
   }
   if (els.researcherName) els.researcherName.value = profile?.name || "";
-  if (els.researcherEmail) els.researcherEmail.value = profile?.email || "";
-  if (els.researcherFields) els.researcherFields.value = (profile?.fields || []).join(", ");
-  if (els.researcherVenues) els.researcherVenues.value = (profile?.default_venues || []).join(", ");
-  if (els.researcherStyle) els.researcherStyle.value = profile?.reviewing_style || "";
-  if (els.researcherGuidelines) els.researcherGuidelines.value = (profile?.preferred_guidelines || []).join(", ");
-  renderLensPrefGrid(profile?.lens_preferences);
   if (els.instructionsText) els.instructionsText.value = profile?.instructions || "";
   state.rubricsDraft = (profile?.rubrics || []).map((rubric) => ({
     name: rubric.name || "rubric",
@@ -2469,18 +2433,8 @@ function openResearcherProfile({ create = false } = {}) {
 }
 
 function _collectResearcherForm() {
-  const lens_preferences = {};
-  els.researcherLensGrid?.querySelectorAll("select[data-lens]").forEach((select) => {
-    if (select.value) lens_preferences[select.dataset.lens] = select.value;
-  });
   return {
     name: els.researcherName?.value.trim() || "",
-    email: els.researcherEmail?.value.trim() || "",
-    fields: els.researcherFields?.value.trim() || "",
-    default_venues: els.researcherVenues?.value.trim() || "",
-    reviewing_style: els.researcherStyle?.value.trim() || "",
-    preferred_guidelines: els.researcherGuidelines?.value.trim() || "",
-    lens_preferences,
     instructions: els.instructionsText?.value || "",
     rubrics: (state.rubricsDraft || []).map((rubric) => ({
       name: rubric.name || "rubric",

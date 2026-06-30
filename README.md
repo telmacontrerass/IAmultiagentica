@@ -164,10 +164,11 @@ ci2lab sessions
 | MCP | `.ci2lab/mcp.json` | External tool servers |
 | Project memory | `CI2LAB.md`, `AGENTS.md` | Persistent instructions injected into the prompt |
 
-### Knowledge projects in the web UI
+### Knowledge and research-paper projects
 
-The local web UI supports isolated projects for subjects, courses, or recurring
-work. A project has its own SQLite database and source directory under
+The local web UI and interactive terminal menu (`ci2lab menu`) support isolated
+projects for subjects, courses, recurring work, and grounded scientific peer
+review. A project has its own SQLite database and source directory under
 `~/.ci2lab/projects/<project-id>/`.
 
 - Create or open a project from the **Projects** panel.
@@ -177,6 +178,12 @@ work. A project has its own SQLite database and source directory under
 - Sessions keep their project association and cannot be resumed in a different
   project.
 - Select **Outside projects** to use a normal standalone chat.
+
+From the terminal menu, open **Researchers and review profiles** to manage each
+reviewer's expertise, style, instructions, and text/PDF rubrics. Then open
+**My projects → Create research-paper project** to choose that reviewer, enter
+paper metadata, upload the manuscript, and run the same grounded peer-review
+pipeline used by the web UI.
 
 ### Tool modes (`tool_mode`)
 

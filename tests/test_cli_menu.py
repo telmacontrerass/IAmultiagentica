@@ -5,8 +5,10 @@ from ci2lab.cli.menu import (
     MenuOption,
     ModelChoice,
     _add_project_source_from_path,
+    _create_paper_review_project,
     _parse_command_line,
     _projects_menu,
+    _read_rubric_document,
     _run_doctor_with_ollama_install_option,
     _run_project_chat,
     _visible_option_window,
@@ -110,6 +112,13 @@ def test_main_menu_exposes_my_projects():
     assert project_option.label == "My projects"
 
 
+def test_main_menu_exposes_researcher_profiles():
+    from ci2lab.cli.menu import MAIN_OPTIONS
+
+    option = next(option for option in MAIN_OPTIONS if option.value == "researchers")
+    assert option.label == "Researchers and review profiles"
+
+
 def test_main_menu_exposes_terminal_language_selector():
     from ci2lab.cli.menu import MAIN_OPTIONS
 
@@ -189,6 +198,57 @@ def test_projects_menu_can_create_project(monkeypatch):
     assert opened == ["prj_123456789abc"]
 
 
+def test_create_paper_project_collects_reviewer_and_metadata(monkeypatch):
+    researcher = {
+        "id": "rsr_123456789abc",
+        "name": "Dr Ada",
+    }
+    captured = {}
+
+    def fake_create(name, **kwargs):
+        captured["name"] = name
+        captured.update(kwargs)
+        return {"ok": True, "project": {"id": "prj_123456789abc", "name": name}}
+
+    monkeypatch.setattr("ci2lab.ui.projects.create_project", fake_create)
+    with (
+        patch("ci2lab.cli.menu._select_researcher", return_value=researcher),
+        patch(
+            "ci2lab.cli.menu._ask_text",
+            side_effect=["My Paper", "robotics", "Nature Robotics", "systematic review"],
+        ),
+        patch("ci2lab.cli.menu._confirm", return_value=False),
+    ):
+        project = _create_paper_review_project()
+
+    assert project is not None
+    assert captured["kind"] == "paper_review"
+    assert captured["owner_id"] == researcher["id"]
+    assert captured["reviewer_profile_id"] == researcher["id"]
+    assert captured["field"] == "robotics"
+    assert captured["target_venue"] == "Nature Robotics"
+    assert captured["article_type"] == "systematic review"
+
+
+def test_terminal_rubric_loader_extracts_pdf_text(tmp_path):
+    rubric = tmp_path / "rubric.pdf"
+    rubric.write_bytes(b"%PDF fake")
+
+    with (
+        patch("ci2lab.cli.menu._ask_text", return_value=str(rubric)),
+        patch(
+            "ci2lab.harness.tools.filesystem.read_document",
+            return_value="Methods must be reproducible.",
+        ),
+    ):
+        loaded = _read_rubric_document()
+
+    assert loaded == {
+        "name": "rubric.pdf",
+        "content": "Methods must be reproducible.",
+    }
+
+
 def test_add_project_source_reads_selected_local_file(tmp_path, monkeypatch):
     source = tmp_path / "notes.txt"
     source.write_text("course notes", encoding="utf-8")
@@ -255,6 +315,64 @@ def test_run_project_chat_uses_project_workspace_and_id(monkeypatch):
     assert config.project_id == project["id"]
     assert captured["session_id"] == "session-1"
     assert captured["multi_agent"] is True
+
+
+def test_run_paper_project_chat_builds_grounded_review_context(monkeypatch):
+    selected = ModelChoice(
+        label="Small Model",
+        value="small",
+        catalog_id="small",
+        ollama_tag="small:1b",
+        installed=True,
+    )
+    project = {
+        "id": "prj_123456789abc",
+        "name": "Robotics paper",
+        "kind": "paper_review",
+        "source_count": 1,
+        "workspace": "/tmp/robotics-paper",
+        "paper_title": "Safe Robots",
+        "field": "robotics",
+        "target_venue": "Robotics Journal",
+        "article_type": "research article",
+        "owner_id": "rsr_123456789abc",
+        "reviewer_profile_id": "rsr_123456789abc",
+    }
+    researcher = {"id": "rsr_123456789abc", "name": "Dr Ada"}
+    selection = type("Selection", (), {"ollama_tag": "small:1b"})()
+    config = type(
+        "Config",
+        (),
+        {"project_id": None, "researcher_id": None, "multiagent_flow": None},
+    )()
+    captured = {}
+
+    monkeypatch.setattr("ci2lab.ui.projects.get_project", lambda project_id: project)
+    monkeypatch.setattr(
+        "ci2lab.ui.projects.project_manuscript_text",
+        lambda project_id: ("Introduction\nRobots were tested safely.", "paper.pdf"),
+    )
+    monkeypatch.setattr(
+        "ci2lab.ui.researchers.get_researcher",
+        lambda researcher_id: researcher,
+    )
+    with (
+        patch("ci2lab.cli.menu.select_model", return_value=selected),
+        patch("ci2lab.pipeline.prepare_session", return_value=(None, selection)),
+        patch("ci2lab.pipeline.build_agent_config", return_value=config),
+        patch(
+            "ci2lab.harness.repl.run_repl",
+            side_effect=lambda sel, cfg, **kwargs: captured.update(kwargs),
+        ),
+    ):
+        assert _run_project_chat(Ci2LabConfig(), project["id"]) == 0
+
+    assert config.project_id == project["id"]
+    assert config.researcher_id == researcher["id"]
+    assert config.multiagent_flow == "paper_review"
+    assert captured["multi_agent"] is True
+    assert captured["review_context"].manuscript_source_name == "paper.pdf"
+    assert captured["review_context"].index.segments
 
 
 def test_menu_command_mode_runs_manual_args():

@@ -278,6 +278,11 @@ MAIN_OPTIONS: tuple[MenuOption, ...] = (
         "projects",
     ),
     MenuOption(
+        "Researchers and review profiles",
+        "Create researchers and manage their instructions and grading rubrics.",
+        "researchers",
+    ),
+    MenuOption(
         "Start chat with agents",
         "Sequential planner/researcher/coder/validator/reviewer flow.",
         "multi_chat",
@@ -532,6 +537,8 @@ def _handle_main_choice(
         return _run_chat_command(runtime, runner, ["chat"])
     if selected == "projects":
         return _projects_menu(runtime)
+    if selected == "researchers":
+        return _researchers_menu()
     if selected == "multi_chat":
         return _run_chat_command(runtime, runner, ["--multi-agent", "chat"])
     if selected == "tools_chat":
@@ -601,6 +608,383 @@ def _run_chat_command(
     return _run_command(["--model", choice.catalog_id or choice.ollama_tag, *base_args], runner)
 
 
+def _profile_payload(profile: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    """Return a complete researcher replacement payload with selected changes."""
+    payload = {
+        "name": profile.get("name", ""),
+        "instructions": profile.get("instructions", ""),
+        "rubrics": list(profile.get("rubrics") or []),
+    }
+    payload.update(changes)
+    return payload
+
+
+def _print_researcher_guidance() -> None:
+    """Explain how to fill the reviewing instructions and rubric documents."""
+    console.print(
+        "\n[bold]How the model learns to review like you[/bold]\n"
+        "A profile is just your name plus two documents you provide. Everything the\n"
+        "model knows about how you review comes from them, so be thorough:\n\n"
+        "  • [bold]instructions.md[/bold] — in plain language or Markdown, write everything that\n"
+        "    defines you as a reviewer: your field(s) and sub-fields, the venues/journals\n"
+        "    you review for, your reviewing philosophy and tone, what you always check,\n"
+        "    common red flags, your scoring scale, and the structure each review should\n"
+        "    follow. Use clear headings and bullet lists.\n"
+        "  • [bold]rubric(s)[/bold] — upload the rubric(s) you grade with (PDF, Markdown or text).\n"
+        "    They are used as ground truth for scoring and corrections, so make every\n"
+        "    criterion and its levels/points explicit. PDF text is extracted on upload.\n\n"
+        "The clearer and more complete these documents are, the better the review.\n"
+    )
+
+
+def _collect_researcher_payload(existing: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Prompt for the researcher name, preserving the reviewing documents.
+
+    The profile is intentionally just a name; the field, style and standards all
+    live in the instructions and rubric documents managed from the detail menu.
+    """
+    existing = existing or {}
+    name = _ask_text(f"Name [{existing.get('name', '')}]") or str(existing.get("name") or "")
+    if not name:
+        console.print("[yellow]A researcher name is required.[/yellow]")
+        return None
+    return _profile_payload(existing, name=name)
+
+
+def _researchers_menu() -> int:
+    """Create, open, edit and delete local researcher/reviewer profiles."""
+    from ci2lab.ui.researchers import create_researcher, list_researchers
+
+    while True:
+        researchers = list_researchers()
+        options = [
+            MenuOption(
+                "Create researcher",
+                "Add a reviewer by name, then attach instructions.md and rubrics.",
+                "create",
+            ),
+            *[
+                MenuOption(
+                    researcher["name"],
+                    (
+                        f"{len(researcher.get('rubrics') or [])} rubric(s) · "
+                        f"{'instructions set' if researcher.get('instructions') else 'no instructions yet'}"
+                    ),
+                    researcher["id"],
+                )
+                for researcher in researchers
+            ],
+            MenuOption("Back", "Return to the main menu.", "back"),
+        ]
+        selected = select_from_menu(
+            "Researchers and review profiles",
+            options,
+            subtitle="A profile is a name plus your instructions.md and grading rubrics.",
+        )
+        if selected is None or selected == "back":
+            return 0
+        if selected == "create":
+            _print_researcher_guidance()
+            payload = _collect_researcher_payload()
+            if payload is None:
+                continue
+            result = create_researcher(payload)
+            if not result.get("ok"):
+                console.print(f"[red]{result.get('error', 'Could not create researcher.')}[/red]")
+                continue
+            researcher = result["researcher"]
+            console.print(f"[green]Researcher created:[/green] {researcher['name']}")
+            _researcher_detail_menu(researcher["id"])
+            continue
+        _researcher_detail_menu(selected)
+
+
+def _researcher_detail_menu(researcher_id: str) -> int:
+    """Manage one review profile, including instructions and rubric documents."""
+    from ci2lab.ui.researchers import (
+        delete_researcher,
+        get_researcher,
+        update_researcher,
+    )
+
+    while True:
+        profile = get_researcher(researcher_id)
+        if profile is None:
+            console.print("[yellow]Researcher not found.[/yellow]")
+            return 0
+        instructions = str(profile.get("instructions") or "")
+        rubrics = list(profile.get("rubrics") or [])
+        options = (
+            MenuOption("Rename profile", "Change the reviewer's name.", "edit"),
+            MenuOption("Reviewing guide", "How to write instructions.md and rubrics.", "guide"),
+            MenuOption(
+                "Set reviewing instructions",
+                f"{len(instructions)} characters currently stored.",
+                "instructions",
+            ),
+            MenuOption(
+                "View reviewing instructions",
+                "Print the complete instructions in the terminal.",
+                "view_instructions",
+            ),
+            MenuOption("Clear reviewing instructions", "Remove the current instructions.", "clear"),
+            MenuOption("Add rubric", "Add a PDF, Markdown, text or CSV rubric.", "add_rubric"),
+            MenuOption("View or remove rubrics", f"{len(rubrics)} rubric(s).", "rubrics"),
+            MenuOption("Delete researcher", "Delete this local review profile.", "delete"),
+            MenuOption("Back", "Return to researchers.", "back"),
+        )
+        selected = select_from_menu(
+            profile["name"],
+            options,
+            subtitle=(
+                f"{len(rubrics)} rubric(s) · "
+                f"{'instructions set' if instructions else 'no instructions yet'}"
+            ),
+        )
+        if selected is None or selected == "back":
+            return 0
+        if selected == "edit":
+            payload = _collect_researcher_payload(profile)
+            if payload is not None:
+                result = update_researcher(researcher_id, payload)
+                if not result.get("ok"):
+                    console.print(f"[red]{result.get('error')}[/red]")
+        elif selected == "guide":
+            _print_researcher_guidance()
+            _pause()
+        elif selected == "instructions":
+            content = _read_reviewer_document("Path to reviewing instructions")
+            if content is not None:
+                result = update_researcher(
+                    researcher_id,
+                    _profile_payload(profile, instructions=content),
+                )
+                if result.get("ok"):
+                    console.print("[green]Reviewing instructions updated.[/green]")
+                else:
+                    console.print(f"[red]{result.get('error')}[/red]")
+        elif selected == "view_instructions":
+            if instructions:
+                _print_divider()
+                console.print(instructions)
+                _print_divider()
+                _pause()
+            else:
+                console.print("[dim]No reviewing instructions are stored.[/dim]")
+        elif selected == "clear":
+            if _confirm("Clear reviewing instructions? [y/N] "):
+                update_researcher(
+                    researcher_id,
+                    _profile_payload(profile, instructions=""),
+                )
+        elif selected == "add_rubric":
+            rubric = _read_rubric_document()
+            if rubric is not None:
+                result = update_researcher(
+                    researcher_id,
+                    _profile_payload(profile, rubrics=[*rubrics, rubric]),
+                )
+                if result.get("ok"):
+                    console.print(f"[green]Rubric added:[/green] {rubric['name']}")
+                else:
+                    console.print(f"[red]{result.get('error')}[/red]")
+        elif selected == "rubrics":
+            _researcher_rubrics_menu(researcher_id)
+        elif selected == "delete":
+            if _confirm(f"Delete researcher '{profile['name']}'? [y/N] "):
+                result = delete_researcher(researcher_id)
+                if result.get("ok"):
+                    console.print("[green]Researcher deleted.[/green]")
+                    return 0
+                console.print(f"[red]{result.get('error')}[/red]")
+
+
+def _read_reviewer_document(label: str) -> str | None:
+    """Read a UTF-8-compatible local reviewing document."""
+    raw_path = _ask_text(label)
+    if not raw_path:
+        return None
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        console.print(f"[red]File not found:[/red] {path}")
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        console.print(f"[red]Could not read file:[/red] {exc}")
+        return None
+
+
+def _read_rubric_document() -> dict[str, str] | None:
+    """Read a rubric from text or extract its text from a PDF."""
+    raw_path = _ask_text("Path to rubric file")
+    if not raw_path:
+        return None
+    path = Path(raw_path).expanduser().resolve()
+    if not path.is_file():
+        console.print(f"[red]File not found:[/red] {path}")
+        return None
+    if path.suffix.lower() == ".pdf":
+        from ci2lab.harness.tools.filesystem import read_document
+
+        content = read_document(str(path.parent), path.name)
+        if content.startswith("Error:") or not content.strip():
+            console.print(
+                "[red]Could not extract rubric PDF text. "
+                "Use a text-based PDF or a text/Markdown rubric.[/red]"
+            )
+            return None
+    else:
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            console.print(f"[red]Could not read rubric:[/red] {exc}")
+            return None
+    return {"name": path.name, "content": content}
+
+
+def _researcher_rubrics_menu(researcher_id: str) -> int:
+    """Show and optionally remove rubrics from a researcher profile."""
+    from ci2lab.ui.researchers import get_researcher
+
+    while True:
+        profile = get_researcher(researcher_id)
+        if profile is None:
+            return 0
+        rubrics = list(profile.get("rubrics") or [])
+        options = [
+            *[
+                MenuOption(
+                    rubric.get("name") or f"Rubric {index + 1}",
+                    f"{len(str(rubric.get('content') or ''))} characters · select to remove",
+                    str(index),
+                )
+                for index, rubric in enumerate(rubrics)
+            ],
+            MenuOption("Back", "Return to the researcher.", "back"),
+        ]
+        selected = select_from_menu("Researcher rubrics", options)
+        if selected is None or selected == "back":
+            return 0
+        try:
+            index = int(selected)
+        except ValueError:
+            continue
+        _rubric_detail_menu(researcher_id, index)
+
+
+def _rubric_detail_menu(researcher_id: str, rubric_index: int) -> int:
+    """View, replace or remove one stored rubric."""
+    from ci2lab.ui.researchers import get_researcher, update_researcher
+
+    while True:
+        profile = get_researcher(researcher_id)
+        if profile is None:
+            return 0
+        rubrics = list(profile.get("rubrics") or [])
+        if not (0 <= rubric_index < len(rubrics)):
+            return 0
+        rubric = rubrics[rubric_index]
+        selected = select_from_menu(
+            str(rubric.get("name") or "Rubric"),
+            (
+                MenuOption("View content", "Print the full rubric.", "view"),
+                MenuOption(
+                    "Replace from file", "Use a new text, Markdown, CSV or PDF file.", "replace"
+                ),
+                MenuOption("Remove rubric", "Delete this rubric from the profile.", "remove"),
+                MenuOption("Back", "Return to the rubric list.", "back"),
+            ),
+        )
+        if selected is None or selected == "back":
+            return 0
+        if selected == "view":
+            _print_divider()
+            console.print(str(rubric.get("content") or ""))
+            _print_divider()
+            _pause()
+        elif selected == "replace":
+            replacement = _read_rubric_document()
+            if replacement is not None:
+                rubrics[rubric_index] = replacement
+                update_researcher(
+                    researcher_id,
+                    _profile_payload(profile, rubrics=rubrics),
+                )
+        elif selected == "remove":
+            if _confirm(f"Remove rubric '{rubric.get('name', 'rubric')}'? [y/N] "):
+                remaining = [
+                    item for item_index, item in enumerate(rubrics) if item_index != rubric_index
+                ]
+                update_researcher(
+                    researcher_id,
+                    _profile_payload(profile, rubrics=remaining),
+                )
+                return 0
+
+
+def _select_researcher(*, allow_none: bool = True) -> dict[str, Any] | None:
+    """Prompt for a researcher profile, optionally allowing no selection."""
+    from ci2lab.ui.researchers import list_researchers
+
+    researchers = list_researchers()
+    options = [
+        *(
+            [MenuOption("No researcher", "Use a generic review profile.", "none")]
+            if allow_none
+            else []
+        ),
+        *[
+            MenuOption(
+                researcher["name"],
+                (
+                    f"{len(researcher.get('rubrics') or [])} rubric(s) · "
+                    f"{'instructions set' if researcher.get('instructions') else 'no instructions'}"
+                ),
+                researcher["id"],
+            )
+            for researcher in researchers
+        ],
+        MenuOption("Back", "Cancel selection.", "back"),
+    ]
+    selected = select_from_menu("Select researcher", options)
+    if selected in {None, "none", "back"}:
+        return None
+    return next((item for item in researchers if item["id"] == selected), None)
+
+
+def _create_paper_review_project() -> dict[str, Any] | None:
+    """Collect manuscript metadata and create a paper-review project."""
+    from ci2lab.ui.projects import create_project
+
+    researcher = _select_researcher()
+    title = _ask_text("Paper title / project name")
+    if not title:
+        return None
+    field = _ask_text("Field") or ""
+    venue = _ask_text("Target venue") or ""
+    article_type = _ask_text("Article type [research article]") or "research article"
+    researcher_id = str((researcher or {}).get("id") or "") or None
+    result = create_project(
+        title,
+        kind="paper_review",
+        owner_id=researcher_id,
+        reviewer_profile_id=researcher_id,
+        paper_title=title,
+        field=field,
+        target_venue=venue,
+        article_type=article_type,
+    )
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('error', 'Could not create paper project.')}[/red]")
+        return None
+    project = result["project"]
+    console.print(f"[green]Research-paper project created:[/green] {project['name']}")
+    if _confirm("Add the manuscript/source file now? [y/N] "):
+        _add_project_source_from_path(project["id"])
+    return project
+
+
 def _projects_menu(runtime: Ci2LabConfig) -> int:
     """Show the projects list, allowing creation and opening of a project."""
     from ci2lab.ui.projects import create_project, list_projects
@@ -613,10 +997,16 @@ def _projects_menu(runtime: Ci2LabConfig) -> int:
                 "Create an isolated workspace with its own sources and chats.",
                 "create",
             ),
+            MenuOption(
+                "Create research-paper project",
+                "One manuscript, reviewer profile, metadata and grounded peer review.",
+                "create_paper",
+            ),
             *[
                 MenuOption(
                     project["name"],
                     (
+                        f"{'Paper review' if project.get('kind') == 'paper_review' else 'Knowledge'} · "
                         f"{project['source_count']} source"
                         f"{'' if project['source_count'] == 1 else 's'} · "
                         f"{project['source_size_label']}"
@@ -646,12 +1036,17 @@ def _projects_menu(runtime: Ci2LabConfig) -> int:
             console.print(f"[green]Project created:[/green] {project['name']}")
             _project_detail_menu(runtime, project["id"])
             continue
+        if selected == "create_paper":
+            project = _create_paper_review_project()
+            if project is not None:
+                _project_detail_menu(runtime, project["id"])
+            continue
         _project_detail_menu(runtime, selected)
 
 
 def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
-    """Show actions for a single project (chat, sources, delete) until Back."""
-    from ci2lab.ui.projects import delete_project, get_project
+    """Show chat, metadata, reviewer and source actions for one project."""
+    from ci2lab.ui.projects import delete_project, get_project, update_project_metadata
 
     while True:
         project = get_project(project_id)
@@ -659,25 +1054,60 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
             console.print("[yellow]Project not found.[/yellow]")
             return 0
         conversations = _project_sessions(project_id)
+        is_paper = project.get("kind") == "paper_review"
+        chat_options = (
+            (
+                MenuOption(
+                    "Run grounded peer review",
+                    "Use anchored evidence and the selected researcher profile.",
+                    "paper_review",
+                ),
+            )
+            if is_paper
+            else (
+                MenuOption(
+                    "Start new chat",
+                    "Classic chat using this project's sources on every turn.",
+                    "chat",
+                ),
+                MenuOption(
+                    "Start new multi-agent chat",
+                    "Use sequential agents with this project's sources.",
+                    "multi_chat",
+                ),
+            )
+        )
+        paper_options = (
+            (
+                MenuOption(
+                    "Edit paper metadata",
+                    "Title, field, venue, article type, maturity and review status.",
+                    "metadata",
+                ),
+                MenuOption(
+                    "Choose reviewer",
+                    "Select the profile, instructions and rubrics used for review.",
+                    "reviewer",
+                ),
+            )
+            if is_paper
+            else ()
+        )
         options = (
-            MenuOption(
-                "Start new chat",
-                "Classic chat using this project's sources on every turn.",
-                "chat",
-            ),
-            MenuOption(
-                "Start new multi-agent chat",
-                "Use sequential agents with this project's sources.",
-                "multi_chat",
-            ),
+            *chat_options,
             MenuOption(
                 "Continue a conversation",
                 f"{len(conversations)} saved project conversation(s).",
                 "sessions",
             ),
+            *paper_options,
             MenuOption(
                 "Add source",
-                "Upload a local document, PDF, notes, slides or spreadsheet.",
+                (
+                    "Add the manuscript or a supporting source."
+                    if is_paper
+                    else "Upload a local document, PDF, notes, slides or spreadsheet."
+                ),
                 "add_source",
             ),
             MenuOption(
@@ -691,13 +1121,16 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
         selected = select_from_menu(
             project["name"],
             options,
-            subtitle=(f"{project['source_count']} sources · {len(conversations)} conversations"),
+            subtitle=(
+                f"{'Paper review · ' if is_paper else ''}"
+                f"{project['source_count']} sources · {len(conversations)} conversations"
+            ),
         )
         if selected is None or selected == "back":
             return 0
         if selected == "chat":
             _run_project_chat(runtime, project_id, multi_agent=False)
-        elif selected == "multi_chat":
+        elif selected in {"multi_chat", "paper_review"}:
             _run_project_chat(runtime, project_id, multi_agent=True)
         elif selected == "sessions":
             session = _select_project_session(project_id)
@@ -712,6 +1145,29 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
             _add_project_source_from_path(project_id)
         elif selected == "sources":
             _project_sources_menu(project_id)
+        elif selected == "metadata":
+            result = update_project_metadata(project_id, _edit_paper_metadata(project))
+            if result.get("ok"):
+                console.print("[green]Paper metadata updated.[/green]")
+            else:
+                console.print(f"[red]{result.get('error')}[/red]")
+        elif selected == "reviewer":
+            researcher = _select_researcher()
+            researcher_id = str((researcher or {}).get("id") or "")
+            result = update_project_metadata(
+                project_id,
+                {
+                    "owner_id": researcher_id,
+                    "reviewer_profile_id": researcher_id,
+                },
+            )
+            if result.get("ok"):
+                console.print(
+                    f"[green]Reviewer updated:[/green] "
+                    f"{(researcher or {}).get('name') or 'generic reviewer'}"
+                )
+            else:
+                console.print(f"[red]{result.get('error')}[/red]")
         elif selected == "delete":
             if _confirm(f"Delete project '{project['name']}' and all its sources/chats? [y/N] "):
                 result = delete_project(project_id)
@@ -719,6 +1175,24 @@ def _project_detail_menu(runtime: Ci2LabConfig, project_id: str) -> int:
                     console.print("[green]Project deleted.[/green]")
                     return 0
                 console.print(f"[red]{result.get('error', 'Could not delete project.')}[/red]")
+
+
+def _edit_paper_metadata(project: dict[str, Any]) -> dict[str, str]:
+    """Prompt for editable scientific-paper metadata, preserving blank defaults."""
+    title = _ask_text(f"Paper title [{project.get('paper_title') or project['name']}]")
+    field = _ask_text(f"Field [{project.get('field') or ''}]")
+    venue = _ask_text(f"Target venue [{project.get('target_venue') or ''}]")
+    article_type = _ask_text(f"Article type [{project.get('article_type') or ''}]")
+    maturity = _ask_text(f"Maturity [{project.get('maturity') or ''}]")
+    review_status = _ask_text(f"Review status [{project.get('review_status') or ''}]")
+    return {
+        "paper_title": title or str(project.get("paper_title") or project["name"]),
+        "field": field or str(project.get("field") or ""),
+        "target_venue": venue or str(project.get("target_venue") or ""),
+        "article_type": article_type or str(project.get("article_type") or ""),
+        "maturity": maturity or str(project.get("maturity") or ""),
+        "review_status": review_status or str(project.get("review_status") or ""),
+    }
 
 
 def _run_project_chat(
@@ -764,14 +1238,49 @@ def _run_project_chat(
         session_id=session_id,
     )
     config.project_id = project_id
+    review_context = None
+    is_paper_review = project.get("kind") == "paper_review"
+    researcher: dict[str, Any] | None = None
+    source_name = ""
+    if is_paper_review:
+        from ci2lab.harness.multiagent.manuscript import build_index
+        from ci2lab.harness.multiagent.paper_review import ReviewContext
+        from ci2lab.ui.projects import project_manuscript_text
+        from ci2lab.ui.researchers import get_researcher, researcher_context_block
+
+        researcher_id = str(project.get("reviewer_profile_id") or project.get("owner_id") or "")
+        researcher = get_researcher(researcher_id) if researcher_id else None
+        raw_text, source_name = project_manuscript_text(project_id)
+        review_context = ReviewContext(
+            index=build_index(raw_text),
+            paper_meta={
+                "paper_title": project.get("paper_title") or project.get("name"),
+                "field": project.get("field"),
+                "target_venue": project.get("target_venue"),
+                "article_type": project.get("article_type"),
+            },
+            reviewer_block=researcher_context_block(researcher) if researcher else "",
+            manuscript_source_name=source_name,
+        )
+        config.researcher_id = researcher_id or None
+        config.multiagent_flow = "paper_review"
+        multi_agent = True
     console.print(
         f"[bold]Project:[/bold] {project['name']} [dim]({project['source_count']} sources)[/dim]"
     )
+    if is_paper_review:
+        console.print(
+            f"[bold]Grounded peer review:[/bold] {source_name or 'no manuscript yet'} · "
+            f"{(researcher or {}).get('name') or 'generic reviewer'}\n"
+            "[dim]Ask for the complete peer review. Accepted findings are checked "
+            "against the manuscript.[/dim]"
+        )
     run_repl(
         selection,
         config,
         session_id=session_id,
         multi_agent=multi_agent,
+        review_context=review_context,
     )
     return 0
 

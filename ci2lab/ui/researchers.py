@@ -1,10 +1,12 @@
 """Login-less researcher profiles for the local web UI.
 
-A researcher profile captures who is doing the review and how they review:
-their field(s) of expertise, default target venues, reviewing style, and a
-per-lens emphasis. There are no passwords — profiles are a local convenience so
-each investigator gets their own papers/projects and so the peer-review flow can
-adapt its depth and tone to that reviewer (see ``researcher_prompt``).
+A researcher profile is intentionally minimal: just a name plus the two
+documents that describe how that person reviews — a free-form ``instructions``
+document (their reviewing brief) and one or more grading ``rubrics``. Everything
+the peer-review flow needs about the reviewer's field, style and standards lives
+inside those documents, which the reviewer writes/uploads themselves (see
+``researcher_prompt``). There are no passwords — profiles are a local
+convenience so each investigator gets their own papers/projects.
 
 Profiles live in a single JSON registry at ``~/.ci2lab/researchers.json`` so the
 store stays trivial to back up and inspect.
@@ -18,24 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-# Emphasis levels accepted for per-lens preferences. Unknown values are dropped.
-LENS_LEVELS = frozenset({"low", "medium", "high"})
-
-# The reviewer lenses a profile can express a preference for. These mirror the
-# multi-agent paper-review roles (see ci2lab/harness/multiagent/state.py).
-LENS_KEYS = (
-    "scope",
-    "novelty",
-    "methodology",
-    "field_expert",
-    "adversarial",
-    "format",
-)
-
 MAX_NAME_CHARS = 100
-MAX_STYLE_CHARS = 2000
-MAX_LIST_ITEMS = 30
-MAX_ITEM_CHARS = 200
 MAX_DOC_CHARS = 50000
 MAX_DOC_NAME_CHARS = 200
 MAX_RUBRICS = 12
@@ -80,29 +65,6 @@ def _clean_text(value: Any, *, limit: int) -> str:
     return " ".join(str(value or "").split()).strip()[:limit]
 
 
-def _clean_list(value: Any) -> list[str]:
-    """Normalise a string or sequence into a de-duplicated list of clean items.
-
-    Comma-separated strings are split; each item has whitespace collapsed and is
-    truncated to :data:`MAX_ITEM_CHARS`. Blanks and duplicates are dropped and
-    the result is capped at :data:`MAX_LIST_ITEMS`.
-    """
-    if isinstance(value, str):
-        items = [part.strip() for part in value.split(",")]
-    elif isinstance(value, (list, tuple)):
-        items = [str(part).strip() for part in value]
-    else:
-        return []
-    cleaned: list[str] = []
-    for item in items:
-        item = " ".join(item.split())[:MAX_ITEM_CHARS]
-        if item and item not in cleaned:
-            cleaned.append(item)
-        if len(cleaned) >= MAX_LIST_ITEMS:
-            break
-    return cleaned
-
-
 def _clean_document(value: Any, *, limit: int = MAX_DOC_CHARS) -> str:
     """Clean a multiline reviewing document while preserving its structure."""
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -128,31 +90,14 @@ def _clean_rubrics(value: Any) -> list[dict[str, str]]:
     return rubrics
 
 
-def _clean_lens_preferences(value: Any) -> dict[str, str]:
-    """Keep only known lens keys mapped to valid emphasis levels.
-
-    Unknown keys and levels outside :data:`LENS_LEVELS` are dropped.
-    """
-    if not isinstance(value, dict):
-        return {}
-    prefs: dict[str, str] = {}
-    for key in LENS_KEYS:
-        level = str(value.get(key) or "").strip().lower()
-        if level in LENS_LEVELS:
-            prefs[key] = level
-    return prefs
-
-
 def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Sanitise a raw researcher payload into the stored profile field set."""
+    """Sanitise a raw researcher payload into the stored profile field set.
+
+    The profile is just a name plus the reviewing documents; all other reviewing
+    context (field, style, standards) is expected to live inside those documents.
+    """
     return {
         "name": _clean_text(payload.get("name"), limit=MAX_NAME_CHARS),
-        "email": _clean_text(payload.get("email"), limit=MAX_ITEM_CHARS),
-        "fields": _clean_list(payload.get("fields")),
-        "default_venues": _clean_list(payload.get("default_venues")),
-        "reviewing_style": _clean_text(payload.get("reviewing_style"), limit=MAX_STYLE_CHARS),
-        "lens_preferences": _clean_lens_preferences(payload.get("lens_preferences")),
-        "preferred_guidelines": _clean_list(payload.get("preferred_guidelines")),
         "instructions": _clean_document(payload.get("instructions")),
         "rubrics": _clean_rubrics(payload.get("rubrics")),
     }
@@ -162,7 +107,7 @@ def create_researcher(payload: dict[str, Any]) -> dict[str, Any]:
     """Create and persist a new researcher profile.
 
     Args:
-        payload: Raw profile fields (name, email, fields, venues, style, etc.).
+        payload: Raw profile fields (name, instructions, rubrics).
 
     Returns:
         ``{"ok": True, "researcher": ...}`` on success, otherwise an error dict
@@ -246,8 +191,10 @@ def delete_researcher(researcher_id: str) -> dict[str, Any]:
 def researcher_context_block(profile: dict[str, Any]) -> str:
     """Render a reviewer profile as a prompt block for the peer-review flow.
 
-    The block tells the reviewer agents to ADAPT depth, emphasis, and tone to
-    this researcher's field and style while keeping a rigorous standard review.
+    The profile carries the reviewer's name plus their own reviewing
+    instructions and grading rubric(s); the block tells the reviewer agents to
+    review as that person, following those documents as authoritative guidance,
+    while keeping a rigorous standard review that never invents content.
     """
     if not profile:
         return ""
@@ -255,32 +202,17 @@ def researcher_context_block(profile: dict[str, Any]) -> str:
     name = str(profile.get("name") or "").strip()
     if name:
         lines.append(f"- Reviewer: {name}")
-    fields = profile.get("fields") or []
-    if fields:
-        lines.append(f"- Field(s) of expertise: {', '.join(fields)}")
-    venues = profile.get("default_venues") or []
-    if venues:
-        lines.append(f"- Typical target venues: {', '.join(venues)}")
-    style = str(profile.get("reviewing_style") or "").strip()
-    if style:
-        lines.append(f"- Reviewing style: {style}")
-    prefs = profile.get("lens_preferences") or {}
-    if prefs:
-        rendered = ", ".join(f"{key}={level}" for key, level in prefs.items())
-        lines.append(f"- Emphasis by lens (low/medium/high): {rendered}")
-    guidelines = profile.get("preferred_guidelines") or []
-    if guidelines:
-        lines.append(f"- Preferred reporting guidelines/checklists: {', '.join(guidelines)}")
 
     doc_sections: list[str] = []
     instructions = str(profile.get("instructions") or "").strip()
     if instructions:
         doc_sections.append(
             "<reviewer_instructions>\n"
-            "The reviewer provided these base reviewing instructions. Treat them as "
-            "authoritative guidance for how to review and what to prioritise. They do "
-            "not license inventing content: every claim about the manuscript still "
-            "requires a verbatim quote and anchor.\n"
+            "The reviewer provided these reviewing instructions. They are the base "
+            "for how to review: field, scope, standards, tone and what to check. "
+            "Treat them as authoritative guidance, but never as a license to invent "
+            "content — every claim about the manuscript still requires a verbatim "
+            "quote and anchor.\n"
             f"{instructions}\n"
             "</reviewer_instructions>"
         )
@@ -301,10 +233,10 @@ def researcher_context_block(profile: dict[str, Any]) -> str:
         return ""
     profile_block = (
         "<reviewer_profile>\n"
-        "Adapt the review's depth, emphasis, and tone to this reviewer's field "
-        "and style, but keep a rigorous, standard peer review. This profile never "
-        "licenses inventing content: every claim about the paper still requires a "
-        "verbatim quote and anchor.\n"
+        "Review as this reviewer, following their instructions and rubric(s) below "
+        "as authoritative guidance, while keeping a rigorous, standard peer review. "
+        "This profile never licenses inventing content: every claim about the paper "
+        "still requires a verbatim quote and anchor.\n"
         + ("\n".join(lines) + "\n" if lines else "")
         + "</reviewer_profile>"
     )

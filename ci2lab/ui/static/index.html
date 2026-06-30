@@ -341,50 +341,33 @@
               <div>
                 <p class="eyebrow">Researcher profile</p>
                 <h2 id="researcherFormTitle">My profile</h2>
-                <p>Your details and reviewing preferences. The peer review adapts its field and style to this — it never invents content.</p>
+                <p>Just your name, plus the reviewing instructions and rubrics the model reads to review papers the way you do — grounded in your manuscript, never inventing content.</p>
               </div>
             </div>
 
             <form id="researcherForm" class="researcher-form">
               <section class="project-detail-section researcher-card">
               <div class="researcher-form-grid">
-                <div>
+                <div class="researcher-form-wide">
                   <label for="researcherName">Name</label>
                   <input id="researcherName" maxlength="100" placeholder="e.g. Dr Ada Lovelace" />
                 </div>
-                <div>
-                  <label for="researcherEmail">Email (optional)</label>
-                  <input id="researcherEmail" maxlength="200" placeholder="name@university.edu" />
-                </div>
-                <div>
-                  <label for="researcherFields">Field(s) of expertise</label>
-                  <input id="researcherFields" placeholder="multi-agent systems, software engineering" />
-                </div>
-                <div>
-                  <label for="researcherVenues">Default target venues</label>
-                  <input id="researcherVenues" placeholder="IEEE TSE, NeurIPS" />
-                </div>
-                <div class="researcher-form-wide">
-                  <label for="researcherStyle">Reviewing style</label>
-                  <textarea id="researcherStyle" rows="3" placeholder="e.g. tough on methodology, reviewer-2 oriented, values reproducibility"></textarea>
-                </div>
-                <div class="researcher-form-wide">
-                  <label for="researcherGuidelines">Preferred reporting guidelines / checklists</label>
-                  <input id="researcherGuidelines" placeholder="CONSORT, PRISMA, STROBE" />
-                </div>
               </div>
 
-              <div class="researcher-lens-prefs">
-                <p class="eyebrow">Emphasis by review lens</p>
-                <div class="researcher-lens-grid" id="researcherLensGrid"></div>
-              </div>
+              <p class="researcher-guidance">
+                Name is the only field. Everything about <em>how</em> you review — your
+                field, venues, standards, tone and scoring — comes from the two documents
+                below: your <strong>instructions.md</strong> and your <strong>grading
+                rubric(s)</strong>. The clearer and more complete they are, the better the
+                model reviews like you.
+              </p>
               </section>
 
               <section class="project-detail-section researcher-card">
               <div class="researcher-card-heading">
                 <p class="eyebrow">Reviewing material</p>
                 <h3>What the model reviews with</h3>
-                <p>Optional, but powerful. When a researcher is selected, these documents tune the peer review to that person. With no researcher selected the review still works — it just isn't personalised.</p>
+                <p>These two documents <strong>are</strong> the profile — they replace every other setting. Fill them carefully: the model reads them on every review when this researcher is selected.</p>
               </div>
               <div class="researcher-docs-grid">
                 <section class="researcher-doc-panel">
@@ -392,7 +375,7 @@
                     <div class="researcher-doc-head-copy">
                       <p class="eyebrow">Reviewing instructions</p>
                       <h3>instructions.md</h3>
-                      <p>The base the model reads before reviewing your papers. Upload a document, then read, scroll and edit it right here.</p>
+                      <p>Write everything that defines you as a reviewer: your field(s) and sub-fields, the venues you review for, your reviewing philosophy and tone, what you always check, common red flags, your scoring scale, and the structure each review should follow. Upload a .md/.txt, then read, scroll and edit it here.</p>
                     </div>
                     <label class="source-add-button" for="instructionsUpload" title="Upload instructions">
                       <span aria-hidden="true">↥</span>
@@ -415,7 +398,7 @@
                     <div class="researcher-doc-head-copy">
                       <p class="eyebrow">Grading rubrics</p>
                       <h3>Rubrics</h3>
-                      <p>Upload the rubric(s) you grade with. The model reads them as ground truth for its corrections. Open one to read or edit it; remove it to swap in another.</p>
+                      <p>Upload the rubric(s) you grade with (PDF, Markdown or text). The model uses them as ground truth for scoring and corrections, so make every criterion and its levels/points explicit. PDF text is extracted automatically. Open one to read or edit it; remove it to swap in another.</p>
                     </div>
                     <label class="source-add-button" for="rubricsUpload" title="Upload rubrics">
                       <span aria-hidden="true">↥</span>
