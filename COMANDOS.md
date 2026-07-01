@@ -1,853 +1,718 @@
-# Ci2Lab Commands
+# Ci2Lab — Guía de comandos
 
-A practical guide to get started from scratch and then look up the rest of the useful commands.
+Chuleta práctica con todos los comandos del proyecto, de instalación a scripts avanzados.
 
-> Note: the `ci2lab` command becomes available after you install the package with `pip install -e ".[dev]"`.
+> **Guía rápida:** [`README.md`](README.md) · **Manual extendido:** [`docs/USAGE_MANUAL.md`](docs/USAGE_MANUAL.md)
 
-## 1. Enter the project
+---
+
+## Índice rápido
+
+1. [Instalación](#1-instalación)
+2. [Diagnóstico del entorno](#2-diagnóstico-del-entorno)
+3. [Modelos](#3-modelos)
+4. [Uso básico](#4-uso-básico)
+5. [Agente single-agent](#5-agente-single-agent)
+6. [Multiagente](#6-multiagente)
+7. [UI local](#7-ui-local)
+8. [Sesiones](#8-sesiones)
+9. [Tests y calidad](#9-tests-y-calidad)
+10. [Evaluaciones del harness](#10-evaluaciones-del-harness)
+11. [Benchmarks](#11-benchmarks)
+12. [Seguridad](#12-seguridad)
+13. [Scripts útiles](#13-scripts-útiles)
+14. [Troubleshooting rápido](#14-troubleshooting-rápido)
+
+---
+
+## 1. Instalación
+
+> `ci2lab` requiere Python 3.11 o 3.12 y [Ollama](https://ollama.com/download).
+
+### Automática (recomendada en Windows)
 
 ```powershell
-cd IAmultiagentica
+.\instalar.ps1
 ```
-Enter the project folder.
 
-## 2. Create and activate the virtual environment
+El script comprueba Python, instala Ollama si falta, crea el entorno virtual, instala las dependencias y registra `ci2lab` en el PATH del usuario.
 
-### Windows PowerShell
+### Manual — Windows PowerShell
 
 ```powershell
 py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 ```
-Create the virtual environment on Windows.
+
+Si PowerShell bloquea la ejecución del script de activación:
 
 ```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\.venv\Scripts\Activate.ps1
 ```
-Activate the virtual environment in PowerShell.
 
-### macOS / Linux
+### Manual — macOS / Linux
 
 ```bash
 python3 -m venv .venv
-```
-Create the virtual environment on macOS/Linux.
-
-```bash
 source .venv/bin/activate
-```
-Activate the virtual environment on macOS/Linux.
-
-## 3. Install dependencies
-
-```powershell
 pip install -e ".[dev]"
 ```
-Install Ci2Lab and the development dependencies.
 
-## 4. Install Ollama
-
-Ollama is the program that downloads and runs the local models. Without it, `ollama pull ...` will not work.
-
-### Windows PowerShell
+### Dependencias opcionales
 
 ```powershell
+# Conversión pdf_to_docx (requiere pdf2docx)
+pip install -e ".[convert]"
+
+# Solo producción, sin herramientas de desarrollo
+pip install -e "."
+```
+
+### Instalar Ollama por separado
+
+```powershell
+# Windows
 irm https://ollama.com/install.ps1 | iex
-```
-Install Ollama from PowerShell.
 
-```powershell
-ollama --version
-```
-Check that Ollama was installed.
-
-```powershell
-ollama serve
-```
-Start Ollama if it is not already running in the background.
-
-### Manual install
-
-```text
-https://ollama.com/download
-```
-Download the official installer from your browser.
-
-### macOS / Linux
-
-```bash
+# macOS / Linux
 curl -fsSL https://ollama.com/install.sh | sh
 ```
-Install Ollama from the terminal.
 
-```bash
-ollama --version
-```
-Check that Ollama was installed.
+---
 
-```bash
-ollama serve
-```
-Start Ollama if it is not already running in the background.
-
-## 5. Check that everything responds
+## 2. Diagnóstico del entorno
 
 ```powershell
 ci2lab doctor
 ```
-Check the installation, the package, and the connection to Ollama.
 
-## 6. Detect your computer's capacity
+Verifica el paquete, Python, Ollama y la configuración básica. Ejecutar siempre que algo falle.
 
 ```powershell
 ci2lab hardware
 ```
-Show the detected characteristics of your machine.
+
+Muestra RAM, VRAM, GPU y CPU detectados.
 
 ```powershell
 ci2lab hardware --json
 ```
-Show the de
-tected hardware as JSON.
 
-```powershell
-ci2lab models recommend
-```
-Recommend models that fit your computer.
-
-```powershell
-ci2lab models recommend --limit 3
-```
-Limit the number of recommendations.
-
-## 7. Recommend models by task
-
-```powershell
-ci2lab models recommend "program in Python"
-```
-Recommend models for programming.
-
-```powershell
-ci2lab models recommend "edit and review code"
-```
-Recommend models for working on code.
-
-```powershell
-ci2lab models recommend "complex reasoning"
-```
-Recommend models for reasoning.
-
-```powershell
-ci2lab models recommend "summarize long documents"
-```
-Recommend models for summarization and large context.
-
-```powershell
-ci2lab models recommend "run on a low-resource computer"
-```
-Recommend lightweight models.
-
-## 8. Pattern for using any model
-
-In the table below, `ci2lab` accepts either the `Ci2Lab ID` or the `Ollama Tag`. If one fails because Ollama cannot find the model, Ci2Lab tries the alternate alias automatically.
-
-For `ollama` commands, always use the `Ollama Tag`.
-
-```powershell
-ci2lab models install <MODEL_ID>
-```
-Show the plan to install and use the model.
-
-```powershell
-ollama pull <OLLAMA_TAG>
-```
-Download the model in Ollama.
-
-```powershell
-ci2lab models run <MODEL_ID>
-```
-Open the model from Ci2Lab with `ollama run`.
-
-```powershell
-ci2lab --model <MODEL_ID> chat
-```
-Open an agent chat with that model.
-
-```powershell
-ci2lab --model <MODEL_ID> "hello"
-```
-Run a one-off request with that model.
-
-```powershell
-ollama rm <OLLAMA_TAG>
-```
-Delete the downloaded model from disk.
-
-```powershell
-ollama list
-```
-Show the models installed in Ollama.
-
-## 9. Table of available models
-
-The current catalog has 86 models. Download only the ones that `ci2lab models recommend` suggests and that fit on your machine.
-
-| Model | Ci2Lab ID | Ollama Tag | Use | Tier | Approx. RAM |
-|---|---|---|---|---|---|
-| Llama 3.2 1B | `llama3.2-1b` | `llama3.2:1b` | general, edge | edge | 2 GB |
-| Qwen2.5 Coder 1.5B | `qwen2.5-coder-1.5b` | `qwen2.5-coder:1.5b` | coding, edge | edge | 3 GB |
-| Llama 3.2 3B | `llama3.2-3b` | `llama3.2:3b` | general, reasoning, edge | edge | 5 GB |
-| Gemma 2 2B | `gemma2-2b` | `gemma2:2b` | general, edge | edge | 4 GB |
-| TinyLlama 1.1B Chat | `tinyllama-1.1b` | `tinyllama:1.1b` | general, edge | edge | 2 GB |
-| Qwen2.5 3B Instruct | `qwen2.5-3b` | `qwen2.5:3b` | general, reasoning, edge | edge | 4 GB |
-| Phi-3 Mini 4K Instruct | `phi3-mini` | `phi3:mini` | general, reasoning, edge | edge | 4 GB |
-| Phi-3.5 Mini Instruct | `phi3.5-3.8b` | `phi3.5:3.8b` | general, reasoning, edge | edge | 4 GB |
-| Qwen3 4B Instruct | `qwen3-4b` | `qwen3:4b` | general, reasoning | edge | 4.5 GB |
-| Qwen1.5 0.5B | `qwen-0-5b` | `qwen:0.5b` | general, edge | edge | 2 GB |
-| Qwen1.5 1.8B | `qwen-1-8b` | `qwen:1.8b` | general, edge | edge | 2 GB |
-| Qwen2 1.5B | `qwen2-1-5b` | `qwen2:1.5b` | general, edge | edge | 2 GB |
-| Qwen2.5 1.5B | `qwen2.5-1-5b` | `qwen2.5:1.5b` | general, edge | edge | 2 GB |
-| Qwen3 0.6B | `qwen3-0-6b` | `qwen3:0.6b` | general, edge | edge | 2 GB |
-| Qwen3 1.7B Base | `qwen3-1-7b` | `qwen3:1.7b` | general, edge | edge | 2 GB |
-| Qwen2.5 Coder 3B | `qwen2.5-coder-3b` | `qwen2.5-coder:3b` | coding, edge | edge | 2.9 GB |
-| starcoder2 3b | `starcoder2-3b` | `starcoder2:3b` | coding, edge | edge | 2.8 GB |
-| Mistral 7B Instruct | `mistral-7b` | `mistral:7b` | general, reasoning | workstation | 8 GB |
-| Falcon 7B Instruct | `falcon-7b` | `falcon:7b` | general, reasoning | workstation | 6.8 GB |
-| DeepSeek Coder 6.7B Instruct | `deepseek-coder-6.7b` | `deepseek-coder:6.7b` | coding, general | workstation | 6.5 GB |
-| Qwen2.5 7B Instruct | `qwen2.5-7b` | `qwen2.5:7b` | general, reasoning | workstation | 7.2 GB |
-| DeepSeek R1 Distill 7B | `deepseek-r1-7b` | `deepseek-r1:7b` | reasoning, general, coding | workstation | 7.2 GB |
-| Llama 3 8B Instruct | `llama3-8b` | `llama3:8b` | general, reasoning | workstation | 7.5 GB |
-| Granite 3.3 8B Instruct | `granite3.3-8b` | `granite3.3:8b` | general, reasoning | workstation | 7.6 GB |
-| Qwen2.5 Coder 7B | `qwen2.5-coder-7b` | `qwen2.5-coder:7b` | coding, general, reasoning | workstation | 9 GB |
-| Gemma 2 9B | `gemma2-9b` | `gemma2:9b` | general, reasoning | workstation | 12 GB |
-| Phi-4 14B | `phi4-14b` | `phi4:14b` | reasoning, coding, general | workstation | 16 GB |
-| Qwen2.5 Coder 14B | `qwen2.5-coder-14b` | `qwen2.5-coder:14b` | coding, reasoning, general | workstation | 18 GB |
-| CodeLlama 7b Instruct | `codellama-7b` | `codellama:7b` | coding | workstation | 6.3 GB |
-| vicuna 7b v1.5 | `vicuna-7b` | `vicuna:7b` | general | workstation | 6.3 GB |
-| openchat 3.5 0106 | `openchat-7b` | `openchat:7b` | general | workstation | 6.5 GB |
-| starcoder2 7b | `starcoder2-7b` | `starcoder2:7b` | coding | workstation | 6.7 GB |
-| zephyr 7b beta | `zephyr-7b` | `zephyr:7b` | general | workstation | 6.7 GB |
-| Falcon3 7B | `falcon3-7b` | `falcon3:7b` | general | workstation | 6.9 GB |
-| Qwen1.5 7B | `qwen-7b` | `qwen:7b` | general | workstation | 7.2 GB |
-| Qwen2 7B | `qwen2-7b` | `qwen2:7b` | general | workstation | 7.1 GB |
-| Hermes 3 Llama 3.1 8B | `hermes3-8b` | `hermes3:8b` | general | workstation | 7.5 GB |
-| Qwen3 8B Base | `qwen3-8b` | `qwen3:8b` | general | workstation | 7.6 GB |
-| Yi 1.5 9B | `yi-9b` | `yi:9b` | general | workstation | 8.2 GB |
-| glm 4 9b | `glm4-9b` | `glm4:9b` | general | workstation | 8.8 GB |
-| SOLAR 10.7B Instruct v1.0 | `solar-10-7b` | `solar:10.7b` | general | workstation | 10 GB |
-| Mistral Nemo Instruct 2407 | `mistral-nemo-12b` | `mistral-nemo:12b` | general | workstation | 11.4 GB |
-| vicuna 13b v1.5 | `vicuna-13b` | `vicuna:13b` | general | workstation | 12.1 GB |
-| Qwen2.5 14B | `qwen2.5-14b` | `qwen2.5:14b` | general | workstation | 13.7 GB |
-| DeepSeek R1 Distill Qwen 14B | `deepseek-r1-14b` | `deepseek-r1:14b` | reasoning | workstation | 13.8 GB |
-| Qwen3 14B AWQ | `qwen3-14b` | `qwen3:14b` | general | workstation | 13.8 GB |
-| starcoder2 15b | `starcoder2-15b` | `starcoder2:15b` | coding | workstation | 14.6 GB |
-| Qwen2.5 Coder 32B | `qwen2.5-coder-32b` | `qwen2.5-coder:32b` | coding, reasoning, general | enterprise | 32 GB |
-| gemma 2 27b | `gemma2-27b` | `gemma2:27b` | general | enterprise | 25.4 GB |
-| Qwen3 30B A3B GPTQ Int4 | `qwen3-30b` | `qwen3:30b` | general | enterprise | 28.4 GB |
-| Qwen1.5 32B | `qwen-32b` | `qwen:32b` | general | enterprise | 30.3 GB |
-| Qwen2.5 32B | `qwen2.5-32b` | `qwen2.5:32b` | general | enterprise | 30.3 GB |
-| DeepSeek R1 Distill Qwen 32B | `deepseek-r1-32b` | `deepseek-r1:32b` | reasoning | enterprise | 30.5 GB |
-| Qwen3 32B AWQ | `qwen3-32b` | `qwen3:32b` | general | enterprise | 30.5 GB |
-| falcon 40b | `falcon-40b` | `falcon:40b` | general | enterprise | 37.3 GB |
-| Mixtral 8x7B Instruct v0.1 | `mixtral-8x7b` | `mixtral:8x7b` | general | enterprise | 43.5 GB |
-| Llama 3.1 70B | `llama3.1-70b` | `llama3.1:70b` | general | enterprise | 65.7 GB |
-| Llama 3.3 70B | `llama3.3-70b` | `llama3.3:70b` | general | enterprise | 65.7 GB |
-| Qwen2 72B | `qwen2-72b` | `qwen2:72b` | general | enterprise | 67.7 GB |
-| Qwen2.5 72B | `qwen2.5-72b` | `qwen2.5:72b` | general | enterprise | 67.7 GB |
-| Qwen1.5 110B Chat AWQ | `qwen-110b` | `qwen:110b` | general | enterprise | 103.6 GB |
-| Mixtral 8x22B Instruct v0.1 | `mixtral-8x22b` | `mixtral:8x22b` | general | enterprise | 131 GB |
-| Qwen3 235B A22B | `qwen3-235b` | `qwen3:235b` | general | enterprise | 218.9 GB |
-| Llama 3.1 405B | `llama3.1-405b` | `llama3.1:405b` | general | enterprise | 378 GB |
-
-Substitution example: for Qwen2.5 Coder 1.5B, `<MODEL_ID>` is `qwen2.5-coder-1.5b` and `<OLLAMA_TAG>` is `qwen2.5-coder:1.5b`.
-
-## 10. Using the agent for the first time
-
-### Easy mode with the web interface
-
-```powershell
-ci2lab ui
-```
-Open a local web interface to use Ci2Lab without typing commands.
-
-```powershell
-ci2lab --model <MODEL_ID> ui
-```
-Open the web interface with a specific default model.
-
-```powershell
-ci2lab ui --no-open
-```
-Start the local server without opening the browser.
-
-```powershell
-ci2lab ui --port 8766
-```
-Start the interface on a different local port.
-
-The UI runs only locally, uses Ollama as its engine, and keeps sessions/logs on your machine.
-In the chat you can attach PDFs and text files; they are copied to `ci2lab_uploads/` and the agent reads them with `read_file` (or `read_document`).
-The chat page shows a persistent token counter per turn and per conversation. Click the arrow next to the counter to see how it is computed for the selected model, with links to the Ollama documentation.
-
-> Note: as of this writing the web frontend (page text and labels) is still in Spanish; the agent's answers follow the model. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
-
-### Terminal mode
-
-```powershell
-ci2lab chat
-```
-Open interactive mode with the default model.
-After each interaction it shows the input, output, turn, and conversation tokens when Ollama returns that data.
-
-```powershell
-ci2lab --model <MODEL_ID> chat
-```
-Open an agent chat with the model you picked from the table.
-
-If you have just downloaded a specific model, always use `--model <MODEL_ID>` so Ci2Lab does not try to open the default model.
-
-```powershell
-ci2lab "list the Python files"
-```
-Run a one-off request to the agent.
-
-```powershell
-ci2lab agent "list the Python files"
-```
-Run a one-off request using the explicit subcommand.
-
-```powershell
-ci2lab --workspace . --no-stream "summarize this project"
-```
-Ask for a summary of the current project.
-
-```powershell
-ci2lab --workspace . --yes "run the tests and tell me the result"
-```
-Let the agent run the tests if it needs to.
-
-## 11. Leaving the conversation and deleting things
-
-Inside `ci2lab chat` or `ci2lab --model ... chat`, type one of these commands.
-
-| Command | Action |
-|---|---|
-| `/exit` | Leave the conversation with the agent |
-| `/quit` | Leave the conversation with the agent |
-| `exit` | Leave the conversation with the agent |
-| `quit` | Leave the conversation with the agent |
-| `Ctrl+C` | Interrupt and close the conversation |
-
-Inside `ollama run ...`, use this command.
-
-| Command | Action |
-|---|---|
-| `/bye` | Leave Ollama's direct chat |
-| `Ctrl+C` | Interrupt Ollama's direct chat |
-
-To see your saved Ci2Lab sessions.
-
-```powershell
-ci2lab sessions
-```
-List the saved conversations.
-
-To delete a saved session on Windows PowerShell.
-
-```powershell
-Remove-Item "$HOME\.ci2lab\sessions\<SESSION_ID>.json"
-```
-Delete a specific Ci2Lab session.
-
-To delete a saved session on macOS/Linux.
-
-```bash
-rm ~/.ci2lab/sessions/<SESSION_ID>.json
-```
-Delete a specific Ci2Lab session.
-
-To remove a downloaded model in Ollama.
-
-```powershell
-ollama rm <OLLAMA_TAG>
-```
-Delete the model from disk.
-
-```powershell
-ollama list
-```
-Show the models installed in Ollama.
-
-## 12. Main day-to-day commands
-
-```powershell
-ci2lab doctor
-```
-Verify that everything is ready.
-
-```powershell
-ci2lab chat
-```
-Open an interactive conversation.
-
-```powershell
-ci2lab ui
-```
-Open the local web interface.
-
-```powershell
-ci2lab sessions
-```
-List saved sessions.
-
-```powershell
-ci2lab sessions --json
-```
-List saved sessions as JSON.
-
-```powershell
-ci2lab hardware
-```
-Show the detected hardware.
-
-```powershell
-ci2lab evals run
-```
-Validate the harness in mock mode.
-
-## Agent flags
-
-These flags can be used before the prompt or with `ci2lab agent`.
-
-```powershell
-ci2lab --model <MODEL_ID> "hello"
-```
-Force a model from the table for one request.
-
-```powershell
-ci2lab --model <OLLAMA_TAG> "review this project"
-```
-Force a model using its Ollama tag.
-
-```powershell
-ci2lab --tool-mode native "do a task"
-```
-Use native tool calling.
-
-```powershell
-ci2lab --tool-mode fenced "do a task"
-```
-Use the fenced-block tool format.
-
-```powershell
-ci2lab --workspace . "list the files"
-```
-Set the agent's working directory.
-
-```powershell
-ci2lab --cwd . "list the files"
-```
-Legacy alias of `--workspace`.
-
-```powershell
-ci2lab --yes "run the tests"
-```
-Auto-confirm allowed dangerous tools.
-
-```powershell
-ci2lab --security-engine ci2lab "do a task"
-```
-Use the legacy security engine (no deny/ask/allow rules). The default is `claude_experimental`.
-
-```powershell
-ci2lab --no-stream "say hello"
-```
-Disable token streaming.
-
-```powershell
-ci2lab --max-rounds 10 "solve this"
-```
-Limit the agent loop rounds.
-
-```powershell
-ci2lab --session my-session chat
-```
-Resume or use a specific session.
-
-```powershell
-ci2lab --runs-dir ./_runs "hello"
-```
-Save logs in a different directory.
-
-```powershell
-ci2lab --no-log "hello"
-```
-Run without saving artifacts under `runs/`.
-
-```powershell
-ci2lab --workspace . --runs-dir ./_test_runs --no-stream --yes "hello"
-```
-Test the agent with a custom workspace, custom logs, and no streaming.
-
-```powershell
-ci2lab --no-log --no-stream --yes "list the files"
-```
-Run quickly with no streaming and no logs.
-
-```powershell
-ci2lab --multi-agent chat
-```
-Use the sequential subagent orchestrator. Note: the `--multi-agent` orchestrator is not present in this checkout; only the shared subsystems live here.
-
-## Evaluations
-
-```powershell
-ci2lab evals run
-```
-Run the mock evals without Ollama.
-
-```powershell
-python -m ci2lab.evals.run
-```
-Direct entrypoint for the mock evals.
-
-```powershell
-ci2lab evals run --live
-```
-Run the evals against a real Ollama.
-
-```powershell
-ci2lab evals run --live --model llama3.1:8b
-```
-Run the live evals with a specific model.
-
-```powershell
-ci2lab evals run --task 001_list_files
-```
-Run a single evaluation task.
-
-```powershell
-ci2lab evals run --task 001_list_files --task 002_read_file
-```
-Run several specific tasks.
-
-```powershell
-ci2lab evals run --tasks-dir ./evals/tasks
-```
-Use a custom tasks directory.
-
-```powershell
-python -m ci2lab.evals.run --task 006_edit_file_approved
-```
-Run a specific task from Python.
-
-```powershell
-python -m ci2lab.evals.run --live --model llama3.1:8b --task 001_list_files
-```
-Run a live task with a specific model.
-
-```powershell
-python -m ci2lab.evals.run --live --model llama3.1:8b
-```
-Run the full live suite.
-
-## Tests and development checks
-
-```powershell
-python -m pytest tests/ -q
-```
-Run the automated test suite.
-
-```powershell
-python -m ci2lab.cli --help
-```
-Show the main CLI help.
-
-```powershell
-python -m ci2lab --help
-```
-Show the help using the package entrypoint.
-
-```powershell
-python -m ci2lab.cli --workspace . --help
-```
-Show the help with the agent flags.
-
-```powershell
-python -m ci2lab.cli doctor
-```
-Run `doctor` without using the installed script.
-
-```powershell
-python -m ci2lab.cli --no-stream --yes "list the files"
-```
-Run the agent from the Python module.
-
-```powershell
-python -m ci2lab.cli --no-log --no-stream --yes "list the files"
-```
-Run without logs or streaming from Python.
-
-## Workspace extensions
-
-Skills, MCP, and project memory are configured in the working directory (they are not CLI flags).
-
-```text
-.ci2lab/skills/<name>/SKILL.md
-```
-Define a skill you can invoke in the REPL with `/name` or via the `skill` tool.
-
-```text
-.ci2lab/mcp.json
-```
-Configure MCP servers; their tools appear as `mcp__<server>__<tool>`.
-
-```text
-CI2LAB.md
-AGENTS.md
-```
-Persistent instructions injected into the system prompt (project memory).
-
-## Run logging
-
-```powershell
-ci2lab --workspace . "list the files"
-```
-Save a normal run under `runs/`.
-
-```powershell
-ci2lab --no-log "list the files"
-```
-Disable logging for that run.
-
-```powershell
-ci2lab --runs-dir ./_runs "hello"
-```
-Save artifacts under `./_runs`.
-
-```powershell
-$env:CI2LAB_NO_LOG="1"
-```
-Disable logs via environment variable.
-
-```powershell
-$env:CI2LAB_RUNS_DIR="./_runs"
-```
-Set the logs folder via environment variable.
-
-## Configuration via environment variables
-
-```powershell
-$env:CI2LAB_MODEL="llama3.1:8b"
-```
-Set the default model.
-
-```powershell
-$env:CI2LAB_OLLAMA_URL="http://localhost:11434"
-```
-Set the Ollama base URL.
-
-```powershell
-$env:CI2LAB_BACKEND_URL="http://localhost:11434/v1"
-```
-Set the OpenAI-compatible endpoint.
-
-```powershell
-$env:CI2LAB_TOOL_MODE="native"
-```
-Set the tool mode.
-
-```powershell
-$env:CI2LAB_MAX_ROUNDS="25"
-```
-Set the maximum number of rounds.
-
-```powershell
-$env:CI2LAB_WORKSPACE="."
-```
-Set the default workspace.
-
-```powershell
-$env:CI2LAB_CWD="."
-```
-Legacy alias for the workspace.
-
-```powershell
-$env:CI2LAB_STREAM="false"
-```
-Disable streaming by default.
-
-```powershell
-$env:CI2LAB_AUTO_CONFIRM="1"
-```
-Enable auto-confirmation.
-
-```powershell
-$env:CI2LAB_YES="1"
-```
-Enable auto-confirmation.
-
-```powershell
-$env:CI2LAB_CONFIG="./ci2lab.yaml"
-```
-Force the config file path.
-
-```powershell
-$env:CI2LAB_WRITE_TOOLS_ENABLED="false"
-```
-Disable `write_file` and `edit_file`.
-
-```powershell
-$env:CI2LAB_REQUIRE_DIFF_PREVIEW="false"
-```
-Allow skipping the mandatory edit preview.
-
-## Configuration via file
-
-Create `ci2lab.yaml` at the project root or `~/.ci2lab/ci2lab.yaml`.
-
-```yaml
-model: llama3.1:8b
-runs_dir: runs
-log_runs: true
-```
-Configure the model and logging.
-
-```yaml
-workspace: .
-max_rounds: 25
-stream: true
-auto_confirm: false
-```
-Configure the workspace and agent behavior.
-
-```yaml
-backend_url: http://localhost:11434/v1
-tool_mode: native
-```
-Configure the endpoint and tool mode.
-
-```yaml
-write_tools_enabled: false
-```
-Disable the write tools.
-
-```yaml
-require_diff_preview: true
-```
-Keep the diff preview mandatory before editing.
-
-```yaml
-no_log: true
-```
-Disable logging from YAML.
-
-## The agent's internal tools
-
-The model invokes these during a task (28 built-in tools + dynamic MCP). See `docs/TOOLS_ROADMAP.md`.
-
-**Reading / exploration:** `ls`, `read_file`, `read_document`, `grep`, `glob`, `file_info`, `tree`, `inspect_file`
-
-**Writing / conversion:** `write_file`, `edit_file`, `write_docx`, `apply_patch`, `fill_docx_template`, `docx_to_pdf`, `pdf_to_docx`, `notebook_edit`
-
-**Shell / git:** `bash`, `git_status`, `git_diff`
-
-**Workflow / integrations:** `todo_write`, `ask_user`, `web_search`, `web_fetch`, `skill`, `mcp_call`, `mcp__*`
-
-## Included eval tasks
-
-```text
-001_list_files
-```
-Checks the use of `ls`.
-
-```text
-002_read_file
-```
-Checks the use of `read_file`.
-
-```text
-003_find_function
-```
-Checks searching with `grep` or `glob` plus `read_file`.
-
-```text
-004_block_dangerous_bash
-```
-Checks that dangerous commands are blocked.
-
-```text
-005_edit_file_denied
-```
-Checks supervised editing when denied.
-
-```text
-006_edit_file_approved
-```
-Checks supervised editing when approved.
-
-```text
-007_write_tools_disabled
-```
-Checks that writing is blocked by configuration.
-
-## Recommended quick sequence
-
-```powershell
-cd IAmultiagentica
-```
-Enter the project.
-
-```powershell
-py -m venv .venv
-```
-Create the virtual environment.
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-Activate the virtual environment.
-
-```powershell
-pip install -e ".[dev]"
-```
-Install the dependencies.
-
-```powershell
-irm https://ollama.com/install.ps1 | iex
-```
-Install Ollama on Windows.
+Lo mismo en formato JSON parseable.
 
 ```powershell
 ollama --version
 ```
-Check that Ollama is installed.
+
+Confirma que Ollama está instalado y en el PATH.
 
 ```powershell
-ci2lab doctor
+ollama list
 ```
-Check the environment.
+
+Lista los modelos descargados en Ollama.
 
 ```powershell
-ci2lab hardware
+ollama serve
 ```
-Detect your machine's capacity.
+
+Inicia Ollama si no está corriendo como servicio en segundo plano.
+
+---
+
+## 3. Modelos
+
+### Recomendar modelos
 
 ```powershell
-ci2lab models recommend "program in Python"
+ci2lab models recommend
 ```
-Pick a model for your case.
+
+Recomienda modelos que caben en tu hardware (RAM/VRAM detectada).
+
+```powershell
+ci2lab models recommend "programa en Python"
+ci2lab models recommend "razonamiento complejo"
+ci2lab models recommend "documentos largos"
+ci2lab models recommend "máquina con pocos recursos"
+```
+
+Filtra además por intención/tarea.
+
+```powershell
+ci2lab models recommend --limit 3
+```
+
+Limita el número de resultados.
+
+### Instalar y gestionar modelos
 
 ```powershell
 ci2lab models install <MODEL_ID>
 ```
-Get the install command for the model.
+
+Muestra el plan de instalación (qué `ollama pull` ejecutar). No descarga por sí solo.
 
 ```powershell
-ollama pull <OLLAMA_TAG>
+ollama pull qwen2.5-coder:7b
 ```
-Download the model in Ollama.
+
+Descarga el modelo en Ollama. Sustituye el tag por el que recomiende `models recommend`.
 
 ```powershell
-ci2lab --model <MODEL_ID> chat
+ci2lab models run <MODEL_ID>
 ```
-Open an agent chat with that model.
+
+Abre el modelo directamente con `ollama run` para pruebas rápidas sin el harness.
+
+```powershell
+ollama rm qwen2.5-coder:7b
+```
+
+Elimina el modelo del disco.
+
+### Referencia de IDs
+
+`ci2lab` acepta el ID del catálogo (`qwen2.5-coder-7b`) o el tag de Ollama (`qwen2.5-coder:7b`). Para los comandos `ollama`, usa siempre el tag de Ollama.
+
+Ejemplo: si `models recommend` sugiere `qwen2.5-coder-7b`, el tag de Ollama es `qwen2.5-coder:7b`.
+
+| Tier | RAM aprox. | Ejemplos |
+|------|-----------|----------|
+| edge | 2–5 GB | `llama3.2:1b`, `qwen2.5-coder:1.5b`, `phi3:mini` |
+| workstation | 6–16 GB | `qwen2.5-coder:7b`, `llama3:8b`, `phi4:14b` |
+| enterprise | 25 GB+ | `qwen2.5-coder:32b`, `llama3.1:70b` |
+
+---
+
+## 4. Uso básico
+
+> Los flags globales van **antes** del subcomando: `ci2lab --model X chat`, **no** `ci2lab chat --model X`.
+
+```powershell
+ci2lab
+```
+
+Abre el menú interactivo de inicio (elige modo, modelo y workspace de forma guiada).
+
+```powershell
+ci2lab menu
+```
+
+Equivalente explícito al anterior.
+
+```powershell
+ci2lab chat
+```
+
+Abre el REPL interactivo con el modelo por defecto.
+
+```powershell
+ci2lab --model qwen2.5-coder:7b chat
+```
+
+REPL con un modelo concreto.
+
+```powershell
+ci2lab --model qwen2.5-coder:7b "lista los archivos Python"
+```
+
+Petición única al agente.
+
+```powershell
+ci2lab --workspace . chat
+```
+
+Fija el directorio de trabajo del agente.
+
+```powershell
+ci2lab --max-rounds 10 --model qwen2.5-coder:7b chat
+```
+
+Limita el número de rondas del loop ReAct.
+
+### Para salir del REPL
+
+Escribe cualquiera de: `/exit`, `/quit`, `exit`, `quit` o pulsa `Ctrl+C`.
+
+---
+
+## 5. Agente single-agent
+
+### Flags globales más útiles
+
+| Flag | Efecto |
+|------|--------|
+| `--model <id-o-tag>` | Modelo a usar |
+| `--workspace <ruta>` | Directorio de trabajo del agente |
+| `--cwd <ruta>` | Alias legado de `--workspace` |
+| `--tool-mode native\|fenced` | Formato de llamadas a herramientas |
+| `--yes` | Auto-confirmar herramientas peligrosas |
+| `--no-stream` | Deshabilitar streaming |
+| `--no-log` | No guardar artefactos en `runs/` |
+| `--runs-dir <ruta>` | Directorio alternativo de artefactos |
+| `--max-rounds <n>` | Límite de rondas del loop |
+| `--session <id>` | Reanudar o usar una sesión concreta |
+| `--security-engine <nombre>` | Motor de seguridad |
+
+### Ejemplos
+
+```powershell
+# Petición única con el subcomando explícito
+ci2lab agent "lista los archivos Python"
+
+# Con modelo y workspace
+ci2lab --model qwen2.5-coder:7b --workspace . agent "resume el README"
+
+# Sin streaming ni log, auto-confirmando
+ci2lab --no-log --no-stream --yes --model qwen2.5-coder:7b "lista los archivos"
+
+# Limitar rondas y cambiar el directorio de logs
+ci2lab --max-rounds 5 --runs-dir ./_runs --model qwen2.5-coder:7b chat
+
+# Con motor de seguridad legado
+ci2lab --security-engine ci2lab --model qwen2.5-coder:7b chat
+
+# Tool mode explícito
+ci2lab --tool-mode native --model qwen2.5-coder:7b chat
+ci2lab --tool-mode fenced --model qwen2.5-coder:7b chat
+
+# Deshabilitar logs via entorno
+$env:CI2LAB_NO_LOG = "1"
+ci2lab --model qwen2.5-coder:7b chat
+```
+
+### Variables de entorno equivalentes
+
+```powershell
+$env:CI2LAB_MODEL         = "qwen2.5-coder:7b"
+$env:CI2LAB_BACKEND       = "ollama"              # o "openai"
+$env:CI2LAB_BACKEND_URL   = "http://localhost:11434/v1"
+$env:CI2LAB_OLLAMA_URL    = "http://localhost:11434"
+$env:CI2LAB_TOOL_MODE     = "native"
+$env:CI2LAB_MAX_ROUNDS    = "25"
+$env:CI2LAB_WORKSPACE     = "."
+$env:CI2LAB_NO_LOG        = "1"
+$env:CI2LAB_RUNS_DIR      = "./_runs"
+$env:CI2LAB_STREAM        = "false"
+$env:CI2LAB_YES           = "1"                   # auto-confirm
+$env:CI2LAB_WRITE_TOOLS_ENABLED = "false"         # solo lectura
+```
+
+### Backend alternativo (vLLM, LM Studio, llama.cpp)
+
+```powershell
+$env:CI2LAB_BACKEND     = "openai"
+$env:CI2LAB_BACKEND_URL = "http://localhost:8000/v1"   # ajusta el puerto
+ci2lab --model nombre-de-tu-modelo chat
+```
+
+---
+
+## 6. Multiagente
+
+> **Verifica antes** que el flag está disponible en tu checkout:
+> ```powershell
+> ci2lab --help
+> ```
+> Si `--multi-agent` no aparece, el orquestador no está presente en este checkout. Ver nota más abajo.
+
+```powershell
+ci2lab --multi-agent --model qwen2.5-coder:7b chat
+```
+
+Activa el orquestador de subagentes secuenciales (`harness/multiagent/`).
+
+> **Nota experimental:** El subsistema multiagente (`harness/multiagent/`) está implementado, pero el flag `--multi-agent` puede no estar presente en todos los checkouts. El orquestador de roles, la revisión científica entre pares y el presupuesto de contexto por subagente sí están en el código. Consulta [`docs/USAGE_MANUAL.md`](docs/USAGE_MANUAL.md) para más detalle.
+
+---
+
+## 7. UI local
+
+```powershell
+ci2lab ui
+```
+
+Inicia el servidor web local y abre el navegador en `http://127.0.0.1:8765`.
+
+```powershell
+ci2lab --model qwen2.5-coder:7b ui
+```
+
+UI con un modelo por defecto concreto.
+
+```powershell
+ci2lab ui --no-open
+```
+
+Inicia el servidor sin abrir el navegador automáticamente.
+
+```powershell
+ci2lab ui --port 8766
+```
+
+Puerto alternativo (útil si 8765 está ocupado).
+
+> La UI corre solo localmente. Los proyectos de conocimiento se guardan en `~/.ci2lab/projects/<id>/`. El texto de la interfaz está en español (limitación conocida).
+
+---
+
+## 8. Sesiones
+
+```powershell
+ci2lab sessions
+```
+
+Lista las sesiones guardadas con ID, fecha y resumen.
+
+```powershell
+ci2lab sessions --json
+```
+
+Lo mismo en formato JSON.
+
+```powershell
+ci2lab --model qwen2.5-coder:7b --session <SESSION_ID> chat
+```
+
+Reanuda una sesión existente (con historial). El `--session` carga el historial solo en modo `chat`, no en `agent`.
+
+### Eliminar una sesión
+
+```powershell
+# Windows PowerShell
+Remove-Item "$HOME\.ci2lab\sessions\<SESSION_ID>.json"
+
+# macOS / Linux
+rm ~/.ci2lab/sessions/<SESSION_ID>.json
+```
+
+---
+
+## 9. Tests y calidad
+
+### Suite de tests
+
+```powershell
+python -m pytest -q
+```
+
+Ejecuta los ~905 tests. Debe pasar limpia antes de cualquier commit o merge.
+
+```powershell
+python -m pytest tests/test_bash_safety.py -q
+```
+
+Un archivo concreto.
+
+```powershell
+python -m pytest -k "test_tool_registry" -q
+```
+
+Todos los tests cuyo nombre contiene `test_tool_registry`.
+
+```powershell
+python -m pytest --lf -q
+```
+
+Solo los tests que fallaron en la última ejecución.
+
+```powershell
+python -m pytest -v tests/test_multiagent_orchestrator.py
+```
+
+Con detalles de cada test (útil al depurar).
+
+```powershell
+python -m pytest -s tests/test_config.py
+```
+
+Con output de `print` visible.
+
+```powershell
+python -m pytest -q --ignore=tests/redteam
+```
+
+Ignora los tests de red team (más lentos, pensados para ejecución manual).
+
+### Puertas de calidad (CI)
+
+Las cuatro deben pasar antes de cualquier commit. CI las ejecuta en Python 3.11 y 3.12.
+
+```powershell
+python -m ruff check ci2lab tests      # lint
+python -m ruff format ci2lab tests     # formato (modifica archivos)
+python -m mypy ci2lab                   # tipos (strict en el núcleo)
+python -m pytest -q                     # tests
+```
+
+Comprobar formato sin modificar:
+
+```powershell
+python -m ruff format --check ci2lab tests
+```
+
+---
+
+## 10. Evaluaciones del harness
+
+Verifican que el harness usa las herramientas correctamente y respeta la seguridad y configuración. **No son benchmarks de calidad de modelo.** No requieren Ollama en modo mock.
+
+### Mock (sin Ollama, determinista)
+
+```powershell
+ci2lab evals run
+python -m ci2lab.evals.run
+```
+
+### Live (con Ollama real)
+
+```powershell
+ci2lab evals run --live
+ci2lab evals run --live --model llama3.1:8b
+python -m ci2lab.evals.run --live --model llama3.1:8b
+```
+
+### Tarea concreta
+
+```powershell
+ci2lab evals run --task 004_block_dangerous_bash
+ci2lab evals run --task 005_edit_file_denied --task 006_edit_file_approved
+python -m ci2lab.evals.run --task 001_list_files
+```
+
+### Directorio de tareas alternativo
+
+```powershell
+ci2lab evals run --tasks-dir ./mis_tareas
+```
+
+### Tareas incluidas
+
+| ID | Qué verifica |
+|----|-------------|
+| `001_list_files` | El agente usa `ls` |
+| `002_read_file` | El agente usa `read_file` |
+| `003_find_function` | El agente usa `grep` o `glob`+`read_file` |
+| `004_block_dangerous_bash` | Comandos peligrosos son bloqueados |
+| `005_edit_file_denied` | Edición supervisada rechazada — archivo sin cambios |
+| `006_edit_file_approved` | Edición supervisada aprobada — archivo modificado |
+| `007_write_tools_disabled` | `write_tools_enabled=false` bloquea escritura |
+
+Resultado en `evals/results/<timestamp>/`: `summary.json` y `results.jsonl`.
+
+Código de salida: `0` si todas pasan, `1` si alguna falla.
+
+---
+
+## 11. Benchmarks
+
+Miden calidad real del agente en tareas de código. **Corren en live** (necesitan Ollama). **Nunca corren en CI.**
+
+> **Antes de ejecutar:** asegúrate de que el modelo elegido está descargado (`ollama list`). Si todos los runs fallan en 2–3 segundos, el campo `tokens` aparece como `"-"` en `results.jsonl` y no se generan artefactos — indica que el modelo no está instalado o que el agente no se invocó correctamente.
+
+### Solo ci2lab
+
+```powershell
+ci2lab bench run --agent ci2lab --model <tu-modelo-instalado> --samples 5
+python -m ci2lab.bench.run --agent ci2lab --model <tu-modelo-instalado>
+```
+
+### ci2lab vs ci2lab-multi (H3 smoke — recomendado para primer run)
+
+```powershell
+ci2lab bench run `
+  --tasks-dir benchmarks/tasks/h3_smoke `
+  --results-dir benchmarks/results/h3_smoke `
+  --agent ci2lab --agent ci2lab-multi `
+  --model <tu-modelo-instalado> --samples 1
+```
+
+### Tareas concretas
+
+```powershell
+ci2lab bench run --agent ci2lab --model <tu-modelo-instalado> --task cli-01 --task bug-01
+```
+
+### Matriz completa (requiere Claude Code y Codex configurados)
+
+```powershell
+ci2lab bench run `
+  --agent ci2lab --agent ci2lab-multi --agent claude-code --agent codex `
+  --model <tu-modelo-instalado> --samples 5
+```
+
+### Directorio de resultados alternativo
+
+```powershell
+ci2lab bench run --agent ci2lab --model <tu-modelo-instalado> `
+  --results-dir benchmarks/results/mi-run
+```
+
+### Resultados
+
+Los artefactos se guardan en `benchmarks/results/<timestamp>/`:
+
+| Archivo | Contenido |
+|---------|-----------|
+| `results.jsonl` | Una fila por tarea × agente × muestra |
+| `summary.json` | Pass@1, Pass@k, tokens medios, coste USD, latencia mediana |
+
+Ver [`benchmarks/README.md`](benchmarks/README.md) y [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md).
+
+---
+
+## 12. Seguridad
+
+### Antes de aprobar cualquier operación con el agente
+
+```powershell
+git status
+git diff
+```
+
+Revisar el estado del repo antes de que el agente haga cambios.
+
+### Verificar qué haría una herramienta (dry-run de seguridad)
+
+```powershell
+python scripts/security_gate_check.py --workspace . --tool bash --target "rm archivo.txt"
+```
+
+Evalúa la puerta de seguridad sin ejecutar nada. Acepta `--engine`, `--security-profile` y `--permission-config`.
+
+```powershell
+# Con motor específico
+python scripts/security_gate_check.py --engine ci2lab --workspace . --tool bash --target "cat /etc/passwd"
+
+# Con perfil de seguridad
+python scripts/security_gate_check.py --security-profile strict --workspace . --tool write_file --target "output.txt"
+```
+
+### Comparar motores de seguridad
+
+```powershell
+python scripts/compare_security_engines.py --workspace .
+```
+
+Compara decisiones de `ci2lab` vs `opencode_experimental` sobre una matriz de casos.
+
+### Auditoría determinista (sin LLM)
+
+```powershell
+python scripts/audit_claude_deterministic.py
+```
+
+Ejecuta la matriz de decisiones de `claude_experimental` sin invocar ningún modelo. Los artefactos se guardan en `audit/deterministic_claude/<timestamp>/`.
+
+### Auditoría live (con Ollama)
+
+```powershell
+# Todos los modelos por defecto (llama3.1:8b native + qwen3:4b fenced)
+python scripts/audit_claude_experimental_live.py --all
+
+# Un modelo concreto
+python scripts/audit_claude_experimental_live.py --model llama3.1:8b --tool-mode native
+```
+
+Requiere que los modelos estén descargados en Ollama. Los artefactos van a `audit/live_claude/<timestamp>/`.
+
+```powershell
+# Equivalente via entrypoint del paquete
+ci2lab-audit-live
+```
+
+### Motores de seguridad disponibles
+
+```powershell
+ci2lab chat                                          # claude_experimental (default)
+ci2lab --security-engine ci2lab chat                 # legado: solo [y/N], sin reglas
+ci2lab --security-engine opencode_experimental chat  # INSEGURO — solo laboratorio
+```
+
+---
+
+## 13. Scripts útiles
+
+Todos los scripts están en `scripts/` y se pueden ejecutar con el entorno virtual activado. Se pasan a Python directamente — no son entrypoints del paquete (excepto `ci2lab-audit-live`).
+
+### Seguridad y auditoría
+
+| Script | Para qué sirve | Comando | Estado |
+|--------|----------------|---------|--------|
+| `scripts/security_gate_check.py` | Evalúa la puerta de seguridad sin ejecutar la herramienta (dry-run) | `python scripts/security_gate_check.py --workspace . --tool bash --target "rm x"` | Estable |
+| `scripts/compare_security_engines.py` | Compara decisiones ci2lab vs opencode_experimental | `python scripts/compare_security_engines.py --workspace .` | Estable |
+| `scripts/audit_claude_deterministic.py` | Auditoría determinista de claude_experimental sin LLM | `python scripts/audit_claude_deterministic.py` | Estable |
+| `scripts/audit_claude_experimental_live.py` | Auditoría live con modelos Ollama reales | `python scripts/audit_claude_experimental_live.py --all` | Estable |
+
+### Configuración de seguridad
+
+| Script | Para qué sirve | Comando | Estado |
+|--------|----------------|---------|--------|
+| `scripts/security_config_export.py` | Exporta configuraciones de permisos desde preset o archivo | `python scripts/security_config_export.py --preset opencode_dev` | Experimental |
+| `scripts/compare_opencode_configs.py` | Compara varias configs de OpenCode contra una matriz de casos | `python scripts/compare_opencode_configs.py --preset opencode_paranoid` | Experimental |
+
+### Evaluaciones live
+
+| Script | Para qué sirve | Comando | Estado |
+|--------|----------------|---------|--------|
+| `scripts/run_harness_write_eval.py` | Eval de fiabilidad de escritura del harness con modelos reales (P2.10) | `python scripts/run_harness_write_eval.py --models llama3.1:8b` | Estable |
+
+### Notas
+
+- `compare_opencode_configs.py` requiere al menos un `--config <ruta.json>` o `--preset <nombre>`.
+- `security_config_export.py` requiere `--preset <nombre>` o `--input <ruta.json>`.
+- Los artefactos de los scripts de auditoría van a `audit/` por defecto; se puede cambiar con `--output-root`.
+
+---
+
+## 14. Troubleshooting rápido
+
+| Síntoma | Causa más probable | Solución |
+|---------|-------------------|----------|
+| `ci2lab: command not found` | Entorno virtual no activado o paquete no instalado | Activar `.venv` con `Activate.ps1` y ejecutar `pip install -e ".[dev]"` |
+| `Connection refused` al iniciar el agente | Ollama no está corriendo | Ejecutar `ollama serve` |
+| `model not found` al iniciar el agente | Modelo no descargado | Ejecutar `ollama pull <tag>` |
+| PowerShell bloquea `Activate.ps1` | Política de ejecución de scripts | `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` |
+| Benchmark falla en 2–3 s, tokens = `"-"` | Modelo no está instalado o tag incorrecto | Verificar con `ollama list`; el tag debe coincidir exactamente |
+| El agente usa `fenced` aunque el modelo soporta `native` | Modelo no catalogado o ID no reconocido | Pasar `--tool-mode native` explícitamente |
+| `ci2lab agent --session <id>` no carga historial | Limitación conocida | Usar `ci2lab --session <id> chat` en su lugar |
+| `test_tool_registry_consistency` falla | Herramienta añadida sin actualizar los 5 registros | Actualizar `TOOL_NAMES`, `DISPATCH`, schema, `capabilities` e implementación |
+| `ruff --fix` elimina imports de `__init__.py` | Re-exportaciones intencionales (F401) | Añadir el fichero a `per-file-ignores` en `pyproject.toml` |
+| `mypy` falla en módulo nuevo | Falta de anotaciones de tipo | Añadir tipos a todas las firmas del módulo |
+| Tests fallan con paths en Windows | Separadores de ruta | Ver `tests/test_bash_windows_vectors.py` para los vectores específicos |
+| Puerto 8765 en uso al lanzar UI | Otro proceso ocupa el puerto | `ci2lab ui --port 8766` |
+| La interfaz web está en español | Limitación conocida | Ver [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) |
+| `security_config_export.py` sin args | Requiere `--preset` o `--input` | `python scripts/security_config_export.py --preset opencode_dev` |
+| `compare_opencode_configs.py` sin args | Requiere `--config` o `--preset` | `python scripts/compare_opencode_configs.py --preset opencode_paranoid` |
+
+---
+
+## Secuencia recomendada desde cero
+
+```powershell
+# 1. Entrar en el proyecto y preparar el entorno
+cd IAmultiagentica
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+
+# 2. Instalar Ollama (si no lo tienes)
+irm https://ollama.com/install.ps1 | iex
+ollama --version
+
+# 3. Verificar el entorno
+ci2lab doctor
+
+# 4. Detectar hardware y elegir modelo
+ci2lab hardware
+ci2lab models recommend "programa en Python"
+
+# 5. Descargar el modelo elegido
+ollama pull <tag-del-modelo-elegido>
+
+# 6. Primer uso
+ci2lab --model <id-o-tag> chat
+```
