@@ -6,7 +6,9 @@ and parses the result JSON for the final answer, token usage and the
 subscription, not an invoice).
 
 Environment knobs (so any Claude Code version can be driven without a code
-change): ``BENCH_CLAUDE_BIN`` overrides the ``claude`` executable, and
+change): ``BENCH_CLAUDE_CMD`` supplies a full command template (placeholders
+``{prompt}``/``{model}``/``{workspace}``; prompt piped to stdin when the template
+omits ``{prompt}``), ``BENCH_CLAUDE_BIN`` overrides the ``claude`` executable, and
 ``BENCH_CLAUDE_ARGS`` injects extra CLI args before the prompt. The exact command
 is written to ``claude_cmd.txt`` in the run directory for debugging; confirm the
 result JSON field names against the installed CLI during the Day-4 auth spike
@@ -22,6 +24,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from ci2lab.bench.adapters.base import render_command_template
 from ci2lab.bench.metrics import STATUS_ERROR, STATUS_SUCCESS, STATUS_TIMEOUT, RunResult
 from ci2lab.bench.task import BenchTask
 
@@ -34,7 +37,8 @@ class ClaudeCodeAdapter:
     name = "claude-code"
 
     def __init__(self) -> None:
-        """Read the Claude Code env knobs (binary path, extra args)."""
+        """Read the Claude Code env knobs (command template, binary, extra args)."""
+        self.template = os.environ.get("BENCH_CLAUDE_CMD", "").strip()
         self.binary = os.environ.get("BENCH_CLAUDE_BIN", "claude")
         self.extra_args = shlex.split(os.environ.get("BENCH_CLAUDE_ARGS", ""))
 
@@ -48,29 +52,37 @@ class ClaudeCodeAdapter:
         timeout: int,
     ) -> RunResult:
         """Run one sample via the ``claude`` CLI and parse its JSON result."""
-        cmd = [
-            self.binary,
-            "-p",
-            task.prompt,
-            "--output-format",
-            "json",
-            "--permission-mode",
-            "acceptEdits",
-        ]
-        if model:
-            cmd += ["--model", model]
-        cmd += self.extra_args
+        if self.template:
+            cmd, stdin_text = render_command_template(
+                self.template, prompt=task.prompt, model=model, workspace=workspace
+            )
+        else:
+            cmd = [
+                self.binary,
+                "-p",
+                task.prompt,
+                "--output-format",
+                "json",
+                "--permission-mode",
+                "acceptEdits",
+            ]
+            if model:
+                cmd += ["--model", model]
+            cmd += self.extra_args
+            stdin_text = None
 
         runs_dir.mkdir(parents=True, exist_ok=True)
-        (runs_dir / "claude_cmd.txt").write_text(
-            " ".join(shlex.quote(part) for part in cmd), encoding="utf-8"
-        )
+        rendered = " ".join(shlex.quote(part) for part in cmd)
+        if stdin_text is not None:
+            rendered += "   # (prompt piped to stdin)"
+        (runs_dir / "claude_cmd.txt").write_text(rendered, encoding="utf-8")
 
         started = time.perf_counter()
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=str(workspace),
+                input=stdin_text,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

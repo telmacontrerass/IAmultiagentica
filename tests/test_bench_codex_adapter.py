@@ -9,7 +9,37 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ci2lab.bench.adapters.base import render_command_template
 from ci2lab.bench.adapters.codex import _build_command, _find_error, _find_error_text
+
+
+def test_template_prompt_as_arg() -> None:
+    cmd, stdin = render_command_template(
+        "codex exec -m {model} --json {prompt}",
+        prompt="find the code",
+        model="qwen2.5-coder:32b",
+        workspace=Path("/ws"),
+    )
+    assert cmd == ["codex", "exec", "-m", "qwen2.5-coder:32b", "--json", "find the code"]
+    assert stdin is None
+
+
+def test_template_prompt_via_stdin_when_absent() -> None:
+    cmd, stdin = render_command_template(
+        "codex exec -m {model}", prompt="hello world", model="m", workspace=Path("/ws")
+    )
+    assert cmd == ["codex", "exec", "-m", "m"]
+    assert stdin == "hello world"
+
+
+def test_template_workspace_substitution() -> None:
+    ws = Path("/ws")
+    cmd, stdin = render_command_template(
+        "codex exec --cd {workspace} {prompt}", prompt="p", model="m", workspace=ws
+    )
+    assert str(ws) in cmd
+    assert cmd[-1] == "p"
+    assert stdin is None
 
 
 def test_oss_flag_is_after_exec() -> None:

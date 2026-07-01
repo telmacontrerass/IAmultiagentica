@@ -888,6 +888,10 @@ def run_agent(
     # means there is nothing to independently check.
     effectful_actions: list[str] = []
     verifier_runs = 0
+    # Gaps reported by the most recent completion-verification attempt. Used to
+    # detect no progress: if the verifier returns the same gaps twice, the model
+    # is not fixing them, so stop re-prompting instead of burning the budget.
+    last_verifier_gaps = ""
     final_answer_review_runs = 0
     evidence_ledger = EvidenceLedger(user_prompt=user_prompt)
     # The model created a task plan with `todo_write` during this run. Only then
@@ -1140,13 +1144,18 @@ def run_agent(
                     maybe_save_session(cfg, history, selection)
                     continue
                 # Opt-in completion verification: the agent is about to report
-                # done and effectful work really happened this turn. A fresh
-                # read-only subagent checks the workspace against the original
-                # request; on a clear failure, feed the gaps back and keep going.
+                # done and it did verifiable work this turn (a successful mutation
+                # or it ran commands/tests). A fresh, independent subagent derives
+                # the acceptance criteria from the original request, checks the
+                # real workspace against them, and — when running non-interactively
+                # — runs the project's own checks. On a confirmed, actionable
+                # failure the concrete gaps are fed back and the agent keeps
+                # trying, until the verdict passes, the gaps stop changing (no
+                # progress), or the per-turn budget is spent.
                 if (
                     final_text
                     and cfg.verify_completion
-                    and effectful_actions
+                    and (effectful_actions or evidence_ledger.has_runtime_evidence)
                     and verifier_runs < VERIFIER_MAX_PER_TURN
                     and selection.supports_tools
                     and not stop_tools_requested
@@ -1154,8 +1163,16 @@ def run_agent(
                     verifier_runs += 1
                     _print_model_step(content, already_streamed=streamed_this_round)
                     _emit_progress("Verifying the result against the request...", on_progress)
-                    issues = verify_completion(cfg, selection, user_prompt, effectful_actions)
-                    if issues:
+                    issues = verify_completion(
+                        cfg,
+                        selection,
+                        user_prompt,
+                        effectful_actions,
+                        evidence_summary=evidence_ledger.summary(),
+                        previous_gaps=last_verifier_gaps,
+                    )
+                    if issues and issues.strip() != last_verifier_gaps:
+                        last_verifier_gaps = issues.strip()
                         console.print(
                             "[yellow]Verifier found gaps; asking the model to "
                             "fix them before finishing.[/yellow]"
@@ -1172,6 +1189,15 @@ def run_agent(
                         effectful_actions = []
                         maybe_save_session(cfg, history, selection)
                         continue
+                    if issues:
+                        # Same gaps as the previous attempt: the model is not
+                        # making progress on them, so stop re-prompting and let it
+                        # finalize honestly instead of spending the rest of the
+                        # budget on a point it cannot fix.
+                        console.print(
+                            "[yellow]Verifier reports the same gaps as the previous "
+                            "attempt; finishing without another retry.[/yellow]"
+                        )
                 if (
                     final_text
                     and cfg.verify_final_answer

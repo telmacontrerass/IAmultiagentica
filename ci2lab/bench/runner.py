@@ -233,10 +233,11 @@ def _evidence_metrics(
     evidence_success = all(required_checks) if required_checks else None
     failure = _failure_classification(trace)
     status = str(result.status or "")
-    looks_successful = status in {"success", "completed"} or "completed" in result.final_answer.lower()
+    looks_successful = (
+        status in {"success", "completed"} or "completed" in result.final_answer.lower()
+    )
     false_positive = bool(
-        looks_successful
-        and (not functional_success or (evidence_success is False))
+        looks_successful and (not functional_success or (evidence_success is False))
     )
     return {
         "evidence_success": evidence_success,
@@ -338,7 +339,9 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         costs = [float(r["cost_usd"]) for r in group if r["cost_usd"] is not None]
         latencies = [float(r["wall_clock_s"]) for r in group if r["wall_clock_s"] is not None]
         functional = sum(1 for r in group if r.get("functional_success"))
-        evidence_values = [r.get("evidence_success") for r in group if r.get("evidence_success") is not None]
+        evidence_values = [
+            r.get("evidence_success") for r in group if r.get("evidence_success") is not None
+        ]
         evidence = sum(1 for value in evidence_values if value)
         false_positives = sum(1 for r in group if r.get("false_positive"))
         tool_violations = sum(r.get("tool_violation_count") or 0 for r in group)

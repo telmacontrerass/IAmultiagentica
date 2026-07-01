@@ -178,8 +178,6 @@ def _count_tool_calls(run_dir: Path) -> int | None:
         phases = data.get("phases")
         if isinstance(phases, list):
             return sum(
-                len(phase.get("tool_calls") or [])
-                for phase in phases
-                if isinstance(phase, dict)
+                len(phase.get("tool_calls") or []) for phase in phases if isinstance(phase, dict)
             )
     return len(load_tool_calls_jsonl(direct)) if direct.is_file() else None

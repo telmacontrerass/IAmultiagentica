@@ -1,27 +1,30 @@
 """Adapter for the OpenAI Codex CLI.
 
-Runs ``codex exec --json "<prompt>"`` in the workspace and parses the JSONL
-event stream for the final message and token usage. In H1 Codex runs under a
-ChatGPT subscription with its default model; in H2 it runs the shared open model
-M locally.
+Codex's exact CLI shape is version-specific, so this adapter does **not** insist
+on one. There are two ways to drive it:
 
-Environment knobs (so any Codex version can be driven without a code change):
+1. **Command template (recommended, guess-proof).** Set ``BENCH_CODEX_CMD`` to the
+   exact invocation that works on your machine, using the placeholders
+   ``{prompt}``, ``{model}`` and ``{workspace}``. Example::
 
-- ``BENCH_CODEX_OSS=1`` — add ``--oss`` to the ``exec`` subcommand, routing Codex
-  at a local model (the H2 arm). Note: ``--oss`` is placed *after* ``exec`` —
-  placing it before the subcommand does not take effect and Codex falls back to
-  the ChatGPT account (which rejects non-OpenAI models).
-- ``BENCH_CODEX_LOCAL_PROVIDER`` — the local provider for ``--oss`` (default
-  ``ollama``; Codex also supports ``lmstudio``). Set to empty to omit the flag on
-  Codex versions that default the provider themselves.
-- ``BENCH_CODEX_ARGS`` — extra CLI args inserted before the prompt, e.g.
-  ``-c model_provider=oss`` or a custom base URL. Use this if your Codex version
-  selects the local provider differently.
-- ``BENCH_CODEX_BIN`` — override the ``codex`` executable path.
+       export BENCH_CODEX_CMD='codex exec --oss --local-provider ollama -m {model} --json {prompt}'
 
-Codex's JSONL schema is version-specific, so parsing is intentionally defensive
-(it scans for known fields). The exact command is written to ``codex_cmd.txt`` and
-the raw stream to ``codex_events.jsonl`` in the run directory for debugging.
+   The harness runs that verbatim (substituting the placeholders). If the template
+   contains no ``{prompt}``, the prompt is piped to stdin instead. This decouples
+   the harness from Codex's flags entirely — find the command that works with a
+   quick manual test, paste it here, done.
+
+2. **Built-in default** (used when ``BENCH_CODEX_CMD`` is unset):
+   ``codex exec --json [--oss --local-provider <p>] [--model M] [extra] --cd WS PROMPT``.
+   Toggle OSS mode with ``BENCH_CODEX_OSS=1`` and the provider with
+   ``BENCH_CODEX_LOCAL_PROVIDER`` (default ``ollama``).
+
+Other knobs: ``BENCH_CODEX_ARGS`` (extra args, default path only),
+``BENCH_CODEX_BIN`` (executable, default path only). Every run writes the exact
+command to ``codex_cmd.txt``, stdout to ``codex_events.jsonl`` and stderr to
+``codex_stderr.txt`` in the run directory. Token parsing scans the stream
+defensively; if nothing parses, the raw stdout becomes the final answer so
+answer-graded tasks still work.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ci2lab.bench.adapters.base import render_command_template
 from ci2lab.bench.metrics import STATUS_ERROR, STATUS_SUCCESS, STATUS_TIMEOUT, RunResult
 from ci2lab.bench.task import BenchTask
 
@@ -41,12 +45,13 @@ __all__ = ["CodexAdapter"]
 
 
 class CodexAdapter:
-    """Subprocess adapter for ``codex exec`` in non-interactive JSON mode."""
+    """Subprocess adapter for the Codex CLI (template-driven or built-in)."""
 
     name = "codex"
 
     def __init__(self) -> None:
-        """Read the Codex env knobs (OSS mode, local provider, extra args, binary)."""
+        """Read the Codex env knobs (command template or built-in flags)."""
+        self.template = os.environ.get("BENCH_CODEX_CMD", "").strip()
         self.oss = _env_flag("BENCH_CODEX_OSS")
         self.local_provider = os.environ.get("BENCH_CODEX_LOCAL_PROVIDER", "ollama")
         self.binary = os.environ.get("BENCH_CODEX_BIN", "codex")
@@ -61,26 +66,35 @@ class CodexAdapter:
         runs_dir: Path,
         timeout: int,
     ) -> RunResult:
-        """Run one sample via the ``codex`` CLI and parse its JSONL events."""
-        cmd = _build_command(
-            task.prompt,
-            model=model,
-            oss=self.oss,
-            local_provider=self.local_provider,
-            extra_args=self.extra_args,
-            binary=self.binary,
-            workspace=workspace,
-        )
+        """Run one sample via the ``codex`` CLI and parse its output."""
+        if self.template:
+            cmd, stdin_text = render_command_template(
+                self.template, prompt=task.prompt, model=model, workspace=workspace
+            )
+        else:
+            cmd = _build_command(
+                task.prompt,
+                model=model,
+                oss=self.oss,
+                local_provider=self.local_provider,
+                extra_args=self.extra_args,
+                binary=self.binary,
+                workspace=workspace,
+            )
+            stdin_text = None
+
         runs_dir.mkdir(parents=True, exist_ok=True)
-        (runs_dir / "codex_cmd.txt").write_text(
-            " ".join(shlex.quote(part) for part in cmd), encoding="utf-8"
-        )
+        rendered = " ".join(shlex.quote(part) for part in cmd)
+        if stdin_text is not None:
+            rendered += "   # (prompt piped to stdin)"
+        (runs_dir / "codex_cmd.txt").write_text(rendered, encoding="utf-8")
 
         started = time.perf_counter()
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=str(workspace),
+                input=stdin_text,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -90,7 +104,7 @@ class CodexAdapter:
                 "",
                 STATUS_ERROR,
                 time.perf_counter() - started,
-                error=f"codex CLI not found (binary: {self.binary})",
+                error=f"codex CLI not found (binary: {cmd[0]})",
             )
         except subprocess.TimeoutExpired:
             return RunResult("", STATUS_TIMEOUT, float(timeout), error="codex timed out")
@@ -103,6 +117,8 @@ class CodexAdapter:
         events = _parse_jsonl(proc.stdout)
         backend_error = _find_error(events) or _find_error_text(proc.stdout)
         final = _find_final_text(events)
+        if not final and backend_error is None:
+            final = _fallback_text(proc.stdout)
         prompt_tokens, completion_tokens = _find_tokens(events)
         total = None
         if prompt_tokens is not None and completion_tokens is not None:
@@ -149,10 +165,10 @@ def _build_command(
     binary: str,
     workspace: Path,
 ) -> list[str]:
-    """Assemble the ``codex exec`` argv.
+    """Assemble the built-in ``codex exec`` argv (used without a template).
 
-    ``--oss`` (when requested) is attached to the ``exec`` subcommand — its
-    placement is the fix for the ChatGPT-account fallback — and is followed by
+    ``--oss`` (when requested) is attached to the ``exec`` subcommand — placement
+    is the fix for the ChatGPT-account fallback — followed by
     ``--local-provider <name>`` so Codex knows which local backend to use. The
     prompt is the final positional argument.
 
@@ -212,6 +228,12 @@ def _find_final_text(events: list[dict[str, Any]]) -> str:
             if isinstance(value, str) and value.strip():
                 text = value
     return text
+
+
+def _fallback_text(stdout: str) -> str:
+    """Last resort: use the raw stdout as the answer (bounded), when unparsed."""
+    stripped = stdout.strip()
+    return stripped[-4000:]
 
 
 def _find_error(events: list[dict[str, Any]]) -> str | None:

@@ -61,12 +61,22 @@ version works without editing code. Each run writes the exact command it ran to
 
 | Var | Effect |
 | --- | --- |
-| `BENCH_CODEX_OSS=1` | Add `--oss --local-provider ollama` to `codex exec` → route Codex at the local model M (H2). |
+| **`BENCH_CODEX_CMD`** | **Full command template** (guess-proof). Placeholders `{prompt}`/`{model}`/`{workspace}`; the harness runs it verbatim. If `{prompt}` is absent, the prompt is piped to stdin. Overrides all the built-in Codex flags below. |
+| `BENCH_CODEX_OSS=1` | *(default path)* Add `--oss --local-provider ollama` to `codex exec` → route Codex at the local model M (H2). |
 | `BENCH_CODEX_LOCAL_PROVIDER` | Local provider for `--oss` (default `ollama`; also `lmstudio`). Set empty to omit. |
-| `BENCH_CODEX_ARGS` | Extra `codex` args before the prompt, e.g. `-c model_provider=oss`. |
-| `BENCH_CODEX_BIN` | Path to the `codex` executable. |
-| `BENCH_CLAUDE_ARGS` | Extra `claude` args before the prompt. |
-| `BENCH_CLAUDE_BIN` | Path to the `claude` executable. |
+| `BENCH_CODEX_ARGS` | Extra `codex` args before the prompt (default path only). |
+| `BENCH_CODEX_BIN` | Path to the `codex` executable (default path only). |
+| **`BENCH_CLAUDE_CMD`** | Full command template for Claude Code (same placeholders/semantics). |
+| `BENCH_CLAUDE_ARGS` | Extra `claude` args before the prompt (default path only). |
+| `BENCH_CLAUDE_BIN` | Path to the `claude` executable (default path only). |
+
+**Recommended for Codex-on-M:** once you find a `codex exec …` command that works
+against local Ollama by hand, set it as the template so the harness never guesses:
+
+```bash
+export BENCH_CODEX_CMD='codex exec --oss --local-provider ollama -m {model} --json {prompt}'
+ci2lab bench run --agent codex --model qwen2.5-coder:32b --task cli-01 --samples 1
+```
 
 **Codex + local model (H2):** `--oss` must attach to the `exec` subcommand
 (`codex exec --oss …`), which the adapter now does. If your Codex still routes to
