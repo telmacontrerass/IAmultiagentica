@@ -32,7 +32,12 @@ DEFAULT_RUNS_DIR = "runs"
 DEFAULT_LOG_RUNS = True
 DEFAULT_WRITE_TOOLS_ENABLED = True
 DEFAULT_REQUIRE_DIFF_PREVIEW = True
-DEFAULT_VERIFY_COMPLETION = False
+# On by default at the product layer so a plain "user writes prompt -> problem
+# solved" flow independently confirms the work before finishing, with no setting
+# to enable. The mechanism is conservative (it only blocks on a confident,
+# actionable failure and leans PASS otherwise). Set CI2LAB_VERIFY_COMPLETION=0
+# (or verify_completion: false in ci2lab.yaml) to turn it off.
+DEFAULT_VERIFY_COMPLETION = True
 DEFAULT_VERIFY_FINAL_ANSWER = True
 
 _CONFIG_FILENAMES = ("ci2lab.yaml", "ci2lab.yml", "ci2lab.json")
@@ -203,8 +208,11 @@ def _from_env(config: Ci2LabConfig) -> Ci2LabConfig:
         "no",
     }:
         mapping["require_diff_preview"] = False
-    if os.environ.get("CI2LAB_VERIFY_COMPLETION", "").lower() in {"1", "true", "yes"}:
+    verify_completion_env = os.environ.get("CI2LAB_VERIFY_COMPLETION", "").lower()
+    if verify_completion_env in {"1", "true", "yes", "on"}:
         mapping["verify_completion"] = True
+    elif verify_completion_env in {"0", "false", "no", "off"}:
+        mapping["verify_completion"] = False
     if os.environ.get("CI2LAB_VERIFY_FINAL_ANSWER", "").lower() in {"0", "false", "no"}:
         mapping["verify_final_answer"] = False
     return _apply_mapping(config, mapping)

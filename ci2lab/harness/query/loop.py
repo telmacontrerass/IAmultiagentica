@@ -29,7 +29,7 @@ from typing import Any
 
 from ci2lab.console import console
 from ci2lab.contracts.types import HardwareProfile, ModelSelection
-from ci2lab.harness.context import manage_context, trim_messages
+from ci2lab.harness.context import manage_context, progress_digest, trim_messages
 from ci2lab.harness.edit_followup import EditSignature, process_edit_round
 from ci2lab.harness.grounding_review import (
     FINAL_ANSWER_REVIEW_MAX_PER_TURN,
@@ -487,22 +487,28 @@ def _todo_plan_snippet(cwd: str) -> str:
     return "Current task plan (keep it updated with `todo_write`):\n" + "\n".join(lines)
 
 
-def _current_request_anchor(user_prompt: str, cwd: str) -> dict[str, Any]:
+def _current_request_anchor(user_prompt: str, cwd: str, *, progress: str = "") -> dict[str, Any]:
     """Build the synthetic user anchor that restates the request each round.
 
-    Re-injecting the prompt (plus a compact task-plan snippet when one exists)
-    after tool results keeps a long multi-step task oriented toward the current
-    request instead of drifting back to an earlier one.
+    Re-injecting the prompt (plus a compact task-plan snippet when one exists and
+    an auto-derived progress digest) after tool results keeps a long multi-step
+    task oriented toward the current request instead of drifting back to an
+    earlier one. The progress digest is the key aid for weaker models: it gives
+    them a stable, compact view of what has already been done so they need not
+    reconstruct it from the whole transcript each round.
 
     Args:
         user_prompt: The user's current request to restate.
         cwd: Workspace directory used to read the current todo plan snippet.
+        progress: Optional pre-computed progress digest (see
+            ``context.progress.progress_digest``); appended when non-empty.
 
     Returns:
         An anchor message dict (``_anchor`` flagged) ready to append to history.
     """
     plan = _todo_plan_snippet(cwd)
     plan_block = f"\n\n{plan}" if plan else ""
+    progress_block = f"\n\n{progress}" if progress.strip() else ""
     return {
         "role": "user",
         "_anchor": True,
@@ -512,6 +518,7 @@ def _current_request_anchor(user_prompt: str, cwd: str) -> dict[str, Any]:
             "Finish this request fully, including any file/tool-output "
             "instructions it depends on. Do not resume an unrelated earlier task."
             f"{plan_block}"
+            f"{progress_block}"
         ),
     }
 
@@ -1438,7 +1445,13 @@ def run_agent(
             _strip_anchors(history)
             if cfg.role_anchor:
                 history.append(_role_anchor_message(cfg.role_anchor))
-            history.append(_current_request_anchor(user_prompt, cfg.cwd))
+            history.append(
+                _current_request_anchor(
+                    user_prompt,
+                    cfg.cwd,
+                    progress=progress_digest(evidence_ledger),
+                )
+            )
 
             if contract_expected is not None:
                 expected_file, expected_content = contract_expected

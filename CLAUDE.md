@@ -15,8 +15,8 @@ terminal and a local web UI. All product code lives in the `ci2lab/` package.
 ```bash
 python -m ruff check ci2lab tests      # lint — must be clean
 python -m ruff format ci2lab tests     # format — run before committing
-python -m mypy ci2lab                   # type-check — must be clean (strict on core)
-python -m pytest -q                     # ~905 tests — must stay green
+python -m mypy ci2lab                  # type-check — must be clean (strict on core)
+python -m pytest -q                    # ~905 tests — must stay green
 ```
 
 CI (`.github/workflows/ci.yml`) runs all four on Python 3.11 and 3.12. Keep the
@@ -45,19 +45,12 @@ Full map: [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 - **Types:** annotate every signature. `mypy ci2lab` must pass; the packages in
   `[[tool.mypy.overrides]]` are held to the strict bar (`disallow_untyped_defs`)
   — grow that list, don't shrink it.
-- **Swapping models/backends is config-only.** Add a provider by writing one
-  `LLMBackend` subclass and registering it in `backends/factory.py`. Do not
-  re-couple the harness to a specific server.
 - **Tool registries must agree.** A tool is declared in `TOOL_NAMES`, `DISPATCH`,
   its JSON schema, and a capability set. `tests/test_tool_registry_consistency.py`
   fails on drift — update all of them together.
 - **Façade modules** re-export internals (often `import x as _x`); they are
   exempt from unused-import (F401) via `[tool.ruff.lint.per-file-ignores]`. Never
   let `ruff --fix` strip those imports; add new façades to that list.
-- **Do not translate functional strings.** The intent keyword lists in
-  `router/intent.py` and `harness/multiagent/intent.py` are matched against
-  Spanish prompts on purpose — leave them verbatim. (The web frontend under
-  `ui/static/` is still Spanish; that is a known, separate limitation.)
 - **The ReAct loop is task-agnostic.** Robustness comes from generic mechanisms
   (loop detection, error-streak cutoff, nudges). Do not add per-topic special
   cases, and be cautious editing the round loop — its nudge/round timing is

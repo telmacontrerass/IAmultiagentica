@@ -20,6 +20,18 @@ def test_load_config_defaults(monkeypatch, tmp_path):
     assert cfg.max_rounds == 25
     assert cfg.stream is True
     assert cfg.auto_confirm is False
+    # Completion verification ships on by default so a plain prompt gets verified
+    # work with no setting to enable.
+    assert cfg.verify_completion is True
+
+
+def test_verify_completion_can_be_disabled_via_env(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("ci2lab.config.Path.home", lambda: tmp_path)
+    monkeypatch.setenv("CI2LAB_VERIFY_COMPLETION", "0")
+    assert load_config().verify_completion is False
+    monkeypatch.setenv("CI2LAB_VERIFY_COMPLETION", "on")
+    assert load_config().verify_completion is True
 
 
 def test_load_config_from_yaml(monkeypatch, tmp_path):

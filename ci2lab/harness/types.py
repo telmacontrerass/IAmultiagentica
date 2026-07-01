@@ -89,10 +89,19 @@ class AgentConfig:
     """If True, write/edit always show a diff and ask for confirmation (--yes does not skip)."""
 
     verify_completion: bool = False
-    """If True, after the agent reports a task done AND effectful work happened
-    this turn, a fresh read-only subagent verifies the result against the
-    original request; on failure the agent is asked to fix it. Opt-in: on weak
-    local models the verifier can false-reject, so it stays off by default."""
+    """If True, after the agent reports a task done AND verifiable work happened
+    this turn (a mutation, or it ran commands/tests), a fresh subagent derives
+    the acceptance criteria from the original request and checks the result
+    against reality; on a confident, actionable failure the agent is asked to fix
+    it and keeps trying. See ``harness.query.verifier``.
+
+    This dataclass default is False so direct constructors (tests, benchmarks,
+    security/redteam audits) opt in explicitly. The *product* enables it by
+    default: real runs build the config from ``Ci2LabConfig.verify_completion``
+    (``DEFAULT_VERIFY_COMPLETION``), so an ordinary CLI/UI user gets completion
+    verification with no setting to flip. It is deliberately conservative (leans
+    PASS when unsure), so a weak local model is not trapped in a false-reject
+    loop."""
 
     verify_final_answer: bool = True
     """If True, every final answer is checked against deterministic evidence

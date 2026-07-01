@@ -256,7 +256,9 @@ def test_verifier_runs_on_command_evidence_without_mutation():
     mock_verify.assert_called_once()
 
 
-def test_verifier_off_by_default():
+def test_verifier_not_run_when_flag_off():
+    # The AgentConfig dataclass default stays False so direct constructors (tests,
+    # benchmarks, audits) opt in explicitly; the product turns it on via config.
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
     assert config.verify_completion is False
