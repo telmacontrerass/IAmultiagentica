@@ -18,7 +18,7 @@ from ci2lab.harness.tools import calc as calc_tool
 from ci2lab.harness.tools import convert as convert_tool
 from ci2lab.harness.tools import docx as docx_tool
 from ci2lab.harness.tools import filesystem as fs
-from ci2lab.harness.tools import git_tools, skill_tool, vision_tool
+from ci2lab.harness.tools import git_tools, skill_tool, vision_tool, yard_tool
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import patch as patch_tool
@@ -112,6 +112,14 @@ DISPATCH: dict[str, Callable[..., str]] = {
         cfg,
         a["skill_name"],
         a.get("args"),
+    ),
+    "yard": lambda cfg, a: yard_tool.run_yard(
+        cfg,
+        a["action"],
+        a.get("component"),
+        a.get("entrypoint"),
+        a.get("args"),
+        a.get("query"),
     ),
     "delegate": lambda cfg, a: _run_delegate(cfg, a),
     "mcp_call": lambda cfg, a: execute_mcp_call(

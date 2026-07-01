@@ -15,6 +15,7 @@ _CLI_COMMANDS = frozenset(
         "evals",
         "bench",
         "skills",
+        "yard",
         "permissions",
         "ui",
         "tools",
@@ -50,6 +51,7 @@ def _print_global_help() -> None:
         "  ci2lab qwen:1.8b tools            Same thing, short form",
         "  ci2lab sessions [--json]          List saved sessions",
         "  ci2lab skills [--json]            List available built-in/user/workspace skills",
+        "  ci2lab yard [list|describe|run]   Browse and run reusable Yard components",
         "  ci2lab doctor                     Check Python, Ollama and models",
         "  ci2lab hardware [--json]          RAM, GPU, memory budget",
         "  ci2lab models recommend [query]",
@@ -210,6 +212,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     skills_p = sub.add_parser("skills", help="List available skills")
     skills_p.add_argument("--json", action="store_true")
+
+    yard_p = sub.add_parser("yard", help="Browse and run Yard components")
+    yard_sub = yard_p.add_subparsers(dest="yard_command")
+    yard_list_p = yard_sub.add_parser("list", help="List Yard components")
+    yard_list_p.add_argument("query", nargs="*", help="Optional filter terms")
+    yard_list_p.add_argument("--json", action="store_true")
+    yard_desc_p = yard_sub.add_parser("describe", help="Show a component's entrypoints")
+    yard_desc_p.add_argument("component")
+    yard_run_p = yard_sub.add_parser("run", help="Run a component entrypoint")
+    yard_run_p.add_argument("component")
+    yard_run_p.add_argument("entrypoint", nargs="?")
+    yard_run_p.add_argument("--args", default="{}", help="JSON object of arguments")
+    yard_run_p.add_argument(
+        "--yes", action="store_true", help="Auto-confirm host-mutating entrypoints"
+    )
 
     sub.add_parser("doctor", help="Check environment")
 
