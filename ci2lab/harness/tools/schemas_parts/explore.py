@@ -46,6 +46,39 @@ EXPLORE_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "create_quiz_questions",
+            "description": (
+                "Create multiple-choice test questions from PDF, DOCX, PPTX, XLSX, "
+                "CSV, Markdown or plain text. Use this when the user asks for "
+                "preguntas tipo test, quiz questions, exam questions or similar. "
+                "Ask the user first when question_count or difficulty is missing. "
+                "Each generated question has exactly one correct answer."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Document path to read"},
+                    "question_count": {
+                        "type": "integer",
+                        "description": "Number of questions requested by the user",
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["basic", "medium", "hard"],
+                        "description": "Question difficulty: basic/easy, medium or hard",
+                    },
+                    "options_per_question": {
+                        "type": "integer",
+                        "description": "Choices per question; default is 4 when omitted",
+                    },
+                },
+                "required": ["path", "question_count", "difficulty"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "ls",
             "description": "List the entries of one directory. For a recursive view use tree.",
             "parameters": {

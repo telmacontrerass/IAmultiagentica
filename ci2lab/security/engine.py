@@ -14,6 +14,7 @@ _PATH_ARG_TOOLS = frozenset(
     {
         "read_file",
         "read_document",
+        "create_quiz_questions",
         "ls",
         "glob",
         "grep",

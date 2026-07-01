@@ -30,6 +30,7 @@ READ_ONLY_TOOLS = frozenset(
         "symcalc",
         "read_file",
         "read_document",
+        "create_quiz_questions",
         "ls",
         "tree",
         "glob",

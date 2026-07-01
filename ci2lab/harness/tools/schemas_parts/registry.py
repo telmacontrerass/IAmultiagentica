@@ -16,6 +16,7 @@ TOOL_NAMES: frozenset[str] = frozenset(
         "symcalc",
         "read_file",
         "read_document",
+        "create_quiz_questions",
         "ls",
         "grep",
         "glob",

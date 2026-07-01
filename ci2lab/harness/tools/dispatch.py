@@ -22,6 +22,7 @@ from ci2lab.harness.tools import git_tools, skill_tool, vision_tool
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import patch as patch_tool
+from ci2lab.harness.tools import quiz as quiz_tool
 from ci2lab.harness.tools import symcalc as symcalc_tool
 from ci2lab.harness.tools import todo as todo_tool
 from ci2lab.harness.tools import web as web_tool
@@ -45,6 +46,13 @@ DISPATCH: dict[str, Callable[..., str]] = {
         security_engine=cfg.security_engine,
     ),
     "read_document": lambda cfg, a: fs.read_document(cfg.cwd, a["path"]),
+    "create_quiz_questions": lambda cfg, a: quiz_tool.create_quiz_questions(
+        cfg.cwd,
+        a["path"],
+        a["question_count"],
+        a["difficulty"],
+        a.get("options_per_question", quiz_tool.DEFAULT_OPTIONS_PER_QUESTION),
+    ),
     "ls": lambda cfg, a: fs.ls(cfg.cwd, a.get("path", ".")),
     "grep": lambda cfg, a: fs.grep_search(
         cfg.cwd,

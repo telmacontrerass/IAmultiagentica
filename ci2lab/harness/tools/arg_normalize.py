@@ -66,13 +66,27 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
                 if alias in cleaned:
                     cleaned["command"] = cleaned.pop(alias)
                     break
-    elif name in ("read_file", "read_document"):
+    elif name in ("read_file", "read_document", "create_quiz_questions"):
         for key in ("offset", "limit"):
             if key in cleaned:
                 cleaned[key] = _coerce_int(cleaned[key])
         for alias in ("file", "filename", "filepath"):
             if "path" not in cleaned and alias in cleaned:
                 cleaned["path"] = cleaned.pop(alias)
+        if name == "create_quiz_questions":
+            if "question_count" not in cleaned:
+                for alias in ("questions", "num_questions", "n_questions", "n_preguntas"):
+                    if alias in cleaned:
+                        cleaned["question_count"] = cleaned.pop(alias)
+                        break
+            if "options_per_question" not in cleaned:
+                for alias in ("options", "choices", "num_options", "opciones"):
+                    if alias in cleaned:
+                        cleaned["options_per_question"] = cleaned.pop(alias)
+                        break
+            for key in ("question_count", "options_per_question"):
+                if key in cleaned:
+                    cleaned[key] = _coerce_int(cleaned[key])
     elif name == "grep":
         if "pattern" not in cleaned and "query" in cleaned:
             cleaned["pattern"] = cleaned.pop("query")
