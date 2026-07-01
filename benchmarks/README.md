@@ -53,6 +53,28 @@ Results land in `benchmarks/results/<timestamp>/` as `results.jsonl` (one row pe
 task × agent × sample) and `summary.json` (per task × agent: Pass@1, Pass@k,
 mean tokens, imputed USD, median latency).
 
+## Competitor CLI knobs (env vars)
+
+The `codex` / `claude-code` adapters are driven entirely by env vars so any CLI
+version works without editing code. Each run writes the exact command it ran to
+`codex_cmd.txt` / `claude_cmd.txt` (and stderr to `*_stderr.txt`) in its run dir.
+
+| Var | Effect |
+| --- | --- |
+| `BENCH_CODEX_OSS=1` | Add `--oss` to `codex exec` → route Codex at the local model M (H2). |
+| `BENCH_CODEX_ARGS` | Extra `codex` args before the prompt, e.g. `-c model_provider=oss`. |
+| `BENCH_CODEX_BIN` | Path to the `codex` executable. |
+| `BENCH_CLAUDE_ARGS` | Extra `claude` args before the prompt. |
+| `BENCH_CLAUDE_BIN` | Path to the `claude` executable. |
+
+**Codex + local model (H2):** `--oss` must attach to the `exec` subcommand
+(`codex exec --oss …`), which the adapter now does. If your Codex still routes to
+the ChatGPT account (a `"...not supported when using Codex with a ChatGPT
+account"` error in `results.jsonl`), your version selects the local provider
+differently — set it via `BENCH_CODEX_ARGS` (e.g. after configuring an Ollama
+provider in `~/.codex/config.toml`, use `BENCH_CODEX_ARGS='-c model_provider=oss'`)
+without touching code. Confirm with `codex exec --help | grep -i oss`.
+
 ## Task ids
 
 | id | family | failure mode |

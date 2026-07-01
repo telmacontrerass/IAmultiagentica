@@ -3,13 +3,21 @@
 Runs ``claude -p "<prompt>" --output-format json`` headlessly in the workspace
 and parses the result JSON for the final answer, token usage and the
 ``total_cost_usd`` Claude Code reports (a computed equivalent under a
-subscription, not an invoice). The exact field names should be confirmed against
-the installed CLI during the Day-4 auth spike (see ``docs/BENCHMARKING.md`` §6).
+subscription, not an invoice).
+
+Environment knobs (so any Claude Code version can be driven without a code
+change): ``BENCH_CLAUDE_BIN`` overrides the ``claude`` executable, and
+``BENCH_CLAUDE_ARGS`` injects extra CLI args before the prompt. The exact command
+is written to ``claude_cmd.txt`` in the run directory for debugging; confirm the
+result JSON field names against the installed CLI during the Day-4 auth spike
+(see ``docs/BENCHMARKING.md`` §6).
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -25,6 +33,11 @@ class ClaudeCodeAdapter:
 
     name = "claude-code"
 
+    def __init__(self) -> None:
+        """Read the Claude Code env knobs (binary path, extra args)."""
+        self.binary = os.environ.get("BENCH_CLAUDE_BIN", "claude")
+        self.extra_args = shlex.split(os.environ.get("BENCH_CLAUDE_ARGS", ""))
+
     def run(
         self,
         task: BenchTask,
@@ -36,7 +49,7 @@ class ClaudeCodeAdapter:
     ) -> RunResult:
         """Run one sample via the ``claude`` CLI and parse its JSON result."""
         cmd = [
-            "claude",
+            self.binary,
             "-p",
             task.prompt,
             "--output-format",
@@ -46,6 +59,12 @@ class ClaudeCodeAdapter:
         ]
         if model:
             cmd += ["--model", model]
+        cmd += self.extra_args
+
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / "claude_cmd.txt").write_text(
+            " ".join(shlex.quote(part) for part in cmd), encoding="utf-8"
+        )
 
         started = time.perf_counter()
         try:
@@ -58,11 +77,16 @@ class ClaudeCodeAdapter:
             )
         except FileNotFoundError:
             return RunResult(
-                "", STATUS_ERROR, time.perf_counter() - started, error="claude CLI not found"
+                "",
+                STATUS_ERROR,
+                time.perf_counter() - started,
+                error=f"claude CLI not found (binary: {self.binary})",
             )
         except subprocess.TimeoutExpired:
             return RunResult("", STATUS_TIMEOUT, float(timeout), error="claude timed out")
         wall = time.perf_counter() - started
+        if proc.stderr:
+            (runs_dir / "claude_stderr.txt").write_text(proc.stderr, encoding="utf-8")
 
         try:
             data = json.loads(proc.stdout)
