@@ -61,7 +61,8 @@ version works without editing code. Each run writes the exact command it ran to
 
 | Var | Effect |
 | --- | --- |
-| `BENCH_CODEX_OSS=1` | Add `--oss` to `codex exec` → route Codex at the local model M (H2). |
+| `BENCH_CODEX_OSS=1` | Add `--oss --local-provider ollama` to `codex exec` → route Codex at the local model M (H2). |
+| `BENCH_CODEX_LOCAL_PROVIDER` | Local provider for `--oss` (default `ollama`; also `lmstudio`). Set empty to omit. |
 | `BENCH_CODEX_ARGS` | Extra `codex` args before the prompt, e.g. `-c model_provider=oss`. |
 | `BENCH_CODEX_BIN` | Path to the `codex` executable. |
 | `BENCH_CLAUDE_ARGS` | Extra `claude` args before the prompt. |

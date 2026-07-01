@@ -147,7 +147,7 @@ def _read_run_json(run_dir: Path) -> tuple[int | None, str | None]:
         phases = data.get("phases")
         if isinstance(phases, list):
             phase_rounds = [
-                phase.get("rounds")
+                int(phase["rounds"])
                 for phase in phases
                 if isinstance(phase, dict) and isinstance(phase.get("rounds"), int)
             ]

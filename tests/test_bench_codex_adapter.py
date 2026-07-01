@@ -38,6 +38,34 @@ def test_no_oss_and_empty_model_omitted() -> None:
     assert cmd[-1] == "p"
 
 
+def test_oss_adds_local_provider_after_oss() -> None:
+    cmd = _build_command(
+        "p",
+        model="m",
+        oss=True,
+        local_provider="ollama",
+        extra_args=[],
+        binary="codex",
+        workspace=Path("/ws"),
+    )
+    assert "--local-provider" in cmd
+    assert cmd[cmd.index("--local-provider") + 1] == "ollama"
+    assert cmd.index("--local-provider") == cmd.index("--oss") + 1
+
+
+def test_no_local_provider_without_oss() -> None:
+    cmd = _build_command(
+        "p",
+        model="m",
+        oss=False,
+        local_provider="ollama",
+        extra_args=[],
+        binary="codex",
+        workspace=Path("/ws"),
+    )
+    assert "--local-provider" not in cmd
+
+
 def test_extra_args_and_binary_override() -> None:
     cmd = _build_command(
         "p",

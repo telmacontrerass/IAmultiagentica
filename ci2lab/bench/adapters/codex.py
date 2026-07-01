@@ -8,9 +8,12 @@ M locally.
 Environment knobs (so any Codex version can be driven without a code change):
 
 - ``BENCH_CODEX_OSS=1`` — add ``--oss`` to the ``exec`` subcommand, routing Codex
-  at a local Ollama model (the H2 arm). Note: ``--oss`` is placed *after* ``exec``
-  — placing it before the subcommand does not take effect and Codex falls back to
+  at a local model (the H2 arm). Note: ``--oss`` is placed *after* ``exec`` —
+  placing it before the subcommand does not take effect and Codex falls back to
   the ChatGPT account (which rejects non-OpenAI models).
+- ``BENCH_CODEX_LOCAL_PROVIDER`` — the local provider for ``--oss`` (default
+  ``ollama``; Codex also supports ``lmstudio``). Set to empty to omit the flag on
+  Codex versions that default the provider themselves.
 - ``BENCH_CODEX_ARGS`` — extra CLI args inserted before the prompt, e.g.
   ``-c model_provider=oss`` or a custom base URL. Use this if your Codex version
   selects the local provider differently.
@@ -43,8 +46,9 @@ class CodexAdapter:
     name = "codex"
 
     def __init__(self) -> None:
-        """Read the Codex env knobs (OSS mode, extra args, binary path)."""
+        """Read the Codex env knobs (OSS mode, local provider, extra args, binary)."""
         self.oss = _env_flag("BENCH_CODEX_OSS")
+        self.local_provider = os.environ.get("BENCH_CODEX_LOCAL_PROVIDER", "ollama")
         self.binary = os.environ.get("BENCH_CODEX_BIN", "codex")
         self.extra_args = shlex.split(os.environ.get("BENCH_CODEX_ARGS", ""))
 
@@ -62,6 +66,7 @@ class CodexAdapter:
             task.prompt,
             model=model,
             oss=self.oss,
+            local_provider=self.local_provider,
             extra_args=self.extra_args,
             binary=self.binary,
             workspace=workspace,
@@ -139,6 +144,7 @@ def _build_command(
     *,
     model: str,
     oss: bool,
+    local_provider: str = "",
     extra_args: list[str],
     binary: str,
     workspace: Path,
@@ -146,13 +152,16 @@ def _build_command(
     """Assemble the ``codex exec`` argv.
 
     ``--oss`` (when requested) is attached to the ``exec`` subcommand — its
-    placement is the fix for the ChatGPT-account fallback. The prompt is the
-    final positional argument.
+    placement is the fix for the ChatGPT-account fallback — and is followed by
+    ``--local-provider <name>`` so Codex knows which local backend to use. The
+    prompt is the final positional argument.
 
     Args:
         prompt: The task prompt (positional argument, placed last).
         model: Model tag to pin with ``--model`` (omitted when empty).
-        oss: Whether to add ``--oss`` to route at a local Ollama model.
+        oss: Whether to add ``--oss`` to route at a local model.
+        local_provider: Local provider name for ``--oss`` (e.g. ``ollama``);
+            omitted when empty or when ``oss`` is false.
         extra_args: Extra CLI args from ``BENCH_CODEX_ARGS`` (an escape hatch).
         binary: The ``codex`` executable name/path.
         workspace: Working directory passed via ``--cd``.
@@ -163,6 +172,8 @@ def _build_command(
     cmd = [binary, "exec", "--json"]
     if oss:
         cmd.append("--oss")
+        if local_provider:
+            cmd += ["--local-provider", local_provider]
     if model:
         cmd += ["--model", model]
     cmd += extra_args
