@@ -63,8 +63,7 @@ class ClaudeCodeAdapter:
                 task.prompt,
                 "--output-format",
                 "json",
-                "--permission-mode",
-                "acceptEdits",
+                "--dangerously-skip-permissions",
             ]
             if model:
                 cmd += ["--model", model]

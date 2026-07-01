@@ -25,6 +25,32 @@ The harness code lives in the package at [`ci2lab/bench/`](../ci2lab/bench/).
 Benchmarks run **live** (local Ollama for ci2lab; Codex/Claude Code under their
 subscriptions). They are never run by `pytest`.
 
+### Quick start (all-local: H2 + H3, two commands)
+
+`ci2lab`, `ci2lab-multi` and Codex all run on the same local model M, so one
+command produces the ci2lab-vs-Codex (H2) and single-vs-multi (H3) comparison;
+the second prints the tables and flags anything untrustworthy:
+
+```bash
+# 1) run ci2lab (single + multi) and Codex, all on the shared local model M
+BENCH_CODEX_OSS=1 ci2lab bench run \
+  --agent ci2lab --agent ci2lab-multi --agent codex \
+  --model qwen2.5-coder:32b --samples 5
+
+# 2) aggregate every run so far into comparison tables + a validity report
+ci2lab bench report
+```
+
+Add the H1 frontier competitors (their own subscription models) whenever you
+want, then re-run `ci2lab bench report`:
+
+```bash
+ci2lab bench run --agent claude-code --model sonnet   --samples 5
+ci2lab bench run --agent codex       --model <gpt-id> --samples 5   # no BENCH_CODEX_OSS
+```
+
+### More examples
+
 ```bash
 # ci2lab only (single + multi agent), shared local model:
 ci2lab bench run --agent ci2lab --agent ci2lab-multi \
@@ -74,9 +100,13 @@ version works without editing code. Each run writes the exact command it ran to
 against local Ollama by hand, set it as the template so the harness never guesses:
 
 ```bash
-export BENCH_CODEX_CMD='codex exec --oss --local-provider ollama -m {model} --json {prompt}'
+export BENCH_CODEX_CMD='codex exec --oss --local-provider ollama -m {model} --skip-git-repo-check --json {prompt}'
 ci2lab bench run --agent codex --model qwen2.5-coder:32b --task cli-01 --samples 1
 ```
+
+(`--skip-git-repo-check` is needed because benchmark workspaces are throwaway
+dirs Codex would otherwise refuse to run in. The built-in default already
+includes it, so plain `BENCH_CODEX_OSS=1` works too.)
 
 **Codex + local model (H2):** `--oss` must attach to the `exec` subcommand
 (`codex exec --oss …`), which the adapter now does. If your Codex still routes to

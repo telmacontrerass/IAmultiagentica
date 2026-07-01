@@ -15,9 +15,14 @@ on one. There are two ways to drive it:
    quick manual test, paste it here, done.
 
 2. **Built-in default** (used when ``BENCH_CODEX_CMD`` is unset):
-   ``codex exec --json [--oss --local-provider <p>] [--model M] [extra] --cd WS PROMPT``.
-   Toggle OSS mode with ``BENCH_CODEX_OSS=1`` and the provider with
-   ``BENCH_CODEX_LOCAL_PROVIDER`` (default ``ollama``).
+   ``codex exec --json --skip-git-repo-check --full-auto [--oss --local-provider
+   <p>] [--model M] [extra] --cd WS PROMPT``. ``--skip-git-repo-check`` is
+   required because the throwaway workspaces are not trusted git repos, and
+   ``--full-auto`` lets Codex actually use tools (read/write/run) without an
+   approval prompt — without it, ``exec`` just answers from the prompt. Toggle
+   OSS mode with ``BENCH_CODEX_OSS=1``, the provider with
+   ``BENCH_CODEX_LOCAL_PROVIDER`` (default ``ollama``), and full-auto off with
+   ``BENCH_CODEX_FULL_AUTO=0``.
 
 Other knobs: ``BENCH_CODEX_ARGS`` (extra args, default path only),
 ``BENCH_CODEX_BIN`` (executable, default path only). Every run writes the exact
@@ -54,6 +59,7 @@ class CodexAdapter:
         self.template = os.environ.get("BENCH_CODEX_CMD", "").strip()
         self.oss = _env_flag("BENCH_CODEX_OSS")
         self.local_provider = os.environ.get("BENCH_CODEX_LOCAL_PROVIDER", "ollama")
+        self.full_auto = _env_flag_on("BENCH_CODEX_FULL_AUTO")
         self.binary = os.environ.get("BENCH_CODEX_BIN", "codex")
         self.extra_args = shlex.split(os.environ.get("BENCH_CODEX_ARGS", ""))
 
@@ -77,6 +83,7 @@ class CodexAdapter:
                 model=model,
                 oss=self.oss,
                 local_provider=self.local_provider,
+                full_auto=self.full_auto,
                 extra_args=self.extra_args,
                 binary=self.binary,
                 workspace=workspace,
@@ -161,16 +168,19 @@ def _build_command(
     model: str,
     oss: bool,
     local_provider: str = "",
+    full_auto: bool = True,
     extra_args: list[str],
     binary: str,
     workspace: Path,
 ) -> list[str]:
     """Assemble the built-in ``codex exec`` argv (used without a template).
 
-    ``--oss`` (when requested) is attached to the ``exec`` subcommand — placement
-    is the fix for the ChatGPT-account fallback — followed by
-    ``--local-provider <name>`` so Codex knows which local backend to use. The
-    prompt is the final positional argument.
+    Two flags are essential for a benchmark: ``--skip-git-repo-check`` (the
+    throwaway workspaces are not trusted git repos) and ``--full-auto`` (lets
+    Codex read/write files and run commands without an approval prompt — without
+    it, ``exec`` answers from the prompt without ever using tools). ``--oss`` +
+    ``--local-provider`` route it at a local model, and the prompt is the final
+    positional argument.
 
     Args:
         prompt: The task prompt (positional argument, placed last).
@@ -178,6 +188,7 @@ def _build_command(
         oss: Whether to add ``--oss`` to route at a local model.
         local_provider: Local provider name for ``--oss`` (e.g. ``ollama``);
             omitted when empty or when ``oss`` is false.
+        full_auto: Add ``--full-auto`` so Codex may use tools unattended.
         extra_args: Extra CLI args from ``BENCH_CODEX_ARGS`` (an escape hatch).
         binary: The ``codex`` executable name/path.
         workspace: Working directory passed via ``--cd``.
@@ -185,7 +196,9 @@ def _build_command(
     Returns:
         The full argument vector for :func:`subprocess.run`.
     """
-    cmd = [binary, "exec", "--json"]
+    cmd = [binary, "exec", "--json", "--skip-git-repo-check"]
+    if full_auto:
+        cmd.append("--full-auto")
     if oss:
         cmd.append("--oss")
         if local_provider:
@@ -199,8 +212,13 @@ def _build_command(
 
 
 def _env_flag(name: str) -> bool:
-    """Whether environment variable ``name`` is set to a truthy value."""
+    """Whether environment variable ``name`` is set to a truthy value (default off)."""
     return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no")
+
+
+def _env_flag_on(name: str) -> bool:
+    """Whether environment variable ``name`` is truthy, defaulting to on when unset."""
+    return os.environ.get(name, "1").strip().lower() not in ("0", "false", "no", "")
 
 
 def _parse_jsonl(text: str) -> list[dict[str, Any]]:

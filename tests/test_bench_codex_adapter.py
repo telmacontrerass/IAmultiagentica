@@ -68,6 +68,34 @@ def test_no_oss_and_empty_model_omitted() -> None:
     assert cmd[-1] == "p"
 
 
+def test_skip_git_repo_check_always_present() -> None:
+    for oss in (True, False):
+        cmd = _build_command(
+            "p", model="m", oss=oss, extra_args=[], binary="codex", workspace=Path("/ws")
+        )
+        assert "--skip-git-repo-check" in cmd
+
+
+def test_full_auto_present_by_default() -> None:
+    cmd = _build_command(
+        "p", model="m", oss=True, extra_args=[], binary="codex", workspace=Path("/ws")
+    )
+    assert "--full-auto" in cmd
+
+
+def test_full_auto_can_be_disabled() -> None:
+    cmd = _build_command(
+        "p",
+        model="m",
+        oss=True,
+        full_auto=False,
+        extra_args=[],
+        binary="codex",
+        workspace=Path("/ws"),
+    )
+    assert "--full-auto" not in cmd
+
+
 def test_oss_adds_local_provider_after_oss() -> None:
     cmd = _build_command(
         "p",

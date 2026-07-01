@@ -8,24 +8,29 @@ from ci2lab.console import console
 
 
 def _cmd_bench(args: argparse.Namespace) -> int:
-    """Run performance benchmarks by translating CLI flags into bench-runner argv.
+    """Dispatch ``ci2lab bench`` subcommands (``run`` and ``report``).
 
     Args:
-        args: Parsed CLI arguments (``bench_command`` plus tasks dir, task ids,
-            agents, model, samples, results dir and prices path).
+        args: Parsed CLI arguments (``bench_command`` plus its options).
 
     Returns:
-        Process exit code from the benchmark runner, or ``0`` if no ``run`` was
-        requested.
+        Process exit code from the benchmark runner/reporter, or ``0`` for the
+        usage message.
     """
-    from ci2lab.bench.run import main as bench_main
+    command = getattr(args, "bench_command", None)
+    if command == "report":
+        from ci2lab.bench.report import main as report_main
 
-    if getattr(args, "bench_command", None) != "run":
+        return report_main(list(args.paths or []))
+    if command != "run":
         console.print(
-            "Usage: ci2lab bench run [--agent NAME ...] [--model TAG] "
-            "[--samples N] [--task ID] [--tasks-dir PATH]"
+            "Usage:\n"
+            "  ci2lab bench run [--agent NAME ...] [--model TAG] [--samples N] [--task ID]\n"
+            "  ci2lab bench report [PATH ...]"
         )
         return 0
+
+    from ci2lab.bench.run import main as bench_main
 
     argv: list[str] = []
     if args.tasks_dir:

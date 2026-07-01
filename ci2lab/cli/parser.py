@@ -261,6 +261,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench_run.add_argument("--results-dir", default=None)
     bench_run.add_argument("--prices", default=None)
 
+    bench_report = bench_sub.add_parser("report", help="Aggregate results into comparison tables")
+    bench_report.add_argument("paths", nargs="*", metavar="PATH")
+
     from ci2lab.cli_permissions import add_permissions_parser
 
     add_permissions_parser(sub)
