@@ -54,6 +54,9 @@ audit/deterministic_claude/
 audit/live_claude/
 .ci2lab/
 
+# Course / exam materials
+Examenes/
+
 # Local test leftovers / manual scratch files
 /prueba.pdf
 /inside.txt

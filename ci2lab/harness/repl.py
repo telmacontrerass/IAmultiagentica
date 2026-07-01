@@ -184,7 +184,10 @@ def _extract_inline_images(
                 _doc = fitz.open(p)
                 _n = len(_doc)
                 _doc.close()
-                _shown: int | str = min(_n, 10)
+                # Mirror the page cap chosen in loop._prepare_vision_turn:
+                # 30 for transcription/review turns, 10 otherwise.
+                _cap = 30 if select_visual_skill(line) is not None else 10
+                _shown: int | str = min(_n, _cap)
                 _suffix = f" ({_shown} of {_n} pages)" if _n > 1 else " (1 page)"
             except Exception:
                 _shown = "?"

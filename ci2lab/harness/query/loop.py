@@ -682,7 +682,11 @@ def _prepare_turn_content(
 
     # Exercise scans pack small digits (47 vs 4.7, 58.4 vs 58,19) that small
     # vision models misread at low resolution, so render those pages sharply.
-    render_dpi = 250 if is_visual_document_request(user_prompt) else 96
+    # Transcription/review turns also span whole multi-page exams, so lift the
+    # default 10-page cap for them; ordinary chat keeps the cheap defaults.
+    _is_visual_doc = is_visual_document_request(user_prompt)
+    render_dpi = 250 if _is_visual_doc else 96
+    render_max_pages = 30 if _is_visual_doc else 10
     expanded_paths: list[str] = []
     pdf_temp_dirs: list[Path] = []
     for raw_path in cfg.image_paths:
@@ -692,7 +696,7 @@ def _prepare_turn_content(
                 continue
             vision_has_pdf = True
             try:
-                pages, tmp = pdf_to_images(raw_path, dpi=render_dpi)
+                pages, tmp = pdf_to_images(raw_path, dpi=render_dpi, max_pages=render_max_pages)
                 expanded_paths.extend(str(p) for p in pages)
                 pdf_temp_dirs.append(tmp)
             except Exception as exc:

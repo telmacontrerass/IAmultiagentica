@@ -471,6 +471,29 @@
     }
   },
   {
+    "id": "qwen3-coder-30b",
+    "display_name": "Qwen3 Coder 30B",
+    "family": "qwen",
+    "categories": [
+      "coding",
+      "reasoning",
+      "general"
+    ],
+    "ollama_tag": "qwen3-coder:30b",
+    "vram_min_gb": 13.0,
+    "ram_inference_gb": 20.0,
+    "supports_tools": true,
+    "tool_mode": "native",
+    "context_length": 262144,
+    "tier": "workstation",
+    "benchmark_score": {
+      "general": 0.85,
+      "coding": 0.96,
+      "reasoning": 0.84,
+      "edge": 0.05
+    }
+  },
+  {
     "id": "qwen-0-5b",
     "display_name": "Qwen1.5 0.5B",
     "family": "qwen",
