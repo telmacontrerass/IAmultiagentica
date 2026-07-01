@@ -961,9 +961,7 @@ def test_exact_file_contract_scope_extra_file_is_scope_violation(tmp_path):
     assert run.contract_validation is not None
     assert run.contract_validation.status == "validation_failed"
     assert run.contract_validation.scope_status == "failed"
-    assert run.contract_validation.scope_failures == [
-        "changed path outside allowed scope: app.py"
-    ]
+    assert run.contract_validation.scope_failures == ["changed path outside allowed scope: app.py"]
     assert run.failure_classification is not None
     assert run.failure_classification.failure_class == "scope_violation"
     assert final_run_status(run) == "validation_failed"
@@ -1507,12 +1505,14 @@ _WRITE_READBACK_TOOL_CALLS = [
     {
         "tool": "write_file",
         "ok": True,
+        "outcome": "approved",
         "arguments": {"path": "prueba_multiagente.txt"},
         "output_preview": "Wrote prueba_multiagente.txt",
     },
     {
         "tool": "read_file",
         "ok": True,
+        "outcome": None,
         "arguments": {"path": "prueba_multiagente.txt"},
         "output_preview": "MULTIAGENTE_OK",
     },

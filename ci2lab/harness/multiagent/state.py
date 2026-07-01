@@ -83,7 +83,7 @@ class EvidenceEntry:
         role: AgentRole | str,
         phase: AgentRole | str | None = None,
         source_run: str | None = None,
-    ) -> "EvidenceEntry":
+    ) -> EvidenceEntry:
         """Build EvidenceEntry v1 from an existing tool-call dictionary."""
         arguments = entry.get("arguments")
         args = dict(arguments) if isinstance(arguments, dict) else {}
@@ -103,8 +103,7 @@ class EvidenceEntry:
             output_hash=_evidence_hash(output_preview),
             error_preview=str(error_preview) if error_preview else None,
             source_run=source_run,
-            timestamp=str(entry.get("started_at") or entry.get("timestamp") or "")
-            or None,
+            timestamp=str(entry.get("started_at") or entry.get("timestamp") or "") or None,
             failure_class=str(entry["failure_class"])
             if entry.get("failure_class") is not None
             else None,

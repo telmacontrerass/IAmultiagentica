@@ -705,6 +705,21 @@ def _capture_git_baseline(cwd: str) -> str | None:
         return None
 
 
+def _git_scope_tools_available(cwd: str) -> bool:
+    """Return whether git status/diff can provide change-scope evidence in cwd."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0 and proc.stdout.strip().lower() == "true"
+
+
 def _git_baseline_section(baseline: str | None) -> str:
     """Return a prompt section describing pre-run WIP, or '' when baseline is clean."""
     if not baseline or baseline == "(clean)":
@@ -1920,6 +1935,8 @@ def _can_use_deterministic_validation(
         return False
     if not tools <= {"read_file", "git_status", "git_diff"}:
         return False
+    if {"git_status", "git_diff"} & tools and not _git_scope_tools_available(config.cwd):
+        return False
     if "read_file" not in tools:
         return True
     expected_path = contract.expected_artifacts[0] if contract.expected_artifacts else None
@@ -2318,8 +2335,7 @@ def classify_exact_file_content_contract(
     )
     observed_changed_paths = _observed_changed_paths_from_evidence(entries)
     has_scope_evidence = any(
-        _tool_ok(entry) and _tool_name(entry) in _CHANGE_SCOPE_EVIDENCE_TOOLS
-        for entry in entries
+        _tool_ok(entry) and _tool_name(entry) in _CHANGE_SCOPE_EVIDENCE_TOOLS for entry in entries
     )
     scope_status, scope_failures = _scope_status(
         allowed_paths=allowed_write_paths,
@@ -3525,7 +3541,7 @@ def run_multi_agent(
                 cfg,
                 scope_required=review_scope_required,
             )
-            if review_scope_required:
+            if review_scope_required and _git_scope_tools_available(review_config.cwd):
                 if on_progress:
                     on_progress("reviewer: collecting deterministic scope evidence")
                 else:
@@ -3577,7 +3593,7 @@ def run_multi_agent(
                     cfg,
                     scope_required=security_scope_required,
                 )
-                if security_scope_required:
+                if security_scope_required and _git_scope_tools_available(security_config.cwd):
                     if on_progress:
                         on_progress("security_reviewer: collecting deterministic scope evidence")
                     else:
