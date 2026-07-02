@@ -3,12 +3,16 @@
 Execution is deliberately defensive: the salvaged modules are unvetted
 third-party code, several were sanitised (redacted prompts/schemas, elided
 constants), and some reach the network or the host. :func:`execute` therefore
-runs a series of gates before importing anything, and only imports and calls the
-target function once every gate passes. Every path returns a plain result
-dictionary (never raises) so the gateway tool can serialise it directly.
+runs a series of gates *in the harness process* before touching the code, and
+only once every gate passes does it hand the call to a short-lived, isolated
+child process (:mod:`ci2lab.harness.yard._worker`). Every path returns a plain
+result dictionary (never raises) so the gateway tool can serialise it directly.
 
-Security: execution is in-process but governed by the run's security policy, the
-same one the built-in tools obey.
+Security: the salvaged code never runs in the harness process. It executes in a
+separate Python process with a kill-timeout, so a crash, hang, or resource leak
+in a component cannot take down or corrupt the agent, and no module-level state
+leaks between runs. On top of that isolation the run's security policy — the same
+one the built-in tools obey — is enforced *before* the worker is spawned:
 
 - A host-mutating (``side_effect``) entrypoint is blocked outright under a
   profile that disables ``bash``/``write_file`` (``strict``/``audit``); otherwise
@@ -24,12 +28,11 @@ so the runner does not truncate them itself.
 
 from __future__ import annotations
 
-import importlib
 import importlib.util
-import io
+import json
+import subprocess
 import sys
 from collections.abc import Iterable
-from contextlib import redirect_stdout
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,20 +46,11 @@ from ci2lab.security.paths import PathViolationError, resolve_workspace_path
 if TYPE_CHECKING:
     from ci2lab.harness.types import AgentConfig
 
+#: Path to the out-of-process execution worker spawned for every ``run``.
+_WORKER = Path(__file__).resolve().parent / "_worker.py"
 
-def _jsonable(value: Any) -> Any:
-    """Coerce ``value`` into something JSON-serialisable.
-
-    Dicts and lists are converted recursively; scalars pass through; anything
-    else falls back to its ``repr`` so a result is always representable.
-    """
-    if value is None or isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, list | tuple | set):
-        return [_jsonable(v) for v in value]
-    return repr(value)
+#: Fallback kill-timeout (seconds) when the config supplies none.
+_DEFAULT_TIMEOUT_SECONDS = 60
 
 
 def _missing_dependencies(requires: Iterable[str]) -> list[str]:
@@ -106,27 +100,100 @@ def _host_mutation_approved(
         return False
 
 
-def _load_callable(entrypoint: YardEntrypoint, core_dirs: Iterable[Path]) -> Any:
-    """Import ``entrypoint.module`` off the Yard core dirs and return the target.
+def _run_isolated(
+    entrypoint: YardEntrypoint,
+    args: dict[str, Any],
+    core_dirs: Iterable[Path],
+    *,
+    timeout: int,
+) -> dict[str, Any]:
+    """Execute one entrypoint in a short-lived isolated worker process.
 
-    All component ``core/`` directories are placed on ``sys.path`` for the
-    duration of the import so cross-component imports (e.g. the Places client
-    importing ``geometria``) resolve. ``sys.path`` is restored afterwards.
+    The component ``core/`` directories are passed to the worker so cross-component
+    imports (e.g. the Places client importing ``geometria``) resolve there. The
+    child is killed if it runs longer than ``timeout`` seconds.
 
-    Raises:
-        ImportError: The module could not be imported.
-        AttributeError: The module has no such function.
+    Args:
+        entrypoint: The entrypoint to execute.
+        args: Validated call arguments (already gated in the parent).
+        core_dirs: Every loaded component's ``core/`` directory.
+        timeout: Wall-clock kill-timeout for the child, in seconds.
+
+    Returns:
+        A partial result dict: ``{"ok": True, "result": ..., "stdout"?: ...}`` on
+        success, or ``{"ok": False, "status": ..., "message": ...}`` describing a
+        component error, timeout, crash, or unparseable output.
     """
-    added = [str(Path(d).resolve()) for d in core_dirs]
-    saved = list(sys.path)
-    sys.path[:0] = added
+    payload = json.dumps(
+        {
+            "core_dirs": [str(Path(d).resolve()) for d in core_dirs],
+            "module": entrypoint.module,
+            "function": entrypoint.function,
+            "args": args,
+        }
+    )
     try:
-        importlib.invalidate_caches()
-        module = importlib.import_module(entrypoint.module)
-        module = importlib.reload(module)
-        return getattr(module, entrypoint.function)
-    finally:
-        sys.path[:] = saved
+        proc = subprocess.run(
+            [sys.executable, str(_WORKER)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "status": "runtime_error",
+            "message": f"Component timed out after {timeout}s and was terminated.",
+        }
+    except OSError as exc:  # could not spawn the interpreter
+        return {
+            "ok": False,
+            "status": "runtime_error",
+            "message": f"Could not start isolated worker: {exc}",
+        }
+
+    envelope = _parse_worker_output(proc.stdout)
+    if envelope is None:
+        detail = (proc.stderr or "").strip()[:500]
+        return {
+            "ok": False,
+            "status": "runtime_error",
+            "message": (
+                f"Isolated worker returned no parseable result (exit {proc.returncode}). {detail}"
+            ).strip(),
+        }
+
+    if envelope.get("ok"):
+        out: dict[str, Any] = {"ok": True, "result": envelope.get("result")}
+        stdout = str(envelope.get("stdout") or "")
+        if stdout:
+            out["stdout"] = stdout[:2000]
+        return out
+
+    error_type = str(envelope.get("error_type", ""))
+    status = (
+        "import_error"
+        if error_type in {"ImportError", "ModuleNotFoundError", "AttributeError"}
+        else "runtime_error"
+    )
+    return {
+        "ok": False,
+        "status": status,
+        "message": str(envelope.get("error") or "unknown error"),
+    }
+
+
+def _parse_worker_output(stdout: str) -> dict[str, Any] | None:
+    """Parse the worker's JSON envelope from its stdout; ``None`` if unparseable."""
+    text = (stdout or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text.splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def execute(
@@ -268,32 +335,20 @@ def execute(
                 "message": f"Path argument `{name}` escapes the workspace: {exc}",
             }
 
-    try:
-        func = _load_callable(entrypoint, core_dirs)
-    except (ImportError, AttributeError) as exc:
-        return {
-            **base,
-            "ok": False,
-            "status": "import_error",
-            "message": f"Could not load `{entrypoint.module}.{entrypoint.function}`: {exc}",
-        }
-
-    stdout = io.StringIO()
-    try:
-        with redirect_stdout(stdout):
-            result = func(**args)
-    except Exception as exc:  # salvaged code may raise anything; never propagate
-        return {
-            **base,
-            "ok": False,
-            "status": "runtime_error",
-            "message": f"{type(exc).__name__}: {exc}",
-        }
+    # Hand the actual call to an isolated child process. All gates above have
+    # already passed, so only the (untrusted) execution itself is offloaded.
+    outcome = _run_isolated(
+        entrypoint,
+        args,
+        core_dirs,
+        timeout=config.bash_timeout_seconds or _DEFAULT_TIMEOUT_SECONDS,
+    )
+    if not outcome["ok"]:
+        return {**base, **outcome}
 
     # Hand back the whole result; the executor's central offload path preserves
     # and previews it when it exceeds max_tool_output_chars.
-    out: dict[str, Any] = {**base, "ok": True, "status": "ok", "result": _jsonable(result)}
-    captured = stdout.getvalue().strip()
-    if captured:
-        out["stdout"] = captured[:2000]
+    out: dict[str, Any] = {**base, "ok": True, "status": "ok", "result": outcome["result"]}
+    if outcome.get("stdout"):
+        out["stdout"] = outcome["stdout"]
     return out

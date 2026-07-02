@@ -104,8 +104,13 @@ like the read/write file tools). All gates return a structured result dictionary
 
 ## Security
 
-Execution is **in-process** but governed by the run's security policy — the same
-one the built-in tools obey:
+Execution happens **out-of-process**: for every `run`, the runner spawns a
+short-lived child Python (`ci2lab/harness/yard/_worker.py`) that imports the
+salvaged module and calls the function, with a kill-timeout. The unvetted code
+never runs in the harness process, so a crash, hang, or leak in a component
+cannot take down or corrupt the agent, and no module-level state leaks between
+runs. On top of that isolation the run's security policy — the same one the
+built-in tools obey — is enforced *before* the worker is spawned:
 
 - The `yard` tool call goes through the normal permission layer (classified
   `allow`, like `skill`/`mcp_call`).
@@ -115,10 +120,10 @@ one the built-in tools obey:
 - Parameters declared as `path_params` are confined to the workspace before the
   call, mirroring the file tools' jail.
 
-Untrusted third-party sources live only under `core/` and are excluded from
-lint/type-checking; they are loaded lazily by the runner, never imported at
-package import time. For stronger isolation, the same registry can be fronted by
-an external MCP server (out-of-process).
+Untrusted third-party sources live only under `core/`, are excluded from
+lint/type-checking, and are imported only inside the worker — never at package
+import time. (An external MCP server fronting the same registry remains a further
+option for cross-machine sandboxing.)
 
 ## Using it
 

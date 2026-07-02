@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -152,6 +153,41 @@ kind: utility
 ```
 
 # Toucher
+""",
+        encoding="utf-8",
+    )
+
+
+def _write_component(
+    tmp_path: Path, name: str, module_src: str, function: str, *, ready: str = "pure"
+) -> None:
+    """Write a minimal single-entrypoint workspace component for isolation tests."""
+    core = tmp_path / ".ci2lab" / "yard" / name / "core"
+    core.mkdir(parents=True)
+    core.joinpath(f"{name}mod.py").write_text(module_src, encoding="utf-8")
+    (core.parent / "COMPONENT.md").write_text(
+        f"""---
+name: {name}
+title: {name}
+description: test component
+kind: utility
+---
+
+```json
+{{
+  "entrypoints": [
+    {{
+      "function": "{function}",
+      "module": "{name}mod",
+      "ready": "{ready}",
+      "summary": "test",
+      "parameters": {{"type": "object", "properties": {{}}, "required": []}}
+    }}
+  ]
+}}
+```
+
+# {name}
 """,
         encoding="utf-8",
     )
@@ -326,6 +362,41 @@ def test_path_param_within_workspace_is_allowed(tmp_path: Path) -> None:
     assert out["ok"] is True
     # base64("hello-bytes") — confinement passed and the real function ran.
     assert out["result"] == "aGVsbG8tYnl0ZXM="
+
+
+# --------------------------------------------------------------------------- #
+# Runner — process isolation                                                  #
+# --------------------------------------------------------------------------- #
+def test_run_executes_in_separate_process(tmp_path: Path) -> None:
+    # The component reports its own PID; it must differ from the test process,
+    # proving execution is offloaded to an isolated child process.
+    _write_component(
+        tmp_path, "pidprobe", "import os\n\n\ndef pid():\n    return os.getpid()\n", "pid"
+    )
+    out = _run("pidprobe", "pid", {}, config=AgentConfig(cwd=str(tmp_path)))
+    assert out["ok"] is True
+    assert isinstance(out["result"], int)
+    assert out["result"] != os.getpid()
+
+
+def test_isolated_execution_enforces_timeout(tmp_path: Path) -> None:
+    # A hung component is killed at the configured timeout instead of blocking
+    # the harness forever.
+    _write_component(
+        tmp_path,
+        "sleeper",
+        "import time\n\n\ndef go():\n    time.sleep(30)\n    return 1\n",
+        "go",
+    )
+    out = _run(
+        "sleeper",
+        "go",
+        {},
+        config=AgentConfig(cwd=str(tmp_path), bash_timeout_seconds=1),
+    )
+    assert out["ok"] is False
+    assert out["status"] == "runtime_error"
+    assert "timed out" in out["message"].lower()
 
 
 # --------------------------------------------------------------------------- #
