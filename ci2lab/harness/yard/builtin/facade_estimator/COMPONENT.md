@@ -9,6 +9,7 @@ requires: requests openai
 yard_id: yard-8a4cadeb43
 source_repo: Proyecto-Alvaro
 signature: sha256:8ba990c34efe9d89da4b2a8b2bdacb1fb33527017b2cdc566408a1cbd4d013db
+core_sha256: sha256:cda0f8f48842e43fc92df7b94ddc8857f1dbc207b1f41d42834cb8543ad99924
 ---
 
 ```json

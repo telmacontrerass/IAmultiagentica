@@ -9,6 +9,7 @@ requires: requests
 yard_id: yard-173c5687f9
 source_repo: Proyecto-Alvaro
 signature: sha256:3c340c14c7f11268907d3e6a63397d56bb9c628484435eb1f69992bc1fe9a1f6
+core_sha256: sha256:cb1524017a094d605102fe8f54a9614f9b148286c967c1b5fba7e2a424fdd181
 ---
 
 ```json

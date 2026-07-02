@@ -16,6 +16,7 @@ components without touching the package.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -25,6 +26,34 @@ from typing import Any
 MAX_COMPONENT_BODY_CHARS = 16_000
 MAX_CATALOG_CHARS = 8_000
 COMPONENT_FILENAME = "COMPONENT.md"
+
+
+def compute_core_hash(core_dir: Path) -> str:
+    """Return a deterministic ``sha256:`` hash of a component's ``core/`` code.
+
+    Hashes every ``.py`` file under ``core_dir`` (``__pycache__`` excluded) in
+    sorted order, mixing in each file's workspace-relative name so a rename is
+    detected too. This is the integrity baseline stored as ``core_sha256`` in the
+    manifest and re-checked at load, so drift or tampering in the vendored
+    third-party code cannot pass unnoticed.
+
+    Args:
+        core_dir: The component's ``core/`` directory.
+
+    Returns:
+        A string of the form ``"sha256:<hexdigest>"``.
+    """
+    digest = hashlib.sha256()
+    files = sorted(
+        p for p in core_dir.rglob("*.py") if "__pycache__" not in p.parts and p.is_file()
+    )
+    for path in files:
+        digest.update(path.relative_to(core_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
 
 #: Execution readiness of an entrypoint, gating what :mod:`runner` will do.
 #:
@@ -92,7 +121,15 @@ class YardComponent:
         requires: Third-party pip dependencies the ``core/`` modules import.
         source_repo: Repository the component was salvaged from (provenance).
         yard_id: Original Quarry-Yard id (provenance).
-        signature: Original sha256 signature of the salvaged source (provenance).
+        signature: Original sha256 signature of the salvaged source, recorded for
+            provenance only (the vendored code was repaired, so it is not
+            re-verified against this).
+        core_sha256: Declared integrity hash of the *vendored* ``core/`` code, or
+            ``None`` when the manifest omits it. Re-checked at load.
+        verified: ``True`` when the component declares no ``core_sha256`` or the
+            declared value matches the actual core hash; ``False`` only when a
+            declared hash mismatches (drift/tamper) — the runner then refuses to
+            execute it.
         core_dir: Path to the component's ``core/`` module folder.
         entrypoints: The callables the component exposes.
         body: The porting-guide prose (manifest block stripped), possibly
@@ -111,6 +148,8 @@ class YardComponent:
     source_repo: str | None
     yard_id: str | None
     signature: str | None
+    core_sha256: str | None
+    verified: bool
     core_dir: Path
     entrypoints: list[YardEntrypoint]
     body: str
@@ -264,6 +303,12 @@ def _load_component_file(path: Path, source: str) -> YardComponent | None:
     name = meta.get("name") or path.parent.name
     if len(prose) > MAX_COMPONENT_BODY_CHARS:
         prose = prose[:MAX_COMPONENT_BODY_CHARS] + "\n... (porting guide truncated)"
+    # Integrity check: when the manifest declares a core hash, it must match the
+    # vendored code on disk. A declared-but-mismatched hash marks the component
+    # unverified so the runner refuses to execute it; an absent hash is allowed
+    # (unverified, e.g. a workspace component whose author did not sign it).
+    declared_hash = meta.get("core_sha256")
+    verified = declared_hash is None or declared_hash == compute_core_hash(core_dir)
     return YardComponent(
         name=name,
         title=meta.get("title") or name,
@@ -275,6 +320,8 @@ def _load_component_file(path: Path, source: str) -> YardComponent | None:
         source_repo=meta.get("source_repo"),
         yard_id=meta.get("yard_id"),
         signature=meta.get("signature"),
+        core_sha256=declared_hash,
+        verified=verified,
         core_dir=core_dir,
         entrypoints=entrypoints,
         body=prose,

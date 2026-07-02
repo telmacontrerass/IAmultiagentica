@@ -17,6 +17,7 @@ from ci2lab.harness.tools.schemas_parts.registry import TOOL_NAMES
 from ci2lab.harness.types import AgentConfig, ToolCall
 from ci2lab.harness.yard import runner
 from ci2lab.harness.yard.loader import (
+    compute_core_hash,
     format_yard_catalog,
     get_component,
     load_components,
@@ -159,19 +160,33 @@ kind: utility
 
 
 def _write_component(
-    tmp_path: Path, name: str, module_src: str, function: str, *, ready: str = "pure"
+    tmp_path: Path,
+    name: str,
+    module_src: str,
+    function: str,
+    *,
+    ready: str = "pure",
+    core_sha256: str | None = None,
 ) -> None:
-    """Write a minimal single-entrypoint workspace component for isolation tests."""
+    """Write a minimal single-entrypoint workspace component for runner tests.
+
+    ``core_sha256="auto"`` computes and records the correct hash; any other
+    string records it verbatim (use a wrong value to simulate drift); ``None``
+    leaves the component unsigned.
+    """
     core = tmp_path / ".ci2lab" / "yard" / name / "core"
     core.mkdir(parents=True)
     core.joinpath(f"{name}mod.py").write_text(module_src, encoding="utf-8")
+    if core_sha256 == "auto":
+        core_sha256 = compute_core_hash(core)
+    sig_line = f"core_sha256: {core_sha256}\n" if core_sha256 else ""
     (core.parent / "COMPONENT.md").write_text(
         f"""---
 name: {name}
 title: {name}
 description: test component
 kind: utility
----
+{sig_line}---
 
 ```json
 {{
@@ -397,6 +412,76 @@ def test_isolated_execution_enforces_timeout(tmp_path: Path) -> None:
     assert out["ok"] is False
     assert out["status"] == "runtime_error"
     assert "timed out" in out["message"].lower()
+
+
+# --------------------------------------------------------------------------- #
+# Runner — signature verification (provenance integrity)                      #
+# --------------------------------------------------------------------------- #
+def test_builtin_components_are_signed_and_verified() -> None:
+    components = load_components(".")
+    for name in BUILTIN_COMPONENTS:
+        component = components[name]
+        assert component.core_sha256 is not None, f"{name} is unsigned"
+        assert component.verified is True
+        # The recorded hash matches the vendored code on disk.
+        assert component.core_sha256 == compute_core_hash(component.core_dir)
+
+
+def test_tampered_component_is_unverified_and_refused(tmp_path: Path) -> None:
+    _write_component(
+        tmp_path,
+        "tampered",
+        "def go():\n    return 1\n",
+        "go",
+        core_sha256="sha256:deadbeef",  # deliberately wrong
+    )
+    components = load_components(str(tmp_path))
+    assert components["tampered"].verified is False
+
+    out = _run("tampered", "go", {}, config=AgentConfig(cwd=str(tmp_path)))
+    assert out["ok"] is False
+    assert out["status"] == "signature_mismatch"
+
+
+def test_correct_signature_verifies_and_runs(tmp_path: Path) -> None:
+    _write_component(
+        tmp_path,
+        "signed",
+        "def go():\n    return 42\n",
+        "go",
+        core_sha256="auto",  # records the correct hash
+    )
+    assert load_components(str(tmp_path))["signed"].verified is True
+    out = _run("signed", "go", {}, config=AgentConfig(cwd=str(tmp_path)))
+    assert out["ok"] is True
+    assert out["result"] == 42
+
+
+def test_unsigned_component_runs_unverified(tmp_path: Path) -> None:
+    # No core_sha256 declared → allowed (verified stays True), so authors are not
+    # forced to sign workspace components.
+    _write_component(tmp_path, "unsigned", "def go():\n    return 7\n", "go")
+    component = load_components(str(tmp_path))["unsigned"]
+    assert component.core_sha256 is None
+    assert component.verified is True
+    out = _run("unsigned", "go", {}, config=AgentConfig(cwd=str(tmp_path)))
+    assert out["ok"] is True
+    assert out["result"] == 7
+
+
+def test_tampered_component_describe_warns(tmp_path: Path) -> None:
+    _write_component(
+        tmp_path,
+        "tampered2",
+        "def go():\n    return 1\n",
+        "go",
+        core_sha256="sha256:deadbeef",
+    )
+    result = execute_tool(
+        ToolCall(name="yard", arguments={"action": "describe", "component": "tampered2"}),
+        AgentConfig(cwd=str(tmp_path)),
+    )
+    assert "unverified" in result.content.lower()
 
 
 # --------------------------------------------------------------------------- #

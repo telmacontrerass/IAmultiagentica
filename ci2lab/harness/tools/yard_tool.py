@@ -45,6 +45,13 @@ def _render_describe(component: YardComponent) -> str:
         "",
         component.description,
     ]
+    if not component.verified:
+        lines += [
+            "",
+            "> ⚠️ **Unverified:** the vendored code does not match its recorded "
+            "`core_sha256` signature. Execution is refused until the signature is "
+            "regenerated.",
+        ]
     if component.when_to_use:
         lines += ["", f"**When to use:** {component.when_to_use}"]
     if component.requires:

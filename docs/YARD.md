@@ -46,7 +46,8 @@ tags: geospatial, haversine, grid-search
 requires: requests
 yard_id: yard-173c5687f9
 source_repo: Proyecto-Alvaro
-signature: sha256:...
+signature: sha256:...          # provenance of the original source (not verified)
+core_sha256: sha256:...       # integrity hash of the vendored core/ (verified at load)
 ---
 
 ​```json
@@ -69,7 +70,16 @@ signature: sha256:...
 
 Per-entrypoint fields: `function`, `module` (a file under `core/`), `ready`,
 `summary`, `parameters` (JSON-Schema-style), optional `secret_params`,
-`requires` (pip deps needed to *import* this entrypoint's module), and `note`.
+`path_params` (args confined to the workspace), `requires` (pip deps needed to
+*import* this entrypoint's module), and `note`.
+
+**Integrity.** `core_sha256` is a deterministic hash of the vendored `core/`
+code (compute it with `ci2lab.harness.yard.loader.compute_core_hash`). At load
+the runner re-hashes `core/` and compares: a **mismatch marks the component
+unverified and its execution is refused** (`signature_mismatch`) until the hash
+is regenerated — so drift or tampering can't pass unnoticed. A manifest that
+omits `core_sha256` loads as unverified-but-runnable (authors of workspace
+components aren't forced to sign).
 
 ## The gateway tool
 
@@ -119,6 +129,9 @@ built-in tools obey — is enforced *before* the worker is spawned:
   and otherwise routed through the write-tool confirmation channel.
 - Parameters declared as `path_params` are confined to the workspace before the
   call, mirroring the file tools' jail.
+- A component whose vendored `core/` no longer matches its recorded
+  `core_sha256` is refused (`signature_mismatch`) — integrity is verified at
+  load (see **Integrity** above).
 
 Untrusted third-party sources live only under `core/`, are excluded from
 lint/type-checking, and are imported only inside the worker — never at package

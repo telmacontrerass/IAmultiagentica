@@ -229,6 +229,21 @@ def execute(
     # confirmation channel. Strip any stray value so it is never passed as a kwarg.
     args.pop("confirm", None)
 
+    # Integrity gate: a component whose vendored code no longer matches its
+    # recorded core_sha256 has drifted or been tampered with — refuse outright,
+    # before any other consideration.
+    if not component.verified:
+        return {
+            **base,
+            "ok": False,
+            "status": "signature_mismatch",
+            "message": (
+                "This component's core code does not match its recorded "
+                "`core_sha256` signature (drift or tampering); execution refused. "
+                "Regenerate the signature if the change was intentional."
+            ),
+        }
+
     # A redacted entrypoint can never run correctly, regardless of environment,
     # so report that first — it is the most actionable message.
     if entrypoint.ready == "needs_config":
