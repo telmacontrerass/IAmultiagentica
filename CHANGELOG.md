@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The Yard** (`ci2lab/harness/yard/`, `docs/YARD.md`): a catalogue of reusable,
+  runnable components salvaged from other projects, exposed behind a single
+  `yard` gateway tool with progressive disclosure (`list` / `describe` / `run`),
+  so the per-turn tool schema stays constant no matter how many components exist.
+  Components are data-driven `COMPONENT.md` manifests (mirroring `SKILL.md`) plus
+  vendored `core/` code; discovery is char-budgeted and query-filterable and
+  merges built-in, user and workspace roots. Execution runs **out-of-process**
+  (a short-lived worker with a kill-timeout) and is gated by readiness
+  (`pure` / `needs_key` / `needs_config` / `side_effect`), the security profile,
+  workspace path-confinement, write-tool confirmation, and a load-time
+  `core_sha256` integrity check. Browse and run from the CLI (`ci2lab yard …`) or
+  the REPL (`/yard`); ships six components salvaged from *Proyecto-Alvaro*.
 - **MIT License** (`LICENSE`), wired into the project metadata.
 - **Pluggable LLM backends** (`ci2lab/harness/backends/`): an `LLMBackend`
   interface with `OllamaBackend` (native `/api/chat`) and `OpenAICompatBackend`
