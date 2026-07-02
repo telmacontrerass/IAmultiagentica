@@ -38,10 +38,7 @@ def test_nvidia_detection_sums_multiple_gpus(monkeypatch):
     monkeypatch.setattr("ci2lab.hardware.profile.shutil.which", lambda _cmd: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(
         "ci2lab.hardware.profile._run_command",
-        lambda _args: (
-            "NVIDIA RTX A6000, 49140, 47000\n"
-            "NVIDIA RTX A6000, 49140, 46800\n"
-        ),
+        lambda _args: "NVIDIA RTX A6000, 49140, 47000\nNVIDIA RTX A6000, 49140, 46800\n",
     )
 
     gpu = _detect_nvidia_gpu()
