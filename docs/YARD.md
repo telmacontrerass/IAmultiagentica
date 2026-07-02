@@ -74,12 +74,13 @@ Per-entrypoint fields: `function`, `module` (a file under `core/`), `ready`,
 *import* this entrypoint's module), and `note`.
 
 **Integrity.** `core_sha256` is a deterministic hash of the vendored `core/`
-code (compute it with `ci2lab.harness.yard.loader.compute_core_hash`). At load
-the runner re-hashes `core/` and compares: a **mismatch marks the component
-unverified and its execution is refused** (`signature_mismatch`) until the hash
-is regenerated — so drift or tampering can't pass unnoticed. A manifest that
-omits `core_sha256` loads as unverified-but-runnable (authors of workspace
-components aren't forced to sign).
+code, with Python source line endings canonicalised to LF (compute it with
+`ci2lab.harness.yard.loader.compute_core_hash`). At load the runner re-hashes
+`core/` and compares: a **mismatch marks the component unverified and its
+execution is refused** (`signature_mismatch`) until the hash is regenerated — so
+drift or tampering can't pass unnoticed. A manifest that omits `core_sha256`
+loads as unverified-but-runnable (authors of workspace components aren't forced
+to sign).
 
 ## The gateway tool
 

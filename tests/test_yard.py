@@ -427,6 +427,18 @@ def test_builtin_components_are_signed_and_verified() -> None:
         assert component.core_sha256 == compute_core_hash(component.core_dir)
 
 
+def test_core_hash_is_stable_across_checkout_line_endings(tmp_path: Path) -> None:
+    core = tmp_path / "core"
+    core.mkdir()
+    module = core / "mod.py"
+    module.write_bytes(b"def go():\n    return 1\n")
+    lf_hash = compute_core_hash(core)
+
+    module.write_bytes(b"def go():\r\n    return 1\r\n")
+
+    assert compute_core_hash(core) == lf_hash
+
+
 def test_tampered_component_is_unverified_and_refused(tmp_path: Path) -> None:
     _write_component(
         tmp_path,

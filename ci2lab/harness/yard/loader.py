@@ -33,7 +33,9 @@ def compute_core_hash(core_dir: Path) -> str:
 
     Hashes every ``.py`` file under ``core_dir`` (``__pycache__`` excluded) in
     sorted order, mixing in each file's workspace-relative name so a rename is
-    detected too. This is the integrity baseline stored as ``core_sha256`` in the
+    detected too. Python source line endings are canonicalised to LF before
+    hashing so a Git checkout's CRLF/LF policy does not invalidate the
+    signature. This is the integrity baseline stored as ``core_sha256`` in the
     manifest and re-checked at load, so drift or tampering in the vendored
     third-party code cannot pass unnoticed.
 
@@ -50,7 +52,7 @@ def compute_core_hash(core_dir: Path) -> str:
     for path in files:
         digest.update(path.relative_to(core_dir).as_posix().encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
         digest.update(b"\0")
     return "sha256:" + digest.hexdigest()
 
