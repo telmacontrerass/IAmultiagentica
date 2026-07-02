@@ -17,6 +17,7 @@ from ci2lab.cli.commands.models import (
 from ci2lab.cli.commands.sessions import _cmd_sessions
 from ci2lab.cli.commands.skills import _cmd_skills
 from ci2lab.cli.commands.ui import _cmd_ui
+from ci2lab.cli.commands.yard import _cmd_yard
 from ci2lab.cli.parser import (
     _CLI_COMMANDS,
     _is_global_help_request,
@@ -89,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_sessions(args)
     if args.command == "skills":
         return _cmd_skills(args, runtime)
+    if args.command == "yard":
+        return _cmd_yard(args, runtime)
     if args.command == "doctor":
         return _cmd_doctor(runtime)
     if args.command == "hardware":

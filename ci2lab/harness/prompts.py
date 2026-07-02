@@ -10,6 +10,7 @@ from ci2lab.contracts.types import ModelSelection, ToolMode
 from ci2lab.harness.mcp.session import get_mcp_manager
 from ci2lab.harness.project_memory import load_project_memory
 from ci2lab.harness.skills.loader import format_skill_catalog, load_skills, skills_for_model
+from ci2lab.harness.yard.loader import load_components
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -74,6 +75,17 @@ def build_system_prompt(
             "Invoke a skill with the `skill` tool when its workflow fits the task. "
             "Skills inject step-by-step instructions; they are not separate executables.\n\n"
             + catalog
+        )
+
+    yard_components = load_components(cwd)
+    if yard_components:
+        parts.append(
+            "## Yard\n\n"
+            f"A catalog of {len(yard_components)} reusable, runnable code components is "
+            'available through the `yard` tool. Call `yard` with action="list" to browse '
+            'them (optionally narrow with `query`), action="describe" to see one '
+            'component\'s entrypoints and parameters, and action="run" to execute one. '
+            "Prefer a matching component over re-implementing it."
         )
 
     mcp_status = get_mcp_manager(cwd, connect=True).format_status()

@@ -61,6 +61,7 @@ packages = ["ci2lab"]
 [tool.hatch.build.targets.wheel.force-include]
 "ci2lab/harness/prompts" = "ci2lab/harness/prompts"
 "ci2lab/harness/skills/builtin" = "ci2lab/harness/skills/builtin"
+"ci2lab/harness/yard/builtin" = "ci2lab/harness/yard/builtin"
 "ci2lab/catalog/models.json" = "ci2lab/catalog/models.json"
 "ci2lab/ui/static" = "ci2lab/ui/static"
 "ci2lab/py.typed" = "ci2lab/py.typed"
@@ -72,6 +73,11 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py311"
 src = ["ci2lab", "tests"]
+# Vendored, sanitized third-party Yard component sources: excluded from linting
+# and formatting. They are salvaged as-is (elided prompts/constants, broad
+# except/print) and executed out-of-band via the yard tool, not imported by the
+# package; the yard loader/runner/tool code IS linted normally.
+extend-exclude = ["ci2lab/harness/yard/builtin/*/core"]
 
 [tool.ruff.lint]
 # A pragmatic, production-grade rule set. `E`/`W`/`F` (pycodestyle + pyflakes)
@@ -128,6 +134,10 @@ known-first-party = ["ci2lab"]
 # Baseline type checking. Strictness is ratcheted up per-package via the
 # overrides below; the long-term target is `strict = true` repo-wide.
 python_version = "3.11"
+# Vendored, sanitized Yard component sources are untyped salvage and are never
+# statically imported by the package (the runner loads them dynamically), so
+# exclude them from type checking.
+exclude = ['ci2lab/harness/yard/builtin/[^/]+/core/']
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_redundant_casts = true
@@ -150,6 +160,9 @@ module = [
     "ci2lab.harness.backends.*",
     "ci2lab.harness.context.*",
     "ci2lab.harness.skills.*",
+    "ci2lab.harness.yard.loader",
+    "ci2lab.harness.yard.runner",
+    "ci2lab.harness.tools.yard_tool",
     "ci2lab.harness.token_usage",
     "ci2lab.harness.messages",
     "ci2lab.bench.*",

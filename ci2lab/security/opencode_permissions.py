@@ -51,6 +51,7 @@ for _t in _BASH_TOOLS:
 _DEFAULT_EXPERIMENTAL_RULES: dict[str, Any] = {
     "*": "ask",
     "skill": "allow",
+    "yard": "allow",
     "ask_user": "allow",
     "todo_write": "allow",
     "read": {

@@ -65,8 +65,9 @@ provider means adding one `LLMBackend` subclass and one entry in
 | `query/` (rest) | `llm_io` (stream/non-stream call), `nudges`, `retry_governor`, `verifier`, `session_hooks`. |
 | `multiagent/` | Orchestrated roles: `orchestrator` (phase runner), `runner` (subagent invocation), `roles`, `state`, `intent` (deterministic routing), plus the peer-review pipeline: `paper_review`, `grounding`, `manuscript`, `context_budget`. |
 | `context/` | `compact` (micro-compact + LLM summary) and `trim` (mechanical history trimming). |
-| `tools/` | `registry`/`schemas*` (tool definitions), `parsing*` (model output → `ToolCall`), `dispatch` + `executor*` (run), `capabilities` (read/write/mutating categories), and the implementations (`bash*`, `filesystem*`, `git_tools`, `web`, `vision_tool`, `delegate`, `skill_tool`, `todo`, `docx*`, `convert`, `patch`, `notebook`, `inspection`). The five registries are cross-checked by `tests/test_tool_registry_consistency.py`. |
+| `tools/` | `registry`/`schemas*` (tool definitions), `parsing*` (model output → `ToolCall`), `dispatch` + `executor*` (run), `capabilities` (read/write/mutating categories), and the implementations (`bash*`, `filesystem*`, `git_tools`, `web`, `vision_tool`, `delegate`, `skill_tool`, `yard_tool`, `todo`, `docx*`, `convert`, `patch`, `notebook`, `inspection`). The five registries are cross-checked by `tests/test_tool_registry_consistency.py`. |
 | `prompts/`, `skills/`, `mcp/` | System-prompt assembly; `SKILL.md` loading; MCP stdio client. |
+| `yard/` | The Yard: data-driven `COMPONENT.md` salvage-component registry (`loader`) and in-process entrypoint execution with readiness/permission/dependency gates (`runner`), fronted by the single `yard` gateway tool. See [`docs/YARD.md`](YARD.md). |
 | `security/` | Per-tool permission and workspace policy (harness side). |
 | `repl.py`, `session.py`, `run_logger.py`, `vision.py`, `project_memory.py` | REPL; session persistence; structured run logs; vision helpers; project memory (`CI2LAB.md`/`AGENTS.md`). |
 
@@ -74,7 +75,7 @@ provider means adding one `LLMBackend` subclass and one entry in
 
 | Path | Responsibility |
 |------|----------------|
-| `cli/` | The `ci2lab` command: `main` (dispatch), `parser`, `runtime` (CLI → config), `menu`, and `commands/` (`agent`, `chat`, `models`, `doctor`, `hardware`, `sessions`, `skills`, `evals`, `ui`). |
+| `cli/` | The `ci2lab` command: `main` (dispatch), `parser`, `runtime` (CLI → config), `menu`, and `commands/` (`agent`, `chat`, `models`, `doctor`, `hardware`, `sessions`, `skills`, `yard`, `evals`, `ui`). |
 | `security/` | Permission engines (`engine`, `policy`, `decisions`, `permissions`), the OpenCode-compatible config layer (`opencode_*`), audit/comparison, and the Claude deterministic/live audit matrices. *(Google-style docstrings)* |
 | `ui/` | Local web app: `server` (facade) + `server_parts/` (`http`, `api`, `agent`, `serializers`, `uploads`), `projects`/`researchers` (peer-review state), and `static/` (frontend assets — still Spanish; see `docs/KNOWN_LIMITATIONS.md`). *(Google-style docstrings)* |
 | `evals/` | Harness evaluation suite (`run`, `runner`, `task`, `harness_write_eval`). *(Google-style docstrings)* |

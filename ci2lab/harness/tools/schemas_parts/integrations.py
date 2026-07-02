@@ -180,6 +180,51 @@ INTEGRATIONS_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "yard",
+            "description": (
+                "Gateway to the Yard: a catalog of reusable, runnable code components. "
+                "One tool, three actions. action='list' returns the component catalog "
+                "(optionally filtered by `query`); action='describe' with a `component` "
+                "returns that component's entrypoints and their parameter schemas; "
+                "action='run' with a `component`, `entrypoint` and `args` executes the "
+                "entrypoint and returns only the result. Use this when a task matches a "
+                "cataloged component instead of re-implementing it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "describe", "run"],
+                        "description": "list | describe | run",
+                    },
+                    "component": {
+                        "type": "string",
+                        "description": "Component name (required for describe and run)",
+                    },
+                    "entrypoint": {
+                        "type": "string",
+                        "description": (
+                            "Entrypoint function name for run; optional when the "
+                            "component has a single entrypoint"
+                        ),
+                    },
+                    "args": {
+                        "type": "object",
+                        "description": "Arguments object passed to the entrypoint on run",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Optional free-text filter for list",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "mcp_call",
             "description": (
                 "Call a tool on a connected MCP server by server name and tool name. "

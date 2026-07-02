@@ -36,6 +36,7 @@ TOOL_NAMES: frozenset[str] = frozenset(
         "git_status",
         "git_diff",
         "skill",
+        "yard",
         "mcp_call",
         "analyze_image",
         "extract_visual_document",

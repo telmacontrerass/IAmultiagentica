@@ -310,7 +310,7 @@ def run_repl(
             "Commands: [bold]/exit[/bold], [bold]/save[/bold], [bold]/clear[/bold], "
             "[bold]/delete[/bold], [bold]/sessions[/bold], [bold]/resume ID[/bold], "
             "[bold]/retry[/bold], [bold]/why[/bold], "
-            "[bold]/skills[/bold], [bold]/skill-name[/bold]",
+            "[bold]/skills[/bold], [bold]/skill-name[/bold], [bold]/yard[/bold]",
             title="Local agent",
             border_style="blue",
         )
@@ -416,6 +416,30 @@ def run_repl(
                     skill = skills[name]
                     src = skill.source
                     console.print(f"- [bold]{name}[/bold] ({src}): {skill.description}")
+            continue
+        if line.lower() == "/yard" or line.lower().startswith("/yard "):
+            from ci2lab.harness.yard.loader import (
+                format_yard_catalog,
+                get_component,
+                load_components,
+            )
+
+            rest = line[len("/yard") :].strip()
+            components = load_components(config.cwd)
+            if not components:
+                console.print("[dim]No Yard components found.[/dim]")
+            elif not rest:
+                console.print(format_yard_catalog(components) or "[dim]No Yard components.[/dim]")
+            else:
+                component = get_component(components, rest.split()[0])
+                if component is None:
+                    console.print(f"[yellow]Unknown Yard component: {rest}[/yellow]")
+                else:
+                    console.print(
+                        f"[bold]{component.name}[/bold] ({component.kind}) — {component.description}"
+                    )
+                    for ep in component.entrypoints:
+                        console.print(f"  - [bold]{ep.function}[/bold] [{ep.ready}]: {ep.summary}")
             continue
         if line.startswith("/"):
             skill_line = line[1:].strip()
