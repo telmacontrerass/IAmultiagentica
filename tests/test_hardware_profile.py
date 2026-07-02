@@ -7,7 +7,7 @@ from io import StringIO
 import pytest
 from rich.console import Console
 
-from ci2lab.hardware.profile import build_cpu_profile_for_testing
+from ci2lab.hardware.profile import _detect_nvidia_gpu, build_cpu_profile_for_testing
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.recommend import (
     classify_memory_fit,
@@ -32,6 +32,25 @@ def test_cpu_high_available_no_memory_pressure():
     assert profile.inference_budget_available_gb == pytest.approx(7.2, abs=0.01)
     assert profile.inference_budget_gb == pytest.approx(7.2, abs=0.01)
     assert profile.memory_pressure is False
+
+
+def test_nvidia_detection_sums_multiple_gpus(monkeypatch):
+    monkeypatch.setattr("ci2lab.hardware.profile.shutil.which", lambda _cmd: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(
+        "ci2lab.hardware.profile._run_command",
+        lambda _args: (
+            "NVIDIA RTX A6000, 49140, 47000\n"
+            "NVIDIA RTX A6000, 49140, 46800\n"
+        ),
+    )
+
+    gpu = _detect_nvidia_gpu()
+
+    assert gpu is not None
+    assert gpu["gpu_name"] == "2x NVIDIA RTX A6000"
+    assert gpu["vram_total_gb"] == pytest.approx(95.98, abs=0.01)
+    assert gpu["vram_available_gb"] == pytest.approx(91.6, abs=0.01)
+    assert len(gpu["raw"]["nvidia_gpus"]) == 2
 
 
 def test_model_ok_if_memory_freed_when_theoretical_but_not_current():

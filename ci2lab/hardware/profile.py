@@ -168,23 +168,32 @@ def _detect_nvidia_gpu() -> dict[str, Any] | None:
     if not output.strip():
         return None
 
-    line = output.strip().splitlines()[0]
-    parts = [part.strip() for part in line.split(",")]
-    if len(parts) < 3:
+    gpus: list[dict[str, float | str]] = []
+    for line in output.strip().splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 3:
+            continue
+        try:
+            total_gb = round(float(parts[1]) / 1024, 2)
+            free_gb = round(float(parts[2]) / 1024, 2)
+        except ValueError:
+            continue
+        gpus.append({"name": parts[0], "total_gb": total_gb, "free_gb": free_gb})
+
+    if not gpus:
         return None
 
-    try:
-        total_gb = round(float(parts[1]) / 1024, 2)
-        free_gb = round(float(parts[2]) / 1024, 2)
-    except ValueError:
-        return None
+    total_gb = round(sum(float(gpu["total_gb"]) for gpu in gpus), 2)
+    free_gb = round(sum(float(gpu["free_gb"]) for gpu in gpus), 2)
+    names = [str(gpu["name"]) for gpu in gpus]
+    gpu_name = f"{len(names)}x {names[0]}" if len(set(names)) == 1 else " + ".join(names)
 
     return {
         "vram_total_gb": total_gb,
         "vram_available_gb": free_gb,
-        "gpu_name": parts[0],
+        "gpu_name": gpu_name,
         "gpu_vendor": "nvidia",
-        "raw": {"nvidia_smi": output.strip()},
+        "raw": {"nvidia_smi": output.strip(), "nvidia_gpus": gpus},
     }
 
 
