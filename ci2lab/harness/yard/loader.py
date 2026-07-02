@@ -50,6 +50,9 @@ class YardEntrypoint:
         parameters: JSON-Schema-style object describing the call arguments.
         secret_params: Parameter names that hold credentials (used by the
             ``needs_key`` gate to check they were supplied).
+        path_params: Parameter names that are filesystem paths. The runner
+            confines each supplied value to the workspace before executing,
+            mirroring the read/write file tools' workspace jail.
         requires: Third-party pip packages needed to *import* this entrypoint's
             module (checked before execution). Declared per-entrypoint because a
             module's pure helpers may need nothing while an LLM entrypoint in the
@@ -64,6 +67,7 @@ class YardEntrypoint:
     ready: str
     parameters: dict[str, Any] = field(default_factory=dict)
     secret_params: list[str] = field(default_factory=list)
+    path_params: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
     note: str | None = None
 
@@ -221,6 +225,7 @@ def _parse_entrypoints(manifest: dict[str, Any]) -> list[YardEntrypoint]:
             ready = "needs_config"
         params = raw.get("parameters")
         secret = raw.get("secret_params", [])
+        paths = raw.get("path_params", [])
         requires = raw.get("requires", [])
         entrypoints.append(
             YardEntrypoint(
@@ -230,6 +235,7 @@ def _parse_entrypoints(manifest: dict[str, Any]) -> list[YardEntrypoint]:
                 ready=ready,
                 parameters=params if isinstance(params, dict) else {},
                 secret_params=[str(s) for s in secret] if isinstance(secret, list) else [],
+                path_params=[str(p) for p in paths] if isinstance(paths, list) else [],
                 requires=[str(r) for r in requires] if isinstance(requires, list) else [],
                 note=str(raw["note"]).strip() if raw.get("note") else None,
             )

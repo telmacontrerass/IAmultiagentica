@@ -286,6 +286,49 @@ def test_missing_required_param_is_reported() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Runner — security-profile + workspace-confinement threading                 #
+# --------------------------------------------------------------------------- #
+def test_side_effect_blocked_by_strict_profile() -> None:
+    # Under strict/audit (which disable bash/write_file), host-mutating
+    # entrypoints are refused before any confirmation — even auto-confirmed.
+    out = _run(
+        "window_layout",
+        "abrir_layout",
+        {"puerto": 8501},
+        config=AgentConfig(cwd=".", security_profile="strict", auto_confirm=True),
+    )
+    assert out["ok"] is False
+    assert out["status"] == "blocked_by_security_profile"
+
+
+def test_path_param_escaping_workspace_is_blocked(tmp_path: Path) -> None:
+    # facade_estimator._encode_image declares `ruta` as a path param, so a path
+    # that escapes the workspace is refused like the read/write file tools.
+    out = _run(
+        "facade_estimator",
+        "_encode_image",
+        {"ruta": "../../etc/passwd"},
+        config=AgentConfig(cwd=str(tmp_path)),
+    )
+    assert out["ok"] is False
+    assert out["status"] == "blocked_by_workspace"
+
+
+def test_path_param_within_workspace_is_allowed(tmp_path: Path) -> None:
+    img = tmp_path / "img.bin"
+    img.write_bytes(b"hello-bytes")
+    out = _run(
+        "facade_estimator",
+        "_encode_image",
+        {"ruta": str(img)},
+        config=AgentConfig(cwd=str(tmp_path)),
+    )
+    assert out["ok"] is True
+    # base64("hello-bytes") — confinement passed and the real function ran.
+    assert out["result"] == "aGVsbG8tYnl0ZXM="
+
+
+# --------------------------------------------------------------------------- #
 # Gateway tool + registry wiring                                              #
 # --------------------------------------------------------------------------- #
 def test_yard_is_a_single_registered_tool() -> None:

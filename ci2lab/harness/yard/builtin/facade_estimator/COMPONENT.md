@@ -35,6 +35,7 @@ signature: sha256:8ba990c34efe9d89da4b2a8b2bdacb1fb33527017b2cdc566408a1cbd4d013
       "function": "_encode_image",
       "module": "estimacion_fachada",
       "ready": "pure",
+      "path_params": ["ruta"],
       "summary": "Read a local image file and return its base64 string.",
       "parameters": {
         "type": "object",
@@ -58,6 +59,9 @@ signature: sha256:8ba990c34efe9d89da4b2a8b2bdacb1fb33527017b2cdc566408a1cbd4d013
       ],
       "secret_params": [
         "api_key"
+      ],
+      "path_params": [
+        "ruta_destino"
       ],
       "summary": "Precheck Street View metadata and download the image for an address; returns True on success.",
       "parameters": {

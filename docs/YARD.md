@@ -94,21 +94,31 @@ so the runner classifies each entrypoint by `ready` and gates accordingly:
 | `pure` | self-contained; runs freely |
 | `needs_key` | performs network calls; a listed `secret_params` (e.g. `api_key`) must be supplied, else declined |
 | `needs_config` | salvaged source has redacted prompts/schemas; **never executes** — returns the porting guide |
-| `side_effect` | mutates the host; refused when write tools are disabled, otherwise routed through the harness confirmation channel (`auto_confirm` / `confirm_callback`) |
+| `side_effect` | mutates the host; **blocked** under a profile that disables `bash`/`write_file` (`strict`/`audit`), refused when write tools are disabled, otherwise routed through the harness confirmation channel (`auto_confirm` / `confirm_callback`) |
 
 Before executing, the runner also checks that each entrypoint's `requires`
-dependencies are importable. All gates return a structured result dictionary
+dependencies are importable, and confines every parameter the entrypoint lists in
+`path_params` to the workspace (rejecting escapes with `blocked_by_workspace`,
+like the read/write file tools). All gates return a structured result dictionary
 (`ok`, `status`, `message`) — execution never raises.
 
 ## Security
 
-Execution is **in-process** but governed: the `yard` tool call goes through the
-normal permission layer (classified `allow`, like `skill`/`mcp_call`), and
-host-mutating (`side_effect`) entrypoints additionally route through the same
-confirmation channel the write tools use. Untrusted third-party sources live only
-under `core/` and are excluded from lint/type-checking; they are loaded lazily by
-the runner, never imported at package import time. For stronger isolation, the
-same registry can be fronted by an external MCP server (out-of-process).
+Execution is **in-process** but governed by the run's security policy — the same
+one the built-in tools obey:
+
+- The `yard` tool call goes through the normal permission layer (classified
+  `allow`, like `skill`/`mcp_call`).
+- Host-mutating (`side_effect`) entrypoints are **blocked outright** under the
+  `strict`/`audit` security profiles (which also disable `bash`/`write_file`),
+  and otherwise routed through the write-tool confirmation channel.
+- Parameters declared as `path_params` are confined to the workspace before the
+  call, mirroring the file tools' jail.
+
+Untrusted third-party sources live only under `core/` and are excluded from
+lint/type-checking; they are loaded lazily by the runner, never imported at
+package import time. For stronger isolation, the same registry can be fronted by
+an external MCP server (out-of-process).
 
 ## Using it
 

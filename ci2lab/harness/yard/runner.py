@@ -7,13 +7,19 @@ runs a series of gates before importing anything, and only imports and calls the
 target function once every gate passes. Every path returns a plain result
 dictionary (never raises) so the gateway tool can serialise it directly.
 
-Security: a host-mutating (``side_effect``) entrypoint is routed through the
-same confirmation channel the harness uses for write tools — it runs only when
-the run is auto-confirmed or the configured ``confirm_callback`` approves it, and
-is refused outright when write tools are disabled. Successful results are handed
-back whole; the executor's central output-offload path (keyed on
-``max_tool_output_chars``) preserves and previews large returns, so the runner
-does not truncate them itself.
+Security: execution is in-process but governed by the run's security policy, the
+same one the built-in tools obey.
+
+- A host-mutating (``side_effect``) entrypoint is blocked outright under a
+  profile that disables ``bash``/``write_file`` (``strict``/``audit``); otherwise
+  it is routed through the harness confirmation channel (auto-confirm or the
+  configured ``confirm_callback``) and refused when write tools are disabled.
+- Every parameter an entrypoint declares as a filesystem path is confined to the
+  workspace before the call, mirroring the read/write file tools' jail.
+
+Successful results are handed back whole; the executor's central output-offload
+path (keyed on ``max_tool_output_chars``) preserves and previews large returns,
+so the runner does not truncate them itself.
 """
 
 from __future__ import annotations
@@ -27,7 +33,12 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ci2lab.harness.security_profiles import (
+    SECURITY_PROFILE_BLOCKED_OUTCOME,
+    is_tool_blocked_by_profile,
+)
 from ci2lab.harness.yard.loader import YardComponent, YardEntrypoint
+from ci2lab.security.paths import PathViolationError, resolve_workspace_path
 
 if TYPE_CHECKING:
     from ci2lab.harness.types import AgentConfig
@@ -167,6 +178,17 @@ def execute(
         }
 
     if entrypoint.ready == "side_effect":
+        if is_tool_blocked_by_profile(config.security_profile, "bash"):
+            return {
+                **base,
+                "ok": False,
+                "status": SECURITY_PROFILE_BLOCKED_OUTCOME,
+                "message": (
+                    "Host-mutating Yard entrypoints are disabled under the "
+                    f"`{config.security_profile}` security profile "
+                    "(which also blocks bash/write_file)."
+                ),
+            }
         if not config.write_tools_enabled:
             return {
                 **base,
@@ -229,6 +251,22 @@ def execute(
             "message": "Missing required parameter(s): " + ", ".join(missing_params),
             "missing": missing_params,
         }
+
+    # Workspace confinement: any path-typed argument must resolve inside the
+    # workspace, mirroring the read/write file tools' jail.
+    for name in entrypoint.path_params:
+        value = args.get(name)
+        if value in (None, ""):
+            continue
+        try:
+            resolve_workspace_path(config.cwd, str(value))
+        except PathViolationError as exc:
+            return {
+                **base,
+                "ok": False,
+                "status": "blocked_by_workspace",
+                "message": f"Path argument `{name}` escapes the workspace: {exc}",
+            }
 
     try:
         func = _load_callable(entrypoint, core_dirs)
