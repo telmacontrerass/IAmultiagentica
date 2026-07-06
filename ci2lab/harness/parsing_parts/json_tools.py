@@ -9,6 +9,7 @@ from typing import Any
 from ci2lab.harness.parsing_parts.common import (
     extract_json_objects,
     json_object_to_call,
+    loads_json_lenient,
     new_call,
     remember_call,
 )
@@ -55,7 +56,7 @@ def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
                 args_raw = fn.get("arguments", {})
                 if isinstance(args_raw, str):
                     try:
-                        args = json.loads(args_raw)
+                        args = loads_json_lenient(args_raw)
                     except json.JSONDecodeError:
                         args = {"command": args_raw} if fn.get("name") == "bash" else {}
                 else:

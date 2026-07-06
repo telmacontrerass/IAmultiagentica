@@ -12,6 +12,7 @@ from ci2lab.harness.parsing_parts.common import (
     extract_json_objects,
     infer_tool_from_bare_args,
     json_object_to_call,
+    loads_json_lenient,
     map_name,
     new_call,
     remember_call,
@@ -74,7 +75,7 @@ def _parse_text_tool_name_plus_json(text: str) -> list[ToolCall]:
             continue
         body = match.group("body").strip()
         try:
-            args = json.loads(body)
+            args = loads_json_lenient(body)
         except json.JSONDecodeError:
             continue
         if not isinstance(args, dict):

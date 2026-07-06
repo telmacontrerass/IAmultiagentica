@@ -72,6 +72,11 @@ class Ci2labAdapter:
             confirm_callback=lambda _name, _src: True,
             suppress_run_saved_message=True,
             security_engine="ci2lab",
+            # Mirror the shipped product configuration: real CLI/UI runs enable
+            # completion verification by default (DEFAULT_VERIFY_COMPLETION),
+            # and the benchmark must measure that same harness, not a weaker
+            # variant with the safety mechanisms stripped.
+            verify_completion=True,
         )
         selection = default_selection(model)
 

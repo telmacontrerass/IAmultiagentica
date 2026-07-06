@@ -300,6 +300,20 @@ _DESCRIBED_NOT_WRITTEN_NUDGE = (
     "(or `edit_file`) now with the full content. Do not just show the code as "
     "text; actually write it."
 )
+# Fires once when the model answers a workspace-referencing request without a
+# single successful tool result this turn — such an answer is a guess by
+# construction. Task-agnostic: it keys on the *shape* of the turn (request
+# mentions local files/project/commands + zero evidence), never on task content.
+_UNGROUNDED_ANSWER_NUDGE = (
+    "Your answer makes claims about this workspace, but no tool ran successfully "
+    "this turn, so none of it is verified — do not answer from memory. Gather "
+    "the evidence now: find and open the relevant files (`ls`, `glob`, `grep`, "
+    "`read_file`) or run the relevant command, then answer only from what those "
+    "results actually show. If the evidence is already visible earlier in this "
+    "conversation, restate it. If the request truly needs no workspace access, "
+    "answer it directly.\n\n"
+    "Original request: {user_prompt}"
+)
 # Fires when the model tries to finish while its own task plan still has open
 # steps — the "stops after step 1" failure. Bounded so a model that genuinely
 # finished but forgot to tick the list off is not trapped forever.
@@ -321,24 +335,72 @@ TODO_CONTINUE_MAX_PER_TURN = 3
 # for the query/url-normalized cache key that also collapses near-duplicate
 # web lookups.
 
+# Verb stems that signal the user wants something created or changed. Shared by
+# the positive write-intent check and the negation stripper so they can never
+# disagree about what counts as a write verb.
+_WRITE_VERBS = r"(?:write|create|implement|add|edit|modify|fix)\w*"
+
 # The user's current prompt explicitly asks to create or change something. Used
 # only to nudge once when the model narrates a change without ever applying it.
-_WRITE_INTENT_RE = re.compile(
-    r"\b(write|create|implement|add|edit|modify|fix)\w*",
+_WRITE_INTENT_RE = re.compile(rf"\b{_WRITE_VERBS}", re.IGNORECASE)
+
+# A write verb inside a prohibition ("Do not modify any files.") is an
+# instruction NOT to write. Such clauses are stripped (to the end of their
+# sentence) before testing for write intent, so a read-only request that only
+# mentions writing in order to forbid it is never pushed toward a write.
+_NEGATED_WRITE_RE = re.compile(
+    rf"\b(?:do\s+not|don'?t|never|without|no)\s+(?:\w+\s+){{0,2}}?{_WRITE_VERBS}[^.;\n]*",
+    re.IGNORECASE,
+)
+
+# The request refers to the local workspace: it names a file-like token, points
+# at the project/directory/files, asks to run something, or names a CLI flag.
+# Drives the ungrounded-answer gate — see _UNGROUNDED_ANSWER_NUDGE.
+_WORKSPACE_REFERENCE_RE = re.compile(
+    r"("
+    r"\b[\w./\\-]+\.(?:py|pyi|js|ts|tsx|jsx|mjs|json|jsonl|md|rst|txt|log|sh|bash|bat|"
+    r"ps1|yaml|yml|toml|ini|cfg|conf|csv|tsv|ipynb|java|kt|c|h|cpp|hpp|cc|cs|rs|go|rb|"
+    r"php|html|css|scss|xml|sql|lock|pdf|docx|xlsx|pptx)\b"
+    r"|\b(?:director(?:y|ies)|folder|carpeta|repo|repository|repositorio|codebase|"
+    r"workspace|project|proyecto|file|files|archivo|archivos|fichero|ficheros|"
+    r"script|log|logs)\b"
+    r"|\b(?:run|execute|rerun|re-run|ejecuta|ejecutar|corre|correr|lanza|lanzar)\b"
+    r"|(?<!\w)--[a-z][\w-]+"
+    r")",
     re.IGNORECASE,
 )
 
 
-def _agent_can_write_files(cfg: AgentConfig) -> bool:
-    """True when this agent's effective tool allow-list can create/edit files.
+def _has_write_intent(user_prompt: str) -> bool:
+    """True when the prompt asks to create/change something, negations removed.
 
-    With no skill/role allow-list active (`skill_allowed_tools is None`) the
-    agent has the full tool set and can write. Otherwise only an allow-list that
-    actually contains a file-writing tool counts — read-only roles (research,
-    review, planning, validation) must never be nudged to apply a change they
-    have no tool to make. Names are canonicalized so synonyms (`write`, `edit`)
-    are matched too.
+    "Fix the bug. Do not edit any test file." keeps its write intent from
+    "Fix"; "Report the value. Do not modify any files." has none once the
+    prohibition clause is stripped.
     """
+    return bool(_WRITE_INTENT_RE.search(_NEGATED_WRITE_RE.sub(" ", user_prompt or "")))
+
+
+def _references_workspace(user_prompt: str) -> bool:
+    """True when the prompt refers to local files, the project, or running things."""
+    return bool(_WORKSPACE_REFERENCE_RE.search(user_prompt or ""))
+
+
+def _agent_can_write_files(cfg: AgentConfig) -> bool:
+    """True when this agent can actually create/edit files this run.
+
+    False when configuration disables the write tools outright
+    (``write_tools_enabled=False``): the executor is guaranteed to block them,
+    so nudging toward a write only wastes rounds and produces blocked-call
+    noise. Otherwise, with no skill/role allow-list active
+    (`skill_allowed_tools is None`) the agent has the full tool set and can
+    write. An allow-list counts only when it actually contains a file-writing
+    tool — read-only roles (research, review, planning, validation) must never
+    be nudged to apply a change they have no tool to make. Names are
+    canonicalized so synonyms (`write`, `edit`) are matched too.
+    """
+    if not cfg.write_tools_enabled:
+        return False
     allowed = cfg.skill_allowed_tools
     if allowed is None:
         return True
@@ -829,7 +891,7 @@ def run_agent(
         console.print(final_text)
         return final_text
 
-    system = build_system_prompt(selection, cfg.cwd)
+    system = build_system_prompt(selection, cfg.cwd, config=cfg)
 
     (
         _user_content,
@@ -883,6 +945,7 @@ def run_agent(
     web_capability_nudge_sent = False
     stop_tools_nudge_sent = False
     described_not_written_nudge_sent = False
+    ungrounded_answer_nudge_sent = False
     # Per-turn cache of successful read-only calls (signature -> True). A
     # mutating tool clears it so later re-reads reflect the new workspace state.
     satisfied_reads: set[str] = set()
@@ -906,7 +969,8 @@ def run_agent(
     # prior run (or a task that never planned) can never block finalization.
     todo_plan_active = False
     todo_continue_nudges = 0
-    write_intent = bool(_WRITE_INTENT_RE.search(user_prompt))
+    write_intent = _has_write_intent(user_prompt)
+    workspace_referenced = _references_workspace(user_prompt)
     # A read-only role/skill (researcher, reviewer, planner, validator) has no
     # file-writing tool. Without this gate the "described but never written"
     # nudge fired on those roles — their scaffolding prompt contains verbs like
@@ -1150,6 +1214,45 @@ def run_agent(
                     history.append({"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
+                # The request refers to this workspace (or asks for a change),
+                # yet the model finalized without attempting a single tool call
+                # this turn — the answer can only be a guess. Push once toward
+                # real evidence before accepting it. Keyed on zero ATTEMPTS,
+                # not zero successes: a model whose tools were blocked or
+                # failed and that is honestly reporting the blocker must not be
+                # sent back to dig. Runs after the more specific finish guards
+                # (open todo plan, change described but not applied) so the
+                # sharper nudge always wins. `tools` being truthy already
+                # implies tool support, no user stop-tools request, and not the
+                # wrap-up round. Vision turns are exempt (their evidence is the
+                # attached images, not tool results), as are orchestrated
+                # subagent roles (`role_anchor` set): their phases are governed
+                # by the orchestrator's own evidence/role guards, mirroring how
+                # the runner disables `verify_completion` for them.
+                if (
+                    final_text
+                    and tools
+                    and cfg.role_anchor is None
+                    and not ungrounded_answer_nudge_sent
+                    and not evidence_ledger.records
+                    and (workspace_referenced or write_intent)
+                    and not (cfg.image_paths and cfg.vision_enabled)
+                ):
+                    ungrounded_answer_nudge_sent = True
+                    _print_model_step(content, already_streamed=streamed_this_round)
+                    console.print(
+                        "[yellow]Final answer has no tool evidence behind it; "
+                        "asking the model to inspect the workspace first.[/yellow]"
+                    )
+                    append_assistant_turn(history, final_text or content)
+                    history.append(
+                        {
+                            "role": "user",
+                            "content": _UNGROUNDED_ANSWER_NUDGE.format(user_prompt=user_prompt),
+                        }
+                    )
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 # Opt-in completion verification: the agent is about to report
                 # done and it did verifiable work this turn (a successful mutation
                 # or it ran commands/tests). A fresh, independent subagent derives
@@ -1373,6 +1476,10 @@ def run_agent(
                     attempted_write_this_turn = True
                     if not result.is_error:
                         satisfied_reads.clear()
+                        # The workspace changed, so a call that failed before
+                        # (e.g. the red test the agent is fixing) may now pass:
+                        # earlier exact-call failure counts no longer apply.
+                        failed_call_sigs.clear()
                         # Record real, successful effectful work for the verifier.
                         effectful_actions.append(
                             f"{call.name} {summarize_args(call.arguments)}".strip()
@@ -1395,8 +1502,11 @@ def run_agent(
                     # it must not feed the retry-governor counters below.
                     # A tool blocked by skill was never executed and produced no
                     # side effects; subsequent independent calls (git_status, bash)
-                    # must not be skipped_after_error because of it.
-                    if result.outcome != "blocked_by_skill":
+                    # must not be skipped_after_error because of it. A non-zero
+                    # command exit ("command_failed") is an observed result, not
+                    # a broken pipeline step — a batched fix that follows a red
+                    # check must still run.
+                    if result.outcome not in ("blocked_by_skill", "command_failed"):
                         round_had_error = True
                     if result.outcome not in (
                         "blocked_by_policy",
@@ -1404,9 +1514,15 @@ def run_agent(
                         "blocked_by_skill",
                     ):
                         failed_call_sigs[psig] = failed_call_sigs.get(psig, 0) + 1
-                        eclass = error_class_key(call, result)
-                        error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
-                        error_class_last[eclass] = result.content
+                        # Failing commands stay out of the error-class budget:
+                        # re-running checks that are still red is a normal part
+                        # of iterating on a fix and must never terminate the
+                        # run. The exact-repeat guard above still stops a
+                        # verbatim failing command from re-running unchanged.
+                        if result.outcome != "command_failed":
+                            eclass = error_class_key(call, result)
+                            error_class_counts[eclass] = error_class_counts.get(eclass, 0) + 1
+                            error_class_last[eclass] = result.content
                 ended_at = datetime.now(UTC)
                 if run_log:
                     run_log.record_tool_call(

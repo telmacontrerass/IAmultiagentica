@@ -9,6 +9,7 @@ from typing import Any
 from ci2lab.harness.parsing_parts.common import (
     extract_json_objects,
     json_object_to_call,
+    loads_json_lenient,
     map_name,
     new_call,
     remember_call,
@@ -92,7 +93,7 @@ def parse_generic_fenced_blocks(text: str) -> list[ToolCall]:
                     if call.arguments and remember_call(call, seen):
                         calls.append(call)
                 try:
-                    args = json.loads(json_part)
+                    args = loads_json_lenient(json_part)
                     if isinstance(args, dict):
                         call = new_call(mapped, args)
                         if call.arguments and remember_call(call, seen):
@@ -160,6 +161,26 @@ def parse_fenced_blocks(text: str) -> list[ToolCall]:
     return calls
 
 
+def _json_object_args(body: str) -> dict[str, Any] | None:
+    """Decode a body that is itself a JSON object, or ``None`` when it is not.
+
+    Args:
+        body: The raw text inside a fenced block.
+
+    Returns:
+        The decoded argument mapping when the body is a JSON object (after
+        invalid-escape repair when needed), otherwise ``None``.
+    """
+    stripped = body.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        data = loads_json_lenient(stripped)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
     """Convert a fenced-block body into an argument mapping for a given tool.
 
@@ -181,13 +202,13 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         if "\n" not in body and not body.startswith("{"):
             return {"path": body}
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"path": body}
         except json.JSONDecodeError:
             return {"path": body.splitlines()[0]}
     if tool in ("write_file", "write_docx", "write_pptx", "edit_file", "fill_docx_template"):
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"content": body}
         except json.JSONDecodeError:
             if tool in ("write_file", "write_docx"):
@@ -199,40 +220,49 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return {"path": "unknown", "old_string": "", "new_string": body}
     if tool == "apply_patch":
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"patch": body}
         except json.JSONDecodeError:
             return {"patch": body}
     if tool in ("docx_to_pdf", "pdf_to_docx"):
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {}
         except json.JSONDecodeError:
             return {}
     if tool == "grep":
-        if "\n" not in body:
-            return {"pattern": body}
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            return {"pattern": body}
+        # A body that is itself a JSON object carries the real arguments even
+        # on one line; treating it as a literal pattern guarantees no matches.
+        obj = _json_object_args(body)
+        if obj is not None:
+            return obj
+        return {"pattern": body}
     if tool == "glob":
+        obj = _json_object_args(body)
+        if obj is not None:
+            return obj
         return {"pattern": body}
     if tool == "ls":
+        obj = _json_object_args(body)
+        if obj is not None:
+            return obj
         return {"path": body or "."}
     if tool == "file_info":
+        obj = _json_object_args(body)
+        if obj is not None:
+            return obj
         return {"path": body.strip()}
     if tool == "tree":
         if body.strip().startswith("{"):
             try:
-                return json.loads(body)
+                return loads_json_lenient(body)
             except json.JSONDecodeError:
                 pass
         return {"path": body.strip() or "."}
     if tool == "inspect_file":
         if body.strip().startswith("{"):
             try:
-                return json.loads(body)
+                return loads_json_lenient(body)
             except json.JSONDecodeError:
                 pass
         return {"path": body.strip()}
@@ -240,42 +270,42 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         if body.startswith("http://") or body.startswith("https://"):
             return {"url": body.strip()}
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"url": body}
         except json.JSONDecodeError:
             return {"url": body.strip()}
     if tool == "web_search":
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"query": body.strip()}
         except json.JSONDecodeError:
             return {"query": body.strip()}
     if tool == "ask_user":
         try:
-            return json.loads(body)
+            return loads_json_lenient(body)
         except json.JSONDecodeError:
             return {"question": body}
     if tool == "delegate":
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"task": body}
         except json.JSONDecodeError:
             return {"task": body}
     if tool == "todo_write":
         try:
-            return json.loads(body)
+            return loads_json_lenient(body)
         except json.JSONDecodeError:
             return {"raw": body}
     if tool == "notebook_edit":
         try:
-            return json.loads(body)
+            return loads_json_lenient(body)
         except json.JSONDecodeError:
             return {"raw": body}
     if tool == "git_status":
         if not body or body.strip() in {".", "{}"}:
             return {"path": "."}
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"path": body.strip()}
         except json.JSONDecodeError:
             return {"path": body.strip()}
@@ -283,12 +313,12 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         if not body:
             return {}
         try:
-            return json.loads(body)
+            return loads_json_lenient(body)
         except json.JSONDecodeError:
             return {"path": body.strip()}
     if tool == "skill":
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             if isinstance(data, dict):
                 if "skill_name" not in data and "name" in data:
                     data["skill_name"] = data["name"]
@@ -298,13 +328,13 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
         return {"skill_name": body.strip(), "args": ""}
     if tool == "mcp_call":
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {"tool": body.strip()}
         except json.JSONDecodeError:
             return {"server": "", "tool": body.strip()}
     if tool.startswith("mcp__"):
         try:
-            data = json.loads(body)
+            data = loads_json_lenient(body)
             return data if isinstance(data, dict) else {}
         except json.JSONDecodeError:
             return {}

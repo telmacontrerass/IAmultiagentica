@@ -323,3 +323,36 @@ def test_unparsed_key_value_tool_attempt():
     assert not looks_like_unparsed_tool_attempt(
         "You can use write_file to persist the summary to disk."
     )
+
+
+def test_fenced_json_args_with_regex_escapes_are_repaired():
+    # Models embed regexes in JSON without doubling the backslash
+    # (`{"pattern": "ERR-\d{4}"}` is invalid JSON). The parser must recover the
+    # intended arguments instead of degrading to a junk literal pattern.
+    from ci2lab.harness.parsing import resolve_tool_calls
+
+    text = '```grep\n{"pattern": "ERR-\\d{4}", "path": "app.log"}\n```'
+    calls = resolve_tool_calls(text, None, tool_mode="fenced")
+
+    assert len(calls) == 1
+    assert calls[0].name == "grep"
+    assert calls[0].arguments["pattern"] == r"ERR-\d{4}"
+    assert calls[0].arguments["path"] == "app.log"
+
+
+def test_native_function_arguments_with_regex_escapes_are_repaired():
+    from ci2lab.harness.parsing import resolve_tool_calls
+
+    native = [
+        {
+            "id": "c1",
+            "function": {
+                "name": "grep",
+                "arguments": r'{"pattern": "code=\w+", "path": "app.log"}',
+            },
+        }
+    ]
+    calls = resolve_tool_calls("", native, tool_mode="native")
+
+    assert len(calls) == 1
+    assert calls[0].arguments["pattern"] == r"code=\w+"

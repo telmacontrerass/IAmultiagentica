@@ -88,9 +88,9 @@ def outcome_for_tool_output(content: str) -> str | None:
         content: The tool's raw output text.
 
     Returns:
-        ``"blocked_by_secret_policy"``, ``"blocked_by_workspace"`` or
-        ``"failed"`` for error output, or ``None`` when the output is not an
-        error.
+        ``"blocked_by_secret_policy"``, ``"blocked_by_workspace"``,
+        ``"command_failed"`` or ``"failed"`` for error output, or ``None`` when
+        the output is not an error.
     """
     if not content.startswith("Error:"):
         return None
@@ -105,4 +105,9 @@ def outcome_for_tool_output(content: str) -> str | None:
         )
     ):
         return "blocked_by_workspace"
+    if lower.startswith("error: command exited with code"):
+        # A shell command that ran and returned non-zero. Kept distinct from
+        # "failed" so the loop treats it as an observed result (e.g. a red
+        # test run) rather than an infrastructure failure.
+        return "command_failed"
     return "failed"

@@ -199,3 +199,40 @@ def test_system_prompt_allows_explicit_write_and_discourages_error_files():
     assert "write_file" in text
     assert "diagnostic or log files" in text.lower()
     assert "explicit" in text.lower()
+
+
+def test_write_tool_schemas_hidden_when_writes_disabled(workspace: Path):
+    # The schemas offered to the model must agree with what the executor will
+    # actually run: a disabled write tool is not offered at all, instead of
+    # being advertised and then blocked (a guaranteed wasted round).
+    from ci2lab.harness.security.write_permissions import WRITE_TOOLS
+    from ci2lab.harness.tools.registry import get_function_schemas
+
+    disabled = AgentConfig(cwd=str(workspace), write_tools_enabled=False)
+    names = {schema["function"]["name"] for schema in get_function_schemas(disabled)}
+    assert not (names & WRITE_TOOLS)
+    assert {"read_file", "grep", "ls", "bash"} <= names
+
+    enabled = AgentConfig(cwd=str(workspace), write_tools_enabled=True)
+    names_enabled = {schema["function"]["name"] for schema in get_function_schemas(enabled)}
+    assert names_enabled >= WRITE_TOOLS
+
+
+def test_system_prompt_declares_read_only_session(workspace: Path):
+    from ci2lab.harness import default_selection
+    from ci2lab.harness.prompts import build_system_prompt
+
+    selection = default_selection("test:1b")
+    read_only = build_system_prompt(
+        selection,
+        str(workspace),
+        config=AgentConfig(cwd=str(workspace), write_tools_enabled=False),
+    )
+    assert "Read-only session" in read_only
+
+    writable = build_system_prompt(
+        selection,
+        str(workspace),
+        config=AgentConfig(cwd=str(workspace)),
+    )
+    assert "Read-only session" not in writable

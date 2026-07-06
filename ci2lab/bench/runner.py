@@ -389,6 +389,11 @@ def _print_run(record: dict[str, Any]) -> None:
         f"    {status} s{record['sample']} "
         f"[dim]({record['status']}, {tokens} tok, {latency:.1f}s)[/dim]"
     )
+    # Surface the agent's own error FIRST — when the agent errored, the oracle
+    # failure reasons below are only the downstream symptom (the agent never ran,
+    # so the fixture is unchanged and its tests "fail"). This is the real cause.
+    if record.get("status") in {"error", "timeout"} and record.get("error"):
+        console.print(f"      [bold red]! agent error:[/bold red] {str(record['error'])[:400]}")
     if not record["solved"]:
         for reason in record["failure_reasons"]:
             console.print(f"      [red]-[/red] {reason}")

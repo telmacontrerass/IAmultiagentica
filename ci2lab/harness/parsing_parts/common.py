@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any
 
@@ -70,11 +71,46 @@ def new_call(name: str, arguments: dict[str, Any]) -> ToolCall:
     )
 
 
+# A backslash that does not start a valid JSON escape. Models frequently embed
+# regexes or Windows paths in JSON arguments without doubling the backslash
+# (`{"pattern": "ERR-\d{4}"}`), which is invalid JSON and would otherwise cost
+# the whole argument mapping.
+_INVALID_JSON_ESCAPE_RE = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def repair_invalid_json_escapes(text: str) -> str:
+    """Double every backslash that does not start a valid JSON escape."""
+    return _INVALID_JSON_ESCAPE_RE.sub(r"\\\\", text)
+
+
+def loads_json_lenient(text: str) -> Any:
+    """``json.loads`` with a second attempt after invalid-escape repair.
+
+    Args:
+        text: JSON text as emitted by a model.
+
+    Returns:
+        The decoded JSON value.
+
+    Raises:
+        json.JSONDecodeError: If the text cannot be parsed even after repair.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        repaired = repair_invalid_json_escapes(text)
+        if repaired == text:
+            raise
+        return json.loads(repaired)
+
+
 def extract_json_objects(text: str) -> list[dict[str, Any]]:
     """Scan free-form text and return every top-level JSON object it contains.
 
     Walks the text character by character, attempting a raw JSON decode at each
-    ``{`` so embedded objects are recovered even when surrounded by prose.
+    ``{`` so embedded objects are recovered even when surrounded by prose. A
+    second pass over the escape-repaired text recovers objects that only fail
+    because of invalid backslash escapes (regexes, Windows paths).
 
     Args:
         text: Text that may contain zero or more JSON objects.
@@ -84,20 +120,30 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
         values (arrays, scalars) are skipped.
     """
     decoder = json.JSONDecoder()
-    objects: list[dict[str, Any]] = []
-    idx = 0
-    while idx < len(text):
-        if text[idx] != "{":
-            idx += 1
-            continue
-        try:
-            obj, end = decoder.raw_decode(text, idx)
-        except json.JSONDecodeError:
-            idx += 1
-            continue
-        if isinstance(obj, dict):
-            objects.append(obj)
-        idx = max(end, idx + 1)
+
+    def _scan(source: str) -> list[dict[str, Any]]:
+        found: list[dict[str, Any]] = []
+        idx = 0
+        while idx < len(source):
+            if source[idx] != "{":
+                idx += 1
+                continue
+            try:
+                obj, end = decoder.raw_decode(source, idx)
+            except json.JSONDecodeError:
+                idx += 1
+                continue
+            if isinstance(obj, dict):
+                found.append(obj)
+            idx = max(end, idx + 1)
+        return found
+
+    objects = _scan(text)
+    repaired = repair_invalid_json_escapes(text)
+    if repaired != text:
+        # Recover only objects the first pass could not decode; objects that
+        # parsed identically in both passes are not duplicated.
+        objects.extend(obj for obj in _scan(repaired) if obj not in objects)
     return objects
 
 
@@ -123,7 +169,7 @@ def args_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
             return value
         if isinstance(value, str) and value.strip():
             try:
-                parsed = json.loads(value)
+                parsed = loads_json_lenient(value)
             except json.JSONDecodeError:
                 continue
             if isinstance(parsed, dict):
@@ -239,7 +285,7 @@ def json_object_to_call(obj: dict[str, Any]) -> ToolCall | None:
             args = fn_args
         elif isinstance(fn_args, str) and fn_args.strip():
             try:
-                args = json.loads(fn_args)
+                args = loads_json_lenient(fn_args)
             except json.JSONDecodeError:
                 pass
     if not args and name == "bash" and "command" in obj:

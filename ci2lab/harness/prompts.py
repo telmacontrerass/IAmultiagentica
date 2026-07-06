@@ -30,23 +30,43 @@ def _read(name: str) -> str:
 def build_system_prompt(
     selection: ModelSelection,
     cwd: str,
+    *,
+    config: object | None = None,
 ) -> str:
     """Assemble the full system prompt for a harness run.
 
     Combines the base system prompt with environment details, optional
     OS-specific guidance, project memory, the skill catalog, MCP server status
     and, when the model lacks native tool support, fenced-tool instructions.
+    When the run configuration disables the write tools, a read-only notice is
+    included so the model plans around that limit instead of attempting calls
+    the executor is guaranteed to block.
 
     Args:
         selection: Resolved model selection driving display name, tool mode and
             tool-support capabilities.
         cwd: Absolute working directory used to load project memory, skills and
             MCP status, and reported back in the environment section.
+        config: Optional run configuration; only ``write_tools_enabled`` is
+            consulted. Accepts any object exposing that attribute (typically
+            :class:`~ci2lab.harness.types.AgentConfig`).
 
     Returns:
         The complete system prompt as a single newline-joined string.
     """
     parts = [_read("system.md")]
+
+    if config is not None and not getattr(config, "write_tools_enabled", True):
+        parts.append(
+            "## Read-only session\n\n"
+            "File creation and modification are DISABLED for this session: "
+            "`write_file`, `edit_file`, `apply_patch`, and the document writers "
+            "will not run. Do not attempt them and do not work around the limit "
+            "through shell redirection. Answer with the read-only tools "
+            "(`ls`, `tree`, `glob`, `grep`, `read_file`, `inspect_file`, "
+            "`read_document`) and by running commands that observe rather than "
+            "change the workspace."
+        )
 
     parts.append(
         f"\n## Environment\n"

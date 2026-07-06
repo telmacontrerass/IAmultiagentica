@@ -144,3 +144,29 @@ def test_final_answer_review_returns_guarded_fallback_when_still_unsupported():
 
     assert "cannot safely confirm" in result.lower()
     assert "unverified claim" in result.lower()
+
+
+def test_invented_code_token_requires_evidence():
+    # An identifier-shaped code stated in the answer must exist in the prompt
+    # or in this turn's tool evidence — confabulated codes are exactly how a
+    # wrong answer masquerades as a finding.
+    ledger = EvidenceLedger(user_prompt="Report the fatal ERR-XXXX code from app.log")
+    ledger.add("read_file", {"path": "app.log"}, "FATAL lost code=ERR-4219 host=db", ok=True)
+
+    invented = review_final_answer("The fatal error code is ERR-2048.", ledger)
+    grounded = review_final_answer("The fatal error code is ERR-4219.", ledger)
+
+    assert invented.ok is False
+    assert "ERR-2048" in " ".join(invented.issues)
+    assert grounded.ok is True
+
+
+def test_code_tokens_allowed_in_chat_and_for_known_standards():
+    # No tool records -> ordinary conversation; code-shaped tokens are prose.
+    chat = EvidenceLedger(user_prompt="explain hashing")
+    assert review_final_answer("SHA-256 is a hash function.", chat).ok is True
+
+    # Well-known public identifiers are world knowledge, not workspace facts.
+    ledger = EvidenceLedger(user_prompt="check the date handling in this repo")
+    ledger.add("read_file", {"path": "dates.py"}, "strftime('%Y-%m-%d')", ok=True)
+    assert review_final_answer("Dates follow the ISO-8601 format.", ledger).ok is True

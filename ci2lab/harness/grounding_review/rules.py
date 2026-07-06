@@ -62,6 +62,18 @@ _NUMERIC_FACT_RE = re.compile(
 )
 
 
+# Identifier-shaped codes (ERR-4219, JIRA-1042): uppercase tag, dash, digits.
+# An answer may only state one if it appears in the prompt or in this turn's
+# tool evidence — these are exactly the tokens weak models confabulate.
+_CODE_TOKEN_RE = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d{2,6}\b")
+
+# Well-known public identifiers whose numbers are world knowledge, not
+# workspace facts (standards, algorithms). Never treated as invented.
+_KNOWN_CODE_PREFIXES = frozenset(
+    {"ISO", "RFC", "IEEE", "IEC", "ANSI", "UTF", "SHA", "AES", "RSA", "COVID"}
+)
+
+
 def _contains_uncertainty(answer: str) -> bool:
     return bool(_UNCERTAINTY_RE.search(answer))
 
@@ -69,6 +81,15 @@ def _contains_uncertainty(answer: str) -> bool:
 def _urls_not_in_evidence(answer: str, ledger: EvidenceLedger) -> list[str]:
     evidence = ledger.evidence_text
     return [url for url in URL_RE.findall(answer) if url not in evidence]
+
+
+def _code_tokens_not_in_evidence(answer: str, ledger: EvidenceLedger) -> list[str]:
+    haystack = ledger.evidence_text.lower()
+    return [
+        token
+        for token in _CODE_TOKEN_RE.findall(answer)
+        if token.split("-", 1)[0] not in _KNOWN_CODE_PREFIXES and token.lower() not in haystack
+    ]
 
 
 def find_grounding_issues(answer: str, ledger: EvidenceLedger) -> list[str]:
@@ -89,6 +110,18 @@ def find_grounding_issues(answer: str, ledger: EvidenceLedger) -> list[str]:
             "The answer includes URL(s) that were not present in the prompt or tool evidence: "
             + ", ".join(sorted(set(unsupported_urls)))
         )
+
+    # Only meaningful on evidence-bearing turns: in plain conversation (no tool
+    # records) code-shaped tokens are ordinary prose, not workspace findings.
+    if ledger.records:
+        invented_codes = _code_tokens_not_in_evidence(text, ledger)
+        if invented_codes:
+            issues.append(
+                "The answer states identifier-like code(s) that appear nowhere in the "
+                "prompt or this turn's tool evidence: "
+                + ", ".join(sorted(set(invented_codes)))
+                + ". Do not invent codes; re-check with the tools and quote the real value."
+            )
 
     if _CURRENT_RE.search(text) and not (
         ledger.has_web_evidence or ledger.has_read_evidence or ledger.has_mutation_evidence

@@ -34,17 +34,20 @@ def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
     Combines the static built-in tool schemas with any dynamic MCP tools
     discovered for ``config.cwd``. When a skill restricts the allowed tools,
     the result is filtered down to that allow-list (canonicalising synonyms so
-    a differently named entry still resolves to the correct schema).
+    a differently named entry still resolves to the correct schema). When the
+    configuration disables the write tools (``write_tools_enabled=False``),
+    their schemas are removed as well: offering a tool the executor is
+    guaranteed to block only invites doomed calls.
 
     Args:
         config: Optional run configuration. When ``None``, only the built-in
             :data:`FUNCTION_SCHEMAS` are returned. Otherwise it supplies the
-            workspace ``cwd`` used to connect to MCP servers and the optional
-            ``skill_allowed_tools`` allow-list.
+            workspace ``cwd`` used to connect to MCP servers, the optional
+            ``skill_allowed_tools`` allow-list, and ``write_tools_enabled``.
 
     Returns:
         A list of OpenAI-compatible function schema dictionaries, possibly
-        filtered to the active skill's allowed tools.
+        filtered to the active skill's allowed tools and write enablement.
     """
     schemas: list[dict[str, Any]] = list(FUNCTION_SCHEMAS)
     if config is not None:
@@ -62,5 +65,15 @@ def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
             schema
             for schema in schemas
             if map_name(schema.get("function", {}).get("name", "")) in allowed
+        ]
+    if config is not None and not getattr(config, "write_tools_enabled", True):
+        # Same set the executor enforces (`execute_write_tool`), so the schemas
+        # offered to the model and the blocking behaviour can never disagree.
+        from ci2lab.harness.security.write_permissions import WRITE_TOOLS
+
+        schemas = [
+            schema
+            for schema in schemas
+            if schema.get("function", {}).get("name", "") not in WRITE_TOOLS
         ]
     return schemas

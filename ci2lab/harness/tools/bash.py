@@ -70,6 +70,13 @@ def run_bash(
         return f"Error running command: {exc}"
 
     parts: list[str] = []
+    if proc.returncode != 0:
+        # The Error: prefix marks the result as failed for the loop's steering
+        # (console ✗, retry accounting, evidence ledger) — without it a failing
+        # command renders as success and the model happily repeats it. The full
+        # stdout/stderr below still lets the model reason from the real output:
+        # a red test run is information, not noise.
+        parts.append(f"Error: command exited with code {proc.returncode}.")
     if proc.stdout:
         parts.append(proc.stdout.rstrip())
     if proc.stderr:

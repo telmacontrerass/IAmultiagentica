@@ -22,13 +22,16 @@ _SUCCESS_EDIT_PREFIXES = ("Edited ", "Editado ")
 _ALREADY_APPLIED_HINT = (
     "This change is already applied in the file. "
     "Do not repeat edit_file with the same old_string. "
-    "Tell the user the change is done; do not call more tools unless they ask "
-    "for a different change."
+    "If the request names a failing test, command, or expected behaviour, run it "
+    "now to confirm the real result before finishing; otherwise report the "
+    "change as done."
 )
 _SUCCESS_HINT = (
-    "The edit was applied successfully. "
-    "Tell the user the result; do not call edit_file or read_file again for the "
-    "same change."
+    "The edit was applied successfully. Do not call edit_file or read_file again "
+    "for the same change. Applied is not the same as working: if the request "
+    "names a failing test, command, or expected behaviour, run it now and let "
+    "the real output decide. Report done only after that check passes — and if "
+    "it fails, keep fixing instead of finishing."
 )
 
 

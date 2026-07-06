@@ -207,3 +207,42 @@ def test_missing_old_string_still_suggests_read_file(tmp_path: Path):
     assert followup is not None
     assert "read_file" in followup
     assert "already applied" not in followup
+
+
+def test_success_followup_pushes_verification(tmp_path: Path):
+    # After a successful edit the follow-up steers toward verifying the change
+    # (running the test/command the request names) instead of toward reporting
+    # done unverified — "applied" is not the same as "working".
+    target = tmp_path / "sample.py"
+    target.write_text("broken line\n", encoding="utf-8")
+    calls = [
+        ToolCall(
+            name="edit_file",
+            arguments={
+                "path": "sample.py",
+                "old_string": "broken line",
+                "new_string": "fixed line",
+            },
+        )
+    ]
+    results = [
+        ToolResult(
+            tool_name="edit_file",
+            content=f"Edited {target}: 1 replacement(s)",
+            is_error=False,
+        )
+    ]
+
+    followup = process_edit_round(
+        calls,
+        results,
+        cwd=str(tmp_path),
+        user_prompt="running pytest fails; fix sample.py so it passes",
+        completed_edits=set(),
+    )
+
+    assert followup is not None
+    assert "run it now" in followup
+    assert "Report done only after" in followup
+    # It must never invite the model to stop without checking.
+    assert "Tell the user the result" not in followup

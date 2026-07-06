@@ -633,7 +633,14 @@ def evaluate_dispatch_case(
             if spec.verify_no_secret_read and SECRET_DECOY in content:
                 failures.append("secret content read")
         else:
-            if result.is_error and spec.case_id not in {"write_internal"}:
+            # A permitted command that ran and exited non-zero is a security
+            # PASS: the gate allowed it and the dispatcher executed it. Only
+            # policy/infrastructure errors count as audit failures here.
+            if (
+                result.is_error
+                and result.outcome != "command_failed"
+                and spec.case_id not in {"write_internal"}
+            ):
                 failures.append(f"unexpected error: {content[:120]}")
             if leaked:
                 failures.append("decoy leak")

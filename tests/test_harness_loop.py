@@ -135,8 +135,12 @@ def test_run_agent_can_forward_progress_to_chat_callback():
             on_progress=progress.append,
         )
 
+    # A write request answered in prose with zero tool calls gets two recovery
+    # rounds before the answer is accepted: the described-but-not-written nudge
+    # first, then the ungrounded-answer nudge (nothing was ever attempted).
     assert progress == [
         "Planning the code change...",
+        "Reviewing the latest results and deciding the next step...",
         "Reviewing the latest results and deciding the next step...",
         "Finalizing the answer...",
         "",
@@ -1321,3 +1325,264 @@ def test_governor_stops_on_repeated_error_class_with_varying_args():
     assert "kept failing" in result
     assert len(dispatched) == 3
     assert client.chat.call_count == 3
+
+
+def test_has_write_intent_ignores_negated_write_verbs():
+    from ci2lab.harness.query.loop import _has_write_intent
+
+    # A prohibition is not a request to write.
+    assert _has_write_intent("Report the error code. Do not modify any files.") is False
+    assert _has_write_intent("Trace the flag across files. Don't edit anything.") is False
+    # A real write request keeps its intent even next to a prohibition.
+    assert _has_write_intent("Fix the root cause. Do not edit any test file.") is True
+    assert _has_write_intent("Implement parse_duration in durations.py.") is True
+    assert _has_write_intent("hola") is False
+
+
+def test_references_workspace_detects_local_signals():
+    from ci2lab.harness.query.loop import _references_workspace
+
+    assert _references_workspace("Find the fatal code in app.log") is True
+    assert _references_workspace("In this Python project, which function returns it?") is True
+    assert _references_workspace("Run `bash build.sh` and tell me the exit code") is True
+    assert _references_workspace("Trace how the --threshold flag reaches the code") is True
+    assert _references_workspace("hola, ¿qué tal?") is False
+    assert _references_workspace("What is a monad?") is False
+
+
+def test_agent_can_write_files_respects_write_tools_disabled():
+    # Configuration-level write disablement means "cannot write", regardless of
+    # the allow-list: the executor is guaranteed to block those tools, so no
+    # nudge may steer the model toward them.
+    assert _agent_can_write_files(AgentConfig(cwd=".", write_tools_enabled=False)) is False
+
+
+def test_workspace_answer_with_zero_tool_attempts_gets_grounding_nudge():
+    # The user asks about this project; the model answers from memory without a
+    # single tool call. The loop nudges once toward real evidence, then accepts
+    # the follow-up answer (bounded so it can never trap the model).
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+    guess = LLMResponse(content="The discount function is get_discount.", tool_calls=[])
+    final = LLMResponse(content="I checked and it is get_discount.", tool_calls=[])
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [guess, final]
+        result = run_agent(
+            "In this Python project, which function computes the shipping discount? "
+            "Do not modify any files.",
+            selection,
+            config=config,
+        )
+
+    assert client.chat.call_count == 2
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user" and "do not answer from memory" in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+    assert result == "I checked and it is get_discount."
+
+
+def test_plain_conversation_is_not_nudged_for_grounding():
+    # A conversational turn with no workspace reference finishes in one round;
+    # the grounding gate must not tax ordinary chat with extra rounds.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+    reply = LLMResponse(content="¡Hola! Todo bien por aquí.", tool_calls=[])
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.return_value = reply
+        result = run_agent("hola, ¿qué tal?", selection, config=config)
+
+    assert client.chat.call_count == 1
+    assert "Hola" in result
+
+
+def test_grounding_nudge_skipped_when_tools_were_attempted():
+    # The model tried a tool, it failed, and the model honestly reports the
+    # blocker. That answer is grounded in the real attempt — it must be
+    # accepted, not sent back to dig for more evidence it cannot get.
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+    attempt = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {"name": "read_file", "arguments": '{"path": "app.log"}'},
+            }
+        ],
+    )
+    report = LLMResponse(content="I could not read app.log: access denied.", tool_calls=[])
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="read_file",
+                content="Error: access denied",
+                is_error=True,
+                call_id="c1",
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [attempt, report]
+        result = run_agent("Report the fatal error code from app.log.", selection, config=config)
+
+    assert client.chat.call_count == 2
+    assert "could not read" in result
+
+
+def test_write_disabled_prose_answer_gets_grounding_nudge_not_write_nudge():
+    # Writes are disabled by configuration, so the "apply the change" nudge must
+    # stay silent (its tool would be blocked); the grounding gate still pushes
+    # the zero-attempt answer toward read-only evidence, once.
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        write_tools_enabled=False,
+        verify_final_answer=False,
+    )
+    prose = LLMResponse(content="Change line 3 of the config to solve it.", tool_calls=[])
+    final = LLMResponse(content="Based on the file, line 3 is the culprit.", tool_calls=[])
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        client = MockClient.return_value
+        client.chat.side_effect = [prose, final]
+        run_agent("Fix the bug in config.py.", selection, config=config)
+
+    assert client.chat.call_count == 2
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    joined = " ".join(
+        str(m.get("content", "")) for m in second_turn_messages if isinstance(m, dict)
+    )
+    assert "did not apply it" not in joined
+    assert "do not answer from memory" in joined
+
+
+def test_red_check_can_be_rerun_after_a_fix():
+    # Red test (twice) -> apply a fix -> re-run the SAME test command. The
+    # exact-repeat failure guard must not block the re-run: a successful
+    # mutation resets failure counts because the workspace changed. Without the
+    # reset, the third pytest run would be short-circuited by MAX_SAME_CALL.
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+
+    def bash_call(call_id: str) -> LLMResponse:
+        return LLMResponse(
+            content="",
+            tool_calls=[
+                {
+                    "id": call_id,
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command": "python -m pytest -q"}',
+                    },
+                }
+            ],
+        )
+
+    def read_call(call_id: str, path: str) -> dict:
+        return {
+            "id": call_id,
+            "function": {"name": "read_file", "arguments": f'{{"path": "{path}"}}'},
+        }
+
+    # Round 1: red test + read a file (different signatures per round so the
+    # round-level loop detector stays quiet and the exact-call governor is the
+    # mechanism under test).
+    red1 = LLMResponse(
+        content="",
+        tool_calls=[bash_call("c1").tool_calls[0], read_call("r1", "m.py")],
+    )
+    red2 = LLMResponse(
+        content="",
+        tool_calls=[bash_call("c2").tool_calls[0], read_call("r2", "test_m.py")],
+    )
+    fix = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c3",
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path": "m.py", "old_string": "a", "new_string": "b"}',
+                },
+            }
+        ],
+    )
+    rerun = bash_call("c4")
+    final = LLMResponse(content="Fixed; the test passes now.", tool_calls=[])
+
+    executed: list[str] = []
+
+    def fake_execute_tool(call, _cfg):
+        executed.append(call.name)
+        if call.name == "bash":
+            if executed.count("bash") <= 2:
+                return ToolResult(
+                    tool_name="bash",
+                    content="Error: command exited with code 1.\n1 failed\n[exit code 1]",
+                    is_error=True,
+                    call_id=call.call_id,
+                    outcome="command_failed",
+                )
+            return ToolResult(
+                tool_name="bash", content="1 passed", is_error=False, call_id=call.call_id
+            )
+        if call.name == "read_file":
+            return ToolResult(
+                tool_name="read_file", content="def f(): ...", is_error=False, call_id=call.call_id
+            )
+        return ToolResult(
+            tool_name="edit_file",
+            content="Edited m.py: 1 replacement(s)",
+            is_error=False,
+            call_id=call.call_id,
+        )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute_tool),
+        # Keep compaction inert: its LLM-summary path shares the mocked client
+        # and would otherwise consume the scripted responses mid-run.
+        patch(
+            "ci2lab.harness.query.loop.manage_context",
+            side_effect=lambda history, client, context_length, summary_failures=0: (
+                history,
+                summary_failures,
+                [],
+            ),
+        ),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [red1, red2, fix, rerun, final]
+        result = run_agent("fix the failing test in m.py", selection, config=config)
+
+    # The re-run after the fix really executed (3 bash runs), and the run ended
+    # normally instead of being cut off by the error-class limit.
+    assert executed.count("bash") == 3
+    assert "passes" in result
