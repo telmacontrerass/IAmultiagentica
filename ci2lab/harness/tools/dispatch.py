@@ -22,6 +22,7 @@ from ci2lab.harness.tools import git_tools, skill_tool, vision_tool, yard_tool
 from ci2lab.harness.tools import inspection as inspection_tool
 from ci2lab.harness.tools import notebook as notebook_tool
 from ci2lab.harness.tools import patch as patch_tool
+from ci2lab.harness.tools import pptx_writer as pptx_tool
 from ci2lab.harness.tools import quiz as quiz_tool
 from ci2lab.harness.tools import symcalc as symcalc_tool
 from ci2lab.harness.tools import todo as todo_tool
@@ -65,6 +66,14 @@ DISPATCH: dict[str, Callable[..., str]] = {
     "glob": lambda cfg, a: fs.glob_search(cfg.cwd, a["pattern"], a.get("path", ".")),
     "write_file": lambda cfg, a: fs.write_file(cfg.cwd, a["path"], a["content"]),
     "write_docx": lambda cfg, a: docx_tool.write_docx(cfg.cwd, a["path"], a["content"]),
+    "write_pptx": lambda cfg, a: pptx_tool.write_pptx(
+        cfg.cwd,
+        a["output_path"],
+        a["title"],
+        a["slides"],
+        a.get("theme"),
+        a.get("overwrite", False),
+    ),
     "apply_patch": lambda cfg, a: patch_tool.apply_patch(cfg.cwd, a["patch"]),
     "fill_docx_template": lambda cfg, a: _run_fill_docx(cfg, a),
     "docx_to_pdf": lambda cfg, a: convert_tool.docx_to_pdf(cfg.cwd, a["source"], a["output"]),

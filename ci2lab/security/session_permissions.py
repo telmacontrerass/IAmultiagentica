@@ -92,6 +92,8 @@ def target_fingerprint(tool_name: str, args: dict[str, Any]) -> str:
         path = _normalize_slashes(str(args.get("path", ".")))
         pattern = str(args.get("pattern", ""))
         return f"{path}|{pattern}"
+    if tool_name == "write_pptx":
+        return _normalize_slashes(str(args.get("output_path", ".")))
     return _normalize_slashes(str(args.get("path", args.get("command", "."))))
 
 

@@ -6,7 +6,15 @@ from typing import Any
 
 #: Argument keys whose values may arrive wrapped in stray quotes/backticks and
 #: should be unquoted before use.
-_QUOTED_STRING_KEYS: tuple[str, ...] = ("path", "url", "directory", "file", "filename", "filepath")
+_QUOTED_STRING_KEYS: tuple[str, ...] = (
+    "path",
+    "output_path",
+    "url",
+    "directory",
+    "file",
+    "filename",
+    "filepath",
+)
 
 
 def _strip_surrounding_quotes(value: Any) -> Any:
@@ -50,6 +58,12 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             for alias in ("new_string", "text", "body", "file_content"):
                 if alias in cleaned:
                     cleaned["content"] = cleaned.pop(alias)
+                    break
+    elif name == "write_pptx":
+        if "output_path" not in cleaned:
+            for alias in ("path", "output", "file", "filename", "filepath"):
+                if alias in cleaned:
+                    cleaned["output_path"] = cleaned.pop(alias)
                     break
     elif name == "edit_file":
         if "new_string" not in cleaned and "content" in cleaned:

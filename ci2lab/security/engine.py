@@ -21,6 +21,7 @@ _PATH_ARG_TOOLS = frozenset(
         "write_file",
         "edit_file",
         "write_docx",
+        "write_pptx",
         "file_info",
         "tree",
         "inspect_file",
@@ -33,6 +34,7 @@ _WRITE_TOOLS = frozenset(
         "write_file",
         "edit_file",
         "write_docx",
+        "write_pptx",
         "apply_patch",
         "fill_docx_template",
         "docx_to_pdf",
@@ -44,6 +46,17 @@ _CONFIRM_TOOLS = frozenset({"bash", *_WRITE_TOOLS})
 CLAUDE_EXTERNAL_ALLOW_IGNORED = (
     "external_directory=allow ignored by claude_experimental hard workspace policy"
 )
+
+
+def _path_arg(tool_name: str, args: dict[str, Any]) -> str | None:
+    """Return the path argument that represents a tool's filesystem target."""
+    if tool_name == "write_pptx":
+        value = args.get("output_path")
+    else:
+        value = args.get("path")
+    if value is None:
+        return None
+    return str(value)
 
 
 class SecurityEngineName(str, Enum):
@@ -240,8 +253,9 @@ def _run_hard_guards(
             experimental=experimental,
         )
 
-    if tool_name in _PATH_ARG_TOOLS and "path" in args:
-        path_decision = check_path_allowed(config.cwd, str(args["path"]))
+    path_arg = _path_arg(tool_name, args)
+    if tool_name in _PATH_ARG_TOOLS and path_arg is not None:
+        path_decision = check_path_allowed(config.cwd, path_arg)
         if path_decision.action is DecisionAction.DENY:
             external = path_decision.reason == "outside_workspace"
             matched = "hard:outside_workspace" if external else "hard:secret_file"

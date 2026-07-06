@@ -74,6 +74,17 @@ def execute_write_tool(
             from ci2lab.harness.tools.write_preview import preview_write_docx
 
             preview = preview_write_docx(config.cwd, args["path"], args["content"])
+        elif name == "write_pptx":
+            from ci2lab.harness.tools.pptx_writer import preview_write_pptx
+
+            preview = preview_write_pptx(
+                config.cwd,
+                args["output_path"],
+                args["title"],
+                args["slides"],
+                args.get("theme"),
+                args.get("overwrite", False),
+            )
         elif name == "apply_patch":
             preview = preview_apply_patch(config.cwd, args["patch"])
         elif name == "fill_docx_template":

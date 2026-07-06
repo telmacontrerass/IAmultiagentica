@@ -50,6 +50,76 @@ EDIT_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "write_pptx",
+            "description": (
+                "Create a real editable PowerPoint .pptx file from structured slides. "
+                "Supported slide types: cover, section, bullets, two_columns, table, "
+                "quote, closing, metric_cards, comparison, decision."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "output_path": {
+                        "type": "string",
+                        "description": "Workspace-relative output path ending in .pptx",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Presentation title",
+                    },
+                    "slides": {
+                        "type": "array",
+                        "description": "Structured slide objects",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": True,
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "cover",
+                                        "section",
+                                        "bullets",
+                                        "two_columns",
+                                        "table",
+                                        "quote",
+                                        "closing",
+                                        "metric_cards",
+                                        "comparison",
+                                        "decision",
+                                    ],
+                                }
+                            },
+                            "required": ["type"],
+                        },
+                    },
+                    "theme": {
+                        "type": "object",
+                        "description": "Optional deterministic visual theme",
+                        "additionalProperties": True,
+                        "properties": {
+                            "font_family": {"type": "string"},
+                            "title_font_size": {"type": "integer"},
+                            "body_font_size": {"type": "integer"},
+                            "primary_color": {"type": "string"},
+                            "secondary_color": {"type": "string"},
+                            "background_color": {"type": "string"},
+                            "footer_text": {"type": "string"},
+                            "slide_number": {"type": "boolean"},
+                        },
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "Set true to replace an existing .pptx",
+                    },
+                },
+                "required": ["output_path", "title", "slides"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "edit_file",
             "description": "Edit an existing file by exact text replacement. `old_string` must match the current text exactly.",
             "parameters": {

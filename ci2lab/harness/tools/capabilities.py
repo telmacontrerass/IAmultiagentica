@@ -57,6 +57,7 @@ FILE_WRITE_TOOLS = frozenset(
         "apply_patch",
         "notebook_edit",
         "write_docx",
+        "write_pptx",
         "fill_docx_template",
     }
 )

@@ -185,13 +185,15 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return data if isinstance(data, dict) else {"path": body}
         except json.JSONDecodeError:
             return {"path": body.splitlines()[0]}
-    if tool in ("write_file", "write_docx", "edit_file", "fill_docx_template"):
+    if tool in ("write_file", "write_docx", "write_pptx", "edit_file", "fill_docx_template"):
         try:
             data = json.loads(body)
             return data if isinstance(data, dict) else {"content": body}
         except json.JSONDecodeError:
             if tool in ("write_file", "write_docx"):
                 return {"path": "unknown", "content": body}
+            if tool == "write_pptx":
+                return {"output_path": "unknown.pptx", "title": "", "slides": []}
             if tool == "fill_docx_template":
                 return {"template": "", "output": "", "fields": {}}
             return {"path": "unknown", "old_string": "", "new_string": body}

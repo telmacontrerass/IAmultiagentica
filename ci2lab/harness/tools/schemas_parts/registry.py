@@ -22,6 +22,7 @@ TOOL_NAMES: frozenset[str] = frozenset(
         "glob",
         "write_file",
         "write_docx",
+        "write_pptx",
         "edit_file",
         "apply_patch",
         "fill_docx_template",

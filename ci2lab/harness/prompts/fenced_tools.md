@@ -86,6 +86,14 @@ Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 {"path": "report.docx", "content": "# Title\n\nParagraph of the document.\n"}
 ```
 
+### write_pptx (create or overwrite a PowerPoint presentation)
+
+Use for editable `.pptx` files. The body MUST be a JSON object with `output_path`, `title`, and a non-empty `slides` list. Supported slide types are `cover`, `section`, `bullets`, `two_columns`, `table`, `quote`, `closing`, `metric_cards`, `comparison`, and `decision`. Optional `theme` fields: `font_family`, `title_font_size`, `body_font_size`, `primary_color`, `secondary_color`, `background_color`, `footer_text`, `slide_number`.
+
+```write_pptx
+{"output_path": "deck.pptx", "title": "Project Update", "theme": {"primary_color": "#2563EB", "footer_text": "CI2Lab", "slide_number": true}, "slides": [{"type": "cover", "title": "Project Update", "subtitle": "July status"}, {"type": "bullets", "title": "Highlights", "bullets": ["Milestone reached", "Next review scheduled"]}]}
+```
+
 ### docx_to_pdf (convert Word to PDF)
 
 Convert a `.docx` file to PDF. Tries LibreOffice first (best for non-Latin text), then pandoc with a Unicode-capable engine. Pass the existing `.docx` path as `source`; do not pass a glob pattern.
@@ -211,4 +219,4 @@ Then fetch selected sources with `web_fetch`.
 {"template": "template.docx", "output": "filled.docx", "fields": {"{{name}}": "Ada", "{{date}}": "2026-06-17"}}
 ```
 
-Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `fill_docx_template`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_search`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.
+Available tools: `bash`, `read_document`, `read_file`, `ls`, `grep`, `glob`, `write_file`, `write_docx`, `write_pptx`, `fill_docx_template`, `docx_to_pdf`, `pdf_to_docx`, `edit_file`, `apply_patch`, `file_info`, `tree`, `inspect_file`, `notebook_edit`, `todo_write`, `ask_user`, `web_search`, `web_fetch`, `git_status`, `git_diff`, `skill`, `mcp_call`, plus any `mcp__*` tools listed in the system prompt.

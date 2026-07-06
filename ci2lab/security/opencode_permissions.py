@@ -29,7 +29,7 @@ _READ_TOOLS = frozenset(
         "ls",
     }
 )
-_EDIT_TOOLS = frozenset({"write_file", "edit_file"})
+_EDIT_TOOLS = frozenset({"write_file", "edit_file", "write_pptx"})
 _BASH_TOOLS = frozenset({"bash", "shell"})
 
 _TOOL_TO_OPENCODE: dict[str, str] = {}
@@ -45,6 +45,7 @@ for _t in _READ_TOOLS:
     _TOOL_RULE_ALIASES[_t] = ["read", _t]
 _TOOL_RULE_ALIASES["write_file"] = ["edit", "write", "write_file"]
 _TOOL_RULE_ALIASES["edit_file"] = ["edit", "edit_file"]
+_TOOL_RULE_ALIASES["write_pptx"] = ["edit", "write", "write_pptx"]
 for _t in _BASH_TOOLS:
     _TOOL_RULE_ALIASES[_t] = ["bash", "shell", _t]
 
@@ -325,6 +326,13 @@ def _is_external_path(workspace: str, path: str) -> bool:
     return not is_within_workspace(path, workspace)
 
 
+def _path_arg(tool_name: str, args: dict[str, Any]) -> str:
+    """Return the path-like permission subject for a path-editing tool."""
+    if tool_name == "write_pptx":
+        return str(args.get("output_path", "."))
+    return str(args.get("path", "."))
+
+
 def evaluate_opencode_tool(
     tool_name: str,
     args: dict[str, Any],
@@ -352,7 +360,7 @@ def evaluate_opencode_tool(
     path_tools = _READ_TOOLS | _EDIT_TOOLS
 
     if tool_name in path_tools:
-        path = str(args.get("path", "."))
+        path = _path_arg(tool_name, args)
         if _is_external_path(workspace, path):
             ext_rules = rule_map.get("external_directory", {"*": "deny"})
             ext_perm, ext_matched = _match_best_rule(
@@ -384,7 +392,7 @@ def evaluate_opencode_tool(
             )
         return decision
 
-    path = str(args.get("path", "."))
+    path = _path_arg(tool_name, args)
     subjects = _path_subjects(path)
     # Types come from the unpacking of `_resolve_tool_permission` above; these
     # are plain re-initialisations (annotating again would shadow that binding).

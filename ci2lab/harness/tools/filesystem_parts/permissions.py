@@ -21,6 +21,8 @@ def permission_summary(tool_name: str, args: dict[str, Any]) -> str:
         return cmd[:120] + ("..." if len(cmd) > 120 else "")
     if tool_name in ("write_file", "edit_file", "notebook_edit"):
         return str(args.get("path", ""))
+    if tool_name == "write_pptx":
+        return str(args.get("output_path", ""))
     if tool_name == "apply_patch":
         patch = str(args.get("patch", ""))
         return patch[:120] + ("..." if len(patch) > 120 else "")

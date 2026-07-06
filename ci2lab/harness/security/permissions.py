@@ -12,6 +12,7 @@ CONFIRM_TOOLS = frozenset(
         "write_file",
         "edit_file",
         "write_docx",
+        "write_pptx",
         "apply_patch",
         "fill_docx_template",
         "docx_to_pdf",

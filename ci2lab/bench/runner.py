@@ -253,7 +253,15 @@ def _evidence_metrics(
 
 
 _WRITE_TOOLS = frozenset(
-    {"write_file", "edit_file", "apply_patch", "write_docx", "docx_to_pdf", "notebook_edit"}
+    {
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "write_docx",
+        "write_pptx",
+        "docx_to_pdf",
+        "notebook_edit",
+    }
 )
 _READBACK_TOOLS = frozenset({"read_file", "read_document", "grep", "inspect_file"})
 

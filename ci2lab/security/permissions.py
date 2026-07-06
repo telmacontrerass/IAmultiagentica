@@ -35,6 +35,8 @@ def permission_summary_for_gate(tool_name: str, args: dict[str, Any]) -> str:
     """
     if tool_name == "bash":
         return str(args.get("command", ""))[:120]
+    if tool_name == "write_pptx":
+        return str(args.get("output_path", ""))
     if "path" in args:
         return str(args["path"])
     if "pattern" in args:

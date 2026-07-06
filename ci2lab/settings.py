@@ -242,10 +242,10 @@ def subject_for_tool(tool_name: str, args: dict[str, Any]) -> str:
         return str(args.get("command", ""))
     if tool_name == "web_fetch":
         return str(args.get("url", ""))
-    if tool_name == "fill_docx_template":
+    if tool_name in {"fill_docx_template", "write_pptx"}:
         # The subject is the output path (the file that will be written).
-        # The template path is validated by workspace containment in preview_fill_docx.
-        return str(args.get("output", "*"))
+        # Other input paths are validated by workspace containment in previews.
+        return str(args.get("output_path") or args.get("output") or "*")
     if "path" in args:
         return str(args["path"])
     if "pattern" in args:
