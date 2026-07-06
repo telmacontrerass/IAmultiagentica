@@ -57,6 +57,9 @@ audit/live_claude/
 # Course / exam materials
 Examenes/
 
+# Paper planning (local strategy notes, not for the repo)
+/PAPER_DIRECTION.md
+
 # Local test leftovers / manual scratch files
 /prueba.pdf
 /inside.txt

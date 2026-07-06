@@ -27,6 +27,7 @@ _RUN_STATUS_MAP = {
     "success": STATUS_SUCCESS,
     "completed": STATUS_SUCCESS,
     "max_rounds": "max_rounds",
+    "stuck": "stuck",
     "interrupted": STATUS_ERROR,
     "llm_error": STATUS_ERROR,
 }
@@ -132,8 +133,17 @@ def _find_latest_run_dir(runs_parent: Path) -> Path | None:
 
 
 def _read_run_json(run_dir: Path) -> tuple[int | None, str | None]:
-    """Read ``run.json`` defensively, returning ``(rounds, status)``."""
+    """Read run metadata defensively, returning ``(rounds, status)``.
+
+    Prefers the multi-agent ``run.json``; falls back to the single-agent
+    ``run_summary.json``, which carries the same ``rounds``/``status`` fields.
+    Without this fallback single-agent runs (which never write ``run.json``)
+    report ``rounds=None`` and keep the adapter's default ``success`` status,
+    so a stalled run is silently mislabeled as a success.
+    """
     path = run_dir / "run.json"
+    if not path.is_file():
+        path = run_dir / "run_summary.json"
     if not path.is_file():
         return None, None
     try:
