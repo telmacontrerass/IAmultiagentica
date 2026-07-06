@@ -63,6 +63,49 @@ def test_parse_xml_invoke():
     assert calls[0].arguments["command"] == "echo hi"
 
 
+def test_parse_function_dialect_orphan_close():
+    # Qwen-Coder emits <function=NAME>/<parameter=KEY> with an orphan </tool_call>
+    # close (no opener). Regression for the qa-02 leak where the call never ran.
+    text = (
+        "Let me explore.\n\n"
+        "<function=ls>\n<parameter=path>\n.\n</parameter>\n</function>\n</tool_call>"
+    )
+    calls = parse_xml_blocks(text)
+    assert len(calls) == 1
+    assert calls[0].name == "ls"
+    assert calls[0].arguments["path"] == "."
+
+
+def test_parse_function_dialect_multiple_params():
+    text = (
+        "<function=write_file>"
+        "<parameter=path>summary.txt</parameter>"
+        "<parameter=content>hello world</parameter>"
+        "</function>"
+    )
+    calls = parse_xml_blocks(text)
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["path"] == "summary.txt"
+    assert calls[0].arguments["content"] == "hello world"
+
+
+def test_function_dialect_resolves_and_strips():
+    text = "Prose before.\n<function=ls>\n<parameter=path>.</parameter>\n</function>\n</tool_call>"
+    assert resolve_tool_calls(text, [], tool_mode="native")[0].name == "ls"
+    cleaned = strip_tool_markup(text)
+    assert cleaned == "Prose before."
+    assert "function" not in cleaned and "tool_call" not in cleaned
+
+
+def test_standard_invoke_still_parses_after_function_normalization():
+    # The <function=…> normalization must not disturb the standard <invoke> form.
+    text = '<invoke name="bash"><parameter name="command">echo hi</parameter></invoke>'
+    calls = parse_xml_blocks(text)
+    assert len(calls) == 1
+    assert calls[0].name == "bash"
+    assert calls[0].arguments["command"] == "echo hi"
+
+
 def test_native_priority():
     native = [{"name": "ls", "arguments": {"path": "."}, "id": "c1"}]
     calls = resolve_tool_calls("", native, tool_mode="native")

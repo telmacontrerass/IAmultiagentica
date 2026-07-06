@@ -24,6 +24,47 @@ XML_PARAM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Qwen-Coder / Hermes-style function-call dialect: ``<function=NAME> …
+# <parameter=KEY>value</parameter> … </function>`` (the name/key follow an ``=``
+# rather than a ``name="…"`` attribute). Rewritten into the standard
+# ``<invoke>``/``<parameter name="…">`` tags the parser already understands.
+XML_FUNCTION_OPEN_RE = re.compile(
+    r'<function\s*=\s*["\']?([\w.+-]+)["\']?\s*>',
+    re.IGNORECASE,
+)
+XML_FUNCTION_CLOSE_RE = re.compile(r"</function\s*>", re.IGNORECASE)
+XML_PARAM_EQ_RE = re.compile(
+    r'<parameter\s*=\s*["\']?([\w.+-]+)["\']?\s*>',
+    re.IGNORECASE,
+)
+
+
+def normalize_function_tags(text: str) -> str:
+    """Rewrite the ``<function=NAME>`` tool-call dialect into standard XML tags.
+
+    Some Qwen-Coder and Hermes-style templates emit tool calls as
+    ``<function=ls><parameter=path>.</parameter></function>`` instead of the
+    ``<invoke name="ls"><parameter name="path">.</parameter></invoke>`` form the
+    XML parser expects. This converts the ``<function=…>``/``</function>`` and
+    ``<parameter=…>`` tags so the existing :data:`XML_INVOKE_RE`/
+    :data:`XML_PARAM_RE` parsers can pick them up. The text is returned unchanged
+    when it contains no such markup.
+
+    Args:
+        text: Raw model output that may contain the ``<function=…>`` dialect.
+
+    Returns:
+        The text with any ``<function=…>`` tool-call tags normalized to standard
+        XML ``<invoke>``/``<parameter name="…">`` tags.
+    """
+    lowered = text.lower()
+    if "<function" not in lowered and "<parameter=" not in lowered:
+        return text
+    t = XML_FUNCTION_OPEN_RE.sub(lambda m: f'<invoke name="{m.group(1)}">', text)
+    t = XML_FUNCTION_CLOSE_RE.sub("</invoke>", t)
+    t = XML_PARAM_EQ_RE.sub(lambda m: f'<parameter name="{m.group(1)}">', t)
+    return t
+
 
 def normalize_dsml(text: str) -> str:
     """Rewrite DeepSeek DSML tool-call markup into standard XML tool tags.
@@ -101,9 +142,9 @@ def invoke_to_call(tool_name: str, body: str) -> ToolCall | None:
 def parse_xml_blocks(text: str) -> list[ToolCall]:
     """Parse tool calls from XML/DSML ``<invoke>`` markup in model text.
 
-    Normalizes DSML markup first, then extracts ``<invoke>`` elements both inside
-    ``<tool_call>``/``<function_call>`` wrappers and at the top level, skipping
-    duplicates discovered by the second pass.
+    Normalizes DSML markup and the ``<function=…>`` dialect first, then extracts
+    ``<invoke>`` elements both inside ``<tool_call>``/``<function_call>`` wrappers
+    and at the top level, skipping duplicates discovered by the second pass.
 
     Args:
         text: Model output that may contain XML or DSML tool-call markup.
@@ -112,6 +153,7 @@ def parse_xml_blocks(text: str) -> list[ToolCall]:
         The tool calls parsed from the markup, in discovery order.
     """
     text = normalize_dsml(text)
+    text = normalize_function_tags(text)
     calls: list[ToolCall] = []
     for block in XML_TOOL_CALL_RE.finditer(text):
         inner = block.group(1)

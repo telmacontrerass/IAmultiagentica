@@ -16,9 +16,13 @@ import sys
 from pathlib import Path
 
 from ci2lab.bench.adapters import ADAPTER_NAMES
+from ci2lab.bench.excel import write_report
+from ci2lab.bench.report import load_records
 from ci2lab.bench.runner import print_summary_table, run_bench_suite
 from ci2lab.bench.task import default_tasks_dir
 from ci2lab.console import console
+
+REPORT_FILENAME = "benchmark_report.xlsx"
 
 DEFAULT_BENCH_MODEL = "qwen2.5-coder:32b"
 
@@ -91,7 +95,30 @@ def main(argv: list[str] | None = None) -> int:
     print_summary_table(summary)
     console.print(f"\n[bold]Summary:[/bold] {summary.passed_runs}/{summary.total_runs} runs solved")
     console.print(f"[dim]Results: {summary.results_dir}[/dim]")
+    _regenerate_report(Path(summary.results_dir))
     return 0
+
+
+def _regenerate_report(run_dir: Path) -> None:
+    """Refresh the aggregate Excel report from every valid run under the results base.
+
+    Called after a run completes; scans the results base (the parent of this
+    run's folder) so the workbook always reflects the full valid history. A
+    reporting failure is logged but never fails the benchmark.
+
+    Args:
+        run_dir: The timestamped directory this run wrote its artifacts to.
+    """
+    results_base = run_dir.parent
+    out_path = results_base / REPORT_FILENAME
+    try:
+        rows = load_records([results_base])
+        written = write_report(rows, out_path)
+    except Exception as exc:  # reporting must never break a run
+        console.print(f"[yellow]Excel report skipped:[/yellow] {exc}")
+        return
+    if written is not None:
+        console.print(f"[dim]Excel report: {written}[/dim]")
 
 
 if __name__ == "__main__":

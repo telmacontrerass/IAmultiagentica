@@ -28,7 +28,10 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('ci2lab/ui/server_parts/api.py',encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('ci2lab/ui/researchers.py',encoding='utf-8'\\).read\\(\\)\\); print\\('PY_OK'\\)\")",
       "Bash(python -m pytest tests/test_ui_server.py tests/test_ui_projects.py tests/test_ui_researchers.py -q)",
       "Bash(python -m pytest tests/test_ui_server.py -q)",
-      "Bash(python -m pytest tests/test_ui_projects.py tests/test_ui_server.py -q)"
+      "Bash(python -m pytest tests/test_ui_projects.py tests/test_ui_server.py -q)",
+      "Bash(ollama list *)",
+      "Bash(timeout 120 ollama run qwen2.5vl:7b \"say ok\")",
+      "Bash(echo \"EXIT: $?\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Pablo\\.claude\\projects\\c--Users-Pablo-Programacion-IAmultiagentica\\memory"

@@ -38,6 +38,7 @@ from ci2lab.harness.parsing_parts.xml_tools import (
     XML_TOOL_CALL_RE,
     invoke_to_call,
     normalize_dsml,
+    normalize_function_tags,
     parse_xml_blocks,
 )
 from ci2lab.harness.tools.registry import TOOL_NAMES
@@ -180,11 +181,17 @@ def strip_tool_markup(text: str) -> str:
         The text with tool-call markup removed and surrounding whitespace
         stripped.
     """
+    text = normalize_function_tags(text)
     text = FENCED_RE.sub("", text)
     text = JSON_FENCED_RE.sub("", text)
     text = GENERIC_FENCED_RE.sub("", text)
     text = XML_TOOL_CALL_RE.sub("", text)
     text = XML_INVOKE_RE.sub("", text)
+    # Drop any orphan closing wrappers left by the ``<function=…>`` dialect
+    # (e.g. a trailing ``</tool_call>`` with no matching opener).
+    text = re.sub(
+        r"</(?:tool_call|function_call|function|invoke)\s*>", "", text, flags=re.IGNORECASE
+    )
     for obj in extract_json_objects(text):
         if json_object_to_call(obj):
             text = text.replace(json.dumps(obj), "")
@@ -215,6 +222,7 @@ __all__ = [
     "native_to_tool_calls",
     "new_call",
     "normalize_dsml",
+    "normalize_function_tags",
     "parse_fenced_blocks",
     "parse_generic_fenced_blocks",
     "parse_json_tool_objects",

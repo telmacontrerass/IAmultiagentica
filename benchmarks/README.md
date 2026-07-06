@@ -79,6 +79,14 @@ Results land in `benchmarks/results/<timestamp>/` as `results.jsonl` (one row pe
 task × agent × sample) and `summary.json` (per task × agent: Pass@1, Pass@k,
 mean tokens, imputed USD, median latency).
 
+After every run, an aggregate Excel report is regenerated at
+`benchmarks/results/benchmark_report.xlsx` from **all valid runs** under the
+results dir (infrastructure-error / timeout runs are excluded). It has four
+sheets — README, Agent Comparison, Per Task × Agent, and All Runs — and groups by
+`(agent, model)` so the same adapter on two models (e.g. Codex on the local model
+for H2 vs a frontier model for H1) stays on separate rows. Report generation
+never fails a run; a problem is logged and the run still exits `0`.
+
 ## Competitor CLI knobs (env vars)
 
 The `codex` / `claude-code` adapters are driven entirely by env vars so any CLI
