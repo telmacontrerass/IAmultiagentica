@@ -215,3 +215,35 @@ def test_code_tokens_allowed_in_chat_and_for_known_standards():
     ledger = EvidenceLedger(user_prompt="check the date handling in this repo")
     ledger.add("read_file", {"path": "dates.py"}, "strftime('%Y-%m-%d')", ok=True)
     assert review_final_answer("Dates follow the ISO-8601 format.", ledger).ok is True
+
+
+def test_strip_code_fence_peels_only_a_wrapping_fence():
+    from ci2lab.harness.query.loop import _strip_code_fence
+
+    assert _strip_code_fence("```markdown\nProblema 1\nx = 2\n```") == "Problema 1\nx = 2"
+    # No wrapping fence: text is returned untouched (only trimmed).
+    assert _strip_code_fence("Problema 1\nx = 2\n") == "Problema 1\nx = 2"
+    # An inner fence that does not wrap the whole text is preserved.
+    body = "Intro\n```\ncode\n```\nOutro"
+    assert _strip_code_fence(body) == body
+
+
+def test_transcription_turn_skips_final_answer_review():
+    # A pure transcription is grounded in the attached document by construction;
+    # the groundedness review (which would flag "version" as a current-fact
+    # claim and re-prompt) must not run, so it finalizes in a single call. The
+    # prompt names no workspace path, so the separate "no tool evidence" nudge
+    # stays silent and the review skip is the only thing under test.
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)
+
+    with patch("ci2lab.harness.query.loop.LLMClient") as MockClient:
+        MockClient.return_value.chat.return_value = LLMResponse(
+            content="## Transcription\nProblema 1: version 2 of the formula.",
+            tool_calls=[],
+        )
+        result = run_agent("Transcribe the handwritten notes", selection, config=config)
+
+    assert "version 2 of the formula" in result
+    assert "cannot safely confirm" not in result.lower()
+    assert MockClient.return_value.chat.call_count == 1

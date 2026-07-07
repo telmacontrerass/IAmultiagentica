@@ -169,3 +169,10 @@ class AgentConfig:
     base64 image_url blocks when the main model is vision-capable; otherwise
     each image is described by the fallback vision_model and the description is
     injected into the prompt text."""
+
+    last_vision_transcription: str | None = None
+    """Set by ``run_agent`` when the fallback vision model transcribes attached
+    page(s) this turn: the assembled per-page transcription text. The REPL
+    exports this verbatim for transcription turns, so the saved ``.md`` holds the
+    faithful page reads regardless of how the reasoning model formats its reply.
+    ``None`` when no fallback-vision transcription happened."""

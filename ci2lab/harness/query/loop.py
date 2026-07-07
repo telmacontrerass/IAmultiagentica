@@ -91,6 +91,7 @@ from ci2lab.harness.vision import (
 from ci2lab.harness.vision_exercise import (
     EXERCISE_TRANSCRIPTION_PROMPT,
     enrich_turn_content_with_exercise_skill,
+    is_transcription_request,
     is_visual_document_request,
 )
 
@@ -709,6 +710,23 @@ def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[Tool
     return prefixed + calls
 
 
+def _strip_code_fence(text: str) -> str:
+    """Drop a single wrapping ``` fence a vision model sometimes adds.
+
+    Small vision models like to wrap a page transcription in a fenced block
+    (```markdown … ```). That reads as a nested code block once written to a
+    ``.md`` file, so peel exactly one outer fence when it wraps the whole text;
+    anything else is left untouched.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2 or not lines[-1].rstrip().endswith("```"):
+        return stripped
+    return "\n".join(lines[1:-1]).strip()
+
+
 def _prepare_turn_content(
     user_prompt: str,
     selection: ModelSelection,
@@ -743,6 +761,10 @@ def _prepare_turn_content(
     user_content: str | list[Any] = user_prompt
     vision_image_count = 0
     vision_has_pdf = False
+    # Cleared every turn; repopulated below only when the fallback vision model
+    # transcribes page(s), so a stale transcription can never leak into a later
+    # turn's export.
+    cfg.last_vision_transcription = None
     history_image_count = count_vision_images_in_messages(messages or [])
     if not (cfg.image_paths and cfg.vision_enabled):
         return user_content, vision_image_count, vision_has_pdf, history_image_count
@@ -790,6 +812,7 @@ def _prepare_turn_content(
                     else None
                 )
                 enriched = user_prompt
+                transcribed_pages: list[str] = []
                 for img in expanded_paths:
                     desc = analyze_image(
                         img,
@@ -807,7 +830,12 @@ def _prepare_turn_content(
                     )
                     console.print(f"[dim]{desc}[/dim]")
                     enriched = f"{enriched}\n\n[Image: {name}]\n{desc}"
+                    transcribed_pages.append(f"## {name}\n\n{_strip_code_fence(desc)}")
                 user_content = enriched
+                # Keep the faithful per-page reads for the transcription export,
+                # so the saved .md never depends on the reasoning model behaving.
+                if transcribed_pages and is_visual_document_request(user_prompt):
+                    cfg.last_vision_transcription = "\n\n".join(transcribed_pages)
             # If no vision_model is configured, pass user_prompt unchanged.
     finally:
         # Temp PNGs from PDF rendering are no longer needed once
@@ -964,6 +992,11 @@ def run_agent(
     last_verifier_gaps = ""
     final_answer_review_runs = 0
     evidence_ledger = EvidenceLedger(user_prompt=user_prompt)
+    # A pure transcription is grounded in the attached document by construction:
+    # the groundedness rubric (web/repo/version/source claims) does not apply, so
+    # never gate its answer on that review — otherwise a faithful transcription is
+    # nudged and eventually replaced by a "cannot confirm" refusal.
+    verify_final_answer = cfg.verify_final_answer and not is_transcription_request(user_prompt)
     # The model created a task plan with `todo_write` during this run. Only then
     # does the loop hold it to that plan on finish — so a stale todos.json from a
     # prior run (or a task that never planned) can never block finalization.
@@ -1310,7 +1343,7 @@ def run_agent(
                         )
                 if (
                     final_text
-                    and cfg.verify_final_answer
+                    and verify_final_answer
                     and final_answer_review_runs < FINAL_ANSWER_REVIEW_MAX_PER_TURN
                 ):
                     review = review_final_answer(final_text, evidence_ledger)
@@ -1333,7 +1366,7 @@ def run_agent(
                         )
                         maybe_save_session(cfg, history, selection)
                         continue
-                if final_text and cfg.verify_final_answer:
+                if final_text and verify_final_answer:
                     review = review_final_answer(final_text, evidence_ledger)
                     if not review.ok:
                         final_text = guarded_uncertain_answer(review)
@@ -1661,7 +1694,7 @@ def run_agent(
             maybe_save_session(cfg, history, selection)
 
         if final_text:
-            if cfg.verify_final_answer:
+            if verify_final_answer:
                 review = review_final_answer(final_text, evidence_ledger)
                 if not review.ok:
                     final_text = guarded_uncertain_answer(review)

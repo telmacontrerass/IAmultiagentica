@@ -625,7 +625,11 @@ def run_repl(
                 if is_exercise_review_request(line):
                     _export_review_markdown(final_text, config.cwd, detected_images)
                 elif is_transcription_request(line):
-                    _export_transcription_markdown(final_text, config.cwd, detected_images)
+                    # Prefer the faithful per-page vision reads over the reasoning
+                    # model's reply, so the saved .md is the transcription even if
+                    # that model drifted into an audit/summary.
+                    transcription = config.last_vision_transcription or final_text
+                    _export_transcription_markdown(transcription, config.cwd, detected_images)
         except LLMError as exc:
             console.print(f"[red]{exc.user_message}[/red]")
             last_error_message = exc.user_message
