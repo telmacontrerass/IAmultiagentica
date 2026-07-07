@@ -79,9 +79,9 @@ def execute_write_tool(
 
             preview = preview_write_pptx(
                 config.cwd,
-                args["output_path"],
-                args["title"],
-                args["slides"],
+                args.get("output_path", ""),
+                args.get("title", ""),
+                args.get("slides"),
                 args.get("theme"),
                 args.get("overwrite", False),
             )

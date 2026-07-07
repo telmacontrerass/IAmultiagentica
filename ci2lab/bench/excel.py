@@ -24,7 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from ci2lab.bench.metrics import mean, median, pass_at_k
+from ci2lab.bench.metrics import compute_cost_usd, load_prices, mean, median, pass_at_k
 
 __all__ = ["write_report"]
 
@@ -66,6 +66,8 @@ def write_report(rows: list[dict[str, Any]], out_path: Path) -> Path | None:
     if not valid:
         return None
 
+    _fill_costs(valid)
+
     workbook = Workbook()
     _build_readme(workbook, valid)
     per_group = _aggregate_by_task_agent_model(valid)
@@ -76,6 +78,27 @@ def write_report(rows: list[dict[str, Any]], out_path: Path) -> Path | None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(out_path)
     return out_path
+
+
+def _fill_costs(rows: list[dict[str, Any]]) -> None:
+    """(Re)derive ``cost_usd`` for each row from the current price table.
+
+    Runs record ``cost_usd`` at execution time, which is ``0.0`` whenever the
+    model was absent from ``prices.json`` back then. The report is the right
+    place to impute cost from measured tokens against the up-to-date table, so
+    the workbook always reflects current pricing. A row keeps its recorded value
+    only when no price applies (``compute_cost_usd`` returns ``None``).
+    """
+    prices = load_prices()
+    for row in rows:
+        cost = compute_cost_usd(
+            row.get("prompt_tokens"),
+            row.get("completion_tokens"),
+            str(row.get("model", "")),
+            prices,
+        )
+        if cost is not None:
+            row["cost_usd"] = cost
 
 
 def _aggregate_by_task_agent_model(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -95,6 +118,7 @@ def _aggregate_by_task_agent_model(rows: list[dict[str, Any]]) -> list[dict[str,
         solved = sum(1 for r in group if r.get("solved") is True)
         tokens = [float(r["total_tokens"]) for r in group if _is_num(r.get("total_tokens"))]
         latencies = [float(r["wall_clock_s"]) for r in group if _is_num(r.get("wall_clock_s"))]
+        costs = [float(r["cost_usd"]) for r in group if _is_num(r.get("cost_usd"))]
         out.append(
             {
                 "agent": agent,
@@ -106,6 +130,8 @@ def _aggregate_by_task_agent_model(rows: list[dict[str, Any]]) -> list[dict[str,
                 "pass_at_k": round(pass_at_k(n, solved, min(_K_REPORT, n)), 4),
                 "mean_total_tokens": _opt_round(mean(tokens), 0),
                 "median_latency_s": _opt_round(median(latencies), 1),
+                "mean_cost_usd": _opt_round(mean(costs), 6),
+                "total_cost_usd": _opt_round(sum(costs), 6) if costs else None,
                 "false_positives": sum(1 for r in group if r.get("false_positive") is True),
                 "tool_violations": sum(int(r.get("tool_violation_count", 0) or 0) for r in group),
             }
@@ -127,12 +153,15 @@ def _aggregate_by_agent_model(per_group: list[dict[str, Any]]) -> list[dict[str,
         latencies = [
             float(r["median_latency_s"]) for r in task_rows if _is_num(r["median_latency_s"])
         ]
+        totals = [float(r["total_cost_usd"]) for r in task_rows if _is_num(r.get("total_cost_usd"))]
+        runs = sum(int(r["n"]) for r in task_rows)
+        total_cost = sum(totals) if totals else None
         out.append(
             {
                 "agent": agent,
                 "model": model,
                 "tasks": len(task_rows),
-                "runs": sum(int(r["n"]) for r in task_rows),
+                "runs": runs,
                 "macro_pass_at_1": round(
                     mean([float(r["pass_at_1"]) for r in task_rows]) or 0.0, 2
                 ),
@@ -142,6 +171,10 @@ def _aggregate_by_agent_model(per_group: list[dict[str, Any]]) -> list[dict[str,
                 "false_positives": sum(int(r["false_positives"]) for r in task_rows),
                 "mean_total_tokens": _opt_round(mean(tokens), 0),
                 "median_latency_s": _opt_round(mean(latencies), 1),
+                "mean_cost_usd": _opt_round(total_cost / runs, 6)
+                if total_cost is not None and runs
+                else None,
+                "total_cost_usd": _opt_round(total_cost, 4) if total_cost is not None else None,
             }
         )
     return out
@@ -176,6 +209,7 @@ def _build_readme(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
                 ("False Pos", "Agent reported success but the hidden oracle failed."),
                 ("ToolViol", "Count of tool-policy violations during the run."),
                 ("Tokens / Latency", "Mean total tokens, median wall-clock seconds per run."),
+                ("USD", "Imputed cost = measured tokens x prices.json rate (not an invoice)."),
             ],
         ),
         (
@@ -215,6 +249,8 @@ def _build_agent_comparison(workbook: Workbook, per_group: list[dict[str, Any]])
         "False Pos",
         "Mean Tokens",
         "Median Latency (s)",
+        "Mean USD/run",
+        "Total USD",
     ]
     _write_header(ws, 3, headers)
     row = 4
@@ -229,6 +265,8 @@ def _build_agent_comparison(workbook: Workbook, per_group: list[dict[str, Any]])
             item["false_positives"],
             item["mean_total_tokens"],
             item["median_latency_s"],
+            item["mean_cost_usd"],
+            item["total_cost_usd"],
         ]
         _write_row(ws, row, values, left_cols=2)
         _paint_pass(ws.cell(row=row, column=5), float(item["macro_pass_at_1"]))
@@ -236,7 +274,7 @@ def _build_agent_comparison(workbook: Workbook, per_group: list[dict[str, Any]])
             _paint(ws.cell(row=row, column=7), _RED, _RED_F)
         row += 1
     ws.freeze_panes = "A4"
-    _autosize(ws, {1: 16, 2: 18, 3: 8, 4: 7, 5: 9, 6: 9, 7: 11, 8: 13, 9: 18})
+    _autosize(ws, {1: 16, 2: 18, 3: 8, 4: 7, 5: 9, 6: 9, 7: 11, 8: 13, 9: 18, 10: 13, 11: 11})
 
 
 def _build_per_task(workbook: Workbook, per_group: list[dict[str, Any]]) -> None:
@@ -257,6 +295,7 @@ def _build_per_task(workbook: Workbook, per_group: list[dict[str, Any]]) -> None
         "ToolViol",
         "Mean Tokens",
         "Median Latency (s)",
+        "Mean USD",
     ]
     _write_header(ws, 3, headers)
     row = 4
@@ -273,6 +312,7 @@ def _build_per_task(workbook: Workbook, per_group: list[dict[str, Any]]) -> None
             item["tool_violations"],
             item["mean_total_tokens"],
             item["median_latency_s"],
+            item["mean_cost_usd"],
         ]
         _write_row(ws, row, values, left_cols=3)
         _paint_pass(ws.cell(row=row, column=5), float(item["pass_at_1"]))
@@ -280,7 +320,9 @@ def _build_per_task(workbook: Workbook, per_group: list[dict[str, Any]]) -> None
             _paint(ws.cell(row=row, column=8), _RED, _RED_F)
         row += 1
     ws.freeze_panes = "A4"
-    _autosize(ws, {1: 10, 2: 15, 3: 17, 4: 5, 5: 9, 6: 9, 7: 8, 8: 11, 9: 10, 10: 13, 11: 18})
+    _autosize(
+        ws, {1: 10, 2: 15, 3: 17, 4: 5, 5: 9, 6: 9, 7: 8, 8: 11, 9: 10, 10: 13, 11: 18, 12: 11}
+    )
 
 
 def _build_all_runs(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
@@ -302,6 +344,7 @@ def _build_all_runs(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
         "Prompt Tok",
         "Completion Tok",
         "Total Tok",
+        "USD",
         "Latency (s)",
         "Rounds",
         "Tool Calls",
@@ -330,6 +373,7 @@ def _build_all_runs(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
             r.get("prompt_tokens"),
             r.get("completion_tokens"),
             r.get("total_tokens"),
+            _opt_round(r.get("cost_usd"), 6),
             _opt_round(r.get("wall_clock_s"), 1),
             r.get("rounds"),
             r.get("tool_calls"),
@@ -362,8 +406,9 @@ def _build_all_runs(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
             11: 14,
             12: 11,
             13: 11,
-            14: 8,
-            15: 10,
+            14: 11,
+            15: 8,
+            16: 10,
         },
     )
 

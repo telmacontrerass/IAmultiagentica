@@ -61,6 +61,13 @@ def todo_write(cwd: str, todos: list[dict[str, Any]]) -> str:
         A summary of the saved list plus a next-step hint, or an
         ``"Error: ..."`` message if the input is empty or invalid.
     """
+    if isinstance(todos, dict):
+        # Small models sometimes emit a single todo object, or an id -> todo
+        # mapping, instead of a list. Coerce both into a list of items.
+        if "content" in todos or "status" in todos:
+            todos = [todos]
+        else:
+            todos = [v for v in todos.values() if isinstance(v, dict)]
     if not isinstance(todos, list):
         return "Error: todos must be a list of objects"
     if not todos:

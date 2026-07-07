@@ -68,9 +68,9 @@ DISPATCH: dict[str, Callable[..., str]] = {
     "write_docx": lambda cfg, a: docx_tool.write_docx(cfg.cwd, a["path"], a["content"]),
     "write_pptx": lambda cfg, a: pptx_tool.write_pptx(
         cfg.cwd,
-        a["output_path"],
-        a["title"],
-        a["slides"],
+        a.get("output_path", ""),
+        a.get("title", ""),
+        a.get("slides"),
         a.get("theme"),
         a.get("overwrite", False),
     ),

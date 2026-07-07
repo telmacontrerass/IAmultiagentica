@@ -293,9 +293,14 @@ def fenced_body_to_args(tool: str, body: str) -> dict[str, Any]:
             return {"task": body}
     if tool == "todo_write":
         try:
-            return loads_json_lenient(body)
+            data = loads_json_lenient(body)
         except json.JSONDecodeError:
             return {"raw": body}
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):
+            return {"todos": data}
+        return {"raw": body}
     if tool == "notebook_edit":
         try:
             return loads_json_lenient(body)

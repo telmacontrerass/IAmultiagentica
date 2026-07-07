@@ -60,6 +60,36 @@ _NUMERIC_FACT_RE = re.compile(
     r"\b\d+(?:[.,]\d+)?\s?(%|eur|usd|gbp|€|\$|ms|s|kg|km|mb|gb|tb|tokens?)\b",
     re.IGNORECASE,
 )
+# A "no-regression" claim: the answer asserts the change is safe BEYOND the
+# specific thing it fixed ("nothing else broke"). Substantiating this needs a
+# broad check, not just the one test tied to the fix — see _ran_broad_check.
+_NO_REGRESSION_RE = re.compile(
+    r"("
+    r"no other (behaviou?rs?|functionality|features?|tests?|code|logic)|"
+    r"nothing else (was |is )?(broke|broken|affected|changed|impacted)|"
+    r"without (breaking|affecting|impacting|changing) (any |anything |other )|"
+    r"did(n't| not) break|does(n't| not) break|didn't affect|does not affect|"
+    r"no regressions?|no side.?effects?|"
+    r"sin romper|sin afectar|sin impactar|no rompe|no afecta|"
+    r"ninguna otra (funcionalidad|prueba|parte|caracter[ií]stica)"
+    r")",
+    re.IGNORECASE,
+)
+# A test/check runner in a bash command.
+_TEST_RUNNER_RE = re.compile(
+    r"\b("
+    r"pytest|py\.test|unittest|tox|nox|nosetests|"
+    r"go test|cargo test|npm (run )?test|yarn test|pnpm test|"
+    r"make (test|check)|rspec|jest|vitest|mocha|ctest|gradle test|mvn test"
+    r")\b",
+    re.IGNORECASE,
+)
+# The run is NARROWED to a specific file/module/node/selector, so it cannot
+# substantiate a claim about the WHOLE project's behaviour.
+_TEST_NARROWED_RE = re.compile(
+    r"(::|\s-k[\s=]|[\w./-]+\.(py|js|ts|tsx|jsx|go|rb|rs|java|cs|php)\b)",
+    re.IGNORECASE,
+)
 
 
 # Identifier-shaped codes (ERR-4219, JIRA-1042): uppercase tag, dash, digits.
@@ -76,6 +106,22 @@ _KNOWN_CODE_PREFIXES = frozenset(
 
 def _contains_uncertainty(answer: str) -> bool:
     return bool(_UNCERTAINTY_RE.search(answer))
+
+
+def _ran_broad_check(ledger: EvidenceLedger) -> bool:
+    """True when a successful bash run invoked a test/check runner un-narrowed.
+
+    A whole-suite run (``pytest -q``, ``make test``) can ground a no-regression
+    claim; a run scoped to a single file/node (``pytest test_x.py``, ``... -k
+    foo``) cannot — it only re-confirms the thing the agent set out to fix.
+    """
+    for record in ledger.records:
+        if not record.ok or record.tool_name != "bash":
+            continue
+        command = str(record.arguments.get("command", ""))
+        if _TEST_RUNNER_RE.search(command) and not _TEST_NARROWED_RE.search(command):
+            return True
+    return False
 
 
 def _urls_not_in_evidence(answer: str, ledger: EvidenceLedger) -> list[str]:
@@ -141,6 +187,18 @@ def find_grounding_issues(answer: str, ledger: EvidenceLedger) -> list[str]:
         issues.append(
             "The answer claims a command/test/check was run or passed, but no successful runtime "
             "tool result supports that claim."
+        )
+
+    if (
+        _NO_REGRESSION_RE.search(text)
+        and ledger.has_mutation_evidence
+        and not _ran_broad_check(ledger)
+    ):
+        issues.append(
+            "The answer claims no other behaviour/functionality was broken after a code change, "
+            "but the evidence shows no broad verification: the project's full test suite/checks "
+            "were never run un-narrowed (only a scoped run, or none). Run the whole suite, and "
+            "check the callers of any shared code you changed, before claiming no regressions."
         )
 
     if _PROJECT_CLAIM_RE.search(text) and not (

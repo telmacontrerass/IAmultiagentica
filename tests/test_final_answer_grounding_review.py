@@ -35,6 +35,51 @@ def test_mutation_claim_requires_successful_mutating_tool():
     assert passed.ok is True
 
 
+def test_no_regression_claim_requires_broad_check_after_edit():
+    # Reproduces the qwen3 bug-02 false positive: the agent edits a shared
+    # function, runs ONLY the single test named in the prompt, then claims it
+    # broke nothing else. A scoped run cannot ground that claim.
+    ledger = EvidenceLedger(user_prompt="Fix the bug without breaking other behaviour.")
+    ledger.add("edit_file", {"path": "rangeutil.py"}, "1 replacement", ok=True)
+    ledger.add(
+        "bash",
+        {"command": "python -m pytest -q test_inclusive.py"},
+        "1 passed",
+        ok=True,
+    )
+
+    result = review_final_answer(
+        "I fixed the bug in rangeutil.py. No other functionality was broken.", ledger
+    )
+
+    assert result.ok is False
+    assert "no regressions" in result.instruction.lower()
+
+
+def test_no_regression_claim_grounded_by_full_suite_run():
+    ledger = EvidenceLedger(user_prompt="Fix the bug without breaking other behaviour.")
+    ledger.add("edit_file", {"path": "rangeutil.py"}, "1 replacement", ok=True)
+    ledger.add("bash", {"command": "python -m pytest -q"}, "2 passed", ok=True)
+
+    result = review_final_answer(
+        "I fixed the bug in rangeutil.py. No other functionality was broken.", ledger
+    )
+
+    assert result.ok is True
+
+
+def test_no_regression_phrasing_without_mutation_is_allowed():
+    # A pure Q&A answer that happens to mention "without breaking" must not be
+    # blocked — the rule only guards claims made after an actual code change.
+    ledger = EvidenceLedger(user_prompt="How can I refactor without breaking anything?")
+
+    result = review_final_answer(
+        "You can refactor without breaking other behaviour by adding tests first.", ledger
+    )
+
+    assert result.ok is True
+
+
 def test_loop_reviews_final_answer_before_accepting_ungrounded_repo_claim():
     selection = default_selection("test:1b")
     selection.context_length = 1_000_000

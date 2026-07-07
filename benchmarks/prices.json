@@ -1,11 +1,537 @@
 {
-  "_comment": "Per-million-token USD prices used to derive cost from measured tokens (see docs/BENCHMARKING.md 4.2). All USD is imputed from tokens, not an invoice. Local/open models are priced at a reference hosted rate and clearly labelled 'imputed' in results. Update 'as_of' when prices change.",
-  "as_of": "2026-06-29",
-  "default": { "input_per_mtok": 0.0, "output_per_mtok": 0.0, "imputed": true },
+  "_comment": "Per-million-token USD prices used to derive cost from measured tokens (see docs/BENCHMARKING.md 4.2). All USD is imputed from tokens, not an invoice. Local/open models are priced at a reference hosted rate and clearly labelled 'imputed' in results. Sizes are parsed from the ollama tag or imputed from the catalog's min VRAM. Update 'as_of' when prices change.",
+  "as_of": "2026-07-07",
+  "default": {
+    "input_per_mtok": 0.0,
+    "output_per_mtok": 0.0,
+    "imputed": true
+  },
   "models": {
-    "qwen2.5-coder:32b": { "input_per_mtok": 0.18, "output_per_mtok": 0.18, "imputed": true, "source": "reference hosted rate for a 32B open model" },
-    "qwen2.5-coder:14b": { "input_per_mtok": 0.10, "output_per_mtok": 0.10, "imputed": true },
-    "qwen2.5-coder:7b": { "input_per_mtok": 0.07, "output_per_mtok": 0.07, "imputed": true },
-    "llama3.1:8b": { "input_per_mtok": 0.07, "output_per_mtok": 0.07, "imputed": true }
+    "gpt-5.5": {
+      "input_per_mtok": 1.25,
+      "output_per_mtok": 10.0,
+      "imputed": true,
+      "source": "frontier hosted reference rate (estimate; not in local catalog)"
+    },
+    "qwen2.5-coder:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a 32B open model"
+    },
+    "qwen2.5-coder:14b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true
+    },
+    "qwen2.5-coder:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true
+    },
+    "bakllava": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference rate imputed from 4.7GB min VRAM (~7.8B)"
+    },
+    "codellama:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "deepseek-coder:6.7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~6.7B open model"
+    },
+    "deepseek-r1:14b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~14B open model"
+    },
+    "deepseek-r1:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~32B open model"
+    },
+    "deepseek-r1:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "falcon3:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "falcon:40b": {
+      "input_per_mtok": 0.35,
+      "output_per_mtok": 0.35,
+      "imputed": true,
+      "source": "reference hosted rate for a ~40B open model"
+    },
+    "falcon:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "gemma2:27b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~27B open model"
+    },
+    "gemma2:2b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~2B open model"
+    },
+    "gemma2:9b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~9B open model"
+    },
+    "gemma3:4b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~4B open model"
+    },
+    "gemma4": {
+      "input_per_mtok": 0.13,
+      "output_per_mtok": 0.13,
+      "imputed": true,
+      "source": "reference rate imputed from 9.0GB min VRAM (~15.0B)"
+    },
+    "glm-4.5v": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 6.0GB min VRAM (~10.0B)"
+    },
+    "glm-4.6v": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 6.0GB min VRAM (~10.0B)"
+    },
+    "glm4:9b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~9B open model"
+    },
+    "granite3.2-vision": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference rate imputed from 2.0GB min VRAM (~3.3B)"
+    },
+    "granite3.3:8b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~8B open model"
+    },
+    "hermes3:8b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~8B open model"
+    },
+    "internvl2.5": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 5.0GB min VRAM (~8.3B)"
+    },
+    "llama3.1:405b": {
+      "input_per_mtok": 1.5,
+      "output_per_mtok": 1.5,
+      "imputed": true,
+      "source": "reference hosted rate for a ~405B open model"
+    },
+    "llama3.1:70b": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~70B open model"
+    },
+    "llama3.2-vision": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 7.8GB min VRAM (~13.0B)"
+    },
+    "llama3.2:1b": {
+      "input_per_mtok": 0.02,
+      "output_per_mtok": 0.02,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1B open model"
+    },
+    "llama3.2:3b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3B open model"
+    },
+    "llama3.3:70b": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~70B open model"
+    },
+    "llama3:8b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~8B open model"
+    },
+    "llama4:maverick": {
+      "input_per_mtok": 1.5,
+      "output_per_mtok": 1.5,
+      "imputed": true,
+      "source": "reference hosted rate for a ~400B open model"
+    },
+    "llama4:scout": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~109B open model"
+    },
+    "llava": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference rate imputed from 4.7GB min VRAM (~7.8B)"
+    },
+    "llava-onevision": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 5.0GB min VRAM (~8.3B)"
+    },
+    "minicpm-v": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3.8B open model"
+    },
+    "mistral-nemo:12b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~12B open model"
+    },
+    "mistral:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "mixtral:8x22b": {
+      "input_per_mtok": 1.0,
+      "output_per_mtok": 1.0,
+      "imputed": true,
+      "source": "reference hosted rate for a ~176B open model"
+    },
+    "mixtral:8x7b": {
+      "input_per_mtok": 0.35,
+      "output_per_mtok": 0.35,
+      "imputed": true,
+      "source": "reference hosted rate for a ~56B open model"
+    },
+    "moondream": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference rate imputed from 1.7GB min VRAM (~2.8B)"
+    },
+    "openchat:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "phi3.5:3.8b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3.8B open model"
+    },
+    "phi3:mini": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3.8B open model"
+    },
+    "phi4-multimodal": {
+      "input_per_mtok": 0.13,
+      "output_per_mtok": 0.13,
+      "imputed": true,
+      "source": "reference rate imputed from 8.5GB min VRAM (~14.2B)"
+    },
+    "phi4:14b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~14B open model"
+    },
+    "qwen2.5-coder:1.5b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.5B open model"
+    },
+    "qwen2.5-coder:3b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3B open model"
+    },
+    "qwen2.5:1.5b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.5B open model"
+    },
+    "qwen2.5:14b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~14B open model"
+    },
+    "qwen2.5:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~32B open model"
+    },
+    "qwen2.5:3b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3B open model"
+    },
+    "qwen2.5:72b": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~72B open model"
+    },
+    "qwen2.5:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "qwen2.5vl:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~32B open model"
+    },
+    "qwen2.5vl:3b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3B open model"
+    },
+    "qwen2.5vl:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "qwen2:1.5b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.5B open model"
+    },
+    "qwen2:72b": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~72B open model"
+    },
+    "qwen2:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "qwen3-coder:30b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~30B open model"
+    },
+    "qwen3-vl": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference rate imputed from 6.1GB min VRAM (~10.2B)"
+    },
+    "qwen3.5:4b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~4B open model"
+    },
+    "qwen3.5:9b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~9B open model"
+    },
+    "qwen3.6:27b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~27B open model"
+    },
+    "qwen3:0.6b": {
+      "input_per_mtok": 0.02,
+      "output_per_mtok": 0.02,
+      "imputed": true,
+      "source": "reference hosted rate for a ~0.6B open model"
+    },
+    "qwen3:1.7b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.7B open model"
+    },
+    "qwen3:14b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~14B open model"
+    },
+    "qwen3:235b": {
+      "input_per_mtok": 1.0,
+      "output_per_mtok": 1.0,
+      "imputed": true,
+      "source": "reference hosted rate for a ~235B open model"
+    },
+    "qwen3:30b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~30B open model"
+    },
+    "qwen3:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~32B open model"
+    },
+    "qwen3:4b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~4B open model"
+    },
+    "qwen3:8b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~8B open model"
+    },
+    "qwen:0.5b": {
+      "input_per_mtok": 0.02,
+      "output_per_mtok": 0.02,
+      "imputed": true,
+      "source": "reference hosted rate for a ~0.5B open model"
+    },
+    "qwen:1.8b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.8B open model"
+    },
+    "qwen:110b": {
+      "input_per_mtok": 0.6,
+      "output_per_mtok": 0.6,
+      "imputed": true,
+      "source": "reference hosted rate for a ~110B open model"
+    },
+    "qwen:32b": {
+      "input_per_mtok": 0.18,
+      "output_per_mtok": 0.18,
+      "imputed": true,
+      "source": "reference hosted rate for a ~32B open model"
+    },
+    "qwen:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "solar:10.7b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~10.7B open model"
+    },
+    "starcoder2:15b": {
+      "input_per_mtok": 0.13,
+      "output_per_mtok": 0.13,
+      "imputed": true,
+      "source": "reference hosted rate for a ~15B open model"
+    },
+    "starcoder2:3b": {
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.05,
+      "imputed": true,
+      "source": "reference hosted rate for a ~3B open model"
+    },
+    "starcoder2:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "tinyllama:1.1b": {
+      "input_per_mtok": 0.03,
+      "output_per_mtok": 0.03,
+      "imputed": true,
+      "source": "reference hosted rate for a ~1.1B open model"
+    },
+    "vicuna:13b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~13B open model"
+    },
+    "vicuna:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    },
+    "yi:9b": {
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.1,
+      "imputed": true,
+      "source": "reference hosted rate for a ~9B open model"
+    },
+    "zephyr:7b": {
+      "input_per_mtok": 0.07,
+      "output_per_mtok": 0.07,
+      "imputed": true,
+      "source": "reference hosted rate for a ~7B open model"
+    }
   }
 }

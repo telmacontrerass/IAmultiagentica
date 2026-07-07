@@ -447,6 +447,11 @@ def _clean_table_rows(value: Any, index: int) -> tuple[list[list[str]] | None, s
 
 
 def _clean_string_list(value: Any, field: str, index: int) -> tuple[list[str] | None, str | None]:
+    if isinstance(value, str):
+        # A model sometimes emits a single string where a list of items is
+        # expected (e.g. two_columns "left"). Split on newlines when present,
+        # otherwise treat the whole string as one item, rather than erroring.
+        value = [line for line in value.splitlines() if line.strip()] or [value]
     if not isinstance(value, list):
         return None, f"Error: slide {index} {field} must be a list"
     if len(value) > MAX_BULLETS:

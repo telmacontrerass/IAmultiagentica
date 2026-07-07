@@ -41,7 +41,8 @@ coverage.xml
 # Runtime outputs
 runs/
 evals/results/
-benchmarks/results/
+benchmarks/results/*
+!benchmarks/results/benchmark_report.xlsx
 artifacts/
 tmp/
 ci2lab_uploads/

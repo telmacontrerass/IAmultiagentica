@@ -48,6 +48,15 @@ def normalize_args_for_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     Returns:
         A new normalized argument mapping.
     """
+    if not isinstance(args, dict):
+        # A model sometimes emits a bare JSON array/scalar as a tool's whole
+        # argument payload (e.g. ```todo_write\n[{...}]```). Wrap it into the
+        # tool's primary argument instead of crashing on ``.items()``; unknown
+        # shapes collapse to ``{}`` so the tool reports a clean missing-argument
+        # error rather than raising ``AttributeError``.
+        if isinstance(args, list) and name == "todo_write":
+            return {"todos": args}
+        return {}
     cleaned = {k: v for k, v in args.items() if v is not None}
     for key in _QUOTED_STRING_KEYS:
         if key in cleaned:
