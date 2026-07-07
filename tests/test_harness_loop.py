@@ -63,6 +63,216 @@ def test_spanish_prompts_still_produce_english_progress_labels():
     )
 
 
+def test_local_pdf_to_pptx_loop_accepts_read_document_then_write_pptx():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+    read = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "read_document",
+                    "arguments": '{"path": "informe.pdf"}',
+                },
+            }
+        ],
+    )
+    write = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {
+                    "name": "write_pptx",
+                    "arguments": (
+                        '{"output_path": "outputs/informe.pptx", "title": "Informe", '
+                        '"slides": [{"type": "cover", "title": "Informe"}, '
+                        '{"type": "bullets", "title": "Resumen", "bullets": ["Dato del PDF"]}]}'
+                    ),
+                },
+            }
+        ],
+    )
+    final = LLMResponse(content="Created outputs/informe.pptx.", tool_calls=[])
+    executed: list[str] = []
+
+    def fake_execute(call: ToolCall, _config: AgentConfig) -> ToolResult:
+        executed.append(call.name)
+        if call.name == "read_document":
+            return ToolResult(
+                tool_name="read_document",
+                content="[PDF text] Dato del PDF",
+                is_error=False,
+                call_id=call.call_id,
+            )
+        return ToolResult(
+            tool_name="write_pptx",
+            content='{"written_file": "outputs/informe.pptx", "slide_count": 2}',
+            is_error=False,
+            call_id=call.call_id,
+            outcome="approved",
+        )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [read, write, final]
+        result = run_agent(
+            "Crea una presentaci\u00f3n PowerPoint editable a partir del PDF local informe.pdf",
+            selection,
+            config=config,
+        )
+
+    assert executed == ["read_document", "write_pptx"]
+    assert "outputs/informe.pptx" in result
+
+
+def test_write_pptx_success_for_requested_output_finalizes_without_retry():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+    write = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "write_pptx",
+                    "arguments": (
+                        '{"output_path": "demo_presentacion.pptx", "title": "Demo", '
+                        '"slides": [{"type": "cover", "title": "Demo"}, '
+                        '{"type": "bullets", "title": "Resumen", "bullets": ["Dato real"]}]}'
+                    ),
+                },
+            }
+        ],
+    )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="write_pptx",
+                content='{"written_file": "demo_presentacion.pptx", "slide_count": 2}',
+                is_error=False,
+                call_id="c1",
+                outcome="approved",
+            ),
+        ) as exec_mock,
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [write]
+        result = run_agent(
+            "Crea una presentacion PowerPoint desde informe.pdf. "
+            "Guarda el resultado como demo_presentacion.pptx.",
+            selection,
+            config=config,
+        )
+
+    assert client.chat.call_count == 1
+    assert exec_mock.call_count == 1
+    assert "demo_presentacion.pptx" in result
+    assert "write_pptx" in result
+
+
+def test_write_pptx_placeholder_document_content_gets_nudged_before_finalizing():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        verify_final_answer=False,
+    )
+    placeholder_write = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c1",
+                "function": {
+                    "name": "write_pptx",
+                    "arguments": (
+                        '{"output_path": "demo_presentacion.pptx", "title": "Demo", '
+                        '"slides": [{"type": "cover", "title": "Demo"}, '
+                        '{"type": "bullets", "title": "Contenido", '
+                        '"bullets": ["Punto 1", "Punto 2"]}]}'
+                    ),
+                },
+            }
+        ],
+    )
+    corrected_write = LLMResponse(
+        content="",
+        tool_calls=[
+            {
+                "id": "c2",
+                "function": {
+                    "name": "write_pptx",
+                    "arguments": (
+                        '{"output_path": "demo_presentacion.pptx", "title": "Demo", '
+                        '"overwrite": true, '
+                        '"slides": [{"type": "cover", "title": "Demo"}, '
+                        '{"type": "bullets", "title": "Coste de hardware", '
+                        '"bullets": ["H100/H200 condicionan el presupuesto", '
+                        '"La memoria disponible limita los modelos grandes"]}]}'
+                    ),
+                },
+            }
+        ],
+    )
+    executed_args: list[dict] = []
+
+    def fake_execute(call: ToolCall, _config: AgentConfig) -> ToolResult:
+        executed_args.append(call.arguments)
+        return ToolResult(
+            tool_name="write_pptx",
+            content='{"written_file": "demo_presentacion.pptx", "slide_count": 2}',
+            is_error=False,
+            call_id=call.call_id,
+            outcome="approved",
+        )
+
+    with (
+        patch("ci2lab.harness.query.loop.LLMClient") as MockClient,
+        patch("ci2lab.harness.query.loop.execute_tool", side_effect=fake_execute),
+    ):
+        client = MockClient.return_value
+        client.chat.side_effect = [placeholder_write, corrected_write]
+        result = run_agent(
+            "Crea una presentacion PowerPoint editable a partir del PDF local informe.pdf. "
+            "Usa unicamente el contenido del documento. "
+            "Guarda el resultado como demo_presentacion.pptx.",
+            selection,
+            config=config,
+        )
+
+    second_turn_messages = client.chat.call_args_list[1].args[0]
+    assert any(
+        m.get("role") == "user"
+        and "Use concrete facts/headings/terms" in str(m.get("content", ""))
+        for m in second_turn_messages
+        if isinstance(m, dict)
+    )
+    assert len(executed_args) == 2
+    assert executed_args[1]["overwrite"] is True
+    assert "demo_presentacion.pptx" in result
+
+
 def test_model_progress_label_explains_later_rounds():
     assert _model_progress_label("fix this test", 1) == "Planning the code change..."
     assert (

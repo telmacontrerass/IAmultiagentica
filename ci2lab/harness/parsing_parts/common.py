@@ -24,6 +24,14 @@ NAME_MAP = {
     "web_search_query": "web_search",
     "internet_search": "web_search",
     "todo": "todo_write",
+    "pptx": "write_pptx",
+    "powerpoint": "write_pptx",
+    "presentation": "write_pptx",
+    "deck": "write_pptx",
+    "slides": "write_pptx",
+    "diapositivas": "write_pptx",
+    "presentacion": "write_pptx",
+    "presentaci\u00f3n": "write_pptx",
     "notebook": "notebook_edit",
     "git": "git_status",
     # Listing/search synonyms: different models (and the allow-lists of
@@ -177,7 +185,19 @@ def args_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     skip_keys = {"name", "tool", "function"}
     if isinstance(payload.get("command"), str) and command_field_as_tool_name(payload):
         skip_keys.add("command")
-    if any(k in payload for k in ("path", "content", "command", "pattern", "old_string")):
+    if any(
+        k in payload
+        for k in (
+            "path",
+            "content",
+            "command",
+            "pattern",
+            "old_string",
+            "output_path",
+            "slides",
+            "title",
+        )
+    ):
         return {k: v for k, v in payload.items() if k not in skip_keys}
     return {}
 
@@ -202,6 +222,13 @@ def infer_tool_from_bare_args(obj: dict[str, Any]) -> str | None:
         return "apply_patch"
     if "content" in keys and "path" in keys:
         return "write_file"
+    output_path = obj.get("output_path") or obj.get("path") or obj.get("output")
+    if (
+        isinstance(output_path, str)
+        and output_path.strip().lower().endswith(".pptx")
+        and "slides" in keys
+    ):
+        return "write_pptx"
     if "url" in keys or "uri" in keys:
         return "web_fetch"
     if "pattern" in keys:

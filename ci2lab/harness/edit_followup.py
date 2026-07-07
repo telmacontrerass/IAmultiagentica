@@ -15,6 +15,10 @@ _FILE_IN_PROMPT_RE = re.compile(
     r"(?P<path>[^\s`\"']+\.(?:py|md|txt|json|yaml|yml))\b",
     re.IGNORECASE,
 )
+_LOCAL_DOCUMENT_IN_PROMPT_RE = re.compile(
+    r"(?P<path>[^\s`\"']+\.(?:pdf|docx|pptx|md|txt))\b",
+    re.IGNORECASE,
+)
 
 EditSignature = tuple[str, str, str]
 
@@ -32,6 +36,21 @@ _SUCCESS_HINT = (
     "names a failing test, command, or expected behaviour, run it now and let "
     "the real output decide. Report done only after that check passes — and if "
     "it fails, keep fixing instead of finishing."
+)
+_PPTX_SHAPE_HINT = (
+    "The write_pptx slide payload was invalid. Build a minimal valid deck first: "
+    "use a `cover` slide with `title`, and `bullets` slides with `title` and a "
+    "non-empty `bullets` list. Do not use unsupported slide types."
+)
+_PPTX_AGENDA_HINT = (
+    "The write_pptx slide payload used unsupported slide type `agenda`. "
+    "Represent an agenda as `type: \"bullets\"` with `title: \"Agenda\"` and "
+    "the agenda items in `bullets`. Safe minimal slide types are `cover` and "
+    "`bullets`."
+)
+_DID_YOU_MEAN_RE = re.compile(
+    r"Did you mean:\s*(?:`([^`]+)`|\"([^\"]+)\"|'([^']+)'|([^\s,;]+))",
+    re.IGNORECASE,
 )
 
 
@@ -145,6 +164,14 @@ def _has(content: str, *needles: str) -> bool:
     return any(needle in content for needle in needles)
 
 
+def _suggested_path_from_error(content: str) -> str | None:
+    match = _DID_YOU_MEAN_RE.search(content)
+    if not match:
+        return None
+    suggestion = next((group for group in match.groups() if group), None)
+    return suggestion.rstrip(".,") if suggestion else None
+
+
 def process_edit_round(
     calls: list[ToolCall],
     results: list[ToolResult],
@@ -174,6 +201,7 @@ def process_edit_round(
     had_redundant_retry = False
     mentioned = _FILE_IN_PROMPT_RE.findall(user_prompt)
     mentioned_path = mentioned[0] if mentioned else None
+    mentioned_document = next(iter(_LOCAL_DOCUMENT_IN_PROMPT_RE.findall(user_prompt)), None)
 
     for call, result in zip(calls, results, strict=False):
         sig = edit_signature(call)
@@ -183,10 +211,39 @@ def process_edit_round(
 
         if not result.is_error:
             continue
-        if result.tool_name not in {"edit_file", "write_file", "apply_patch"}:
+
+        suggested_path = _suggested_path_from_error(result.content)
+        if suggested_path:
+            hints.append(
+                f"The previous file path was wrong. Use exactly `{suggested_path}` "
+                "in the next tool call; do not retry the missing path."
+            )
+            continue
+
+        if result.tool_name not in {"edit_file", "write_file", "apply_patch", "write_pptx"}:
             continue
 
         content = result.content
+        if result.tool_name == "write_pptx":
+            if _has(
+                content,
+                "slides must be a non-empty list",
+                "unsupported slide type",
+                "is required",
+                "must be a list",
+                "requires a non-empty",
+                "requires non-empty",
+            ):
+                hint = _PPTX_AGENDA_HINT if "agenda" in content.lower() else _PPTX_SHAPE_HINT
+                if mentioned_document:
+                    hint += (
+                        f" The user provided local document `{mentioned_document}`; call "
+                        "`read_document` on it first, then create the slide content from "
+                        "that extracted text before calling `write_pptx` again."
+                    )
+                hints.append(hint)
+                continue
+
         if _has(content, "does not exist"):
             hint = (
                 "The file path was wrong. Do not invent example paths like "

@@ -336,7 +336,7 @@ _DOCUMENT_SUMMARY_MARKERS = (
     "resumelo",
 )
 
-# Asking to convert/export a document.
+# Asking to convert/export/create a document artifact.
 _DOCUMENT_TRANSFORM_MARKERS = (
     "docx to pdf",
     "convert to pdf",
@@ -344,6 +344,56 @@ _DOCUMENT_TRANSFORM_MARKERS = (
     "export as pdf",
     "save as pdf",
     "convert document",
+)
+
+_DOCUMENT_ARTIFACT_MARKERS = (
+    "pptx",
+    "powerpoint",
+    "presentation",
+    "presentaci\u00f3n",
+    "presentaciÃ³n",
+    "presentacion",
+    "diapositivas",
+    "slides",
+    "deck",
+)
+
+_DOCUMENT_SOURCE_TO_ARTIFACT_MARKERS = (
+    "from pdf",
+    "from document",
+    "from a document",
+    "a partir del pdf",
+    "a partir de un pdf",
+    "a partir de una pdf",
+    "a partir de este documento",
+    "a partir del documento",
+    "a partir de un documento",
+    "a partir de una fuente",
+    "a partir de",
+    "desde pdf",
+    "desde un pdf",
+    "desde el pdf",
+    "desde documento",
+    "desde un documento",
+    "desde el documento",
+    "pdf local",
+    "local pdf",
+    "documento local",
+    "archivo local",
+    "local document",
+    "local file",
+)
+_LOCAL_DOCUMENT_PATH_RE = re.compile(r"\.(?:pdf|docx|pptx|md|txt)\b", re.IGNORECASE)
+_CODE_CONTEXT_MARKERS = (
+    ".py",
+    "script",
+    "python",
+    "codigo",
+    "cÃ³digo",
+    "code",
+    "bug",
+    "test",
+    "tests",
 )
 
 # Asking for explanation/analysis without file changes. Note: bare "analiza"
@@ -610,12 +660,17 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
             confidence="high",
         )
 
-    if _contains_any(text, _DOCUMENT_TRANSFORM_MARKERS):
+    document_artifact_requested = _contains_any(text, _DOCUMENT_ARTIFACT_MARKERS)
+    source_backed_artifact = document_artifact_requested and (
+        _contains_any(text, _DOCUMENT_SOURCE_TO_ARTIFACT_MARKERS)
+        or bool(_LOCAL_DOCUMENT_PATH_RE.search(text))
+    ) and not _contains_any(text, _CODE_CONTEXT_MARKERS)
+    if _contains_any(text, _DOCUMENT_TRANSFORM_MARKERS) or source_backed_artifact:
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.DOCUMENT_TRANSFORM,
             requires_write=True,
             allowed_phases=list(_FULL_FLOW),
-            reason="Prompt asks to convert/export a document into another format.",
+            reason="Prompt asks to convert/export/create a document artifact.",
             confidence="high",
         )
 

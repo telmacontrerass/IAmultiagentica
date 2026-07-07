@@ -88,10 +88,22 @@ Use for `.docx` files. The body is markdown; pandoc converts it to Word.
 
 ### write_pptx (create or overwrite a PowerPoint presentation)
 
-Use for editable `.pptx` files. The body MUST be a JSON object with `output_path`, `title`, and a non-empty `slides` list. Supported slide types are `cover`, `section`, `bullets`, `two_columns`, `table`, `quote`, `closing`, `metric_cards`, `comparison`, and `decision`. Optional `theme` fields: `font_family`, `title_font_size`, `body_font_size`, `primary_color`, `secondary_color`, `background_color`, `footer_text`, `slide_number`.
+Use for editable `.pptx` files, PowerPoint presentations, decks, slides, presentaciones, or diapositivas. If the presentation is based on a local PDF/DOCX/PPTX/Markdown/text document, call `read_document` first and build the slides from the extracted text. The body MUST be a JSON object with `output_path`, `title`, and a non-empty `slides` list. Supported slide types are `cover`, `section`, `bullets`, `two_columns`, `table`, `quote`, `closing`, `metric_cards`, `comparison`, and `decision`. Optional `theme` fields: `font_family`, `title_font_size`, `body_font_size`, `primary_color`, `secondary_color`, `background_color`, `footer_text`, `slide_number`.
 
 ```write_pptx
 {"output_path": "deck.pptx", "title": "Project Update", "theme": {"primary_color": "#2563EB", "footer_text": "CI2Lab", "slide_number": true}, "slides": [{"type": "cover", "title": "Project Update", "subtitle": "July status"}, {"type": "bullets", "title": "Highlights", "bullets": ["Milestone reached", "Next review scheduled"]}]}
+```
+
+Document-to-presentation example:
+
+```read_document
+report.pdf
+```
+
+Then, after reading the result:
+
+```write_pptx
+{"output_path": "outputs/report_summary.pptx", "title": "Report Summary", "slides": [{"type": "cover", "title": "Report Summary", "subtitle": "From report.pdf"}, {"type": "bullets", "title": "Agenda", "bullets": ["Context", "Findings", "Recommendations"]}, {"type": "bullets", "title": "Main Points", "bullets": ["Key finding from the document", "Important constraint from the document"]}, {"type": "bullets", "title": "Recommended Next Steps", "bullets": ["Action based on the document", "Follow-up decision"]}]}
 ```
 
 ### docx_to_pdf (convert Word to PDF)

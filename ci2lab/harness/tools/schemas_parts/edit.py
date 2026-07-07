@@ -52,7 +52,11 @@ EDIT_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "write_pptx",
             "description": (
-                "Create a real editable PowerPoint .pptx file from structured slides. "
+                "Create a real editable PowerPoint/PPTX presentation from structured slides. "
+                "Use when the user asks for PowerPoint, PPTX, presentation, deck, slides, "
+                "presentacion, presentación, or diapositivas. If the presentation is based "
+                "on a local PDF, DOCX, PPTX, Markdown, or text document, call `read_document` "
+                "first, then build structured slides and call `write_pptx`. "
                 "Supported slide types: cover, section, bullets, two_columns, table, "
                 "quote, closing, metric_cards, comparison, decision."
             ),

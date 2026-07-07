@@ -9,6 +9,7 @@ from ci2lab.harness.parsing import (
     resolve_tool_calls,
     strip_tool_markup,
 )
+from ci2lab.harness.parsing_parts.common import map_name
 
 
 def test_parse_fenced_bash():
@@ -53,6 +54,21 @@ def test_parse_fenced_pdf_to_docx_json_args():
     assert calls[0].name == "pdf_to_docx"
     assert calls[0].arguments["source"] == "Test/report.pdf"
     assert calls[0].arguments["output"] == "Test/report.docx"
+
+
+def test_pptx_aliases_map_to_write_pptx():
+    for alias in ("presentation", "pptx", "deck", "slides", "diapositivas", "presentacion"):
+        assert map_name(alias) == "write_pptx"
+
+
+def test_bare_json_pptx_payload_infers_write_pptx():
+    calls = parse_json_tool_objects(
+        '{"output_path": "outputs/deck.pptx", "title": "Deck", '
+        '"slides": [{"type": "cover", "title": "Deck"}]}'
+    )
+    assert len(calls) == 1
+    assert calls[0].name == "write_pptx"
+    assert calls[0].arguments["output_path"] == "outputs/deck.pptx"
 
 
 def test_parse_xml_invoke():

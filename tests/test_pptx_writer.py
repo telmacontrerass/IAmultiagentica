@@ -9,7 +9,7 @@ from unittest.mock import patch
 from pptx import Presentation
 
 from ci2lab.harness.tools.pptx_writer import write_pptx
-from ci2lab.harness.tools.registry import execute_tool
+from ci2lab.harness.tools.registry import execute_tool, get_function_schemas
 from ci2lab.harness.types import AgentConfig, ToolCall
 
 
@@ -58,6 +58,25 @@ def _assert_textbox_above(path: Path, upper_text: str, lower_text: str) -> None:
     _, upper_top, _, upper_height = _text_shape_bounds(path, upper_text)
     _, lower_top, _, _ = _text_shape_bounds(path, lower_text)
     assert upper_top + upper_height <= lower_top
+
+
+def test_write_pptx_schema_teaches_presentation_flow() -> None:
+    schema = next(
+        item for item in get_function_schemas() if item["function"]["name"] == "write_pptx"
+    )
+    description = schema["function"]["description"]
+    for phrase in ("PowerPoint", "PPTX", "presentation", "slides", "deck", "read_document"):
+        assert phrase in description
+
+
+def test_fenced_tools_prompt_has_document_to_pptx_example() -> None:
+    prompt = Path("ci2lab/harness/prompts/fenced_tools.md").read_text(encoding="utf-8")
+    read_pos = prompt.index("```read_document\nreport.pdf")
+    write_pos = prompt.index("```write_pptx", read_pos)
+    assert read_pos < write_pos
+    assert "Document-to-presentation example" in prompt
+    assert '"title": "Agenda"' in prompt
+    assert '"type": "agenda"' not in prompt
 
 
 def test_write_pptx_minimal_cover_and_bullets(tmp_path: Path) -> None:

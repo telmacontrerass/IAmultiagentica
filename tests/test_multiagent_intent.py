@@ -77,6 +77,47 @@ def test_document_transform_requires_full_flow():
     assert "coder" in decision.allowed_phases
 
 
+def test_powerpoint_from_local_pdf_is_document_transform_not_code_change():
+    decision = classify_multiagent_intent(
+        "Crea una presentaci\u00f3n PowerPoint editable a partir del PDF local informe.pdf"
+    )
+    assert decision.intent is MultiAgentIntent.DOCUMENT_TRANSFORM
+    assert decision.requires_write is True
+    assert "coder" in decision.allowed_phases
+
+    rich = classify_orchestration_decision(
+        "Crea una presentaci\u00f3n PowerPoint editable a partir del PDF local informe.pdf"
+    )
+    assert rich.task_type == "file_operation"
+    assert "read_fs" in rich.required_capabilities
+    assert "write_fs" in rich.required_capabilities
+    assert "edit_code" not in rich.required_capabilities
+
+
+def test_local_document_slides_are_document_transform():
+    decision = classify_multiagent_intent("Haz diapositivas a partir de este documento local")
+    assert decision.intent is MultiAgentIntent.DOCUMENT_TRANSFORM
+    assert decision.requires_write is True
+
+
+def test_code_that_generates_pptx_stays_code_change():
+    decision = classify_multiagent_intent("Crea un script Python que genere un PPTX")
+    assert decision.intent is MultiAgentIntent.CODE_CHANGE
+    assert decision.requires_write is True
+
+
+def test_pptx_writer_bugfix_stays_code_change():
+    decision = classify_multiagent_intent("Arregla el bug en pptx_writer.py")
+    assert decision.intent is MultiAgentIntent.CODE_CHANGE
+    assert decision.requires_write is True
+
+
+def test_write_pptx_tests_stay_code_change():
+    decision = classify_multiagent_intent("A\u00f1ade tests para write_pptx")
+    assert decision.intent is MultiAgentIntent.CODE_CHANGE
+    assert decision.requires_write is True
+
+
 def test_read_only_answer():
     decision = classify_multiagent_intent("Explain what this function does, without editing.")
     assert decision.intent is MultiAgentIntent.READ_ONLY_ANSWER

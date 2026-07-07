@@ -24,6 +24,83 @@ def test_edit_followup_mentions_user_file_when_path_missing():
     assert "src/main.py" in followup
 
 
+def test_write_pptx_invalid_slides_followup_mentions_minimal_contract():
+    followup = process_edit_round(
+        [
+            ToolCall(
+                name="write_pptx",
+                arguments={"output_path": "outputs/deck.pptx", "title": "Deck", "slides": []},
+            )
+        ],
+        [
+            ToolResult(
+                tool_name="write_pptx",
+                content="Error: slides must be a non-empty list",
+                is_error=True,
+            )
+        ],
+        cwd=".",
+        user_prompt="Crea una presentacion desde informe.pdf",
+        completed_edits=set(),
+    )
+    assert followup is not None
+    assert "cover" in followup
+    assert "bullets" in followup
+    assert "read_document" in followup
+    assert "informe.pdf" in followup
+
+
+def test_write_pptx_unsupported_agenda_followup_suggests_bullets():
+    followup = process_edit_round(
+        [
+            ToolCall(
+                name="write_pptx",
+                arguments={
+                    "output_path": "outputs/deck.pptx",
+                    "title": "Deck",
+                    "slides": [{"type": "agenda", "title": "Agenda"}],
+                },
+            )
+        ],
+        [
+            ToolResult(
+                tool_name="write_pptx",
+                content="Error: unsupported slide type at slide 2: agenda",
+                is_error=True,
+            )
+        ],
+        cwd=".",
+        user_prompt="Crea una presentacion desde informe.pdf",
+        completed_edits=set(),
+    )
+    assert followup is not None
+    assert "`agenda`" in followup
+    assert 'type: "bullets"' in followup
+    assert "Safe minimal slide types" in followup
+
+
+def test_file_not_found_did_you_mean_followup_uses_exact_suggestion():
+    followup = process_edit_round(
+        [ToolCall(name="read_document", arguments={"path": "missing.pdf"})],
+        [
+            ToolResult(
+                tool_name="read_document",
+                content=(
+                    "Error: file not found: missing.pdf. "
+                    "Did you mean: investigacion_hardware_llm_grandes_presupuesto_pdf.pdf"
+                ),
+                is_error=True,
+            )
+        ],
+        cwd=".",
+        user_prompt="Lee missing.pdf",
+        completed_edits=set(),
+    )
+    assert followup is not None
+    assert "`investigacion_hardware_llm_grandes_presupuesto_pdf.pdf`" in followup
+    assert "do not retry" in followup
+
+
 def test_success_followup_after_edit_file(tmp_path: Path):
     target = tmp_path / "sample.py"
     target.write_text("line three\n", encoding="utf-8")

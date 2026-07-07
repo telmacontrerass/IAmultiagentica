@@ -254,6 +254,98 @@ def _contract_final_text(expected_file: str) -> str:
     )
 
 
+_PPTX_OUTPUT_RE = re.compile(r"[`\"']?([A-Za-z0-9_./\\-]+\.pptx)[`\"']?", re.IGNORECASE)
+
+
+def _requested_pptx_output_from_prompt(user_prompt: str) -> str | None:
+    """Return the explicit PPTX artifact requested by the user, if any."""
+    matches = _PPTX_OUTPUT_RE.findall(user_prompt or "")
+    return matches[-1].rstrip(".,;:") if matches else None
+
+
+def _successful_requested_pptx_output(
+    calls: list[ToolCall],
+    results: list[ToolResult],
+    *,
+    cwd: str,
+    requested_output: str | None,
+) -> str | None:
+    """Return the matching output path after a successful write_pptx call."""
+    if not requested_output:
+        return None
+    expected_path = _contract_path(requested_output, cwd)
+    if expected_path is None:
+        return None
+    for call, result in zip(calls, results, strict=False):
+        if call.name != "write_pptx" or result.is_error or result.outcome == "already_satisfied":
+            continue
+        output_path = call.arguments.get("output_path") or call.arguments.get("path")
+        if _contract_path(output_path, cwd) == expected_path:
+            return str(output_path or requested_output)
+    return None
+
+
+def _pptx_final_text(output_path: str) -> str:
+    return (
+        f"Created {output_path}.\n"
+        "Tool used: write_pptx\n"
+        "Validation: write_pptx reported success."
+    )
+
+
+_DOCUMENT_ONLY_RE = re.compile(
+    r"(usa\s+(?:unic|\u00fanic)(?:a|\u00e1)mente\s+el\s+contenido\s+del\s+documento|"
+    r"use\s+only\s+the\s+(?:document|source)\s+content|"
+    r"only\s+the\s+(?:document|source)\s+content)",
+    re.IGNORECASE,
+)
+_PPTX_PLACEHOLDER_TEXT_RE = re.compile(
+    r"(\bpunto\s*\d+\b|\bpoint\s*\d+\b|\bbullet\s*\d+\b|"
+    r"lorem\s+ipsum|\bTBD\b|\bTODO\b|placeholder)",
+    re.IGNORECASE,
+)
+_PPTX_PLACEHOLDER_NUDGE = (
+    "The PPTX was written, but its slide content contains placeholder text. "
+    "Use concrete facts/headings/terms from the `read_document` result; do not "
+    "use placeholder bullets. Recreate the requested PPTX with `overwrite=true` "
+    "and real content from the document."
+)
+
+
+def _iter_strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for item in value.values():
+            strings.extend(_iter_strings(item))
+        return strings
+    if isinstance(value, list):
+        strings = []
+        for item in value:
+            strings.extend(_iter_strings(item))
+        return strings
+    return []
+
+
+def _pptx_placeholder_followup(
+    calls: list[ToolCall],
+    results: list[ToolResult],
+    *,
+    user_prompt: str,
+) -> str | None:
+    """Nudge document-only PPTX writes away from obvious placeholder content."""
+    if not _DOCUMENT_ONLY_RE.search(user_prompt or ""):
+        return None
+    for call, result in zip(calls, results, strict=False):
+        if call.name != "write_pptx" or result.is_error:
+            continue
+        slide_strings = _iter_strings(call.arguments.get("slides"))
+        if any(_PPTX_PLACEHOLDER_TEXT_RE.search(text) for text in slide_strings):
+            return _PPTX_PLACEHOLDER_NUDGE
+    return None
+
+
 _UNPARSED_FENCED_HINT = (
     "Your previous tool call was not executed. Use a fenced block with the tool "
     "name as the tag, e.g.\n"
@@ -314,6 +406,18 @@ _UNGROUNDED_ANSWER_NUDGE = (
     "conversation, restate it. If the request truly needs no workspace access, "
     "answer it directly.\n\n"
     "Original request: {user_prompt}"
+)
+_DESCRIBED_NOT_WRITTEN_PPTX_NUDGE = (
+    "You described the presentation but did not create it â€” nothing was written "
+    "to disk. The request needs an editable PowerPoint/PPTX file, so call "
+    "`write_pptx` now with `output_path`, `title`, and a non-empty `slides` list. "
+    "If it is based on a local PDF/DOCX/PPTX/Markdown/text document, call "
+    "`read_document` first and build the slides from that extracted text."
+)
+_PPTX_REQUEST_RE = re.compile(
+    r"(\.pptx\b|powerpoint|presentation|deck|slides|diapositivas|"
+    r"presentacion|presentaci\u00f3n)",
+    re.IGNORECASE,
 )
 # Fires when the model tries to finish while its own task plan still has open
 # steps — the "stops after step 1" failure. Bounded so a model that genuinely
@@ -1023,6 +1127,7 @@ def run_agent(
     contract_expected = _contract_expected_from_prompt(user_prompt)
     contract_write_seen = False
     contract_readback_seen = False
+    requested_pptx_output = _requested_pptx_output_from_prompt(user_prompt)
     required_evidence_tools = set(cfg.required_evidence_tools or ())
     required_evidence_seen: set[str] = set()
 
@@ -1244,7 +1349,12 @@ def run_agent(
                         "model to apply it.[/yellow]"
                     )
                     append_assistant_turn(history, final_text or content)
-                    history.append({"role": "user", "content": _DESCRIBED_NOT_WRITTEN_NUDGE})
+                    nudge = (
+                        _DESCRIBED_NOT_WRITTEN_PPTX_NUDGE
+                        if _PPTX_REQUEST_RE.search(user_prompt)
+                        else _DESCRIBED_NOT_WRITTEN_NUDGE
+                    )
+                    history.append({"role": "user", "content": nudge})
                     maybe_save_session(cfg, history, selection)
                     continue
                 # The request refers to this workspace (or asks for a change),
@@ -1620,6 +1730,16 @@ def run_agent(
                     maybe_save_session(cfg, history, selection)
                     break
 
+            pptx_placeholder_followup = _pptx_placeholder_followup(
+                calls,
+                results,
+                user_prompt=user_prompt,
+            )
+            if pptx_placeholder_followup:
+                history.append({"role": "user", "content": pptx_placeholder_followup})
+                maybe_save_session(cfg, history, selection)
+                continue
+
             if required_evidence_tools and required_evidence_tools <= required_evidence_seen:
                 final_text = cfg.evidence_completion_verdict or (
                     "PASS: required evidence tools completed successfully."
@@ -1628,6 +1748,20 @@ def run_agent(
                 append_assistant_turn(history, final_text)
                 maybe_save_session(cfg, history, selection)
                 break
+
+            if not required_evidence_tools or required_evidence_tools <= required_evidence_seen:
+                completed_pptx = _successful_requested_pptx_output(
+                    calls,
+                    results,
+                    cwd=cfg.cwd,
+                    requested_output=requested_pptx_output,
+                )
+                if completed_pptx:
+                    final_text = _pptx_final_text(completed_pptx)
+                    console.print(final_text)
+                    append_assistant_turn(history, final_text)
+                    maybe_save_session(cfg, history, selection)
+                    break
 
             # Error-streak cutoff: even when arguments change each round (so the
             # signature detector does not see a loop), if every tool fails for
