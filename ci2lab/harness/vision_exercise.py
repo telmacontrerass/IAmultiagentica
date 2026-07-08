@@ -8,10 +8,16 @@ problems when they affect the final answer.
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ci2lab.harness.skills.loader import get_skill, load_skills
+
+if TYPE_CHECKING:
+    from ci2lab.contracts.types import ModelSelection
+
+logger = logging.getLogger(__name__)
 
 REVIEW_HANDWRITTEN_EXERCISE_SKILL = "review_handwritten_exercise"
 TRANSCRIBE_DOCUMENT_SKILL = "transcribe_document"
@@ -29,6 +35,111 @@ EXERCISE_TRANSCRIPTION_PROMPT = (
     "- Mark illegible spans as [illegible]\n"
     "- Preserve line breaks between steps"
 )
+
+# Focused clean-up pass over a raw vision transcription. This is deliberately NOT
+# the review skill: it fixes how the page was *read*, never the author's work.
+CLEAN_TRANSCRIPTION_SYSTEM = (
+    "You are a careful transcription cleaner. You output only the corrected "
+    "transcription — never an analysis, audit, or solution."
+)
+CLEAN_TRANSCRIPTION_PROMPT = (
+    "The text below is an automatic transcription of a handwritten document made "
+    "by a vision model, which sometimes misreads a character. Correct ONLY "
+    "obvious recognition mistakes, using the surrounding context to decide:\n"
+    "- a digit read as a letter or vice versa (e.g. a coefficient shown as 'n7' "
+    "where the equation clearly needs '47'; 'O'<->'0', 'l'/'I'<->'1', 'S'<->'5', "
+    "'B'<->'8', 'Z'<->'2')\n"
+    "- a misread operator, a dropped subscript/superscript, or a split token "
+    "('C 8 H 18' -> 'C8H18')\n\n"
+    "Strict rules:\n"
+    "- Do NOT solve, evaluate, grade, check, or comment on the work. Do NOT add "
+    "an audit, a corrected solution, a summary, or any new section or heading.\n"
+    "- Do NOT change the author's actual numbers, choices, or math even if they "
+    "look wrong — you fix how the page was READ, not the author's work.\n"
+    "- If a token is genuinely ambiguous, keep both readings as '[4.7 or 47?]'.\n"
+    "- Preserve the exact structure, headings, order, and line breaks.\n"
+    "- Output ONLY the corrected transcription, with no preamble or explanation.\n\n"
+    "Transcription to clean:\n"
+)
+
+# If the model returns any of these it audited/graded instead of transcribing;
+# the raw transcription is kept rather than exporting an audit.
+_AUDIT_MARKERS = (
+    "## audit",
+    "corrected solution",
+    "material issues",
+    "affects result",
+    "likely source",
+    "non-propagating",
+)
+
+
+def clean_transcription(
+    raw: str,
+    selection: ModelSelection,
+    *,
+    timeout: float = 480.0,
+) -> str:
+    """Fix obvious vision/OCR glyph misreads in a raw transcription.
+
+    Runs one focused, tool-free reasoning-model call whose only job is to repair
+    character-recognition slips (e.g. a coefficient read as ``n7`` where the
+    equation needs ``47``) from surrounding context — never solving, grading, or
+    restructuring the work. The narrow prompt keeps a weak model on task where
+    the in-loop transcribe skill drifts into an audit.
+
+    The call is best-effort: on any error, an empty answer, an answer that looks
+    like an audit/summary, or one whose length is wildly different from the
+    input, the ``raw`` text is returned unchanged so the export never loses the
+    transcription or gains an audit.
+
+    Args:
+        raw: The assembled per-page vision transcription.
+        selection: The active model selection; a tool-free copy drives the pass.
+        timeout: HTTP timeout in seconds for the clean-up call.
+
+    Returns:
+        The corrected transcription, or ``raw`` unchanged on any failure.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return raw
+
+    from dataclasses import replace
+
+    from ci2lab.harness.llm_client import LLMClient
+
+    clean_selection = replace(
+        selection,
+        supports_tools=False,
+        tool_mode="fenced",
+        temperature=0.1,
+        max_tokens=max(selection.max_tokens, 4096),
+    )
+    messages = [
+        {"role": "system", "content": CLEAN_TRANSCRIPTION_SYSTEM},
+        {"role": "user", "content": CLEAN_TRANSCRIPTION_PROMPT + text},
+    ]
+    try:
+        response = LLMClient(clean_selection, timeout=timeout).chat(messages)
+        cleaned = (response.content or "").strip()
+    except Exception as exc:  # never fail the turn over a best-effort clean-up
+        logger.warning("Transcription clean-up failed; keeping raw reads: %s", exc)
+        return raw
+
+    if not cleaned:
+        return raw
+    lowered = cleaned.lower()
+    if any(marker in lowered for marker in _AUDIT_MARKERS):
+        logger.info("Clean-up returned an audit-shaped answer; keeping raw reads.")
+        return raw
+    # A faithful clean-up stays close to the input length; a large swing means
+    # the model rewrote or padded it, so keep the trustworthy raw reads.
+    if not (0.5 * len(text) <= len(cleaned) <= 1.8 * len(text) + 200):
+        logger.info("Clean-up length off (%d vs %d); keeping raw reads.", len(cleaned), len(text))
+        return raw
+    return cleaned
+
 
 # Audit/solve intent: the user wants the calculations *checked*, not just read.
 # Bare "transcribe"/"handwritten" no longer lives here — that is transcription.

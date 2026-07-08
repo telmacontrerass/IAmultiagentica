@@ -90,6 +90,7 @@ from ci2lab.harness.vision import (
 )
 from ci2lab.harness.vision_exercise import (
     EXERCISE_TRANSCRIPTION_PROMPT,
+    clean_transcription,
     enrich_turn_content_with_exercise_skill,
     is_transcription_request,
     is_visual_document_request,
@@ -287,9 +288,7 @@ def _successful_requested_pptx_output(
 
 def _pptx_final_text(output_path: str) -> str:
     return (
-        f"Created {output_path}.\n"
-        "Tool used: write_pptx\n"
-        "Validation: write_pptx reported success."
+        f"Created {output_path}.\nTool used: write_pptx\nValidation: write_pptx reported success."
     )
 
 
@@ -937,9 +936,17 @@ def _prepare_turn_content(
                     transcribed_pages.append(f"## {name}\n\n{_strip_code_fence(desc)}")
                 user_content = enriched
                 # Keep the faithful per-page reads for the transcription export,
-                # so the saved .md never depends on the reasoning model behaving.
+                # so the saved .md never depends on the reasoning model behaving,
+                # and run one focused pass to repair obvious vision misreads
+                # (e.g. a coefficient read as "n7" that context shows is "47").
                 if transcribed_pages and is_visual_document_request(user_prompt):
-                    cfg.last_vision_transcription = "\n\n".join(transcribed_pages)
+                    raw_transcription = "\n\n".join(transcribed_pages)
+                    console.print(
+                        "[dim]── Cleaning transcription (fixing vision misreads)… ──[/dim]"
+                    )
+                    cfg.last_vision_transcription = clean_transcription(
+                        raw_transcription, selection, timeout=image_timeout
+                    )
             # If no vision_model is configured, pass user_prompt unchanged.
     finally:
         # Temp PNGs from PDF rendering are no longer needed once
