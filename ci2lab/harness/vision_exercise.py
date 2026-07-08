@@ -37,26 +37,39 @@ EXERCISE_TRANSCRIPTION_PROMPT = (
 )
 
 # Focused clean-up pass over a raw vision transcription. This is deliberately NOT
-# the review skill: it fixes how the page was *read*, never the author's work.
+# the review skill: it recovers what the author *wrote*, never grades the work.
+# It is allowed to reason about the subject to resolve misreads (a specific-heat
+# term read as "Ck" is "Cp"), because telling a misreading from a real value
+# often needs that context — but its only output is the transcription.
 CLEAN_TRANSCRIPTION_SYSTEM = (
-    "You are a careful transcription cleaner. You output only the corrected "
-    "transcription — never an analysis, audit, or solution."
+    "You are an expert who produces a faithful transcription of a handwritten "
+    "technical document. You use your understanding of the subject to recover "
+    "what the author actually wrote where the automatic reading is garbled, but "
+    "you output only the transcription — never an analysis, audit, grade, or "
+    "solution."
 )
 CLEAN_TRANSCRIPTION_PROMPT = (
     "The text below is an automatic transcription of a handwritten document made "
-    "by a vision model, which sometimes misreads a character. Correct ONLY "
-    "obvious recognition mistakes, using the surrounding context to decide:\n"
-    "- a digit read as a letter or vice versa (e.g. a coefficient shown as 'n7' "
-    "where the equation clearly needs '47'; 'O'<->'0', 'l'/'I'<->'1', 'S'<->'5', "
-    "'B'<->'8', 'Z'<->'2')\n"
-    "- a misread operator, a dropped subscript/superscript, or a split token "
-    "('C 8 H 18' -> 'C8H18')\n\n"
+    "by a vision model, which often misreads symbols and digits. Produce the "
+    "corrected transcription of what the AUTHOR actually wrote.\n\n"
+    "Use your understanding of the subject to recover the intended text wherever "
+    "the automatic reading is garbled, internally inconsistent, or physically/"
+    "mathematically implausible. For example:\n"
+    "- a misread symbol: a specific-heat term read as 'Ck'/'Cn' is 'Cp'; a "
+    "coefficient read as 'n7' is '47'; 'O'/'0', 'l'/'1', 'S'/'5', 'B'/'8'.\n"
+    "- a number that does not match a value given elsewhere on the page (e.g. a "
+    "term that should equal a constant from the data table, or a value that was "
+    "crossed out and replaced).\n"
+    "- dropped subscripts/superscripts, split tokens ('C 8 H 18' -> 'C8H18'), or "
+    "a misread operator.\n\n"
     "Strict rules:\n"
-    "- Do NOT solve, evaluate, grade, check, or comment on the work. Do NOT add "
-    "an audit, a corrected solution, a summary, or any new section or heading.\n"
-    "- Do NOT change the author's actual numbers, choices, or math even if they "
-    "look wrong — you fix how the page was READ, not the author's work.\n"
-    "- If a token is genuinely ambiguous, keep both readings as '[4.7 or 47?]'.\n"
+    "- Recover what the author WROTE. Do NOT solve the exercise, grade it, check "
+    "whether the answer is right, or add any audit, corrected solution, summary, "
+    "commentary, or new heading.\n"
+    "- Keep the author's own method, steps, and choices — fix how the page was "
+    "READ, not the author's reasoning. If you genuinely cannot tell whether "
+    "something is a misreading or the author's own value, keep the reading and "
+    "mark it '[?]'.\n"
     "- Preserve the exact structure, headings, order, and line breaks.\n"
     "- Output ONLY the corrected transcription, with no preamble or explanation.\n\n"
     "Transcription to clean:\n"
