@@ -9,12 +9,15 @@ is an imputed hosted-rate number, never an invoice.
 from __future__ import annotations
 
 import json
+import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 __all__ = [
     "RunResult",
+    "bootstrap_ci",
     "compute_cost_usd",
     "load_prices",
     "mean",
@@ -157,3 +160,75 @@ def median(values: list[float]) -> float | None:
     if len(ordered) % 2 == 1:
         return ordered[mid]
     return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _percentile(sorted_values: list[float], q: float) -> float:
+    """Return the ``q``-quantile of an already-sorted, non-empty ascending list.
+
+    Uses linear interpolation between the two nearest ranks (the same convention
+    as ``numpy.percentile``'s default), so a fractional rank lands between its
+    neighbours instead of snapping to one of them.
+
+    Args:
+        sorted_values: Ascending, non-empty list of samples.
+        q: Quantile in ``[0.0, 1.0]`` (``0.025`` → 2.5th percentile).
+
+    Returns:
+        The interpolated quantile value.
+    """
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    pos = q * (len(sorted_values) - 1)
+    low_idx = int(pos)
+    high_idx = min(low_idx + 1, len(sorted_values) - 1)
+    frac = pos - low_idx
+    return sorted_values[low_idx] + (sorted_values[high_idx] - sorted_values[low_idx]) * frac
+
+
+def bootstrap_ci(
+    values: list[float],
+    *,
+    statistic: Callable[[list[float]], float | None] = mean,
+    confidence: float = 0.95,
+    resamples: int = 2000,
+    seed: int = 12345,
+) -> tuple[float, float] | None:
+    """Percentile-bootstrap confidence interval for ``statistic`` over ``values``.
+
+    Draws ``resamples`` samples of ``len(values)`` observations *with replacement*,
+    recomputes ``statistic`` on each, and returns the ``confidence``-level interval
+    as the matching percentiles of that bootstrap distribution. This is the
+    interval attached to Pass@1 / Pass@k in ``summary.json`` (methodology:
+    ``docs/BENCHMARKING.md`` §2.2).
+
+    Resampling draws from a private, ``seed``-ed RNG, so the interval is fully
+    reproducible: identical inputs always yield identical bounds and there is no
+    dependence on — or perturbation of — global random state. This is what makes a
+    benchmark run's reported CIs replayable.
+
+    Args:
+        values: The observed sample (e.g. per-sample ``1.0``/``0.0`` solved flags).
+        statistic: Point statistic to bootstrap; defaults to :func:`mean`.
+        confidence: Two-sided confidence level in ``(0, 1)`` (``0.95`` → 95% CI).
+        resamples: Number of bootstrap resamples to draw.
+        seed: Seed for the private RNG, for reproducibility.
+
+    Returns:
+        The ``(low, high)`` bounds, or ``None`` when ``values`` is empty. A single
+        observation yields both bounds equal to that observation.
+    """
+    if not values:
+        return None
+    size = len(values)
+    rng = random.Random(seed)
+    stats: list[float] = []
+    for _ in range(resamples):
+        resample = [values[rng.randrange(size)] for _ in range(size)]
+        point = statistic(resample)
+        if point is not None:
+            stats.append(point)
+    if not stats:
+        return None
+    stats.sort()
+    alpha = (1.0 - confidence) / 2.0
+    return _percentile(stats, alpha), _percentile(stats, 1.0 - alpha)

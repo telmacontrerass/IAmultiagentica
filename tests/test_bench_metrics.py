@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ci2lab.bench.metrics import (
     RunResult,
+    bootstrap_ci,
     compute_cost_usd,
     load_prices,
     mean,
     median,
     pass_at_k,
 )
-from ci2lab.bench.runner import _evidence_metrics
+from ci2lab.bench.runner import _aggregate, _evidence_metrics
 from ci2lab.bench.task import BenchTask
 
 
@@ -61,6 +64,72 @@ def test_mean_and_median() -> None:
     assert mean([1.0, 2.0, 3.0]) == 2.0
     assert median([1.0, 2.0, 3.0]) == 2.0
     assert median([1.0, 2.0, 3.0, 4.0]) == 2.5
+
+
+def test_bootstrap_ci_empty_is_none() -> None:
+    assert bootstrap_ci([]) is None
+
+
+def test_bootstrap_ci_single_observation_is_degenerate() -> None:
+    # One observation → every resample is identical → a zero-width interval.
+    assert bootstrap_ci([1.0]) == (1.0, 1.0)
+
+
+def test_bootstrap_ci_constant_sample_has_zero_width() -> None:
+    assert bootstrap_ci([0.0, 0.0, 0.0, 0.0]) == (0.0, 0.0)
+
+
+def test_bootstrap_ci_is_deterministic() -> None:
+    # Seeded RNG → identical bounds across calls, so reported CIs are replayable.
+    values = [1.0, 1.0, 1.0, 0.0, 0.0]
+    assert bootstrap_ci(values) == bootstrap_ci(values)
+
+
+def test_bootstrap_ci_brackets_the_point_estimate() -> None:
+    values = [1.0, 1.0, 1.0, 0.0, 0.0]  # mean = 0.6
+    ci = bootstrap_ci(values)
+    assert ci is not None
+    low, high = ci
+    assert 0.0 <= low <= 0.6 <= high <= 1.0
+
+
+def test_bootstrap_ci_accepts_a_custom_statistic_and_confidence() -> None:
+    ci = bootstrap_ci([2.0, 4.0, 6.0, 8.0, 10.0], statistic=median, confidence=0.8)
+    assert ci is not None
+    low, high = ci
+    assert low <= high
+
+
+def _agg_record(solved: bool) -> dict[str, Any]:
+    """Minimal per-sample record with the keys ``_aggregate`` reads."""
+    return {
+        "task_id": "t1",
+        "agent": "ci2lab",
+        "solved": solved,
+        "total_tokens": 100,
+        "cost_usd": 0.001,
+        "wall_clock_s": 1.0,
+        "functional_success": solved,
+        "evidence_success": None,
+        "false_positive": False,
+        "tool_violation_count": 0,
+    }
+
+
+def test_aggregate_attaches_bootstrap_cis_to_pass_rates() -> None:
+    records = [_agg_record(True) for _ in range(3)] + [_agg_record(False) for _ in range(2)]
+    rows = _aggregate(records)
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row["pass_at_1"] == 0.6
+    pass_1_ci = row["pass_at_1_ci"]
+    assert isinstance(pass_1_ci, list) and len(pass_1_ci) == 2
+    assert 0.0 <= pass_1_ci[0] <= 0.6 <= pass_1_ci[1] <= 1.0
+
+    pass_k_ci = row["pass_at_k_ci"]
+    assert isinstance(pass_k_ci, list) and len(pass_k_ci) == 2
+    assert 0.0 <= pass_k_ci[0] <= pass_k_ci[1] <= 1.0
 
 
 def test_load_real_prices_has_model_m() -> None:

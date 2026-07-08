@@ -1,8 +1,12 @@
 """Sequential multi-agent orchestrator.
 
-This module is intentionally not wired into the default harness flow yet. The
-classic `run_agent` path remains unchanged until the multi-agent route is
-explicitly enabled by a later CLI/config integration.
+Runs a task as an ordered sequence of role subagents (see :mod:`roles`), each an
+isolated ``run_agent`` invocation, with a grounded peer-review / validation phase
+between them. This is an **opt-in** route, not the default: the classic single
+ReAct agent (``run_agent``) remains the default harness flow. The orchestrator is
+selected explicitly — via the ``--multi-agent`` CLI flag (and the interactive
+menu), the ``ci2lab-multi`` benchmark condition, or by calling ``run_multi_agent``
+directly — and is never invoked by the plain ``run_agent`` path.
 """
 
 from __future__ import annotations

@@ -3,8 +3,9 @@
 For each run it provisions a fresh workspace, optionally takes a git baseline,
 invokes the agent adapter, captures the agent's file changes, injects the hidden
 oracle files, grades with the verifier, derives cost from tokens, and appends a
-row to ``results.jsonl``. A ``summary.json`` with Pass@1 / Pass@k / mean tokens /
-imputed USD / median latency is written at the end.
+row to ``results.jsonl``. A ``summary.json`` with Pass@1 / Pass@k (each with a
+bootstrap 95% CI) / mean tokens / imputed USD / median latency is written at the
+end.
 """
 
 from __future__ import annotations
@@ -19,7 +20,14 @@ from rich.table import Table
 
 from ci2lab.bench.adapters import AgentAdapter, get_adapter
 from ci2lab.bench.gitutil import changed_paths, init_baseline
-from ci2lab.bench.metrics import compute_cost_usd, load_prices, mean, median, pass_at_k
+from ci2lab.bench.metrics import (
+    bootstrap_ci,
+    compute_cost_usd,
+    load_prices,
+    mean,
+    median,
+    pass_at_k,
+)
 from ci2lab.bench.task import (
     BenchTask,
     default_results_dir,
@@ -334,7 +342,8 @@ def _tool_violation_count(tool_entries: list[dict[str, Any]], trace: dict[str, A
 
 
 def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Aggregate per (task, agent): Pass@1, Pass@k, mean tokens/cost, latency."""
+    """Aggregate per (task, agent): Pass@1/Pass@k (each with a bootstrap 95% CI),
+    mean tokens/cost, latency."""
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in records:
         groups.setdefault((record["task_id"], record["agent"]), []).append(record)
@@ -343,6 +352,7 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for (task_id, agent), group in sorted(groups.items()):
         n = len(group)
         c = sum(1 for r in group if r["solved"])
+        k_report = min(DEFAULT_K_REPORT, n)
         tokens = [float(r["total_tokens"]) for r in group if r["total_tokens"] is not None]
         costs = [float(r["cost_usd"]) for r in group if r["cost_usd"] is not None]
         latencies = [float(r["wall_clock_s"]) for r in group if r["wall_clock_s"] is not None]
@@ -353,6 +363,17 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         evidence = sum(1 for value in evidence_values if value)
         false_positives = sum(1 for r in group if r.get("false_positive"))
         tool_violations = sum(r.get("tool_violation_count") or 0 for r in group)
+        # Bootstrap the per-sample 0/1 solved outcomes so the reported Pass@1 and
+        # Pass@k carry a 95% CI (methodology: docs/BENCHMARKING.md §2.2). With
+        # few samples the point estimate alone hides how wide the uncertainty is.
+        solved_flags = [1.0 if r["solved"] else 0.0 for r in group]
+        pass_at_1_ci = bootstrap_ci(solved_flags)
+        pass_at_k_ci = bootstrap_ci(
+            solved_flags,
+            statistic=lambda flags: pass_at_k(
+                len(flags), round(sum(flags)), min(DEFAULT_K_REPORT, len(flags))
+            ),
+        )
         rows.append(
             {
                 "task_id": task_id,
@@ -360,7 +381,9 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "n": n,
                 "solved": c,
                 "pass_at_1": round(c / n, 4) if n else 0.0,
-                "pass_at_k": round(pass_at_k(n, c, min(DEFAULT_K_REPORT, n)), 4),
+                "pass_at_1_ci": _round_ci(pass_at_1_ci),
+                "pass_at_k": round(pass_at_k(n, c, k_report), 4),
+                "pass_at_k_ci": _round_ci(pass_at_k_ci),
                 "functional_success_rate": round(functional / n, 4) if n else 0.0,
                 "evidence_success_rate": (
                     round(evidence / len(evidence_values), 4) if evidence_values else None
@@ -378,6 +401,11 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _opt_round(value: float | None, digits: int) -> float | None:
     """Round ``value`` to ``digits`` places, passing ``None`` through."""
     return None if value is None else round(value, digits)
+
+
+def _round_ci(ci: tuple[float, float] | None, digits: int = 4) -> list[float] | None:
+    """Round a ``(low, high)`` CI to a JSON-friendly list, passing ``None`` through."""
+    return None if ci is None else [round(ci[0], digits), round(ci[1], digits)]
 
 
 def _print_run(record: dict[str, Any]) -> None:
