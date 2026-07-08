@@ -661,10 +661,14 @@ def classify_multiagent_intent(user_prompt: str) -> MultiAgentIntentDecision:
         )
 
     document_artifact_requested = _contains_any(text, _DOCUMENT_ARTIFACT_MARKERS)
-    source_backed_artifact = document_artifact_requested and (
-        _contains_any(text, _DOCUMENT_SOURCE_TO_ARTIFACT_MARKERS)
-        or bool(_LOCAL_DOCUMENT_PATH_RE.search(text))
-    ) and not _contains_any(text, _CODE_CONTEXT_MARKERS)
+    source_backed_artifact = (
+        document_artifact_requested
+        and (
+            _contains_any(text, _DOCUMENT_SOURCE_TO_ARTIFACT_MARKERS)
+            or bool(_LOCAL_DOCUMENT_PATH_RE.search(text))
+        )
+        and not _contains_any(text, _CODE_CONTEXT_MARKERS)
+    )
     if _contains_any(text, _DOCUMENT_TRANSFORM_MARKERS) or source_backed_artifact:
         return MultiAgentIntentDecision(
             intent=MultiAgentIntent.DOCUMENT_TRANSFORM,

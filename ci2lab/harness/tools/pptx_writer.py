@@ -226,9 +226,13 @@ def write_pptx(
         _paint_background(slide, theme_values["background"], RGBColor)
         slide_type = slide_data["type"]
         if slide_type == "cover":
-            _render_cover(slide, slide_data, theme_values, Inches, Pt, PP_ALIGN, RGBColor, MSO_SHAPE)
+            _render_cover(
+                slide, slide_data, theme_values, Inches, Pt, PP_ALIGN, RGBColor, MSO_SHAPE
+            )
         elif slide_type == "section":
-            _render_section(slide, slide_data, theme_values, Inches, Pt, PP_ALIGN, RGBColor, MSO_SHAPE)
+            _render_section(
+                slide, slide_data, theme_values, Inches, Pt, PP_ALIGN, RGBColor, MSO_SHAPE
+            )
         elif slide_type == "bullets":
             _render_bullets(slide, slide_data, theme_values, Inches, Pt, RGBColor)
         elif slide_type == "two_columns":
@@ -997,7 +1001,9 @@ def _estimate_cover_title_lines(title: str) -> int:
         return 1
     longest_word = max((len(word) for word in title.split()), default=0)
     weighted_length = len(title) + max(0, longest_word - 14)
-    return max(1, min(3, (weighted_length + _cover_single_line_chars() - 1) // _cover_single_line_chars()))
+    return max(
+        1, min(3, (weighted_length + _cover_single_line_chars() - 1) // _cover_single_line_chars())
+    )
 
 
 def _cover_title_font_size(title: str, theme: dict[str, Any]) -> int:
@@ -1034,49 +1040,247 @@ def _metric_label_font_size(theme: dict[str, Any], *, density: int = 0) -> int:
     return max(9, min(12, _body_font_size(theme, density=density, delta=-6)))
 
 
-def _render_cover(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, PP_ALIGN: Any, RGBColor: Any, MSO_SHAPE: Any) -> None:
-    _add_rect(slide, left=Inches(0.9), top=Inches(1.75), width=Inches(8.2), height=Inches(0.08), color=theme["primary"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
+def _render_cover(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    PP_ALIGN: Any,
+    RGBColor: Any,
+    MSO_SHAPE: Any,
+) -> None:
+    _add_rect(
+        slide,
+        left=Inches(0.9),
+        top=Inches(1.75),
+        width=Inches(8.2),
+        height=Inches(0.08),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
     title_lines = int(data.get("_title_lines") or _estimate_cover_title_lines(data["title"]))
     title_top = 1.92
     title_height = min(2.2, 0.74 * title_lines + 0.55)
     subtitle_gap = 0.22
-    _add_textbox(slide, data["title"], left=Inches(0.8), top=Inches(title_top), width=Inches(8.4), height=Inches(title_height), font_size=Pt(_cover_title_font_size(data["title"], theme)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True, align=PP_ALIGN.CENTER)
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.8),
+        top=Inches(title_top),
+        width=Inches(8.4),
+        height=Inches(title_height),
+        font_size=Pt(_cover_title_font_size(data["title"], theme)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
     if data.get("subtitle"):
         subtitle_top = title_top + title_height + subtitle_gap
         subtitle_height = 0.95 if len(data["subtitle"]) > 85 else 0.75
-        _add_textbox(slide, data["subtitle"], left=Inches(1.1), top=Inches(subtitle_top), width=Inches(7.8), height=Inches(subtitle_height), font_size=Pt(_cover_subtitle_font_size(data["subtitle"], theme, title_lines=title_lines)), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"], align=PP_ALIGN.CENTER)
+        _add_textbox(
+            slide,
+            data["subtitle"],
+            left=Inches(1.1),
+            top=Inches(subtitle_top),
+            width=Inches(7.8),
+            height=Inches(subtitle_height),
+            font_size=Pt(
+                _cover_subtitle_font_size(data["subtitle"], theme, title_lines=title_lines)
+            ),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            align=PP_ALIGN.CENTER,
+        )
 
 
-def _render_section(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, PP_ALIGN: Any, RGBColor: Any, MSO_SHAPE: Any) -> None:
-    _add_rect(slide, left=Inches(0), top=Inches(0), width=Inches(0.22), height=Inches(7.5), color=theme["primary"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-    _add_rect(slide, left=Inches(0.22), top=Inches(0), width=Inches(9.78), height=Inches(7.5), color=theme["panel"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-    _add_textbox(slide, data["title"], left=Inches(0.8), top=Inches(2.2), width=Inches(8.4), height=Inches(0.9), font_size=Pt(theme["title_font_size"] + 4), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True, align=PP_ALIGN.CENTER)
+def _render_section(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    PP_ALIGN: Any,
+    RGBColor: Any,
+    MSO_SHAPE: Any,
+) -> None:
+    _add_rect(
+        slide,
+        left=Inches(0),
+        top=Inches(0),
+        width=Inches(0.22),
+        height=Inches(7.5),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
+    _add_rect(
+        slide,
+        left=Inches(0.22),
+        top=Inches(0),
+        width=Inches(9.78),
+        height=Inches(7.5),
+        color=theme["panel"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.8),
+        top=Inches(2.2),
+        width=Inches(8.4),
+        height=Inches(0.9),
+        font_size=Pt(theme["title_font_size"] + 4),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
     if data.get("subtitle"):
-        _add_textbox(slide, data["subtitle"], left=Inches(1.2), top=Inches(3.2), width=Inches(7.6), height=Inches(0.7), font_size=Pt(theme["body_font_size"]), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"], align=PP_ALIGN.CENTER)
+        _add_textbox(
+            slide,
+            data["subtitle"],
+            left=Inches(1.2),
+            top=Inches(3.2),
+            width=Inches(7.6),
+            height=Inches(0.7),
+            font_size=Pt(theme["body_font_size"]),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            align=PP_ALIGN.CENTER,
+        )
 
 
-def _render_bullets(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any) -> None:
+def _render_bullets(
+    slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any
+) -> None:
     density = int(data.get("_density", 0))
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.4), width=Inches(9.0), height=Inches(0.7), font_size=Pt(_title_font_size(theme)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_bullet_list(slide, data["bullets"], left=Inches(0.85), top=Inches(1.45), width=Inches(8.5), height=Inches(4.6), font_size=Pt(_body_font_size(theme, density=density)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.4),
+        width=Inches(9.0),
+        height=Inches(0.7),
+        font_size=Pt(_title_font_size(theme)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_bullet_list(
+        slide,
+        data["bullets"],
+        left=Inches(0.85),
+        top=Inches(1.45),
+        width=Inches(8.5),
+        height=Inches(4.6),
+        font_size=Pt(_body_font_size(theme, density=density)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
 
 
-def _render_two_columns(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any) -> None:
+def _render_two_columns(
+    slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any
+) -> None:
     density = int(data.get("_density", 0))
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.35), width=Inches(9.0), height=Inches(0.6), font_size=Pt(_title_font_size(theme, delta=-2)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.35),
+        width=Inches(9.0),
+        height=Inches(0.6),
+        font_size=Pt(_title_font_size(theme, delta=-2)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
     if data.get("left_title"):
-        _add_textbox(slide, data["left_title"], left=Inches(0.75), top=Inches(1.25), width=Inches(4.0), height=Inches(0.4), font_size=Pt(_body_font_size(theme, density=density)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
+        _add_textbox(
+            slide,
+            data["left_title"],
+            left=Inches(0.75),
+            top=Inches(1.25),
+            width=Inches(4.0),
+            height=Inches(0.4),
+            font_size=Pt(_body_font_size(theme, density=density)),
+            color=theme["primary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            bold=True,
+        )
     if data.get("right_title"):
-        _add_textbox(slide, data["right_title"], left=Inches(5.15), top=Inches(1.25), width=Inches(4.0), height=Inches(0.4), font_size=Pt(_body_font_size(theme, density=density)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_bullet_list(slide, data["left"], left=Inches(0.75), top=Inches(1.8), width=Inches(4.0), height=Inches(4.3), font_size=Pt(_body_font_size(theme, density=density, delta=-1)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
-    _add_bullet_list(slide, data["right"], left=Inches(5.15), top=Inches(1.8), width=Inches(4.0), height=Inches(4.3), font_size=Pt(_body_font_size(theme, density=density, delta=-1)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
+        _add_textbox(
+            slide,
+            data["right_title"],
+            left=Inches(5.15),
+            top=Inches(1.25),
+            width=Inches(4.0),
+            height=Inches(0.4),
+            font_size=Pt(_body_font_size(theme, density=density)),
+            color=theme["primary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            bold=True,
+        )
+    _add_bullet_list(
+        slide,
+        data["left"],
+        left=Inches(0.75),
+        top=Inches(1.8),
+        width=Inches(4.0),
+        height=Inches(4.3),
+        font_size=Pt(_body_font_size(theme, density=density, delta=-1)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
+    _add_bullet_list(
+        slide,
+        data["right"],
+        left=Inches(5.15),
+        top=Inches(1.8),
+        width=Inches(4.0),
+        height=Inches(4.3),
+        font_size=Pt(_body_font_size(theme, density=density, delta=-1)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
 
 
-def _render_table(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any) -> None:
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.35), width=Inches(9.0), height=Inches(0.6), font_size=Pt(theme["title_font_size"] - 2), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
+def _render_table(
+    slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any
+) -> None:
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.35),
+        width=Inches(9.0),
+        height=Inches(0.6),
+        font_size=Pt(theme["title_font_size"] - 2),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
     row_count = len(data["rows"]) + 1
     col_count = len(data["headers"])
-    table_shape = slide.shapes.add_table(row_count, col_count, Inches(0.65), Inches(1.35), Inches(8.7), Inches(4.6))
+    table_shape = slide.shapes.add_table(
+        row_count, col_count, Inches(0.65), Inches(1.35), Inches(8.7), Inches(4.6)
+    )
     table = table_shape.table
     for col_idx, header in enumerate(data["headers"]):
         cell = table.cell(0, col_idx)
@@ -1096,25 +1300,133 @@ def _render_table(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inche
                 paragraph.font.name = theme["font_family"]
 
 
-def _render_quote(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, PP_ALIGN: Any, RGBColor: Any) -> None:
+def _render_quote(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    PP_ALIGN: Any,
+    RGBColor: Any,
+) -> None:
     if data.get("title"):
-        _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.4), width=Inches(9.0), height=Inches(0.6), font_size=Pt(theme["title_font_size"] - 4), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_textbox(slide, data["quote"], left=Inches(1.0), top=Inches(2.0), width=Inches(8.0), height=Inches(1.4), font_size=Pt(theme["title_font_size"] - 2), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"], align=PP_ALIGN.CENTER)
+        _add_textbox(
+            slide,
+            data["title"],
+            left=Inches(0.55),
+            top=Inches(0.4),
+            width=Inches(9.0),
+            height=Inches(0.6),
+            font_size=Pt(theme["title_font_size"] - 4),
+            color=theme["primary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            bold=True,
+        )
+    _add_textbox(
+        slide,
+        data["quote"],
+        left=Inches(1.0),
+        top=Inches(2.0),
+        width=Inches(8.0),
+        height=Inches(1.4),
+        font_size=Pt(theme["title_font_size"] - 2),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        align=PP_ALIGN.CENTER,
+    )
     if data.get("author"):
-        _add_textbox(slide, data["author"], left=Inches(1.0), top=Inches(3.6), width=Inches(8.0), height=Inches(0.5), font_size=Pt(max(theme["body_font_size"] - 2, MIN_BODY_FONT_SIZE)), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"], align=PP_ALIGN.CENTER)
+        _add_textbox(
+            slide,
+            data["author"],
+            left=Inches(1.0),
+            top=Inches(3.6),
+            width=Inches(8.0),
+            height=Inches(0.5),
+            font_size=Pt(max(theme["body_font_size"] - 2, MIN_BODY_FONT_SIZE)),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            align=PP_ALIGN.CENTER,
+        )
 
 
-def _render_closing(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, PP_ALIGN: Any, RGBColor: Any) -> None:
-    _add_textbox(slide, data["title"], left=Inches(0.8), top=Inches(1.6), width=Inches(8.4), height=Inches(0.9), font_size=Pt(theme["title_font_size"] + 4), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True, align=PP_ALIGN.CENTER)
+def _render_closing(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    PP_ALIGN: Any,
+    RGBColor: Any,
+) -> None:
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.8),
+        top=Inches(1.6),
+        width=Inches(8.4),
+        height=Inches(0.9),
+        font_size=Pt(theme["title_font_size"] + 4),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
     if data.get("subtitle"):
-        _add_textbox(slide, data["subtitle"], left=Inches(1.0), top=Inches(2.6), width=Inches(8.0), height=Inches(0.6), font_size=Pt(theme["body_font_size"]), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"], align=PP_ALIGN.CENTER)
+        _add_textbox(
+            slide,
+            data["subtitle"],
+            left=Inches(1.0),
+            top=Inches(2.6),
+            width=Inches(8.0),
+            height=Inches(0.6),
+            font_size=Pt(theme["body_font_size"]),
+            color=theme["text"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            align=PP_ALIGN.CENTER,
+        )
     if data.get("bullets"):
-        _add_bullet_list(slide, data["bullets"], left=Inches(2.0), top=Inches(3.45), width=Inches(6.0), height=Inches(1.8), font_size=Pt(max(theme["body_font_size"] - 2, MIN_BODY_FONT_SIZE)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
+        _add_bullet_list(
+            slide,
+            data["bullets"],
+            left=Inches(2.0),
+            top=Inches(3.45),
+            width=Inches(6.0),
+            height=Inches(1.8),
+            font_size=Pt(max(theme["body_font_size"] - 2, MIN_BODY_FONT_SIZE)),
+            color=theme["text"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+        )
 
 
-def _render_metric_cards(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any, MSO_SHAPE: Any) -> None:
+def _render_metric_cards(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    RGBColor: Any,
+    MSO_SHAPE: Any,
+) -> None:
     density = int(data.get("_density", 0))
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.35), width=Inches(9.0), height=Inches(0.6), font_size=Pt(_title_font_size(theme, delta=-2)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.35),
+        width=Inches(9.0),
+        height=Inches(0.6),
+        font_size=Pt(_title_font_size(theme, delta=-2)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
     cards = data["cards"]
     col_count = 3 if len(cards) > 3 else len(cards)
     card_width = 2.65 if col_count == 3 else 8.4 / max(col_count, 1)
@@ -1125,35 +1437,236 @@ def _render_metric_cards(slide: Any, data: dict[str, Any], theme: dict[str, Any]
         col = idx % 3
         left = Inches(0.75 + col * 3.0)
         top = Inches(1.25 + row * row_gap)
-        _add_rect(slide, left=left, top=top, width=Inches(card_width), height=Inches(card_height), color=theme["panel"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-        _add_rect(slide, left=left, top=top, width=Inches(0.08), height=Inches(card_height), color=theme["primary"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
+        _add_rect(
+            slide,
+            left=left,
+            top=top,
+            width=Inches(card_width),
+            height=Inches(card_height),
+            color=theme["panel"],
+            RGBColor=RGBColor,
+            MSO_SHAPE=MSO_SHAPE,
+        )
+        _add_rect(
+            slide,
+            left=left,
+            top=top,
+            width=Inches(0.08),
+            height=Inches(card_height),
+            color=theme["primary"],
+            RGBColor=RGBColor,
+            MSO_SHAPE=MSO_SHAPE,
+        )
         text_left = left + Inches(0.18)
         text_width = Inches(card_width - 0.32)
         label_top = top + Inches(0.17)
         value_top = top + Inches(0.55)
-        _add_textbox(slide, card["label"], left=text_left, top=label_top, width=text_width, height=Inches(0.28), font_size=Pt(_metric_label_font_size(theme, density=density)), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-        _add_textbox(slide, card["value"], left=text_left, top=value_top, width=text_width, height=Inches(0.72), font_size=Pt(_metric_value_font_size(card["value"], theme, density=density)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
+        _add_textbox(
+            slide,
+            card["label"],
+            left=text_left,
+            top=label_top,
+            width=text_width,
+            height=Inches(0.28),
+            font_size=Pt(_metric_label_font_size(theme, density=density)),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            bold=True,
+        )
+        _add_textbox(
+            slide,
+            card["value"],
+            left=text_left,
+            top=value_top,
+            width=text_width,
+            height=Inches(0.72),
+            font_size=Pt(_metric_value_font_size(card["value"], theme, density=density)),
+            color=theme["primary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+            bold=True,
+        )
 
 
-def _render_comparison(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any, MSO_SHAPE: Any) -> None:
+def _render_comparison(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    RGBColor: Any,
+    MSO_SHAPE: Any,
+) -> None:
     density = int(data.get("_density", 0))
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.35), width=Inches(9.0), height=Inches(0.6), font_size=Pt(_title_font_size(theme, delta=-2)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_rect(slide, left=Inches(0.7), top=Inches(1.25), width=Inches(4.1), height=Inches(4.85), color=theme["panel"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-    _add_rect(slide, left=Inches(5.1), top=Inches(1.25), width=Inches(4.1), height=Inches(4.85), color=theme["panel"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-    _add_textbox(slide, data["left_title"], left=Inches(0.95), top=Inches(1.5), width=Inches(3.6), height=Inches(0.4), font_size=Pt(_body_font_size(theme, density=density, delta=1)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_textbox(slide, data["right_title"], left=Inches(5.35), top=Inches(1.5), width=Inches(3.6), height=Inches(0.4), font_size=Pt(_body_font_size(theme, density=density, delta=1)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_bullet_list(slide, data["left_items"], left=Inches(0.95), top=Inches(2.05), width=Inches(3.55), height=Inches(3.5), font_size=Pt(_body_font_size(theme, density=density, delta=-2)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
-    _add_bullet_list(slide, data["right_items"], left=Inches(5.35), top=Inches(2.05), width=Inches(3.55), height=Inches(3.5), font_size=Pt(_body_font_size(theme, density=density, delta=-2)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.35),
+        width=Inches(9.0),
+        height=Inches(0.6),
+        font_size=Pt(_title_font_size(theme, delta=-2)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_rect(
+        slide,
+        left=Inches(0.7),
+        top=Inches(1.25),
+        width=Inches(4.1),
+        height=Inches(4.85),
+        color=theme["panel"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
+    _add_rect(
+        slide,
+        left=Inches(5.1),
+        top=Inches(1.25),
+        width=Inches(4.1),
+        height=Inches(4.85),
+        color=theme["panel"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
+    _add_textbox(
+        slide,
+        data["left_title"],
+        left=Inches(0.95),
+        top=Inches(1.5),
+        width=Inches(3.6),
+        height=Inches(0.4),
+        font_size=Pt(_body_font_size(theme, density=density, delta=1)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_textbox(
+        slide,
+        data["right_title"],
+        left=Inches(5.35),
+        top=Inches(1.5),
+        width=Inches(3.6),
+        height=Inches(0.4),
+        font_size=Pt(_body_font_size(theme, density=density, delta=1)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_bullet_list(
+        slide,
+        data["left_items"],
+        left=Inches(0.95),
+        top=Inches(2.05),
+        width=Inches(3.55),
+        height=Inches(3.5),
+        font_size=Pt(_body_font_size(theme, density=density, delta=-2)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
+    _add_bullet_list(
+        slide,
+        data["right_items"],
+        left=Inches(5.35),
+        top=Inches(2.05),
+        width=Inches(3.55),
+        height=Inches(3.5),
+        font_size=Pt(_body_font_size(theme, density=density, delta=-2)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
 
 
-def _render_decision(slide: Any, data: dict[str, Any], theme: dict[str, Any], Inches: Any, Pt: Any, RGBColor: Any, MSO_SHAPE: Any) -> None:
+def _render_decision(
+    slide: Any,
+    data: dict[str, Any],
+    theme: dict[str, Any],
+    Inches: Any,
+    Pt: Any,
+    RGBColor: Any,
+    MSO_SHAPE: Any,
+) -> None:
     density = int(data.get("_density", 0))
-    _add_textbox(slide, data["title"], left=Inches(0.55), top=Inches(0.35), width=Inches(9.0), height=Inches(0.6), font_size=Pt(_title_font_size(theme, delta=-2)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_rect(slide, left=Inches(0.75), top=Inches(1.25), width=Inches(8.5), height=Inches(1.15), color=theme["primary"], RGBColor=RGBColor, MSO_SHAPE=MSO_SHAPE)
-    _add_textbox(slide, data["recommendation"], left=Inches(0.95), top=Inches(1.48), width=Inches(8.05), height=Inches(0.55), font_size=Pt(_body_font_size(theme, density=density, delta=2)), color="#FFFFFF", RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_textbox(slide, data["rationale"], left=Inches(0.85), top=Inches(2.75), width=Inches(8.3), height=Inches(1.1), font_size=Pt(_body_font_size(theme, density=density)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
-    _add_textbox(slide, "Siguientes pasos", left=Inches(0.85), top=Inches(4.05), width=Inches(8.3), height=Inches(0.35), font_size=Pt(_body_font_size(theme, density=density)), color=theme["primary"], RGBColor=RGBColor, font_family=theme["font_family"], bold=True)
-    _add_bullet_list(slide, data["next_steps"], left=Inches(1.05), top=Inches(4.5), width=Inches(7.8), height=Inches(1.45), font_size=Pt(_body_font_size(theme, density=density, delta=-2)), color=theme["text"], RGBColor=RGBColor, font_family=theme["font_family"])
+    _add_textbox(
+        slide,
+        data["title"],
+        left=Inches(0.55),
+        top=Inches(0.35),
+        width=Inches(9.0),
+        height=Inches(0.6),
+        font_size=Pt(_title_font_size(theme, delta=-2)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_rect(
+        slide,
+        left=Inches(0.75),
+        top=Inches(1.25),
+        width=Inches(8.5),
+        height=Inches(1.15),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        MSO_SHAPE=MSO_SHAPE,
+    )
+    _add_textbox(
+        slide,
+        data["recommendation"],
+        left=Inches(0.95),
+        top=Inches(1.48),
+        width=Inches(8.05),
+        height=Inches(0.55),
+        font_size=Pt(_body_font_size(theme, density=density, delta=2)),
+        color="#FFFFFF",
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_textbox(
+        slide,
+        data["rationale"],
+        left=Inches(0.85),
+        top=Inches(2.75),
+        width=Inches(8.3),
+        height=Inches(1.1),
+        font_size=Pt(_body_font_size(theme, density=density)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
+    _add_textbox(
+        slide,
+        "Siguientes pasos",
+        left=Inches(0.85),
+        top=Inches(4.05),
+        width=Inches(8.3),
+        height=Inches(0.35),
+        font_size=Pt(_body_font_size(theme, density=density)),
+        color=theme["primary"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+        bold=True,
+    )
+    _add_bullet_list(
+        slide,
+        data["next_steps"],
+        left=Inches(1.05),
+        top=Inches(4.5),
+        width=Inches(7.8),
+        height=Inches(1.45),
+        font_size=Pt(_body_font_size(theme, density=density, delta=-2)),
+        color=theme["text"],
+        RGBColor=RGBColor,
+        font_family=theme["font_family"],
+    )
 
 
 def _add_footer_and_slide_number(
@@ -1168,9 +1681,31 @@ def _add_footer_and_slide_number(
 ) -> None:
     footer = theme.get("footer_text", "")
     if footer:
-        _add_textbox(slide, footer, left=Inches(0.55), top=Inches(6.95), width=Inches(6.8), height=Inches(0.25), font_size=Pt(8), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"])
+        _add_textbox(
+            slide,
+            footer,
+            left=Inches(0.55),
+            top=Inches(6.95),
+            width=Inches(6.8),
+            height=Inches(0.25),
+            font_size=Pt(8),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+        )
     if theme.get("slide_number"):
-        _add_textbox(slide, f"{slide_index}/{total_slides}", left=Inches(8.75), top=Inches(6.95), width=Inches(0.7), height=Inches(0.25), font_size=Pt(8), color=theme["secondary"], RGBColor=RGBColor, font_family=theme["font_family"])
+        _add_textbox(
+            slide,
+            f"{slide_index}/{total_slides}",
+            left=Inches(8.75),
+            top=Inches(6.95),
+            width=Inches(0.7),
+            height=Inches(0.25),
+            font_size=Pt(8),
+            color=theme["secondary"],
+            RGBColor=RGBColor,
+            font_family=theme["font_family"],
+        )
 
 
 def _post_validate(plan: PresentationPlan) -> dict[str, Any]:

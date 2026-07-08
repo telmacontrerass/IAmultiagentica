@@ -263,8 +263,7 @@ def test_write_pptx_placeholder_document_content_gets_nudged_before_finalizing()
 
     second_turn_messages = client.chat.call_args_list[1].args[0]
     assert any(
-        m.get("role") == "user"
-        and "Use concrete facts/headings/terms" in str(m.get("content", ""))
+        m.get("role") == "user" and "Use concrete facts/headings/terms" in str(m.get("content", ""))
         for m in second_turn_messages
         if isinstance(m, dict)
     )

@@ -44,7 +44,7 @@ _PPTX_SHAPE_HINT = (
 )
 _PPTX_AGENDA_HINT = (
     "The write_pptx slide payload used unsupported slide type `agenda`. "
-    "Represent an agenda as `type: \"bullets\"` with `title: \"Agenda\"` and "
+    'Represent an agenda as `type: "bullets"` with `title: "Agenda"` and '
     "the agenda items in `bullets`. Safe minimal slide types are `cover` and "
     "`bullets`."
 )
