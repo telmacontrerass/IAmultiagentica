@@ -81,7 +81,7 @@ def execute_write_tool(
                 config.cwd,
                 args.get("output_path", ""),
                 args.get("title", ""),
-                args.get("slides"),
+                args.get("slides", []),
                 args.get("theme"),
                 args.get("overwrite", False),
             )
