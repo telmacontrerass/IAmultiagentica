@@ -39,43 +39,36 @@ EXERCISE_TRANSCRIPTION_PROMPT = (
     "- Preserve line breaks between steps"
 )
 
-# Focused clean-up pass over a raw vision transcription. This is deliberately NOT
-# the review skill: it recovers what the author *wrote*, never grades the work.
-# It is allowed to reason about the subject to resolve misreads (a specific-heat
-# term read as "Ck" is "Cp"), because telling a misreading from a real value
-# often needs that context — but its only output is the transcription.
+# Proofreading pass over a raw vision transcription. This is deliberately NOT the
+# review skill: it fixes clear character-level *reading* errors (it may reason
+# about the exercise's own numbers/result to spot them, e.g. 'J989'->'5989'), but
+# it preserves the author's notation and never grades or rewrites the work.
 CLEAN_TRANSCRIPTION_SYSTEM = (
-    "You are an expert who produces a faithful transcription of a handwritten "
-    "technical document. You use your understanding of the subject to recover "
-    "what the author actually wrote where the automatic reading is garbled, but "
-    "you output only the transcription — never an analysis, audit, grade, or "
-    "solution."
+    "You are a proofreader for a transcription. You fix only clear character-level "
+    "reading errors and otherwise output the transcription verbatim — never an "
+    "analysis, audit, grade, solution, or a rewritten/normalised version."
 )
 CLEAN_TRANSCRIPTION_PROMPT = (
-    "The text below is an automatic transcription of a handwritten document made "
-    "by a vision model, which often misreads symbols and digits. Produce the "
-    "corrected transcription of what the AUTHOR actually wrote.\n\n"
-    "Use your understanding of the subject to recover the intended text wherever "
-    "the automatic reading is garbled, internally inconsistent, or physically/"
-    "mathematically implausible. For example:\n"
-    "- a misread symbol: a specific-heat term read as 'Ck'/'Cn' is 'Cp'; a "
-    "coefficient read as 'n7' is '47'; 'O'/'0', 'l'/'1', 'S'/'5', 'B'/'8'.\n"
-    "- a number that does not match a value given elsewhere on the page (e.g. a "
-    "term that should equal a constant from the data table, or a value that was "
-    "crossed out and replaced).\n"
-    "- dropped subscripts/superscripts, split tokens ('C 8 H 18' -> 'C8H18'), or "
-    "a misread operator.\n\n"
+    "The text below is an automatic transcription of a handwritten exercise made "
+    "by a vision model, which misreads characters. Return the SAME transcription "
+    "with only clear reading errors fixed.\n\n"
+    "You MAY use the exercise's own data and its final result as a check to spot a "
+    "misread character — e.g. a temperature written 'J989,92 K' must be "
+    "'5989,92 K' (a result cannot start with a letter); a coefficient 'n7' must "
+    "be '47'; 'O'/'0', 'l'/'1', 'S'/'5', 'B'/'8'.\n\n"
     "Strict rules:\n"
-    "- Recover what the author WROTE. Do NOT solve the exercise, grade it, check "
-    "whether the answer is right, or add any audit, corrected solution, summary, "
-    "commentary, or new heading.\n"
-    "- Keep the author's own method, steps, and choices — fix how the page was "
-    "READ, not the author's reasoning. If you genuinely cannot tell whether "
-    "something is a misreading or the author's own value, keep the reading and "
-    "mark it '[?]'.\n"
+    "- Fix only CLEAR misreadings of an individual character, digit, or symbol. "
+    "Keep everything else exactly as written.\n"
+    "- PRESERVE the author's own notation, signs, order, and structure. Do NOT "
+    "reorder terms, change a sign convention, add or remove operators, or rewrite "
+    "an expression into a 'standard' or 'correct' form — even if it looks wrong.\n"
+    "- Do NOT solve, evaluate, grade, or check the exercise, and do NOT add any "
+    "audit, corrected solution, summary, commentary, or new heading.\n"
+    "- If you are unsure whether something is a misreading or the author's own "
+    "choice, leave it exactly as written.\n"
     "- Preserve the exact structure, headings, order, and line breaks.\n"
-    "- Output ONLY the corrected transcription, with no preamble or explanation.\n\n"
-    "Transcription to clean:\n"
+    "- Output ONLY the transcription, with no preamble or explanation.\n\n"
+    "Transcription to proofread:\n"
 )
 
 # If the model returns any of these it audited/graded instead of transcribing;
@@ -452,4 +445,11 @@ def transcribe_visual_document(
         for tmp in temp_dirs:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    return "\n\n".join(parts) if parts else "[No se pudo transcribir ningún contenido.]"
+    if not parts:
+        return "[No se pudo transcribir ningún contenido.]"
+    # Proofread the assembled reads with the reasoning model to catch clear vision
+    # misreads (J->5, n7->47) that only surface against the exercise's own numbers.
+    # clean_transcription keeps the raw reads if the model drifts into an audit.
+    raw = "\n\n".join(parts)
+    console.print("[dim]── Proofreading (fixing clear vision misreads)… ──[/dim]")
+    return clean_transcription(raw, selection)
