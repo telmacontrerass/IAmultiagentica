@@ -16,6 +16,7 @@ from ci2lab.harness.skills.loader import get_skill, load_skills
 
 if TYPE_CHECKING:
     from ci2lab.contracts.types import ModelSelection
+    from ci2lab.harness.types import AgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ EXERCISE_TRANSCRIPTION_PROMPT = (
     "- Step labels (1, 2, a, b) and handwritten annotations\n"
     "- Tables and boxed final answers\n\n"
     "Rules:\n"
-    "- Copy what you see; do NOT judge whether calculations are correct\n"
+    "- Copy what you see; do NOT solve, correct, grade, or add anything\n"
+    "- Ignore crossed-out / struck-through text — transcribe only what the "
+    "author left standing\n"
     "- If a digit or symbol is ambiguous, show both readings in brackets "
     "(e.g. [4.7 or 47?])\n"
     "- Mark illegible spans as [illegible]\n"
@@ -359,3 +362,94 @@ def enrich_turn_content_with_exercise_skill(
         return new_content, allowed
 
     return skill_block + "\n\n" + content, allowed
+
+
+def _strip_wrapping_fence(text: str) -> str:
+    """Drop a single ``` fence a vision model sometimes wraps a page in."""
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2 or not lines[-1].rstrip().endswith("```"):
+        return stripped
+    return "\n".join(lines[1:-1]).strip()
+
+
+def transcribe_visual_document(
+    image_paths: list[str],
+    selection: ModelSelection,
+    cfg: AgentConfig,
+) -> str:
+    """Literal, vision-only transcription of attached page(s) — no reasoning model.
+
+    A pure transcription must never touch the reasoning model: it turns a
+    transcription into an audit and "corrects" the author's maths. Each page is
+    rendered sharply and read by the fallback vision model with the literal
+    transcription prompt, then the readings are assembled verbatim under one
+    ``## <page>`` heading each. Returns a short ``[...]`` note (never raises)
+    when no vision model is configured or nothing could be transcribed.
+
+    Args:
+        image_paths: Attached image/PDF paths for this turn.
+        selection: Active model selection (backend URL + vision fallback).
+        cfg: Agent config; ``vision_model``/``vision_enabled`` are read.
+
+    Returns:
+        The assembled transcription markdown.
+    """
+    import shutil
+    from pathlib import Path
+
+    from ci2lab.console import console
+    from ci2lab.harness.tools.filesystem_parts.documents import pdf_needs_vision
+    from ci2lab.harness.vision import analyze_image, compute_llm_timeout, pdf_to_images
+
+    if not cfg.vision_enabled:
+        return "[La visión está desactivada; no se puede transcribir.]"
+    vision_tag = (cfg.vision_model or "").strip()
+    if not vision_tag:
+        return (
+            "[No hay modelo de visión configurado (vision_model); "
+            "no se puede transcribir un documento escaneado.]"
+        )
+
+    # (display_name, page_image_path) pairs; PDFs are rendered to sharp per-page
+    # PNGs so small digits (47 vs 4.7) survive.
+    pages: list[tuple[str, str]] = []
+    temp_dirs: list[Path] = []
+    has_pdf = False
+    for raw in image_paths:
+        path = Path(raw)
+        if path.suffix.lower() == ".pdf":
+            if not pdf_needs_vision(raw):
+                continue
+            has_pdf = True
+            try:
+                rendered, tmp = pdf_to_images(raw, dpi=250, max_pages=30)
+                temp_dirs.append(tmp)
+                pages.extend((page.name, str(page)) for page in rendered)
+            except Exception as exc:
+                logger.warning("PDF conversion failed for %s: %s", raw, exc)
+        else:
+            pages.append((path.name, str(path)))
+
+    timeout = compute_llm_timeout(1, has_pdf=has_pdf)
+    parts: list[str] = []
+    try:
+        for name, image in pages:
+            desc = analyze_image(
+                image,
+                selection.backend_url,
+                vision_tag,
+                timeout=timeout,
+                prompt=EXERCISE_TRANSCRIPTION_PROMPT,
+            )
+            console.print(
+                f"[dim]── Transcribing {name} ({len(desc)} chars, model {vision_tag}) ──[/dim]"
+            )
+            parts.append(f"## {name}\n\n{_strip_wrapping_fence(desc)}")
+    finally:
+        for tmp in temp_dirs:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    return "\n\n".join(parts) if parts else "[No se pudo transcribir ningún contenido.]"

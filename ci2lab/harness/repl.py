@@ -41,6 +41,7 @@ from ci2lab.harness.vision_exercise import (
     is_exercise_review_request,
     is_transcription_request,
     select_visual_skill,
+    transcribe_visual_document,
 )
 
 
@@ -527,8 +528,15 @@ def run_repl(
         # absolute paths and bare filenames relative to the workspace.
         prompt, detected_images = _extract_inline_images(line, config, selection)
 
+        # A pure "transcribe this" request (no request to check/audit the work)
+        # is handled by the vision model alone below — the reasoning model turns
+        # a transcription into an audit and rewrites the author's maths.
+        _wants_transcription = is_transcription_request(line) and not is_exercise_review_request(
+            line
+        )
+
         _visual_skill = select_visual_skill(line) if detected_images else None
-        if _visual_skill is not None:
+        if _visual_skill is not None and not _wants_transcription:
             console.print(f"[dim]Will apply skill: {_visual_skill}[/dim]")
 
         # Re-attach the last PDF/images on follow-up turns so the model re-reads
@@ -547,6 +555,28 @@ def run_repl(
                 "when errors affect the final answer.]"
             )
             prompt = follow_note + "\n\n" + prompt
+
+        # Pure transcription: read the pages with the vision model and save them,
+        # bypassing the reasoning-model agent loop entirely (which would audit and
+        # "correct" the maths). Only "check/audit this" requests go to the agent.
+        if detected_images and _wants_transcription:
+            transcription = transcribe_visual_document(detected_images, selection, config)
+            console.print(transcription)
+            _export_transcription_markdown(transcription, config.cwd, detected_images)
+            history = (history or []) + [
+                {"role": "user", "content": line},
+                {"role": "assistant", "content": transcription},
+            ]
+            save_session(
+                sid,
+                messages=history,
+                model_tag=selection.ollama_tag,
+                cwd=config.cwd,
+                token_usage=config.token_usage.to_dict(),
+                project_id=config.project_id,
+            )
+            last_error_message = None
+            continue
 
         execution_prompt = _project_prompt(config, prompt)
 
