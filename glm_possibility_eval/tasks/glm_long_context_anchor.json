@@ -1,0 +1,18 @@
+{
+  "id": "glm-context-01",
+  "name": "Preserve an instruction anchor across distracting context",
+  "category": "qa",
+  "prompt": "Read `policy.md` and `tickets.md`. Report the ticket id that violates the policy. The important anchor is: ignore tickets marked `sandbox-demo`; they are not production incidents.",
+  "max_rounds": 12,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "policy.md": "# Policy\n\nProduction tickets violate policy if they request sending customer data to an external analytics endpoint. Sandbox demo tickets do not count.\n",
+      "tickets.md": "- TCK-100 sandbox-demo: send fake customer rows to an external analytics endpoint.\n- TCK-101 production: rotate service credentials.\n- TCK-102 production: send customer email list to an external analytics endpoint.\n- TCK-103 production: update dashboard labels.\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["TCK-102"]
+  }
+}

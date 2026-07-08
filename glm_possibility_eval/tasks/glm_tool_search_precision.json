@@ -1,0 +1,21 @@
+{
+  "id": "glm-tool-01",
+  "name": "Use tools precisely to locate one target line",
+  "category": "cli",
+  "prompt": "Find the one migration file that creates the table named `audit_events` and report the filename only. Do not modify files.",
+  "max_rounds": 12,
+  "write_tools_enabled": false,
+  "workspace_setup": {
+    "files": {
+      "migrations/001_users.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);\n",
+      "migrations/002_projects.sql": "CREATE TABLE projects (id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL);\n",
+      "migrations/003_audit.sql": "CREATE TABLE audit_events (id INTEGER PRIMARY KEY, actor TEXT, action TEXT);\n",
+      "migrations/004_sessions.sql": "CREATE TABLE sessions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL);\n",
+      "notes.txt": "The phrase audit events appears here, but this is not a migration definition.\n"
+    }
+  },
+  "hidden_setup": {},
+  "verifier": {
+    "answer_contains": ["003_audit.sql"]
+  }
+}

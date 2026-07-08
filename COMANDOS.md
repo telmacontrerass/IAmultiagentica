@@ -258,7 +258,7 @@ Escribe cualquiera de: `/exit`, `/quit`, `exit`, `quit` o pulsa `Ctrl+C`.
 | `--security-engine <nombre>` | Motor de seguridad |
 
 ### Ejemplos
-
+solu
 ```powershell
 # Petición única con el subcomando explícito
 ci2lab agent "lista los archivos Python"
