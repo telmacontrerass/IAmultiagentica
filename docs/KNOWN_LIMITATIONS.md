@@ -40,7 +40,7 @@
 | Limitation | Detail |
 |------------|--------|
 | Web frontend still in Spanish | The agent system prompt, the terminal/CLI UI, and tool outputs are English, but the web UI page text (`ci2lab/ui/static/index.html`, `app.js`) is still Spanish. |
-| A few tool output strings still in Spanish | Some filesystem tool messages (e.g. `grep` "no matches" notices) remain Spanish; the agent and CLI surfaces are otherwise English. |
+| Intentional Spanish in a couple of tools | No unintentional Spanish tool-output strings remain (the former `grep`/`write_preview` notices are now English). The `quiz` tool still emits Spanish **by design** — it builds quizzes from Spanish study material and accepts EN+ES aliases — and a few tool schemas list Spanish trigger keywords (e.g. `presentación`, `diapositivas`) on purpose. |
 
 ## Security and sandbox
 

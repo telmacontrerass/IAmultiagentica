@@ -232,9 +232,9 @@ cerrar; "Aliviable" = mitigable aunque no eliminable del todo con modelos locale
 | 10 | Telemetría rota en la condición primaria | Leer `run_summary.json` (no `run.json`) y mapear el estado `"stuck"` en `_RUN_STATUS_MAP` | [`ci2lab/bench/adapters/ci2lab_adapter.py`](ci2lab/bench/adapters/ci2lab_adapter.py) | ✅ Ya estaba corregido (audit obsoleto): `_read_run_json` hace el fallback y `_RUN_STATUS_MAP` ya mapea `"stuck"` |
 | 10 | Sin intervalos de confianza | Añadir bootstrap CIs a `_aggregate`/`summary.json` | [`ci2lab/bench/metrics.py`](ci2lab/bench/metrics.py), [`ci2lab/bench/runner.py`](ci2lab/bench/runner.py) | ✅ Hecho: `bootstrap_ci()` + `pass_at_1_ci`/`pass_at_k_ci` (95%, reproducibles) |
 | 10 | Docstring del orquestador obsoleto/falso | Corregir `orchestrator.py:1-6` | [`ci2lab/harness/multiagent/orchestrator.py`](ci2lab/harness/multiagent/orchestrator.py) | ✅ Hecho: docstring reescrito (multiagente es ruta opt-in, no "sin cablear") |
-| 7 | No hay auto-pull (`ollama pull` manual) | Implementar `ensure_model_ready(selection)` (ya especificado en el handoff, pendiente) | `ci2lab/runtime/ensure.py` (a crear) |
-| 1 | `benchmark_score` sin respaldo empírico | Correr la matriz live una vez y sustituir priores por medidas; mientras tanto, marcarlos como no-fiables en la UI de recomendación | `ci2lab/catalog/models.json`, `ci2lab/router/recommend.py` |
-| 6 | Cadenas de salida aún en español | Traducir mensajes residuales de herramientas (p. ej. `grep` "no matches") a inglés | `ci2lab/harness/tools/` |
+| 7 | Typo/modelo ausente → crash críptico | Check con error claro + "did you mean" (auto-pull descartado) | `ci2lab/runtime/`, `ci2lab/cli/commands/agent.py` | ⏳ Pendiente (intento revertido; requiere arreglar antes el bug de parser `--model` antes del subcomando) |
+| 1 | `benchmark_score` sin respaldo empírico | Correr la matriz live una vez y sustituir priores por medidas; mientras tanto, marcarlos como no-fiables en la UI de recomendación | `ci2lab/catalog/models.json`, `ci2lab/router/recommend.py` | ⏳ Pendiente (los benchmarks los trabaja un compañero de equipo) |
+| 6 | Cadenas de salida aún en español | `write_preview` "archivos"→"files" (grep ya era inglés); `quiz.py` y palabras-gatillo se dejan en español a propósito | [`ci2lab/harness/tools/write_preview.py`](ci2lab/harness/tools/write_preview.py) | ✅ Hecho |
 
 ### Nivel B — Solucionables con trabajo medio (cierran huecos estructurales)
 

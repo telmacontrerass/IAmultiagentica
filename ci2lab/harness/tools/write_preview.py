@@ -315,7 +315,7 @@ def preview_apply_patch(cwd: str, patch_text: str) -> WritePreview:
     if len(plan.touched_paths) == 1:
         path_label = plan.touched_paths[0]
     else:
-        path_label = f"{len(plan.touched_paths)} archivos: {', '.join(plan.touched_paths)}"
+        path_label = f"{len(plan.touched_paths)} files: {', '.join(plan.touched_paths)}"
     return WritePreview(
         path=path_label,
         is_new_file=False,
