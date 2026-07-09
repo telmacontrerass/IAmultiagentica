@@ -23,6 +23,7 @@ venv/
 # Tool caches
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp_*/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
