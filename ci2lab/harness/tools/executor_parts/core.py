@@ -13,7 +13,10 @@ from ci2lab.harness.tools.bash_redirect import (
 )
 from ci2lab.harness.tools.bash_safety import check_bash_blocked
 from ci2lab.harness.tools.dispatch import DISPATCH
-from ci2lab.harness.tools.executor_parts.arguments import normalize_tool_arguments
+from ci2lab.harness.tools.executor_parts.arguments import (
+    normalize_tool_arguments,
+    validate_tool_arguments,
+)
 from ci2lab.harness.tools.executor_parts.audit import (
     audit_security_decision,
     ensure_audit_persist_context,
@@ -168,6 +171,20 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             )
 
     args = normalize_tool_arguments(call.arguments, tool_name=name)
+
+    # Fail fast when the model omitted a required argument: return a message it
+    # can act on instead of the cryptic KeyError the handler would raise once it
+    # indexes the missing key. Generalizes the bash-specific check below to every
+    # built-in tool (mcp__* tools are skipped — their schema lives on the server).
+    arg_error = validate_tool_arguments(name, args)
+    if arg_error:
+        return ToolResult(
+            tool_name=name,
+            content=f"Error: {arg_error}",
+            is_error=True,
+            call_id=call.call_id,
+            outcome="invalid_arguments",
+        )
 
     # The bash→tool redirection already happened above (before the skill filter).
     # Here we only validate that the command is not empty, to avoid erroneous

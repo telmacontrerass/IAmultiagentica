@@ -117,7 +117,7 @@ EDIT_SCHEMAS: list[dict[str, Any]] = [
                         "description": "Set true to replace an existing .pptx",
                     },
                 },
-                "required": ["output_path", "title", "slides"],
+                "required": ["output_path", "slides"],
             },
         },
     },

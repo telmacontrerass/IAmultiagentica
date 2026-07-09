@@ -1,10 +1,12 @@
 """Tool name → implementation dispatch table.
 
 Maps each canonical tool name to a handler ``lambda cfg, a: ...`` that unpacks
-the validated argument dict ``a`` (and pulls run-scoped settings off the
+the argument dict ``a`` (and pulls run-scoped settings off the
 :class:`~ci2lab.harness.types.AgentConfig` ``cfg``) before calling the concrete
-tool implementation. The executor looks the handler up by name and invokes it;
-every handler returns the tool's textual result.
+tool implementation. The executor validates that a tool's required arguments are
+present (``executor_parts.arguments.validate_tool_arguments``) before dispatch,
+so a handler may index its required keys directly. The executor looks the handler
+up by name and invokes it; every handler returns the tool's textual result.
 """
 
 from __future__ import annotations

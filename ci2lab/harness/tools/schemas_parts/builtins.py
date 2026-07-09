@@ -27,6 +27,64 @@ FUNCTION_SCHEMAS: list[dict[str, Any]] = [
     *INTEGRATIONS_SCHEMAS,
 ]
 
+#: Canonical tool name -> its schema's required argument names. Derived from
+#: :data:`FUNCTION_SCHEMAS` so the model-facing contract and argument validation
+#: can never drift apart.
+REQUIRED_ARGS: dict[str, list[str]] = {
+    schema["function"]["name"]: list(schema["function"].get("parameters", {}).get("required", []))
+    for schema in FUNCTION_SCHEMAS
+    if "name" in schema.get("function", {})
+}
+
+
+def required_args_for_tool(name: str) -> list[str] | None:
+    """Return a built-in tool's required argument names, or ``None`` if unknown.
+
+    ``None`` (rather than an empty list) signals that ``name`` is not a built-in
+    tool — e.g. a dynamic ``mcp__*`` tool whose schema lives on the MCP server —
+    so callers can skip built-in argument validation for it.
+
+    Args:
+        name: Canonical tool name.
+
+    Returns:
+        The list of required argument names (possibly empty), or ``None`` when
+        ``name`` is not a built-in tool.
+    """
+    return REQUIRED_ARGS.get(name)
+
+
+#: Canonical tool name -> its top-level boolean argument names. Only top-level
+#: properties are considered (a boolean nested inside an object argument is
+#: passed through whole), and the mapping is derived from :data:`FUNCTION_SCHEMAS`
+#: so it stays in sync with the schemas automatically.
+BOOLEAN_ARGS: dict[str, set[str]] = {
+    schema["function"]["name"]: {
+        prop
+        for prop, spec in schema["function"].get("parameters", {}).get("properties", {}).items()
+        if isinstance(spec, dict) and spec.get("type") == "boolean"
+    }
+    for schema in FUNCTION_SCHEMAS
+    if "name" in schema.get("function", {})
+}
+
+
+def boolean_args_for_tool(name: str) -> set[str]:
+    """Return a built-in tool's top-level boolean argument names.
+
+    Used to coerce string booleans (e.g. ``"false"``) that a model may emit into
+    real ``bool`` values before dispatch — without it, ``"false"`` is a truthy
+    non-empty string and silently inverts the flag.
+
+    Args:
+        name: Canonical tool name.
+
+    Returns:
+        The set of boolean argument names (empty for a tool with none, or one
+        that is not a built-in).
+    """
+    return BOOLEAN_ARGS.get(name, set())
+
 
 def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
     """Build the OpenAI function schema list for the current run.

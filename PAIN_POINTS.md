@@ -243,7 +243,7 @@ cerrar; "Aliviable" = mitigable aunque no eliminable del todo con modelos locale
 | 9 | **Punto único de fallo** — sin fallback | Implementar enrutado multi-modelo por turno: escalar a un modelo local mayor (o a un backend OpenAI-compatible/cloud opcional) cuando se dispare la detección de bucle o el corte por racha de errores. Aprovecha que el backend ya es enchufable. |
 | 3 | Verificación débil | Hacer el cierre determinista con evidencia la ruta **por defecto** (no solo `--multi-agent`); permitir configurar un "modelo juez" distinto (y opcionalmente más fuerte) del "modelo trabajador". |
 | 5 | Esquemas MCP inyectados cada turno | Extender el *progressive disclosure* O(1) del Yard (`list/describe/run`) a las herramientas MCP para no quemar contexto. |
-| 4 | Parsing frágil | Validación estricta de argumentos de herramientas (extracción pendiente citada de OpenCode) + más formatos de tool-call reconocidos en el parser. |
+| 4 | Parsing frágil | ✅ **Hecho (validación de argumentos):** `validate_tool_arguments()` intercepta requeridos ausentes antes del dispatch y devuelve un mensaje accionable (`outcome="invalid_arguments"`) en vez del `KeyError` críptico — [`executor_parts/arguments.py`](ci2lab/harness/tools/executor_parts/arguments.py) + enganche en [`core.py`](ci2lab/harness/tools/executor_parts/core.py). La mitad "más formatos de parser" ya estaba cubierta (native/XML/fenced/JSON/…). Pendiente opcional: chequeo de **tipos** (fase 2). |
 | 10 | Runs no replayables | Capturar seed + construir un replay harness para que los resultados sean reproducibles. |
 | 10 | Cobertura de eval escasa | Ampliar de 12 a un set de fixtures multi-paso / recuperación / seguridad más grande. |
 
