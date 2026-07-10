@@ -54,6 +54,7 @@ def prepare_session(
     tool_mode_override: str | None = None,
     backend: str = "ollama",
     backend_url: str | None = None,
+    context_length_override: int | None = None,
     pull: bool = True,
 ) -> tuple[HardwareProfile | None, ModelSelection]:
     """Prepare a harness session for the model the user chose.
@@ -81,6 +82,7 @@ def prepare_session(
     selection = build_model_selection(
         tag,
         tool_mode_override=tool_mode_override,
+        context_length_override=context_length_override,
         backend=backend,
         backend_url=backend_url,
         profile=profile,

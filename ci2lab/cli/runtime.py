@@ -35,8 +35,11 @@ def _resolve_runtime_config(args: argparse.Namespace) -> Ci2LabConfig:
     merged = merge_cli_config(
         base,
         model=args.model,
+        backend=getattr(args, "backend", None),
+        backend_url=getattr(args, "backend_url", None),
         tool_mode=args.tool_mode,
         max_rounds=args.max_rounds,
+        context_length=getattr(args, "context_length", None),
         workspace=args.workspace,
         cwd=args.cwd,
         no_stream=args.no_stream,
@@ -157,6 +160,7 @@ def _resolve_selection(
         tool_mode_override=_tool_mode_override(runtime, args),
         backend=runtime.backend,
         backend_url=runtime.backend_url,
+        context_length_override=runtime.context_length,
         pull=False,
     )
     return selection

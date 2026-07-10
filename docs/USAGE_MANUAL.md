@@ -355,7 +355,90 @@ ollama list                                # modelos instalados en Ollama
 ollama rm qwen2.5-coder:7b                # eliminar modelo del disco
 ```
 
-### 5.8 Backend alternativo (servidor compatible con OpenAI)
+### 5.8 Importar modelos GGUF desde Hugging Face
+
+CI2Lab puede registrar un GGUF descargado desde Hugging Face y crear el modelo correspondiente en Ollama con `ci2lab models import-gguf`. El flujo recomendado es: buscar un repo GGUF, descargar el archivo con `hf download`, verificar la ruta local, hacer primero un `--dry-run`, revisar el Modelfile generado y solo entonces ejecutar el import real.
+
+> `huggingface-cli` aparece como deprecated en instalaciones recientes. Usa `hf download`.
+
+#### Flujo recomendado en PowerShell
+
+1. Busca en Hugging Face un repositorio que publique archivos `.gguf`. En portátiles, empieza por cuantizaciones `Q4_K_M`.
+2. Descarga solo el archivo que quieres usar.
+3. Resuelve la ruta absoluta del `.gguf`.
+4. Ejecuta `ci2lab models import-gguf --dry-run`.
+5. Comprueba que el Modelfile generado contiene el `FROM` correcto y un `TEMPLATE` compatible con la familia del modelo.
+6. Ejecuta el import real.
+7. Verifica con `ollama list`, prueba con `ollama run` y finalmente prueba desde CI2Lab.
+
+Ejemplo validado con GLM-4-9B chat:
+
+```powershell
+hf download bartowski/glm-4-9b-chat-GGUF `
+  --include "*Q4_K_M.gguf" `
+  --local-dir models/glm4-9b-chat
+
+Get-ChildItem .\models\glm4-9b-chat
+
+$gguf = (Resolve-Path .\models\glm4-9b-chat\glm-4-9b-chat-Q4_K_M.gguf).Path
+
+ci2lab models import-gguf `
+  --id glm4chattest `
+  --repo bartowski/glm-4-9b-chat-GGUF `
+  --file glm-4-9b-chat-Q4_K_M.gguf `
+  --path "$gguf" `
+  --family glm4 `
+  --template glm4-chat `
+  --ctx 16384 `
+  --dry-run
+
+ci2lab models import-gguf `
+  --id glm4chattest `
+  --repo bartowski/glm-4-9b-chat-GGUF `
+  --file glm-4-9b-chat-Q4_K_M.gguf `
+  --path "$gguf" `
+  --family glm4 `
+  --template glm4-chat `
+  --ctx 16384
+
+ollama list
+ollama run glm4chattest
+
+ci2lab --backend ollama --model glm4chattest --context-length 8192 --max-rounds 1 --no-stream chat
+```
+
+En el `--dry-run`, revisa especialmente estas partes:
+
+```text
+FROM C:\ruta\absoluta\al\modelo.gguf
+TEMPLATE """
+...
+"""
+PARAMETER num_ctx 16384
+```
+
+En Windows, preferir ruta absoluta evita ambigüedades. Si usas ruta relativa, escribe `.\models\...` o `./models/...`; una ruta como `models/...` puede ser interpretada por Ollama como nombre remoto.
+
+#### Errores comunes
+
+| Error | Causa probable | Solución |
+|-------|----------------|----------|
+| `huggingface-cli is deprecated` | CLI antiguo de Hugging Face | Usar `hf download ...` |
+| `lookup models: no such host` | Ollama interpretó `models/...` como remoto | Usar `.\models\...`, `./models/...` o ruta absoluta |
+| `400 Bad Request: invalid model name` | Nombre/tag demasiado largo o con formato no aceptado por Ollama | Usar `--id` simple, por ejemplo `glm4chattest` o `glm4chat:q4km` |
+| `request exceeds available context size` | La conversación supera el contexto configurado | Subir `--context-length`, por ejemplo `8192` o `16384` |
+| Funciona en `ollama run` pero falla en CI2Lab | Contexto, sesión o streaming complican el primer smoke test | Probar `--context-length 8192 --max-rounds 1 --no-stream` y una sesión limpia |
+
+#### Buenas prácticas
+
+- Empieza con `Q4_K_M` en portátiles.
+- Evita modelos demasiado grandes para la RAM/VRAM disponible.
+- Usa nombres de Ollama simples y cortos.
+- Ejecuta siempre `--dry-run` antes del import real.
+- En Windows, prefiere ruta absoluta para `--path`.
+- Si el modelo no está en el catálogo base, conserva el `--family`, `--template`, `--ctx` y `--tool-mode` que hayas validado.
+
+### 5.9 Backend alternativo (servidor compatible con OpenAI)
 
 ```powershell
 # vLLM en localhost:8000
@@ -371,7 +454,7 @@ ci2lab --model lm-studio-model chat
 # O mediante ci2lab.yaml
 ```
 
-### 5.9 Orquestación multiagente
+### 5.10 Orquestación multiagente
 
 ```powershell
 ci2lab --multi-agent chat
@@ -381,7 +464,7 @@ Activa el orquestador de subagentes secuenciales. El subsistema multiagente vive
 
 > **Nota:** El flag `--multi-agent` puede no estar presente en todos los checkouts del repositorio. Verificar disponibilidad con `ci2lab --help` antes de usarlo.
 
-### 5.10 Gestión de sesiones
+### 5.11 Gestión de sesiones
 
 ```powershell
 ci2lab sessions                          # listar sesiones

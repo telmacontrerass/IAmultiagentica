@@ -7,6 +7,7 @@ from typing import Literal
 
 from ci2lab.contracts import HardwareProfile, ModelSelection, ModelSpec, ToolMode
 from ci2lab.hardware import scan_hardware
+from ci2lab.router.imported_models import ImportedModelProfile, find_imported_model_by_tag
 from ci2lab.router.catalog import find_model_by_tag
 
 # --- Context-window sizing ------------------------------------------------
@@ -43,6 +44,7 @@ def build_model_selection(
     ollama_tag: str,
     *,
     tool_mode_override: str | None = None,
+    context_length_override: int | None = None,
     backend: str = "ollama",
     backend_url: str | None = None,
     profile: HardwareProfile | None = None,
@@ -68,10 +70,16 @@ def build_model_selection(
     Returns:
         A fully-populated :class:`ModelSelection` the harness can run from.
     """
-    spec = find_model_by_tag(ollama_tag)
+    imported = find_imported_model_by_tag(ollama_tag)
+    spec = None if imported is not None else find_model_by_tag(ollama_tag)
     profile = profile or scan_hardware()
-    tool_mode: ToolMode = _resolve_tool_mode(spec, tool_mode_override)
-    context_length = _resolve_context_length(spec, profile)
+    tool_mode: ToolMode = _resolve_tool_mode(spec, tool_mode_override, imported=imported)
+    context_length = _resolve_context_length(
+        spec,
+        profile,
+        imported=imported,
+        explicit_override=context_length_override,
+    )
     provider: Literal["ollama", "openai"] = "ollama" if backend == "ollama" else "openai"
 
     resolved_backend: str = (
@@ -80,6 +88,32 @@ def build_model_selection(
         or os.environ.get("CI2LAB_OLLAMA_URL")
         or "http://localhost:11434/v1"
     )
+
+    if imported is not None:
+        temperature = imported.parameters.get("temperature", 0.2)
+        try:
+            resolved_temperature = float(temperature)
+        except (TypeError, ValueError):
+            resolved_temperature = 0.2
+        imported_backend: Literal["ollama", "openai"] = (
+            "ollama" if imported.backend == "ollama" else "openai"
+        )
+        return ModelSelection(
+            model_id=imported.id,
+            ollama_tag=imported.ollama_tag,
+            display_name=imported.display_name,
+            backend=imported_backend,
+            backend_url=resolved_backend,
+            tool_mode=tool_mode,
+            supports_tools=imported.supports_tools,
+            context_length=context_length if context_length is not None else imported.context_length,
+            hardware_tier=profile.hardware_tier,
+            temperature=resolved_temperature,
+            reason=(
+                f"Imported model profile: template={imported.template_id}, "
+                f"tool_mode={imported.tool_mode}."
+            ),
+        )
 
     if spec is not None:
         return ModelSelection(
@@ -115,6 +149,9 @@ def build_model_selection(
 def _resolve_context_length(
     spec: ModelSpec | None,
     profile: HardwareProfile | None,
+    *,
+    imported: ImportedModelProfile | None = None,
+    explicit_override: int | None = None,
 ) -> int | None:
     """Resolve the effective context window for a model selection.
 
@@ -140,9 +177,13 @@ def _resolve_context_length(
         The effective context window in tokens, or ``None`` when no catalog
         entry and no override apply.
     """
+    if explicit_override is not None and explicit_override > 0:
+        return explicit_override
     override = _env_num_ctx_override()
     if override is not None:
         return override
+    if imported is not None:
+        return imported.context_length
     if spec is None:
         return None
     return _fit_context_to_hardware(spec, profile)
@@ -210,9 +251,13 @@ def _fit_context_to_hardware(
 def _resolve_tool_mode(
     spec: ModelSpec | None,
     tool_mode_override: str | None,
+    *,
+    imported: ImportedModelProfile | None = None,
 ) -> ToolMode:
     if tool_mode_override is not None:
         return tool_mode_override  # type: ignore[return-value]
+    if imported is not None:
+        return imported.tool_mode
     if spec is not None:
         return spec.tool_mode
     return "fenced"

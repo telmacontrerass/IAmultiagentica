@@ -10,6 +10,7 @@ from ci2lab.cli.commands.doctor import _cmd_doctor
 from ci2lab.cli.commands.evals import _cmd_evals
 from ci2lab.cli.commands.hardware import _cmd_hardware
 from ci2lab.cli.commands.models import (
+    _cmd_models_import_gguf,
     _cmd_models_install,
     _cmd_models_recommend,
     _cmd_models_run,
@@ -109,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_models_install(args)
     if args.command == "models" and args.models_command == "run":
         return _cmd_models_run(args)
+    if args.command == "models" and args.models_command == "import-gguf":
+        return _cmd_models_import_gguf(args)
     if args.command == "evals":
         return _cmd_evals(args)
     if args.command == "bench":

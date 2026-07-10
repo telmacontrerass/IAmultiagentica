@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 from rich.table import Table
 
@@ -15,6 +17,12 @@ from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
 from ci2lab.router.intent import classify_intent
+from ci2lab.router.imported_models import (
+    build_imported_profile,
+    create_ollama_model,
+    render_ollama_modelfile,
+    save_imported_model_profile,
+)
 from ci2lab.router.recommend import (
     ScoredRecommendation,
     build_display_recommendations,
@@ -112,6 +120,55 @@ def _cmd_models_run(args: argparse.Namespace) -> int:
         console.print(f"  {_install_commands(model)['pull']}")
         return 1
     return completed.returncode
+
+
+def _cmd_models_import_gguf(args: argparse.Namespace) -> int:
+    """Import one already-downloaded GGUF file into Ollama and CI2Lab metadata."""
+    gguf_path = Path(args.path).expanduser()
+    if not gguf_path.is_file():
+        console.print(f"[red]GGUF file not found:[/red] {gguf_path}")
+        return 1
+    resolved_gguf_path = str(gguf_path.resolve())
+
+    try:
+        profile = build_imported_profile(
+            model_id=args.id,
+            repo=args.repo,
+            filename=args.file,
+            local_path=resolved_gguf_path,
+            family=args.family,
+            template_id=args.template,
+            context_length=args.ctx,
+            tool_mode=args.tool_mode,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 1
+
+    if args.dry_run:
+        sys.stdout.write(render_ollama_modelfile(profile))
+        return 0
+
+    try:
+        _modelfile, completed = create_ollama_model(profile, dry_run=False)
+    except FileNotFoundError:
+        console.print("[red]Cannot find the `ollama` command.[/red]")
+        return 1
+    if completed is None:
+        return 1
+    if completed.stdout:
+        console.print(completed.stdout.strip())
+    if completed.stderr:
+        console.print(completed.stderr.strip())
+    if completed.returncode != 0:
+        console.print(f"[red]ollama create failed with exit code {completed.returncode}.[/red]")
+        return completed.returncode
+
+    registry_path = save_imported_model_profile(profile)
+    console.print(f"[green]Imported model:[/green] {profile.id}")
+    console.print(f"[bold]Ollama tag:[/bold] {profile.ollama_tag}")
+    console.print(f"[bold]CI2Lab registry:[/bold] {registry_path}")
+    return 0
 
 
 def _install_commands(model: ModelSpec) -> dict[str, str]:

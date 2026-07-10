@@ -1,0 +1,31 @@
+{
+  "templates": [
+    {
+      "id": "glm4-chat",
+      "family": "glm4",
+      "description": "GLM-4 chat template for Ollama GGUF imports.",
+      "template": "[gMASK]<sop>{{ if .System }}<|system|>\n{{ .System }}{{ end }}<|user|>\n{{ .Prompt }}<|assistant|>\n{{ .Response }}",
+      "stops": [
+        "<|user|>",
+        "<|assistant|>",
+        "<|system|>",
+        "<|observation|>",
+        "<|endoftext|>",
+        "<eop>"
+      ],
+      "default_parameters": {
+        "temperature": 0.1,
+        "top_p": 0.8
+      },
+      "default_tool_mode": "fenced"
+    }
+  ],
+  "families": [
+    "qwen2.5",
+    "llama3",
+    "mistral",
+    "deepseek",
+    "gemma",
+    "glm4"
+  ]
+}

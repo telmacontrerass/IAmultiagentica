@@ -70,7 +70,9 @@ def _print_global_help() -> None:
         "  ci2lab --version                  Print version and exit",
         "",
         "Agent flags (shortcut, agent and chat):",
-        "  --model TAG                       Ollama tag (e.g. qwen2.5-coder:7b)",
+        "  --model TAG                       Model name/tag (e.g. qwen2.5-coder:7b)",
+        "  --backend {ollama,openai}         Inference backend/provider",
+        "  --base-url URL                    Backend base URL (e.g. http://localhost:8000/v1)",
         "  --tool-mode {native,fenced}       native=function calling; fenced=blocks",
         "  --workspace PATH                  Agent working directory",
         "  --cwd PATH                        Legacy alias of --workspace",
@@ -142,7 +144,19 @@ def _add_agent_flags(p: argparse.ArgumentParser, *, subcommand: bool = False) ->
     p.add_argument(
         "--model",
         default=value_default,
-        help="Ollama tag (override; otherwise config or CI2LAB_MODEL)",
+        help="Model name/tag (override; otherwise config or CI2LAB_MODEL)",
+    )
+    p.add_argument(
+        "--backend",
+        choices=["ollama", "openai"],
+        default=value_default,
+        help="Inference backend/provider",
+    )
+    p.add_argument(
+        "--base-url",
+        dest="backend_url",
+        default=value_default,
+        help="Backend base URL (e.g. http://localhost:8000/v1)",
     )
     p.add_argument(
         "--tool-mode",
@@ -185,6 +199,12 @@ def _add_agent_flags(p: argparse.ArgumentParser, *, subcommand: bool = False) ->
         help="Disable token streaming",
     )
     p.add_argument("--max-rounds", type=int, default=value_default)
+    p.add_argument(
+        "--context-length",
+        type=int,
+        default=value_default,
+        help="Override model context window used by CI2Lab and Ollama num_ctx",
+    )
     p.add_argument(
         "--multi-agent",
         action="store_true",
@@ -286,6 +306,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Open the model in the console with ollama run",
     )
     run_p.add_argument("model", help="Catalog ID or Ollama tag")
+    import_p = models_sub.add_parser(
+        "import-gguf",
+        help="Import an already-downloaded Hugging Face GGUF into Ollama",
+    )
+    import_p.add_argument("--repo", required=True, help="Hugging Face repo id")
+    import_p.add_argument("--file", required=True, help="GGUF filename in the repo")
+    import_p.add_argument("--path", required=True, help="Local GGUF path")
+    import_p.add_argument("--id", required=True, help="Stable CI2Lab/Ollama model id")
+    import_p.add_argument("--family", required=True, help="Model family, e.g. glm4")
+    import_p.add_argument("--template", required=True, help="Template id, e.g. glm4-chat")
+    import_p.add_argument("--ctx", type=int, required=True, help="Context length / num_ctx")
+    import_p.add_argument(
+        "--tool-mode",
+        choices=["native", "fenced"],
+        default=None,
+        help="Default CI2Lab tool mode for this imported profile",
+    )
+    import_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the generated Modelfile without running ollama create or saving metadata",
+    )
 
     evals_p = sub.add_parser("evals", help="Practical harness evaluation")
     evals_sub = evals_p.add_subparsers(dest="evals_command")

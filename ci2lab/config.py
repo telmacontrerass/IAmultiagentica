@@ -26,6 +26,7 @@ DEFAULT_BACKEND = "ollama"
 DEFAULT_BACKEND_URL = "http://localhost:11434/v1"
 DEFAULT_TOOL_MODE = "native"
 DEFAULT_MAX_ROUNDS = 25
+DEFAULT_CONTEXT_LENGTH: int | None = None
 DEFAULT_STREAM = True
 DEFAULT_AUTO_CONFIRM = False
 DEFAULT_RUNS_DIR = "runs"
@@ -52,6 +53,7 @@ class Ci2LabConfig:
     backend_url: str = DEFAULT_BACKEND_URL
     tool_mode: str = DEFAULT_TOOL_MODE
     max_rounds: int = DEFAULT_MAX_ROUNDS
+    context_length: int | None = DEFAULT_CONTEXT_LENGTH
     workspace: str | None = None
     stream: bool = DEFAULT_STREAM
     auto_confirm: bool = DEFAULT_AUTO_CONFIRM
@@ -72,7 +74,7 @@ def _parse_bool(value: str) -> bool:
 
 def _coerce_value(key: str, raw: str) -> Any:
     text = raw.strip().strip("'\"")
-    if key in {"max_rounds"}:
+    if key in {"max_rounds", "context_length"}:
         return int(text)
     if key in {
         "stream",
@@ -266,8 +268,11 @@ def merge_cli_config(
     base: Ci2LabConfig,
     *,
     model: str | None = None,
+    backend: str | None = None,
+    backend_url: str | None = None,
     tool_mode: str | None = None,
     max_rounds: int | None = None,
+    context_length: int | None = None,
     workspace: str | None = None,
     cwd: str | None = None,
     stream: bool | None = None,
@@ -280,10 +285,16 @@ def merge_cli_config(
     updates: dict[str, Any] = {}
     if model is not None:
         updates["model"] = model
+    if backend is not None:
+        updates["backend"] = backend
+    if backend_url is not None:
+        updates["backend_url"] = backend_url
     if tool_mode is not None:
         updates["tool_mode"] = tool_mode
     if max_rounds is not None:
         updates["max_rounds"] = max_rounds
+    if context_length is not None:
+        updates["context_length"] = context_length
     if stream is not None:
         updates["stream"] = stream
     elif no_stream:
