@@ -62,6 +62,12 @@ Examenes/
 # Paper planning (local strategy notes, not for the repo)
 /PAPER_DIRECTION.md
 
+# Quarto HTML renders of markdown docs (generate locally: `quarto render <file>.md`)
+/*.html
+/*_files/
+docs/*.html
+docs/*_files/
+
 # Local test leftovers / manual scratch files
 /prueba.pdf
 /inside.txt

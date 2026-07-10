@@ -439,7 +439,6 @@ Ver [`CONTRIBUTING.md`](CONTRIBUTING.md) para el flujo completo.
 | [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) | Limitaciones conocidas |
 | [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) | Metodología de benchmarks |
 | [`docs/evals.md`](docs/evals.md) | Evaluación del harness |
-| [`docs/HARDWARE_ROUTER_HANDOFF.md`](docs/HARDWARE_ROUTER_HANDOFF.md) | Integración hardware → router |
 | [`docs/PEER_REVIEW.md`](docs/PEER_REVIEW.md) | Flujo de revisión entre pares |
 | [`docs/TOOLS_ROADMAP.md`](docs/TOOLS_ROADMAP.md) | Roadmap de herramientas |
 

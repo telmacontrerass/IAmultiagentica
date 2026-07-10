@@ -14,8 +14,6 @@ They are not the agent's primary flow over the repository code, and they are not
 - Changes are recorded under `runs/` (`tool_calls.jsonl` with an `outcome`).
 - They can be disabled entirely with `write_tools_enabled=false`.
 
-Technical detail of the flow: [`docs/audits/write_edit_tools_status.md`](audits/write_edit_tools_status.md).
-
 ## Recommended use today
 
 - Temporary files and test workspaces.
@@ -40,6 +38,4 @@ Technical detail of the flow: [`docs/audits/write_edit_tools_status.md`](audits/
 
 ## References
 
-- [Technical write/edit status](audits/write_edit_tools_status.md)
-- [Validation in mock/live evals](audits/live_eval_status.md) — tasks `005`–`007`
 - [Known limitations](KNOWN_LIMITATIONS.md)

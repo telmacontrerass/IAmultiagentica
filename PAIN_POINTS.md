@@ -335,8 +335,9 @@ compactación (historial viejo resumido o recortado) · **trim grosero ~4 caract
 
 - `references/EXTRACTION_LOG.md`: de Odysseus se tomó *"the idea of 'hardware scan + fit
   scoring + model catalog' (from its README + `services/hwfit/`); **no code copied**"*.
-- `docs/HARDWARE_ROUTER_HANDOFF.md` §6.1 y §13: la fuente de `models.json` es la **"project
-  model table"** interna, no Odysseus.
+- `docs/HARDWARE_ROUTER_HANDOFF.md` §6.1 y §13 (documento histórico, hoy solo en el
+  historial de git): la fuente de `models.json` es la **"project model table"** interna,
+  no Odysseus.
 - Repo de Odysseus (`services/hwfit/models.py`, verificado): carga de
   `data/hf_models.json` + `data/mlx_community_models.json` con campos `name`,
   `quantization`, `parameter_count`, `is_moe`, `use_case` (inferido del nombre)… →

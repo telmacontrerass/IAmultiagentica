@@ -1018,8 +1018,6 @@ python scripts/security_gate_check.py --workspace . --tool bash --target "rm -rf
 | `runs/` | Artefactos de ejecución históricos; pueden contener trazas de sesiones de investigación |
 | `evals/results/` | Resultados de evaluaciones pasadas; referencia histórica de comportamiento del harness |
 | `benchmarks/results/` | Resultados de benchmarks; referencia histórica de rendimiento comparativo |
-| `docs/audits/` | Reportes de auditoría documentados |
-| `docs/reports/` | Reportes técnicos del proyecto |
 | `Examenes/` | PDFs de ejemplo / casos de uso — pueden ser datos de prueba relevantes |
 | `.agents/` | Directorio de trabajo de agentes activos — puede contener estado de sesiones en progreso |
 
@@ -1040,9 +1038,7 @@ python scripts/security_gate_check.py --workspace . --tool bash --target "rm -rf
 
 - **`references/`** — Snapshots de repos de referencia (claude-code, odysseus, opencode, deepagents). Son solo lectura para el equipo; no son parte del paquete instalable.
 - **`audit/redteam/`** y **`audit/redteam_sandbox/`** — Tests de adversarios ejecutados manualmente. Contienen escenarios de ataque usados para validar los motores de seguridad.
-- **`audit/repo_cleanup/`** — Herramientas para análisis de limpieza del repo. No ejecutar sin entender el contenido.
-- **`20260217_rudiger_user_instructions.md`** — Instrucciones de usuario de una sesión específica. Archivo histórico de referencia.
-- **`docs/stashed_changes_concepts.md`** — Conceptos de cambios stashed / pendientes de implementar. Lectura de roadmap informal.
+- **`docs/20260217_rudiger_user_instructions.md`** — Guía de uso y entorno de la estación de trabajo RUDIGER. Archivo histórico de referencia.
 - **`Examenes/`** — PDFs de ejemplo (exámenes universitarios de matemáticas). Usados probablemente como casos de prueba para las herramientas de procesamiento de PDFs y visión. No son datos sensibles pero sí datos de prueba.
 - **`inside.txt`** y **`debug.log`** — Archivos de trabajo / debug generados durante el desarrollo. Verificar contenido antes de borrar.
 

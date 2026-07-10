@@ -30,4 +30,4 @@ This package defines the types shared between:
 
 ## Full documentation
 
-See [`docs/HARDWARE_ROUTER_HANDOFF.md`](../../docs/HARDWARE_ROUTER_HANDOFF.md).
+See [`docs/STRUCTURE.md`](../../docs/STRUCTURE.md) for the module map and data flow.
