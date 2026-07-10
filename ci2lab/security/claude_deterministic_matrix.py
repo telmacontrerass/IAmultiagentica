@@ -1,4 +1,4 @@
-"""P3.0.1 deterministic matrix — claude_experimental security without an LLM."""
+"""P3.0.1 deterministic matrix - ci2lab_guard security without an LLM."""
 
 from __future__ import annotations
 
@@ -451,7 +451,7 @@ def _agent_config(
     """Build the agent config used for deterministic matrix evaluation."""
     return AgentConfig(
         cwd=str(ws_root),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         security_profile="standard",
         opencode_permissions=permissions or _dev_permissions(),
         auto_confirm=auto_confirm,
@@ -469,7 +469,7 @@ def _maybe_grant_session(
     if not spec.grant_session_allow or not spec.session_id:
         return
     fp = build_approval_fingerprint(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         tool_name=spec.tool,
         args=spec.args,
         matched_rule="hard:outside_workspace",
@@ -564,7 +564,7 @@ def evaluate_dispatch_case(
                 runs_dir="runs",
                 run_id=f"det-{spec.case_id}",
                 run_subdir=f"det-{spec.case_id}",
-                security_engine="claude_experimental",
+                security_engine="ci2lab_guard",
             )
         )
         bind_active_session(spec.session_id)
@@ -784,7 +784,7 @@ def export_deterministic_report(
     summary: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "phase": "P3.0.1",
-        "security_engine": "claude_experimental",
+        "security_engine": "ci2lab_guard",
         "workspace": str(workspace_root),
         "outside_secret": str(outside_secret),
         "gate": {
@@ -846,7 +846,7 @@ def export_deterministic_report(
             writer.writerow({k: data.get(k, "") for k in fieldnames})
 
     md_lines = [
-        "# Claude experimental deterministic audit (P3.0.1)",
+        "# CI2Lab Guard deterministic audit (P3.0.1)",
         "",
         f"Generated: {summary['generated_at']}",
         "",

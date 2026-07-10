@@ -1,4 +1,4 @@
-"""P2.8 tests — claude_experimental engine (hard guards + permission UX)."""
+"""P2.8 tests - ci2lab_guard engine (hard guards + permission UX)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ci2lab.security.approval_prompt import (
 from ci2lab.security.audit import clear_audit_log, get_audit_log
 from ci2lab.security.comparison import run_comparison
 from ci2lab.security.engine import (
-    CLAUDE_EXTERNAL_ALLOW_IGNORED,
+    CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED,
     SecurityEngineName,
     enforce_ci2lab_hard_policy,
     evaluate_tool_gate,
@@ -86,9 +86,9 @@ def _dev_rules() -> OpenCodePermissionConfig:
 def test_claude_engine_in_config():
     cfg = _apply_mapping(
         Ci2LabConfig(),
-        {"security": {"engine": "claude_experimental", "permission_preset": "opencode_dev"}},
+        {"security": {"engine": "ci2lab_guard", "permission_preset": "opencode_dev"}},
     )
-    assert cfg.security.engine == "claude_experimental"
+    assert cfg.security.engine == "ci2lab_guard"
 
 
 def test_claude_engine_cli_flag():
@@ -101,8 +101,8 @@ def test_claude_engine_cli_flag():
     assert proc.returncode == 0
 
 
-def test_default_engine_claude_experimental():
-    assert normalize_security_engine(None) == SecurityEngineName.CLAUDE_EXPERIMENTAL.value
+def test_default_engine_ci2lab_guard():
+    assert normalize_security_engine(None) == SecurityEngineName.CI2LAB_GUARD.value
 
 
 def test_unknown_engine_fails():
@@ -113,7 +113,7 @@ def test_unknown_engine_fails():
 def test_claude_blocks_external_despite_external_allow(workspace: Path, outside_secret: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=_external_allow_rules(),
     )
     gate = evaluate_tool_gate("read_file", {"path": str(outside_secret)}, config)
@@ -121,13 +121,13 @@ def test_claude_blocks_external_despite_external_allow(workspace: Path, outside_
     assert gate.matched_rule == "hard:outside_workspace"
     assert gate.external_directory is True
     assert gate.hard_guards_enabled is True
-    assert gate.risk_note == CLAUDE_EXTERNAL_ALLOW_IGNORED
+    assert gate.risk_note == CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED
 
 
 def test_claude_blocks_dotenv_despite_read_allow(workspace: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=OpenCodePermissionConfig(rules={"read": {"*": "allow"}}),
     )
     gate = evaluate_tool_gate("read_file", {"path": ".env"}, config)
@@ -141,7 +141,7 @@ def test_claude_blocks_rm_despite_bash_allow_rule(workspace: Path):
     )
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=rules,
     )
     gate = evaluate_tool_gate("bash", {"command": "rm *"}, config)
@@ -152,7 +152,7 @@ def test_claude_blocks_rm_despite_bash_allow_rule(workspace: Path):
 def test_yes_does_not_skip_hard_deny(workspace: Path, outside_secret: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=_external_allow_rules(),
         auto_confirm=True,
     )
@@ -163,7 +163,7 @@ def test_yes_does_not_skip_hard_deny(workspace: Path, outside_secret: Path):
 def test_claude_allows_git_status(workspace: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=_dev_rules(),
     )
     gate = evaluate_tool_gate("bash", {"command": "git status"}, config)
@@ -175,7 +175,7 @@ def test_claude_allows_git_status(workspace: Path):
 def test_claude_asks_unknown_bash(workspace: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=_dev_rules(),
         auto_confirm=False,
     )
@@ -188,7 +188,7 @@ def test_claude_permission_deny(workspace: Path):
     rules = OpenCodePermissionConfig(rules={"bash": {"*": "deny"}})
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=rules,
     )
     gate = evaluate_tool_gate("bash", {"command": "git status"}, config)
@@ -218,7 +218,7 @@ def test_claude_default_deny_patterns_generalized(
 ):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("bash", {"command": command}, config)
     assert gate.blocked
@@ -237,7 +237,7 @@ def test_claude_recursive_cmd_variants_blocked(workspace: Path, command: str):
     """rmdir /s and rd /s must be blocked (hard guard or permission deny)."""
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("bash", {"command": command}, config)
     assert gate.blocked
@@ -246,7 +246,7 @@ def test_claude_recursive_cmd_variants_blocked(workspace: Path, command: str):
 def test_claude_safe_commands_not_denied(workspace: Path):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     git = evaluate_tool_gate("bash", {"command": "git status"}, config)
     assert not git.blocked
@@ -283,7 +283,7 @@ def test_claude_linux_destructive_permission_deny(
 ):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("bash", {"command": command}, config)
     assert gate.blocked
@@ -307,7 +307,7 @@ def test_claude_linux_destructive_hard_or_permission_deny(workspace: Path, comma
     """High-impact destructive commands: permission deny or hard guard."""
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("bash", {"command": command}, config)
     assert gate.blocked
@@ -323,7 +323,7 @@ def test_claude_risky_dev_commands_stay_ask_not_deny(workspace: Path, command: s
     """Useful dev one-liners: ask, not automatic permission deny."""
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("bash", {"command": command}, config)
     assert not gate.blocked
@@ -334,7 +334,7 @@ def test_git_destructive_beats_git_allow(workspace: Path):
     """git clean/reset --hard must win over git * = allow."""
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     clean = evaluate_tool_gate("bash", {"command": "git clean -fd"}, config)
     assert clean.blocked
@@ -351,7 +351,7 @@ def test_git_destructive_beats_git_allow(workspace: Path):
 
 def test_security_permission_over_root():
     sec = SecurityConfig(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         permission={"bash": {"*": "deny"}},
     )
     perms = resolved_opencode_permissions(
@@ -363,13 +363,13 @@ def test_security_permission_over_root():
 
 def test_preset_opencode_dev_claude(workspace: Path):
     sec = SecurityConfig(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         permission_preset="opencode_dev",
     )
     perms = resolved_opencode_permissions(sec)
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=perms,
     )
     gate = evaluate_tool_gate("bash", {"command": "pytest -q"}, config)
@@ -377,7 +377,7 @@ def test_preset_opencode_dev_claude(workspace: Path):
 
 
 def test_modern_prompt_used_for_claude():
-    assert uses_modern_permission_prompt("claude_experimental")
+    assert uses_modern_permission_prompt("ci2lab_guard")
 
 
 def test_claude_prompt_menu():
@@ -391,11 +391,11 @@ def test_claude_prompt_menu():
             target_summary="echo x",
             matched_rule="bash:*",
         ),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         input_func=lambda _: "a",
         output_func=out.write,
     )
-    assert "claude_experimental" in out.getvalue()
+    assert "ci2lab_guard" in out.getvalue()
     assert choice.value == "allow_once"
 
 
@@ -403,7 +403,7 @@ def test_allow_session_second_call(workspace: Path):
     rules = OpenCodePermissionConfig(rules={"bash": {"*": "ask"}})
     args = {"command": "echo safe"}
     fp = build_approval_fingerprint(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         tool_name="bash",
         args=args,
         matched_rule="bash:*",
@@ -412,7 +412,7 @@ def test_allow_session_second_call(workspace: Path):
     bind_active_session("sess-c")
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=rules,
         session_id="sess-c",
     )
@@ -426,7 +426,7 @@ def test_allow_session_second_call(workspace: Path):
 
 def test_allow_session_no_skip_hard(workspace: Path, outside_secret: Path):
     fp = build_approval_fingerprint(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         tool_name="read_file",
         args={"path": str(outside_secret)},
         matched_rule="hard:outside_workspace",
@@ -435,7 +435,7 @@ def test_allow_session_no_skip_hard(workspace: Path, outside_secret: Path):
     grant_session_approval("sess-x", fp, "allow_session")
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=_external_allow_rules(),
         session_id="sess-x",
     )
@@ -456,7 +456,7 @@ def test_opencode_session_does_not_affect_claude(workspace: Path):
     rules = OpenCodePermissionConfig(rules={"bash": {"*": "ask"}})
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         opencode_permissions=rules,
         session_id="sess-m",
         auto_confirm=False,
@@ -471,20 +471,20 @@ def test_audit_marks_claude_engine(workspace: Path):
         ToolCall("read_file", {"path": "inside.txt"}, "t1"),
         AgentConfig(
             cwd=str(workspace),
-            security_engine="claude_experimental",
+            security_engine="ci2lab_guard",
             opencode_permissions=_dev_rules(),
             auto_confirm=True,
         ),
     )
     entries = get_audit_log()
-    assert any(e.extra.get("security_engine") == "claude_experimental" for e in entries)
+    assert any(e.extra.get("security_engine") == "ci2lab_guard" for e in entries)
     assert any(e.extra.get("hard_guards_enabled") for e in entries)
 
 
 def test_retry_plan_hard_deny_claude(workspace: Path, outside_secret: Path):
     event = {
         "event_id": "abc",
-        "security_engine": "claude_experimental",
+        "security_engine": "ci2lab_guard",
         "tool": "read_file",
         "target": str(outside_secret),
         "decision": "deny",
@@ -497,17 +497,17 @@ def test_retry_plan_hard_deny_claude(workspace: Path, outside_secret: Path):
     plan = build_retry_plan(event, workspace=str(workspace))
     text = " ".join(plan["recommendations"]).lower()
     assert "hard" in text or "workspace" in text
-    assert "if_retried_claude_experimental" in plan
+    assert "if_retried_ci2lab_guard" in plan
 
 
 def test_comparator_includes_claude(workspace: Path, outside_secret: Path):
     rows = run_comparison(workspace, outside_path=outside_secret)
-    assert any(r.engine == "claude_experimental" for r in rows)
+    assert any(r.engine == "ci2lab_guard" for r in rows)
     claude_ext = next(
         r
         for r in rows
         if r.case_id == "read_external_allow"
-        and r.engine == "claude_experimental"
+        and r.engine == "ci2lab_guard"
         and r.permission_config == "external_allow"
     )
     assert claude_ext.actual_decision == "deny"
@@ -528,7 +528,7 @@ def test_comparator_three_engines_external(workspace: Path, outside_secret: Path
         r
         for r in rows
         if r.case_id == "read_external_allow"
-        and r.engine == "claude_experimental"
+        and r.engine == "ci2lab_guard"
         and r.permission_config == "external_allow"
     )
     assert ci2.actual_decision == "deny"
@@ -538,17 +538,17 @@ def test_comparator_three_engines_external(workspace: Path, outside_secret: Path
 
 def test_dry_gate_claude_git(workspace: Path):
     result = evaluate_security_gate(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         workspace=str(workspace),
         tool="bash",
         target="git status",
     )
-    assert result["engine"] == "claude_experimental"
+    assert result["engine"] == "ci2lab_guard"
     assert result["experimental"] is True
 
 
 def test_enforce_hard_policy_includes_claude():
-    assert enforce_ci2lab_hard_policy("claude_experimental")
+    assert enforce_ci2lab_hard_policy("ci2lab_guard")
     assert not enforce_ci2lab_hard_policy("opencode_experimental")
 
 
@@ -557,11 +557,11 @@ def test_build_agent_config_uses_runtime_security():
     from ci2lab.pipeline import build_agent_config
 
     runtime = Ci2LabConfig(
-        security=SecurityConfig(engine="claude_experimental", profile="standard"),
+        security=SecurityConfig(engine="ci2lab_guard", profile="standard"),
     )
     selection = default_selection("test:1b")
     agent = build_agent_config(runtime, selection, cwd=str(Path.cwd()))
-    assert agent.security_engine == "claude_experimental"
+    assert agent.security_engine == "ci2lab_guard"
     assert agent.opencode_permissions is not None
 
 
@@ -584,6 +584,6 @@ def test_security_gate_check_default_engine(workspace: Path):
     )
     assert proc.returncode == 0, proc.stderr
     data = json.loads(proc.stdout)
-    assert data["engine"] == "claude_experimental"
+    assert data["engine"] == "ci2lab_guard"
     assert data["decision"] == "deny"
     assert data["blocked"] is True

@@ -112,8 +112,8 @@ class AgentConfig:
     security_profile: str = "standard"
     """Security profile (strict, standard, dev, audit)."""
 
-    security_engine: str = "claude_experimental"
-    """Security engine: claude_experimental (default), ci2lab (legacy) or opencode_experimental."""
+    security_engine: str = "ci2lab_guard"
+    """Security engine: ci2lab_guard (default), ci2lab (legacy) or opencode_experimental."""
 
     opencode_permissions: OpenCodePermissionConfig | None = None
     """OpenCode-style permission rules (experimental engine only)."""

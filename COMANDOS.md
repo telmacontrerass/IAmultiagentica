@@ -602,19 +602,19 @@ Compara decisiones de `ci2lab` vs `opencode_experimental` sobre una matriz de ca
 ### Auditoría determinista (sin LLM)
 
 ```powershell
-python scripts/audit_claude_deterministic.py
+python scripts/audit_ci2lab_guard_deterministic.py
 ```
 
-Ejecuta la matriz de decisiones de `claude_experimental` sin invocar ningún modelo. Los artefactos se guardan en `audit/deterministic_claude/<timestamp>/`.
+Ejecuta la matriz de decisiones de `ci2lab_guard` sin invocar ningún modelo. Los artefactos se guardan en `audit/deterministic_claude/<timestamp>/`.
 
 ### Auditoría live (con Ollama)
 
 ```powershell
 # Todos los modelos por defecto (llama3.1:8b native + qwen3:4b fenced)
-python scripts/audit_claude_experimental_live.py --all
+python scripts/audit_ci2lab_guard_live.py --all
 
 # Un modelo concreto
-python scripts/audit_claude_experimental_live.py --model llama3.1:8b --tool-mode native
+python scripts/audit_ci2lab_guard_live.py --model llama3.1:8b --tool-mode native
 ```
 
 Requiere que los modelos estén descargados en Ollama. Los artefactos van a `audit/live_claude/<timestamp>/`.
@@ -627,7 +627,7 @@ ci2lab-audit-live
 ### Motores de seguridad disponibles
 
 ```powershell
-ci2lab chat                                          # claude_experimental (default)
+ci2lab chat                                          # ci2lab_guard (default)
 ci2lab --security-engine ci2lab chat                 # legado: solo [y/N], sin reglas
 ci2lab --security-engine opencode_experimental chat  # INSEGURO — solo laboratorio
 ```
@@ -644,8 +644,8 @@ Todos los scripts están en `scripts/` y se pueden ejecutar con el entorno virtu
 |--------|----------------|---------|--------|
 | `scripts/security_gate_check.py` | Evalúa la puerta de seguridad sin ejecutar la herramienta (dry-run) | `python scripts/security_gate_check.py --workspace . --tool bash --target "rm x"` | Estable |
 | `scripts/compare_security_engines.py` | Compara decisiones ci2lab vs opencode_experimental | `python scripts/compare_security_engines.py --workspace .` | Estable |
-| `scripts/audit_claude_deterministic.py` | Auditoría determinista de claude_experimental sin LLM | `python scripts/audit_claude_deterministic.py` | Estable |
-| `scripts/audit_claude_experimental_live.py` | Auditoría live con modelos Ollama reales | `python scripts/audit_claude_experimental_live.py --all` | Estable |
+| `scripts/audit_ci2lab_guard_deterministic.py` | Auditoría determinista de ci2lab_guard sin LLM | `python scripts/audit_ci2lab_guard_deterministic.py` | Estable |
+| `scripts/audit_ci2lab_guard_live.py` | Auditoría live con modelos Ollama reales | `python scripts/audit_ci2lab_guard_live.py --all` | Estable |
 
 ### Configuración de seguridad
 

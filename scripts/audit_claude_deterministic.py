@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auditoría determinista P3.0.1 — claude_experimental sin LLM."""
+"""Auditoría determinista P3.0.1 — ci2lab_guard sin LLM."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
     out_dir = args.output_root.resolve() / stamp
 
-    with tempfile.TemporaryDirectory(prefix="ci2lab_det_claude_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="ci2lab_guard_det_") as tmp:
         gate_results, dispatch_results, ws = run_full_deterministic_matrix(
             Path(tmp),
             repo_root=ROOT,

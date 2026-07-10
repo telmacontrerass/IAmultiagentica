@@ -57,7 +57,7 @@ El proyecto resuelve tres problemas concretos:
 | **Memoria del proyecto** | Archivos `CI2LAB.md` y `AGENTS.md` en el workspace; se inyectan en el system prompt de cada sesión. |
 | **Edición supervisada** | Antes de que el agente ejecute `write_file` o `edit_file`, muestra un diff y pide confirmación (a menos que `--yes` esté activo). |
 | **Compactación de contexto** | Cuando el contexto se acerca al límite, se ejecuta micro-compact (elimina mensajes intermedios) + resumen LLM + trim mecánico. |
-| **Motor de seguridad** | Implementación de las reglas de permisos. Los tres disponibles son `claude_experimental` (default), `ci2lab` (legado) y `opencode_experimental` (inseguro). |
+| **Motor de seguridad** | Implementación de las reglas de permisos. Los tres disponibles son `ci2lab_guard` (default), `ci2lab` (legado) y `opencode_experimental` (inseguro). |
 | **Perfil de seguridad** | Preset de permisos: `strict`, `standard` (default), `dev`, `audit`. Se configura en `ci2lab.json`. |
 | **Run log** | Artefactos JSON/JSONL generados bajo `runs/` o `--runs-dir` con cada ejecución del agente: tool_calls, mensajes, tokens, etc. |
 | **Eval task** | Tarea JSON en `evals/tasks/` que define un prompt, archivos iniciales, respuestas mock y criterios de éxito/fallo para validar el harness. |
@@ -167,7 +167,7 @@ Implementaciones de los tres motores de seguridad más las herramientas de audit
 - `policy.py` — definición de reglas deny/ask/allow.
 - `permissions.py` — sistema de permisos por sesión.
 - `decisions.py` — lógica de decisión.
-- `claude_deterministic_matrix.py` — matriz de decisiones determinista para `claude_experimental`.
+- `claude_deterministic_matrix.py` — matriz de decisiones determinista para `ci2lab_guard`.
 - `opencode_config_*.py` — capa de compatibilidad con configuración de OpenCode.
 - `audit.py` — framework de auditoría no interactiva.
 - `comparison.py` — comparativa entre motores.
@@ -509,7 +509,7 @@ Los flags globales van siempre **antes** del subcomando.
 | `--max-rounds` | int | 25 | Límite de rondas del loop |
 | `--session` | string | — | ID de sesión a reanudar |
 | `--runs-dir` | ruta | `runs/` | Directorio de artefactos |
-| `--security-engine` | string | `claude_experimental` | Motor de seguridad |
+| `--security-engine` | string | `ci2lab_guard` | Motor de seguridad |
 | `--multi-agent` | flag | false | Activar orquestador multiagente |
 
 ### Subcomandos
@@ -747,7 +747,7 @@ python -m pytest --lf -q
 | `test_bash_windows_vectors.py` | Vectores de escape específicos de Windows |
 | `test_config.py` | Precedencia de configuración |
 | `test_backends.py` | Backends Ollama y OpenAI-compatible |
-| `test_claude_deterministic_matrix.py` | Matriz de decisiones del motor claude_experimental |
+| `test_claude_deterministic_matrix.py` | Matriz de decisiones del motor ci2lab_guard |
 | `test_multiagent_orchestrator.py` | Orquestador multiagente |
 | `test_cli_*.py` | Subcomandos del CLI |
 | `test_apply_patch.py` | Herramienta apply_patch |
@@ -1019,7 +1019,7 @@ python scripts/compare_security_engines.py
 
 # Auditoría live de modelos
 ci2lab-audit-live
-python scripts/audit_claude_experimental_live.py --all
+python scripts/audit_ci2lab_guard_live.py --all
 ```
 
 ### Política de edición supervisada
@@ -1063,7 +1063,7 @@ Editar `ci2lab/catalog/models.json` con los campos requeridos. Verificar con `ci
 
 ### Nuevo motor de seguridad
 
-Implementar en `ci2lab/security/engine.py` la interfaz del motor. Registrar en `ci2lab/security/`. Añadir documentación de validación similar a `docs/CLAUDE_EXPERIMENTAL_VALIDATION.md`.
+Implementar en `ci2lab/security/engine.py` la interfaz del motor. Registrar en `ci2lab/security/`. Añadir documentación de validación similar a `docs/CI2LAB_GUARD_VALIDATION.md`.
 
 ### Nuevo subcomando CLI
 

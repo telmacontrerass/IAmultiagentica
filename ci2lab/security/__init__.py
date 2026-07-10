@@ -1,6 +1,6 @@
 """Ci2Lab core security and permissions layer.
 
-Engines: `ci2lab` (default), `claude_experimental`, `opencode_experimental`.
+Engines: `ci2lab_guard` (default), `ci2lab`, `opencode_experimental`.
 The harness applies the gate via `harness/tools/executor.py` based on `AgentConfig.security_engine`.
 """
 

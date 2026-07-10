@@ -1,4 +1,4 @@
-"""Tests P3.0.1 — matriz determinista claude_experimental."""
+"""Tests P3.0.1 - matriz determinista ci2lab_guard."""
 
 from __future__ import annotations
 

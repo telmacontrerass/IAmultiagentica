@@ -1,4 +1,4 @@
-"""Unit tests for the claude_experimental live audit."""
+"""Unit tests for the ci2lab_guard live audit."""
 
 from __future__ import annotations
 

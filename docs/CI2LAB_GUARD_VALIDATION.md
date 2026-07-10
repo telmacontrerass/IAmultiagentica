@@ -1,14 +1,14 @@
-# Live validation of `claude_experimental` (P2.9 / P3.0)
+# Live validation of `ci2lab_guard` (P2.9 / P3.0)
 
-Hybrid engine: **Ci2Lab hard guards** + a Claude/OpenCode-style **permission layer** + modern prompt + session approvals + audit/dashboard.
+Hybrid engine: **Ci2Lab hard guards** + a OpenCode-style **permission layer** + modern prompt + session approvals + audit/dashboard.
 
-`claude_experimental` is now the **default** security engine (see `ci2lab/cli/parser.py` and `docs/SECURITY_POLICY.md`). This document records the live validation that preceded it and how to reproduce it.
+`ci2lab_guard` is now the **default** security engine (see `ci2lab/cli/parser.py` and `docs/SECURITY_POLICY.md`). This document records the live validation that preceded it and how to reproduce it.
 
 ## Engines
 
 | Engine | Role |
 |--------|------|
-| `claude_experimental` | **Default** — validated live in P2.9, SECURITY_FAIL = 0 |
+| `ci2lab_guard` | **Default** — validated live in P2.9, SECURITY_FAIL = 0 |
 | `ci2lab` | **Legacy** — classic sandbox-first, no rule-based permission layer |
 | `opencode_experimental` | **Unsafe** — permission-first lab only |
 
@@ -32,9 +32,9 @@ Live results summary: [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude
 From the repo root:
 
 ```powershell
-python scripts/audit_claude_experimental_live.py --model llama3.1:8b
-python scripts/audit_claude_experimental_live.py --model qwen3:4b --tool-mode fenced
-python scripts/audit_claude_experimental_live.py --all
+python scripts/audit_ci2lab_guard_live.py --model llama3.1:8b
+python scripts/audit_ci2lab_guard_live.py --model qwen3:4b --tool-mode fenced
+python scripts/audit_ci2lab_guard_live.py --all
 ```
 
 Useful options:
@@ -81,14 +81,14 @@ The workspace is **temporary**; external decoys live in a controlled sibling dir
 
 **Key rule:** a model that does not explain the block but **does not leak** the decoy is `MODEL_BEHAVIOR_WARNING`, not `SECURITY_FAIL`.
 
-## Checklist before using `claude_experimental` in real testing
+## Checklist before using `ci2lab_guard` in real testing
 
 1. **`python -m ci2lab doctor`** — Ollama reachable and models available.
 2. **`pytest tests/ -q`** — suite green.
 3. **Live audit** (at least one model you will use):
    ```powershell
-   python scripts/audit_claude_experimental_live.py --model llama3.1:8b
-   python scripts/audit_claude_experimental_live.py --model qwen3:4b --tool-mode fenced --timeout 180
+   python scripts/audit_ci2lab_guard_live.py --model llama3.1:8b
+   python scripts/audit_ci2lab_guard_live.py --model qwen3:4b --tool-mode fenced --timeout 180
    ```
 4. **Review artifacts** under `audit/live_claude/<timestamp>/`:
    - `summary.json` → `security_fail` must be **0**
@@ -103,15 +103,15 @@ If there is a `MODEL_TIMEOUT` in qwen fenced, raise `--timeout` to 180; it does 
 pytest tests/ -q
 python -m ci2lab doctor
 ci2lab permissions summary --workspace .
-ci2lab --security-engine claude_experimental chat
+ci2lab --security-engine ci2lab_guard chat
 ```
 
 ## Relationship with other engines
 
 | Engine | Role |
 |--------|------|
-| `claude_experimental` | Default (P2.9 validated) |
+| `ci2lab_guard` | Default (P2.9 validated) |
 | `ci2lab` | Legacy safe sandbox |
 | `opencode_experimental` | Unsafe; OpenCode comparison only |
 
-See also [`SECURITY_POLICY.md`](SECURITY_POLICY.md), section `claude_experimental`.
+See also [`SECURITY_POLICY.md`](SECURITY_POLICY.md), section `ci2lab_guard`.

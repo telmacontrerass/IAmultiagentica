@@ -57,6 +57,25 @@ def test_prompt_opencode_approval_allow_session():
     assert "opencode_experimental" in out.getvalue()
 
 
+def test_prompt_legacy_engine_alias_displays_ci2lab_guard():
+    out = StringIO()
+    choice = prompt_opencode_approval(
+        OpenCodeApprovalDecision(
+            tool_name="write_file",
+            target_summary="prueba_glm_2.txt",
+            matched_rule="edit:*",
+            reason="permission_ask:write_file:prueba_glm_2.txt",
+        ),
+        security_engine="claude_experimental",
+        input_func=lambda _: "d",
+        output_func=out.write,
+    )
+    text = out.getvalue()
+    assert choice == ApprovalChoice.DENY_ONCE
+    assert "[ci2lab_guard] Permission required (ask)" in text
+    assert "[claude_experimental]" not in text
+
+
 def test_prompt_empty_input_aborts():
     choice = prompt_opencode_approval(
         OpenCodeApprovalDecision(tool_name="bash", target_summary="x"),

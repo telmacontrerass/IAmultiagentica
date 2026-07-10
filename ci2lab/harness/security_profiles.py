@@ -64,12 +64,12 @@ class SecurityConfig:
     """
 
     profile: str = DEFAULT_PROFILE
-    engine: str = "claude_experimental"
+    engine: str = "ci2lab_guard"
     bash_timeout_seconds: int | None = None
     max_tool_output_chars: int | None = None
     permission: dict[str, Any] = field(default_factory=dict)
     permission_preset: str | None = None
-    """OpenCode preset (opencode_experimental / claude_experimental)."""
+    """OpenCode preset (opencode_experimental / ci2lab_guard)."""
 
     def resolved_limits(self) -> SecurityLimits:
         """Resolve effective limits, applying profile defaults where unset.
@@ -199,7 +199,7 @@ def merge_opencode_permission_sources(
     Merges OpenCode-style permission layers (order: the first layer wins least).
 
     Typical precedence: preset < permission (root) < security.permission.
-    Used with opencode_experimental and claude_experimental.
+    Used with opencode_experimental and ci2lab_guard.
     """
     merged: dict[str, Any] = {}
     for layer in layers:

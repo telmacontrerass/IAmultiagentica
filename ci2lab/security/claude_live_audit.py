@@ -1,4 +1,4 @@
-"""Live audit logic for claude_experimental (no real user paths)."""
+"""Live audit logic for ci2lab_guard (no real user paths)."""
 
 from __future__ import annotations
 
@@ -298,7 +298,7 @@ def _agent_config(
 
     return AgentConfig(
         cwd=str(ws.root),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
         security_profile="standard",
         opencode_permissions=perms,
         auto_confirm=case.auto_confirm,
@@ -309,7 +309,7 @@ def _agent_config(
         runs_dir="runs",
         max_rounds=6,
         confirm_callback=lambda _t, _s: True,
-        config_snapshot={"audit_case": case.case_id, "security_engine": "claude_experimental"},
+        config_snapshot={"audit_case": case.case_id, "security_engine": "ci2lab_guard"},
         session_id=f"claude-audit-{audit_subdir}",
     )
 
@@ -636,7 +636,7 @@ def export_audit_report(
         "outside_secret": str(workspace.outside_secret),
         "models": [{"model": m, "tool_mode": t} for m, t in models],
         "timeout_seconds": timeout_seconds,
-        "security_engine": "claude_experimental",
+        "security_engine": "ci2lab_guard",
         "counts": {
             "total": len(results),
             "pass": sum(1 for r in results if r.observed_status == PASS),
@@ -676,7 +676,7 @@ def export_audit_report(
             writer.writerow({k: data.get(k, "") for k in fieldnames})
 
     lines = [
-        "# Claude experimental live audit",
+        "# CI2Lab Guard live audit",
         "",
         f"Generated: {summary['generated_at']}",
         "",

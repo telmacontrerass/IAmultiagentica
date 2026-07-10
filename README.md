@@ -35,7 +35,7 @@ La mayoría de los CLI agénticos asumen que tienes acceso a una API cloud o a h
 | `ci2lab/harness/mcp/` | Estable | Cliente MCP stdio (`.ci2lab/mcp.json`) |
 | `ci2lab/harness/skills/` | Estable | Workspace skills (`.ci2lab/skills/*/SKILL.md`) |
 | `ci2lab/ui/` | Estable | Interfaz web local en `127.0.0.1:8765` |
-| `ci2lab/security/` | Estable | Motores de permisos (`ci2lab`, `claude_experimental`, …) |
+| `ci2lab/security/` | Estable | Motores de permisos (`ci2lab`, `ci2lab_guard`, …) |
 | `ci2lab/evals/` | Estable | Suite de evaluación del harness (7 tareas, mock + live) |
 | `ci2lab/bench/` | Estable | Suite de benchmarks comparativos (no corre en CI) |
 | `ci2lab/runtime/` | Pendiente | No hay `ensure_model_ready` — el usuario debe ejecutar `ollama pull` manualmente |
@@ -326,12 +326,12 @@ Los resultados van a `benchmarks/results/<timestamp>/` como `results.jsonl` y `s
 
 | Motor | Comportamiento |
 |-------|---------------|
-| **`claude_experimental`** (default) | Guards duros + capa deny/ask/allow + aprobaciones de sesión |
+| **`ci2lab_guard`** (default) | Guards duros + capa deny/ask/allow + aprobaciones de sesión |
 | `ci2lab` | Legado: guards duros + confirmación `[y/N]` (sin reglas deny/ask/allow) |
 | `opencode_experimental` | **INSEGURO / solo laboratorio** — sin guards duros |
 
 ```powershell
-ci2lab chat                                         # claude_experimental (default)
+ci2lab chat                                         # ci2lab_guard (default)
 ci2lab --security-engine ci2lab chat                # motor legado
 ci2lab --security-engine opencode_experimental chat # INSEGURO — solo comparativa
 ```
@@ -351,7 +351,7 @@ Política completa: [`docs/SECURITY_POLICY.md`](docs/SECURITY_POLICY.md).
 
 ```powershell
 ci2lab-audit-live
-python scripts/audit_claude_experimental_live.py --all
+python scripts/audit_ci2lab_guard_live.py --all
 python scripts/compare_security_engines.py
 python scripts/security_gate_check.py --workspace . --tool bash --target "rm file.txt"
 ```

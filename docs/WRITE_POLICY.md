@@ -9,7 +9,7 @@ They are not the agent's primary flow over the repository code, and they are not
 ## What supervised mode means
 
 - A diff preview is always generated when `require_diff_preview=true`.
-- The user must visually approve the diff (legacy engine: `[y/N]`; `claude_experimental`: the Allow/Deny prompt).
+- The user must visually approve the diff (legacy engine: `[y/N]`; `ci2lab_guard`: the Allow/Deny prompt).
 - `--yes` **does not skip** the preview when `require_diff_preview=true`.
 - Changes are recorded under `runs/` (`tool_calls.jsonl` with an `outcome`).
 - They can be disabled entirely with `write_tools_enabled=false`.

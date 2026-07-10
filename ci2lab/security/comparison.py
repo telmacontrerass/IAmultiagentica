@@ -46,7 +46,7 @@ class ComparisonCase:
         args: Arguments passed to the tool.
         expected_ci2lab: Expected decision for the ci2lab engine.
         expected_opencode: Map of permission-config key to expected decision.
-        expected_claude: Same as above for the claude_experimental engine.
+        expected_claude: Same as above for the ci2lab_guard engine.
         notes: Free-form notes.
         risk_note: Advisory risk note for the case.
     """
@@ -59,7 +59,7 @@ class ComparisonCase:
     expected_opencode: dict[str, str]
     """permission_config_key -> expected decision (allow|ask|deny)."""
     expected_claude: dict[str, str] = field(default_factory=dict)
-    """permission_config_key -> expected decision for claude_experimental."""
+    """permission_config_key -> expected decision for ci2lab_guard."""
     notes: str = ""
     risk_note: str = ""
 
@@ -183,8 +183,8 @@ def _risk_note_for_row(
         return case.notes
     if engine == "opencode_experimental" and external_directory:
         return "opencode may allow external paths depending on external_directory"
-    if engine == "claude_experimental" and external_directory:
-        return "claude_experimental ignores external_directory=allow; hard workspace blocks"
+    if engine == "ci2lab_guard" and external_directory:
+        return "ci2lab_guard ignores external_directory=allow; hard workspace blocks"
     if engine == "ci2lab" and external_directory:
         return "ci2lab always blocks paths outside the workspace"
     return ""
@@ -495,7 +495,7 @@ def run_comparison(
             use_yes = case.case_id in {"yes_approves_ask", "yes_not_deny"}
             claude_cfg = AgentConfig(
                 cwd=str(ws),
-                security_engine="claude_experimental",
+                security_engine="ci2lab_guard",
                 opencode_permissions=rules,
                 auto_confirm=use_yes or auto_confirm,
             )
@@ -510,7 +510,7 @@ def run_comparison(
             ) = _gate_decision(case.tool, case.args, claude_cfg)
             expected = case.expected_claude[preset_key]
             risk = gate_risk or _risk_note_for_row(
-                engine="claude_experimental",
+                engine="ci2lab_guard",
                 case=case,
                 external_directory=ext,
             )
@@ -518,7 +518,7 @@ def run_comparison(
                 ComparisonRow(
                     case_id=case.case_id,
                     description=case.description,
-                    engine="claude_experimental",
+                    engine="ci2lab_guard",
                     permission_config=preset_key,
                     tool=case.tool,
                     target_or_command=_target_label(case.args),
@@ -701,7 +701,7 @@ def export_comparison_report(
     }
     opencode_snapshot = {
         "engine": "opencode_experimental",
-        "description": "UNSAFE — replicates OpenCode allow/ask/deny for comparison",
+        "description": "UNSAFE - replicates OpenCode allow/ask/deny for comparison",
         "permission": OpenCodePermissionConfig.default_experimental().rules,
         "permission_sources": {
             "precedence": [

@@ -1,4 +1,4 @@
-"""P3.1 — V-02: falsos positivos por substring 'token' en nombres legitimos."""
+"""P3.1 - V-02: falsos positivos por substring 'token' en nombres legitimos."""
 
 from __future__ import annotations
 
@@ -58,10 +58,10 @@ def test_ci2lab_gate_blocks_real_secrets(workspace: Path, name: str):
 
 
 @pytest.mark.parametrize("name", _BLOCKED_NAMES)
-def test_claude_experimental_gate_blocks_real_secrets(workspace: Path, name: str):
+def test_ci2lab_guard_gate_blocks_real_secrets(workspace: Path, name: str):
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("read_file", {"path": name}, config)
     assert gate.blocked
@@ -69,13 +69,13 @@ def test_claude_experimental_gate_blocks_real_secrets(workspace: Path, name: str
 
 
 @pytest.mark.parametrize("name", _ALLOWED_NAMES)
-def test_claude_experimental_gate_allows_false_positive_names(workspace: Path, name: str):
+def test_ci2lab_guard_gate_allows_false_positive_names(workspace: Path, name: str):
     target = workspace / name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("visible\n", encoding="utf-8")
     config = AgentConfig(
         cwd=str(workspace),
-        security_engine="claude_experimental",
+        security_engine="ci2lab_guard",
     )
     gate = evaluate_tool_gate("read_file", {"path": name}, config)
     assert not gate.blocked
@@ -97,7 +97,7 @@ def test_execute_tool_read_allowed_tokenized_name(workspace: Path):
 
     path = "normal_tokenized_name.txt"
     (workspace / path).write_text("visible\n", encoding="utf-8")
-    config = AgentConfig(cwd=str(workspace), security_engine="claude_experimental")
+    config = AgentConfig(cwd=str(workspace), security_engine="ci2lab_guard")
     result = execute_tool(
         ToolCall(name="read_file", arguments={"path": path}, call_id="r1"),
         config,

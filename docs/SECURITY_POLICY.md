@@ -52,18 +52,18 @@ Minimal example in `ci2lab.json`:
 
 | Value | Behavior |
 |-------|----------|
-| **`claude_experimental`** (default) | Ci2Lab hard guards + an `allow`/`ask`/`deny` layer + modern prompt + session approvals |
+| **`ci2lab_guard`** (default) | Ci2Lab hard guards + an `allow`/`ask`/`deny` layer + modern prompt + session approvals |
 | `ci2lab` | **Legacy**: hard guards + `[y/N]` confirmation on bash/write/edit only. **No** deny/ask/allow rules |
 | `opencode_experimental` | **UNSAFE / lab only**: permission layer without hard guards |
 
-**Important:** a policy `deny` (a config rule) only exists in engines that have a permission layer (`claude_experimental`, `opencode_experimental`). The legacy `ci2lab` engine has no `permission deny`; dangerous tools fall back to `[y/N]` confirmation if they pass the hard guards.
+**Important:** a policy `deny` (a config rule) only exists in engines that have a permission layer (`ci2lab_guard`, `opencode_experimental`). The legacy `ci2lab` engine has no `permission deny`; dangerous tools fall back to `[y/N]` confirmation if they pass the hard guards.
 
 **Do not confuse:**
 
 - **`deny` in the policy** = a permanent block by rule (not approvable).
 - **`[d] Deny once` in the prompt** = the user rejects an action under `ask` (not a policy deny).
 
-#### `claude_experimental` (default safe engine)
+#### `ci2lab_guard` (default safe engine)
 
 Mandatory precedence:
 
@@ -79,22 +79,22 @@ Mandatory precedence:
 
 - `allow` **never** skips workspace, secrets, or the bash blocklist.
 - `--yes` auto-approves `ask`, not hard deny or permission deny.
-- `external_directory=allow` is **ignored** for external paths (warning: `external_directory=allow ignored by claude_experimental hard workspace policy`).
+- `external_directory=allow` is **ignored** for external paths (warning: `external_directory=allow ignored by ci2lab_guard hard workspace policy`).
 - It uses the same modern prompt (Allow once / Allow session / Deny once / Cancel) as `opencode_experimental`.
 - Session approvals include `engine` in the fingerprint (they do not cross between engines).
 
 ```json
 {
   "security": {
-    "engine": "claude_experimental",
+    "engine": "ci2lab_guard",
     "permission_preset": "opencode_dev"
   }
 }
 ```
 
-CLI: `ci2lab chat` (defaults to `claude_experimental`). Legacy: `--security-engine ci2lab`.
+CLI: `ci2lab chat` (defaults to `ci2lab_guard`). Legacy: `--security-engine ci2lab`.
 
-Live validation (P2.9) and the recommended experimental mode (P3.0, not the default): [`CLAUDE_EXPERIMENTAL_VALIDATION.md`](CLAUDE_EXPERIMENTAL_VALIDATION.md), summary [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude/P2_9_SUMMARY.md).
+Live validation (P2.9) and the recommended permission-layer mode: [`CI2LAB_GUARD_VALIDATION.md`](CI2LAB_GUARD_VALIDATION.md), summary [`audit/live_claude/P2_9_SUMMARY.md`](../audit/live_claude/P2_9_SUMMARY.md).
 
 Explicit activation:
 

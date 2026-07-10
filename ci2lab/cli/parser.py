@@ -77,7 +77,7 @@ def _print_global_help() -> None:
         "  --workspace PATH                  Agent working directory",
         "  --cwd PATH                        Legacy alias of --workspace",
         "  --yes                             Auto-confirm bash (does not skip preview)",
-        "  --security-engine ENGINE          Engine: claude_experimental (default),",
+        "  --security-engine ENGINE          Engine: ci2lab_guard (default),",
         "                                    ci2lab (legacy), opencode_experimental (lab)",
         "  --no-stream                       Disable token streaming",
         "  --max-rounds N                    Maximum agent rounds",
@@ -188,7 +188,7 @@ def _add_agent_flags(p: argparse.ArgumentParser, *, subcommand: bool = False) ->
         default=value_default,
         metavar="ENGINE",
         help=(
-            "Security engine (default: claude_experimental). "
+            "Security engine (default: ci2lab_guard). "
             "ci2lab=legacy without deny/ask/allow; opencode_experimental=unsafe lab."
         ),
     )

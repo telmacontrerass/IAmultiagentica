@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ci2lab.security.audit import resolve_audit_path_within_workspace
-from ci2lab.security.engine import CLAUDE_EXTERNAL_ALLOW_IGNORED, uses_permission_layer
+from ci2lab.security.engine import CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED, uses_permission_layer
 from ci2lab.security.gate_check import build_tool_args, evaluate_security_gate
 from ci2lab.security.session_permissions import (
     ApprovalFingerprint,
@@ -28,7 +28,7 @@ _TABLE_COLUMNS = (
     "outcome",
 )
 
-_EXTERNAL_WARNING = "UNSAFE: external_directory=true — access outside the workspace"
+_EXTERNAL_WARNING = "UNSAFE: external_directory=true - access outside the workspace"
 
 _DENIED_OUTCOMES = frozenset(
     {
@@ -255,7 +255,7 @@ def build_retry_plan(
         target=eval_target,
     )
     claude_gate = evaluate_security_gate(
-        engine="claude_experimental",
+        engine="ci2lab_guard",
         workspace=workspace,
         tool=tool,
         target=eval_target,
@@ -266,8 +266,8 @@ def build_retry_plan(
     orig_engine = str(event.get("security_engine", ""))
     if event.get("external_directory"):
         warnings.append(_EXTERNAL_WARNING)
-    if orig_engine == "claude_experimental" and _is_outside_workspace_event(event):
-        warnings.append(CLAUDE_EXTERNAL_ALLOW_IGNORED)
+    if orig_engine == "ci2lab_guard" and _is_outside_workspace_event(event):
+        warnings.append(CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED)
 
     if _is_secret_event(event):
         recommendations.extend(
@@ -284,10 +284,10 @@ def build_retry_plan(
                 "It was blocked by the hard workspace policy (outside_workspace).",
                 "Retrying it with ci2lab will remain denied.",
                 "Only opencode_experimental with external_directory=allow could permit it.",
-                "That is UNSAFE — do not use in production.",
+                "That is UNSAFE - do not use in production.",
             ]
         )
-    elif orig_engine in {"opencode_experimental", "claude_experimental"} and (
+    elif orig_engine in {"opencode_experimental", "ci2lab_guard"} and (
         str(event.get("decision", "")).lower() == "ask"
         or event.get("approval_choice") == "deny_once"
     ):
@@ -300,17 +300,17 @@ def build_retry_plan(
                 f"{event.get('event_id')} (only with an active session in this process).",
             ]
         )
-    elif orig_engine in {"opencode_experimental", "claude_experimental"} and (
+    elif orig_engine in {"opencode_experimental", "ci2lab_guard"} and (
         str(event.get("decision", "")).lower() == "deny"
     ):
         matched = str(event.get("matched_rule") or "")
         if matched.startswith("hard:") or (
-            orig_engine == "claude_experimental" and matched.startswith("hard:")
+            orig_engine == "ci2lab_guard" and matched.startswith("hard:")
         ):
             recommendations.extend(
                 [
                     "Hard block: cannot be bypassed with permission config or --yes.",
-                    "claude_experimental keeps the workspace/secret/bash blocklist.",
+                    "ci2lab_guard keeps the workspace/secret/bash blocklist.",
                 ]
             )
         else:
@@ -329,7 +329,7 @@ def build_retry_plan(
             f"decision={opencode_gate['decision']}."
         )
         recommendations.append(
-            f"If you retry with claude_experimental (defaults): decision={claude_gate['decision']}."
+            f"If you retry with ci2lab_guard (defaults): decision={claude_gate['decision']}."
         )
 
     return {
@@ -348,7 +348,7 @@ def build_retry_plan(
         },
         "if_retried_ci2lab": ci2lab_gate,
         "if_retried_opencode_experimental": opencode_gate,
-        "if_retried_claude_experimental": claude_gate,
+        "if_retried_ci2lab_guard": claude_gate,
         "recommendations": recommendations,
         "warnings": warnings,
         "executes_tools": False,
@@ -378,9 +378,9 @@ def format_retry_plan(plan: dict[str, Any]) -> str:
         f"  opencode_experimental -> "
         f"{plan['if_retried_opencode_experimental']['decision']} "
         f"({plan['if_retried_opencode_experimental'].get('reason', '')})",
-        f"  claude_experimental -> "
-        f"{plan['if_retried_claude_experimental']['decision']} "
-        f"({plan['if_retried_claude_experimental'].get('reason', '')})",
+        f"  ci2lab_guard -> "
+        f"{plan['if_retried_ci2lab_guard']['decision']} "
+        f"({plan['if_retried_ci2lab_guard'].get('reason', '')})",
         "",
         "Recommendations:",
     ]
@@ -400,7 +400,7 @@ def find_latest_audit_file(
     """
     Look for security_audit.jsonl under runs/<run_id>/ (most recent by mtime).
 
-    Does not include the `.ci2lab/` fallback — use resolve_audit_source().
+    Does not include the `.ci2lab/` fallback - use resolve_audit_source().
     """
     ws = Path(workspace).resolve()
     runs_root = ws / runs_dir

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auditoría live de claude_experimental contra modelos Ollama locales."""
+"""Auditoría live de ci2lab_guard contra modelos Ollama locales."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         parser.error("Indique --model o --all")
 
-    with tempfile.TemporaryDirectory(prefix="ci2lab_claude_audit_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="ci2lab_guard_audit_") as tmp:
         base = Path(tmp)
         results, out_dir, _ws = run_full_audit(
             models=models,

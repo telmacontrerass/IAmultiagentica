@@ -1,4 +1,4 @@
-"""Security engine selection: CI2Lab, OpenCode experimental, Claude experimental."""
+"""Security engine selection: CI2Lab, CI2Lab Guard, and OpenCode experimental."""
 
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ _WRITE_TOOLS = frozenset(
 )
 _CONFIRM_TOOLS = frozenset({"bash", *_WRITE_TOOLS})
 
-CLAUDE_EXTERNAL_ALLOW_IGNORED = (
-    "external_directory=allow ignored by claude_experimental hard workspace policy"
+CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED = (
+    "external_directory=allow ignored by ci2lab_guard hard workspace policy"
 )
 
 
@@ -66,21 +66,22 @@ class SecurityEngineName(str, Enum):
         CI2LAB: Default sandbox-first engine with hard guards.
         STANDARD: Alias of :attr:`CI2LAB`.
         OPENCODE_EXPERIMENTAL: Permission-layer engine without hard guards.
-        CLAUDE_EXPERIMENTAL: Permission-layer engine with hard guards.
+        CI2LAB_GUARD: Permission-layer engine with hard guards.
     """
 
     CI2LAB = "ci2lab"
     STANDARD = "standard"  # alias of ci2lab
     OPENCODE_EXPERIMENTAL = "opencode_experimental"
-    CLAUDE_EXPERIMENTAL = "claude_experimental"
+    CI2LAB_GUARD = "ci2lab_guard"
 
 
-DEFAULT_SECURITY_ENGINE = SecurityEngineName.CLAUDE_EXPERIMENTAL.value
+DEFAULT_SECURITY_ENGINE = SecurityEngineName.CI2LAB_GUARD.value
 
 CLI_SECURITY_ENGINE_CHOICES = (
-    SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+    SecurityEngineName.CI2LAB_GUARD.value,
     SecurityEngineName.CI2LAB.value,
     SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
+    "claude_experimental",
 )
 
 _ENGINE_ALIASES = {
@@ -88,14 +89,16 @@ _ENGINE_ALIASES = {
     "standard": SecurityEngineName.CI2LAB.value,
     "opencode_experimental": SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
     "opencode": SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
-    "claude_experimental": SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
-    "claude": SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+    "ci2lab_guard": SecurityEngineName.CI2LAB_GUARD.value,
+    "guard": SecurityEngineName.CI2LAB_GUARD.value,
+    "claude_experimental": SecurityEngineName.CI2LAB_GUARD.value,
+    "claude": SecurityEngineName.CI2LAB_GUARD.value,
 }
 
 _PERMISSION_LAYER_ENGINES = frozenset(
     {
         SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
-        SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+        SecurityEngineName.CI2LAB_GUARD.value,
     }
 )
 
@@ -126,7 +129,8 @@ def normalize_security_engine(raw: str | None) -> str:
                 {
                     SecurityEngineName.CI2LAB.value,
                     SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
-                    SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+                    SecurityEngineName.CI2LAB_GUARD.value,
+                    "claude_experimental",
                 }
             )
         )
@@ -143,7 +147,7 @@ def uses_permission_layer(security_engine: str) -> bool:
         security_engine: Engine name or alias.
 
     Returns:
-        True for the opencode/claude experimental engines, else False.
+        True for the permission-layer engines, else False.
     """
     return normalize_security_engine(security_engine) in _PERMISSION_LAYER_ENGINES
 
@@ -158,12 +162,12 @@ def enforce_ci2lab_hard_policy(security_engine: str) -> bool:
         security_engine: Engine name or alias.
 
     Returns:
-        True for the ci2lab and claude_experimental engines, else False.
+        True for the ci2lab and ci2lab_guard engines, else False.
     """
     engine = normalize_security_engine(security_engine)
     return engine in {
         SecurityEngineName.CI2LAB.value,
-        SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+        SecurityEngineName.CI2LAB_GUARD.value,
     }
 
 
@@ -174,12 +178,12 @@ def is_experimental_engine(security_engine: str) -> bool:
         security_engine: Engine name or alias.
 
     Returns:
-        True for the opencode/claude experimental engines, else False.
+        True for the permission-layer engines, else False.
     """
     engine = normalize_security_engine(security_engine)
     return engine in {
         SecurityEngineName.OPENCODE_EXPERIMENTAL.value,
-        SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+        SecurityEngineName.CI2LAB_GUARD.value,
     }
 
 
@@ -260,8 +264,8 @@ def _run_hard_guards(
             external = path_decision.reason == "outside_workspace"
             matched = "hard:outside_workspace" if external else "hard:secret_file"
             risk = (
-                CLAUDE_EXTERNAL_ALLOW_IGNORED
-                if engine == SecurityEngineName.CLAUDE_EXPERIMENTAL.value and external
+                CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED
+                if engine == SecurityEngineName.CI2LAB_GUARD.value and external
                 else None
             )
             return ToolGateResult(
@@ -339,11 +343,11 @@ def _permission_layer_gate(
 
     risk_note: str | None = None
     if (
-        engine == SecurityEngineName.CLAUDE_EXPERIMENTAL.value
+        engine == SecurityEngineName.CI2LAB_GUARD.value
         and decision.external_directory
         and not hard_guards_enabled
     ):
-        risk_note = CLAUDE_EXTERNAL_ALLOW_IGNORED
+        risk_note = CI2LAB_GUARD_EXTERNAL_ALLOW_IGNORED
 
     if decision.action is DecisionAction.DENY:
         return ToolGateResult(
@@ -476,17 +480,17 @@ def _opencode_gate(
     )
 
 
-def _claude_experimental_gate(
+def _ci2lab_guard_gate(
     tool_name: str,
     args: dict[str, Any],
     config: AgentConfig,
 ) -> ToolGateResult:
-    """Evaluate the gate for claude_experimental: hard guards then permissions."""
+    """Evaluate the gate for ci2lab_guard: hard guards then permissions."""
     hard = _run_hard_guards(
         tool_name,
         args,
         config,
-        engine=SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+        engine=SecurityEngineName.CI2LAB_GUARD.value,
         experimental=True,
     )
     if hard is not None:
@@ -496,7 +500,7 @@ def _claude_experimental_gate(
         tool_name,
         args,
         config,
-        engine=SecurityEngineName.CLAUDE_EXPERIMENTAL.value,
+        engine=SecurityEngineName.CI2LAB_GUARD.value,
         hard_guards_enabled=True,
     )
 
@@ -508,7 +512,7 @@ def evaluate_tool_gate(
 ) -> ToolGateResult:
     """Evaluate a tool call against the engine selected in ``config``.
 
-    Dispatches to the ci2lab, opencode_experimental or claude_experimental
+    Dispatches to the ci2lab, opencode_experimental or ci2lab_guard
     gate based on ``config.security_engine``.
 
     Args:
@@ -522,6 +526,6 @@ def evaluate_tool_gate(
     engine = normalize_security_engine(config.security_engine)
     if engine == SecurityEngineName.OPENCODE_EXPERIMENTAL.value:
         return _opencode_gate(tool_name, args, config)
-    if engine == SecurityEngineName.CLAUDE_EXPERIMENTAL.value:
-        return _claude_experimental_gate(tool_name, args, config)
+    if engine == SecurityEngineName.CI2LAB_GUARD.value:
+        return _ci2lab_guard_gate(tool_name, args, config)
     return _ci2lab_gate(tool_name, args, config)

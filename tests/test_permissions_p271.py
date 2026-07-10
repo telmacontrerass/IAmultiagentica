@@ -1,4 +1,4 @@
-"""Tests P2.7.1 — event_id, retry-plan, approve-session."""
+"""Tests P2.7.1 - event_id, retry-plan, approve-session."""
 
 from __future__ import annotations
 
@@ -248,7 +248,7 @@ def test_approval_hard_guards_rejected():
     with pytest.raises(ValueError, match="hard block"):
         approval_from_audit_event(
             {
-                "security_engine": "claude_experimental",
+                "security_engine": "ci2lab_guard",
                 "decision": "deny",
                 "tool": "read_file",
                 "target": "../outside.txt",
@@ -350,7 +350,7 @@ def test_approve_session_with_active_session(workspace: Path):
             text=True,
             cwd=str(ROOT),
         )
-        # Subprocess has its own memory — expect no active session in child
+        # Subprocess has its own memory - expect no active session in child
         assert proc.returncode == 1
     finally:
         bind_active_session(None)

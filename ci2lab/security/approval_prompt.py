@@ -1,4 +1,4 @@
-"""Interactive Claude/OpenCode-style approval prompt (permission-layer engines)."""
+"""Interactive approval prompt for permission-layer security engines."""
 
 from __future__ import annotations
 
@@ -181,7 +181,7 @@ def confirm_opencode_ask(
 ) -> OpenCodeConfirmResult:
     """Resolve a permission-layer ``ask`` via prompt, auto-confirm or session.
 
-    Applies to the opencode_experimental and claude_experimental engines.
+    Applies to the opencode_experimental and ci2lab_guard engines.
 
     Args:
         config: Active agent configuration (selects the engine).
@@ -202,7 +202,7 @@ def confirm_opencode_ask(
     if not uses_permission_layer(engine):
         raise ValueError(
             "confirm_opencode_ask only applies to engines with a permission layer "
-            "(opencode_experimental, claude_experimental)"
+            "(opencode_experimental, ci2lab_guard)"
         )
 
     if config.auto_confirm:

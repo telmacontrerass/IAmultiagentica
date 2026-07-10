@@ -32,7 +32,7 @@ def main() -> int:
         metavar="ENGINE",
         help=(
             f"Motor de seguridad (default: {DEFAULT_SECURITY_ENGINE}). "
-            "Valores: claude_experimental, ci2lab, opencode_experimental."
+            "Valores: ci2lab_guard, ci2lab, opencode_experimental."
         ),
     )
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
