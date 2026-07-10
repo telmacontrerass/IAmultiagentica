@@ -9,6 +9,7 @@ from pathlib import Path
 from ci2lab.cli.runtime import _build_config, _resolve_selection
 from ci2lab.config import Ci2LabConfig
 from ci2lab.console import console
+from ci2lab.contracts.types import ModelSelection
 
 
 def _looks_like_ci2lab_repo(path: str) -> bool:
@@ -28,6 +29,33 @@ def _workspace_startup_hint(args: argparse.Namespace, cwd: str) -> None:
             "[dim]Tip: to work on another project use `--workspace <path>` "
             "or set `CI2LAB_WORKSPACE_HINT`.[/dim]"
         )
+
+
+def _preflight_failed(selection: ModelSelection) -> bool:
+    """Check the model can serve; print a clear error and return True if not.
+
+    Turns a would-be cryptic mid-run Ollama failure into an actionable message up
+    front (with a "did you mean" on a mistyped tag). Read-only — never pulls.
+
+    Args:
+        selection: The resolved model selection about to be run.
+
+    Returns:
+        ``True`` when the model cannot serve (caller should abort), ``False``
+        when it is ready.
+    """
+    from ci2lab.runtime.preflight import ModelUnavailableError, check_model_available
+
+    try:
+        check_model_available(selection)
+    except ModelUnavailableError as exc:
+        console.print(f"[red]{exc}[/red]")
+        console.print(
+            "[dim]Validate the environment with `ci2lab doctor`, or list models "
+            "with `ci2lab models recommend`.[/dim]"
+        )
+        return True
+    return False
 
 
 def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
@@ -51,6 +79,8 @@ def _run_turn(prompt: str, args: argparse.Namespace, runtime: Ci2LabConfig) -> i
     from ci2lab.harness.session import load_session
 
     selection = _resolve_selection(runtime, prompt, args)
+    if _preflight_failed(selection):
+        return 1
     config = _build_config(runtime, args, selection)
     history = None
     if args.session:
@@ -121,6 +151,8 @@ def _run_repl(args: argparse.Namespace, runtime: Ci2LabConfig) -> int:
     from ci2lab.harness.repl import run_repl
 
     selection = _resolve_selection(runtime, "", args)
+    if _preflight_failed(selection):
+        return 1
     config = _build_config(runtime, args, selection)
     _workspace_startup_hint(args, config.cwd)
     try:

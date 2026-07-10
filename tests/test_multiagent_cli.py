@@ -27,6 +27,8 @@ def test_agent_multi_agent_flag_uses_orchestrator():
     with (
         patch("ci2lab.cli.commands.agent._resolve_selection") as resolve_selection,
         patch("ci2lab.cli.commands.agent._build_config") as build_config,
+        # Model availability is out of scope here: this test checks routing only.
+        patch("ci2lab.cli.commands.agent._preflight_failed", return_value=False),
         patch("ci2lab.harness.run_agent") as run_agent,
         patch("ci2lab.harness.multiagent.run_multi_agent", return_value="done") as run_multi_agent,
     ):

@@ -115,65 +115,95 @@ def _print_global_help() -> None:
     print("\n".join(lines))
 
 
-def _add_agent_flags(p: argparse.ArgumentParser) -> None:
-    """Add the shared agent/chat flags (model, tool mode, workspace, etc.) to a parser."""
+def _add_agent_flags(p: argparse.ArgumentParser, *, subcommand: bool = False) -> None:
+    """Add the shared agent/chat flags (model, tool mode, workspace, etc.) to a parser.
+
+    These flags live on BOTH the top-level parser (so they may precede the
+    subcommand, e.g. ``ci2lab --model X agent ...``) and the ``agent`` subparser
+    (so they may follow it, e.g. ``ci2lab agent --model X ...``). On the subparser
+    copy (``subcommand=True``) every default is :data:`argparse.SUPPRESS`, so a
+    flag that is not repeated after the subcommand does not overwrite the value
+    already parsed at the top level. Without this, argparse's subparser defaults
+    silently clobber a ``--model`` given *before* ``agent`` back to ``None``.
+
+    Args:
+        p: The parser to add the flags to.
+        subcommand: True when adding the copy on the ``agent`` subparser, so its
+            defaults are suppressed to avoid overwriting top-level values.
+    """
+    value_default = argparse.SUPPRESS if subcommand else None
+    flag_default = argparse.SUPPRESS if subcommand else False
     p.add_argument(
         "--model",
-        default=None,
+        default=value_default,
         help="Ollama tag (override; otherwise config or CI2LAB_MODEL)",
     )
     p.add_argument(
         "--tool-mode",
         choices=["native", "fenced"],
-        default=None,
+        default=value_default,
         help="Tool invocation mode",
     )
     p.add_argument(
         "--cwd",
-        default=None,
+        default=value_default,
         help="Working directory (legacy; prefer --workspace)",
     )
     p.add_argument(
         "--workspace",
-        default=None,
+        default=value_default,
         help="Agent working directory (semantic alias of --cwd)",
     )
-    p.add_argument("--yes", action="store_true", help="Auto-confirm dangerous tools")
+    p.add_argument(
+        "--yes",
+        action="store_true",
+        default=flag_default,
+        help="Auto-confirm dangerous tools",
+    )
     from ci2lab.security.engine import CLI_SECURITY_ENGINE_CHOICES
 
     p.add_argument(
         "--security-engine",
         choices=list(CLI_SECURITY_ENGINE_CHOICES),
-        default=None,
+        default=value_default,
         metavar="ENGINE",
         help=(
             "Security engine (default: claude_experimental). "
             "ci2lab=legacy without deny/ask/allow; opencode_experimental=unsafe lab."
         ),
     )
-    p.add_argument("--no-stream", action="store_true", help="Disable token streaming")
-    p.add_argument("--max-rounds", type=int, default=None)
+    p.add_argument(
+        "--no-stream",
+        action="store_true",
+        default=flag_default,
+        help="Disable token streaming",
+    )
+    p.add_argument("--max-rounds", type=int, default=value_default)
     p.add_argument(
         "--multi-agent",
         action="store_true",
+        default=flag_default,
         help="Use the sequential subagent orchestrator for one task",
     )
-    p.add_argument("--session", default=None, help="Session ID (new one if omitted in REPL)")
+    p.add_argument(
+        "--session", default=value_default, help="Session ID (new one if omitted in REPL)"
+    )
     p.add_argument(
         "--runs-dir",
-        default=None,
+        default=value_default,
         help="Base directory for run logs (default: runs)",
     )
     p.add_argument(
         "--no-log",
         action="store_true",
+        default=flag_default,
         help="Do not save run artifacts in runs/",
     )
     p.add_argument(
         "--image",
         action="append",
         dest="images",
-        default=None,
+        default=value_default,
         metavar="PATH",
         help=(
             "Image or scanned-PDF file to attach. "
@@ -202,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     agent_p = sub.add_parser("agent", help="One request and exit")
     agent_p.add_argument("agent_prompt", help="Request for the agent")
-    _add_agent_flags(agent_p)
+    _add_agent_flags(agent_p, subcommand=True)
 
     sub.add_parser("chat", help="Interactive REPL mode").set_defaults(command="chat")
     sub.add_parser("menu", help="Open the interactive launcher").set_defaults(command="menu")
