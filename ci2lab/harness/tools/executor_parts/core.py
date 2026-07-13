@@ -115,6 +115,7 @@ def execute_tool(call: ToolCall, config: AgentConfig) -> ToolResult:
             content=f"Error: unknown tool `{name}`",
             is_error=True,
             call_id=call.call_id,
+            outcome="unknown_tool",
         )
 
     # `bash read_file ...` (a native tool written as a command) is always

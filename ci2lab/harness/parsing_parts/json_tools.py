@@ -54,14 +54,22 @@ def native_to_tool_calls(raw_calls: list[dict[str, Any]]) -> list[ToolCall]:
             fn = item["function"]
             if isinstance(fn, dict) and fn.get("name"):
                 args_raw = fn.get("arguments", {})
+                repaired = False
                 if isinstance(args_raw, str):
                     try:
-                        args = loads_json_lenient(args_raw)
+                        args = json.loads(args_raw)
                     except json.JSONDecodeError:
-                        args = {"command": args_raw} if fn.get("name") == "bash" else {}
+                        # The model emitted arguments that are not valid JSON.
+                        # Recover as before, but flag the call: a benchmark must be
+                        # able to tell a well-formed call from one the harness fixed.
+                        repaired = True
+                        try:
+                            args = loads_json_lenient(args_raw)
+                        except json.JSONDecodeError:
+                            args = {"command": args_raw} if fn.get("name") == "bash" else {}
                 else:
                     args = args_raw if isinstance(args_raw, dict) else {}
-                call = new_call(str(fn["name"]), args)
+                call = new_call(str(fn["name"]), args, repaired=repaired)
         if call:
             calls.append(call)
     return calls

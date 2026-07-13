@@ -60,12 +60,14 @@ def map_name(name: str) -> str:
     return NAME_MAP.get(low, low)
 
 
-def new_call(name: str, arguments: dict[str, Any]) -> ToolCall:
+def new_call(name: str, arguments: dict[str, Any], *, repaired: bool = False) -> ToolCall:
     """Build a :class:`ToolCall` with a canonical name and normalized arguments.
 
     Args:
         name: Tool name to resolve through :func:`map_name`.
         arguments: Raw argument mapping to normalize for the resolved tool.
+        repaired: True when the caller had to fix an invalid payload from the
+            model to build this call (see :attr:`ToolCall.repaired`).
 
     Returns:
         A :class:`ToolCall` carrying the canonical tool name, the normalized
@@ -76,6 +78,7 @@ def new_call(name: str, arguments: dict[str, Any]) -> ToolCall:
         name=tool,
         arguments=normalize_args_for_tool(tool, arguments),
         call_id=f"call_{uuid.uuid4().hex[:8]}",
+        repaired=repaired,
     )
 
 

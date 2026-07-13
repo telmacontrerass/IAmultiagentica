@@ -168,6 +168,37 @@ def looks_like_unparsed_tool_attempt(text: str) -> bool:
     return False
 
 
+_ANY_TOOL_NAME_RE = re.compile(
+    r'["\']?(?:name|tool)["\']?\s*:\s*["\']([A-Za-z_][A-Za-z0-9_.\-]*)["\']'
+)
+
+
+def detect_unknown_tool_attempt(text: str) -> str | None:
+    """Return the invented tool name when the model called a tool that does not exist.
+
+    A hallucinated tool name parses to nothing, so the round is indistinguishable
+    from a plain final answer and the attempt leaves no trace. Benchmarks must
+    still count it — a call to a nonexistent tool is a tool-calling failure, not a
+    finished answer — so this reports the offending name for the run log.
+
+    Purely diagnostic: it does not change how the loop handles the round.
+
+    Args:
+        text: The model's textual output to inspect.
+
+    Returns:
+        The unknown tool name, or ``None`` when a real tool call resolves or no
+        tool-shaped name is present.
+    """
+    if resolve_tool_calls(text, [], tool_mode="native"):
+        return None
+    for match in _ANY_TOOL_NAME_RE.finditer(text):
+        name = match.group(1)
+        if map_name(name) not in TOOL_NAMES:
+            return name
+    return None
+
+
 def strip_tool_markup(text: str) -> str:
     """Strip fences, JSON tool blocks and XML from the text shown to the user.
 
@@ -211,6 +242,7 @@ __all__ = [
     "XML_TOOL_CALL_RE",
     "args_from_payload",
     "command_field_as_tool_name",
+    "detect_unknown_tool_attempt",
     "extract_json_objects",
     "fenced_body_to_args",
     "infer_tool_from_bare_args",

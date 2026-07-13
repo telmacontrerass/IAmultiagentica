@@ -29,7 +29,9 @@ from harbor.models.agent.context import AgentContext
 from ci2lab import __version__ as _CI2LAB_VERSION
 from ci2lab.bench.harbor import (
     CONTAINER_WORKDIR,
+    DEFAULT_WHEEL_URL,
     agent_env,
+    build_install_command,
     build_run_command,
     read_run_summary,
 )
@@ -41,9 +43,11 @@ class Ci2LabAgent(BaseInstalledAgent):
     MULTI = False
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        # ``workdir`` is a ci2lab-specific knob (``--agent-kwarg workdir=/foo``);
-        # pop it before delegating so Harbor's base never sees an unknown kwarg.
+        # ci2lab-specific knobs (``--agent-kwarg workdir=/foo``,
+        # ``--agent-kwarg wheel_url=...``); pop them before delegating so Harbor's
+        # base never sees an unknown kwarg.
         self._workdir = str(kwargs.pop("workdir", CONTAINER_WORKDIR))
+        self._wheel_url = str(kwargs.pop("wheel_url", DEFAULT_WHEEL_URL))
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     @staticmethod
@@ -64,9 +68,12 @@ class Ci2LabAgent(BaseInstalledAgent):
             command="apt-get update && apt-get install -y python3 python3-pip",
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
-        # Pin an exact ci2lab ref (wheel or git@<commit>) here for a reproducible
-        # paper run; ``ci2lab`` installs the latest published build.
-        await self.exec_as_agent(environment, command="pip install --no-input ci2lab")
+        # ci2lab is not on PyPI: the container pulls a wheel served from the host
+        # (see build_install_command). The wheel filename pins the exact build
+        # under test — do not float it.
+        await self.exec_as_agent(
+            environment, command=build_install_command(self._wheel_url)
+        )
 
     async def run(
         self,
@@ -95,6 +102,9 @@ class Ci2LabAgent(BaseInstalledAgent):
             "ci2lab_total_tokens": readback.total_tokens,
             "ci2lab_rounds": readback.rounds,
             "ci2lab_status": readback.status,
+            # Terminal-Bench grades only the container's final state, so the
+            # tool-calling axis would otherwise be invisible to it.
+            "tool_call_quality": readback.tool_call_quality,
         }
 
 

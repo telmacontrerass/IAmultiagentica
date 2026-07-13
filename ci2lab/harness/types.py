@@ -22,6 +22,17 @@ class ToolCall:
     arguments: dict[str, Any]
     call_id: str | None = None
 
+    repaired: bool = False
+    """True when the harness had to fix what the model emitted to make this call.
+
+    Set at the parse sites that recover from an invalid payload (e.g. arguments
+    that were not valid JSON). It separates "the model emitted a well-formed call"
+    from "the harness rescued a malformed one" — the two are indistinguishable in
+    the tool result, but only the first is a model success. Benchmarks report both
+    a raw and an effective tool-call correctness rate off this flag; see
+    ``ci2lab.harness.tool_metrics``.
+    """
+
 
 @dataclass
 class ToolResult:

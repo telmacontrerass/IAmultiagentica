@@ -59,6 +59,7 @@ from ci2lab.harness.parsing_parts.json_tools import (
     parse_json_tool_objects,
 )
 from ci2lab.harness.parsing_parts.resolver import (
+    detect_unknown_tool_attempt,
     looks_like_unparsed_tool_attempt,
     resolve_tool_calls,
     strip_tool_markup,
@@ -86,6 +87,7 @@ from ci2lab.harness.parsing_parts.xml_tools import (
 )
 
 __all__ = [
+    "detect_unknown_tool_attempt",
     "looks_like_unparsed_tool_attempt",
     "native_to_tool_calls",
     "parse_fenced_blocks",

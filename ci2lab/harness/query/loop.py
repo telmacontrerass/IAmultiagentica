@@ -43,6 +43,7 @@ from ci2lab.harness.llm_errors import LLMCancelledError, LLMError, classify_requ
 from ci2lab.harness.mcp.session import close_mcp_manager
 from ci2lab.harness.messages import append_assistant_turn, append_tool_results
 from ci2lab.harness.parsing import (
+    detect_unknown_tool_attempt,
     looks_like_unparsed_tool_attempt,
     resolve_tool_calls,
     strip_tool_markup,
@@ -1269,6 +1270,28 @@ def run_agent(
                     history.append({"role": "user", "content": _STOP_TOOLS_NUDGE})
                     maybe_save_session(cfg, history, selection)
                     continue
+
+                # Record the attempt before deciding what to do about it. A
+                # malformed payload or an invented tool name yields no ToolCall, so
+                # it never reaches record_tool_call — without this it leaves no
+                # trace at all and the tool-call correctness rate would be computed
+                # over a denominator that silently excludes the failures. Logging
+                # only; the round's control flow below is unchanged.
+                if run_log is not None and selection.supports_tools:
+                    _unknown_tool = detect_unknown_tool_attempt(content)
+                    if _unknown_tool is not None:
+                        run_log.record_parse_failure(
+                            round_num=round_num,
+                            kind="unknown_tool",
+                            excerpt=content,
+                            tool=_unknown_tool,
+                        )
+                    elif looks_like_unparsed_tool_attempt(content):
+                        run_log.record_parse_failure(
+                            round_num=round_num,
+                            kind="unparsed",
+                            excerpt=content,
+                        )
 
                 if (
                     looks_like_unparsed_tool_attempt(content)

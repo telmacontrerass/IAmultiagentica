@@ -16,6 +16,7 @@ from uuid import uuid4
 from ci2lab.console import console
 from ci2lab.contracts.types import ModelSelection
 from ci2lab.harness.token_usage import TokenUsage
+from ci2lab.harness.tool_metrics import summarize_tool_calls
 from ci2lab.harness.types import AgentConfig, ToolCall, ToolResult
 from ci2lab.security.audit import AuditPersistContext, set_audit_persist_context
 from ci2lab.security.session_permissions import (
@@ -43,6 +44,28 @@ class ToolCallLogEntry:
     output: str
     error: str | None = None
     outcome: str | None = None
+    repaired: bool = False
+    """True when the harness fixed the model's payload to make this call valid."""
+
+
+@dataclass
+class ToolParseFailureEntry:
+    """One tool-call attempt that never reached execution.
+
+    A malformed payload or an invented tool name produces no tool call, so without
+    this record the attempt is invisible and the tool-call correctness denominator
+    is silently too small. Written to ``tool_parse_failures.jsonl`` — a separate
+    file, so ``tool_calls.jsonl`` keeps meaning "calls that actually ran".
+    """
+
+    round: int
+    kind: str
+    """``unparsed`` (payload unreadable) or ``unknown_tool`` (invented tool name)."""
+
+    tool: str | None = None
+    """The invented tool name, when one could be identified."""
+
+    excerpt: str = ""
 
 
 @dataclass
@@ -72,6 +95,7 @@ class RunLogger:
     _active: bool = field(default=True, init=False, repr=False)
     _started_at: datetime = field(default_factory=lambda: datetime.now(UTC), init=False)
     _tool_entries: list[ToolCallLogEntry] = field(default_factory=list, init=False)
+    _parse_failures: list[ToolParseFailureEntry] = field(default_factory=list, init=False)
     _token_entries: list[TokenUsageLogEntry] = field(default_factory=list, init=False)
     _rounds_completed: int = field(default=0, init=False)
     _tokens_prompt_last: int = field(default=0, init=False, repr=False)
@@ -217,6 +241,7 @@ class RunLogger:
             output=output,
             error=result.content if result.is_error else None,
             outcome=outcome,
+            repaired=call.repaired,
         )
         self._tool_entries.append(entry)
         try:
@@ -226,6 +251,45 @@ class RunLogger:
                 fh.write(line + "\n")
         except Exception as exc:
             self._warn(f"Could not record tool call: {exc}")
+
+    def record_parse_failure(
+        self,
+        *,
+        round_num: int,
+        kind: str,
+        excerpt: str,
+        tool: str | None = None,
+    ) -> None:
+        """Append a failed tool-call attempt to ``tool_parse_failures.jsonl``.
+
+        These attempts never reach :meth:`record_tool_call` — the payload could not
+        be parsed, or it named a tool that does not exist — so without this record
+        they leave no trace and the tool-call correctness rate is computed over too
+        small a denominator. No-op when the logger is inactive or has no run
+        directory; write failures only warn.
+
+        Args:
+            round_num: The round in which the attempt occurred.
+            kind: ``"unparsed"`` or ``"unknown_tool"``.
+            excerpt: The offending model output (truncated for the log).
+            tool: The invented tool name, when one could be identified.
+        """
+        if not self._active or self._run_dir is None:
+            return
+        entry = ToolParseFailureEntry(
+            round=round_num,
+            kind=kind,
+            tool=tool,
+            excerpt=excerpt[:LOG_OUTPUT_MAX_CHARS],
+        )
+        self._parse_failures.append(entry)
+        try:
+            line = json.dumps(asdict(entry), ensure_ascii=False)
+            path = self._run_dir / "tool_parse_failures.jsonl"
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception as exc:
+            self._warn(f"Could not record tool parse failure: {exc}")
 
     def record_token_usage(self, *, round_num: int, usage: TokenUsage | None) -> None:
         """Append a token-usage record to ``token_usage.jsonl``.
@@ -310,6 +374,9 @@ class RunLogger:
             "verify_final_answer": self.agent_config.verify_final_answer,
             "rounds": self._rounds_completed,
             "tool_call_count": len(self._tool_entries),
+            "tool_call_quality": summarize_tool_calls(
+                self._tool_entries, self._parse_failures
+            ).to_dict(),
             "tools_used": tools_used,
             "token_usage": {
                 "prompt_tokens": prompt_tokens,

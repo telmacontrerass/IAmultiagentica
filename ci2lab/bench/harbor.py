@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +34,10 @@ __all__ = [
     "DEFAULT_BACKEND_URL",
     "DEFAULT_MODEL",
     "DEFAULT_NUM_CTX",
+    "DEFAULT_WHEEL_URL",
     "TokenReadback",
     "agent_env",
+    "build_install_command",
     "build_run_command",
     "find_latest_run_summary",
     "read_run_summary",
@@ -68,16 +70,45 @@ back to the host ``logs_dir`` for :func:`read_run_summary`.
 CONTAINER_LOG_PATH = "/logs/agent/ci2lab.txt"
 """Where the agent's combined stdout/stderr is teed for audit."""
 
+DEFAULT_WHEEL_URL = "http://host.docker.internal:8000/ci2lab-0.1.0-py3-none-any.whl"
+"""Where the task container fetches ci2lab from.
+
+ci2lab is not published to PyPI, so the container installs a wheel served over the
+host's loopback (``python -m http.server`` in ``dist/``). This reuses the same
+host-egress path the container already needs for Ollama — no credentials in the
+container, nothing published — and pinning the wheel filename pins the exact build
+under test, which is what a reproducible paper run requires.
+"""
+
+
+def build_install_command(wheel_url: str = DEFAULT_WHEEL_URL) -> str:
+    """Build the shell command that installs ci2lab into a task container.
+
+    Args:
+        wheel_url: URL of the ci2lab wheel, reachable from inside the container.
+
+    Returns:
+        A shell command suitable for Harbor's ``exec_as_agent``.
+    """
+    return f"pip install --no-input --break-system-packages {shlex.quote(wheel_url)}"
+
 
 @dataclass
 class TokenReadback:
-    """Token usage and status read back from a ci2lab ``run_summary.json``."""
+    """Token usage, status and tool-call quality read from a ``run_summary.json``."""
 
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
     rounds: int | None
     status: str | None
+    tool_call_quality: dict[str, Any] = field(default_factory=dict)
+    """The run's tool-call correctness block (see ``harness.tool_metrics``).
+
+    Terminal-Bench grades only the final container state, so the tool-calling axis
+    is invisible to it. Carrying this through means the benchmark can report *why*
+    a task failed — a malformed call is a different failure from a wrong plan.
+    """
 
 
 def agent_env(
@@ -191,6 +222,8 @@ def read_run_summary(logs_dir: Path) -> TokenReadback | None:
         return None
     usage = data.get("token_usage")
     usage = usage if isinstance(usage, dict) else {}
+    quality = data.get("tool_call_quality")
+    quality = quality if isinstance(quality, dict) else {}
     rounds = data.get("rounds")
     status = data.get("status")
     return TokenReadback(
@@ -199,6 +232,7 @@ def read_run_summary(logs_dir: Path) -> TokenReadback | None:
         total_tokens=_as_int(usage.get("total_tokens")),
         rounds=rounds if isinstance(rounds, int) else None,
         status=str(status) if status is not None else None,
+        tool_call_quality=quality,
     )
 
 
