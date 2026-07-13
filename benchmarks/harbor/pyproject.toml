@@ -1,0 +1,26 @@
+# Editable-install shim so Harbor's `--agent ci2lab_harbor:Ci2LabAgent` resolves.
+#
+# Install into the SAME environment as the `harbor` CLI (Python >= 3.12):
+#     uv pip install -e benchmarks/harbor
+# ci2lab and harbor must also be importable there:
+#     uv tool install harbor        # or: pip install harbor
+#     pip install ci2lab            # or: pip install -e .   (from the repo root)
+#
+# Alternatively skip the install and run Harbor with this directory on the path:
+#     PYTHONPATH=benchmarks/harbor harbor run --agent ci2lab_harbor:Ci2LabAgent ...
+
+[project]
+name = "ci2lab-harbor"
+version = "0.1.0"
+description = "Run ci2lab as a Terminal-Bench (Harbor) installed agent"
+requires-python = ">=3.12"
+# harbor and ci2lab are installed separately (see the header) so this shim never
+# pins their versions or drags them into ci2lab's own dependency resolution.
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["ci2lab_harbor"]

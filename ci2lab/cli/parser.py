@@ -31,6 +31,11 @@ def _is_global_help_request(raw_argv: list[str]) -> bool:
     return raw_argv in (["--help"], ["-h"])
 
 
+def _is_version_request(raw_argv: list[str]) -> bool:
+    """True when the user asks for the version string with no subcommand."""
+    return raw_argv in (["--version"], ["-V"])
+
+
 def _print_global_help() -> None:
     """Global ASCII help (cp1252-compatible)."""
     lines = [
@@ -62,6 +67,7 @@ def _print_global_help() -> None:
         "  ci2lab bench run                   Performance benchmarks (live, vs Codex/Claude Code)",
         "  ci2lab permissions summary        Permissions / audit dashboard",
         "  ci2lab ui                         Local web interface",
+        "  ci2lab --version                  Print version and exit",
         "",
         "Agent flags (shortcut, agent and chat):",
         "  --model TAG                       Ollama tag (e.g. qwen2.5-coder:7b)",

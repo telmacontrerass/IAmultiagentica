@@ -21,6 +21,7 @@ from ci2lab.cli.commands.yard import _cmd_yard
 from ci2lab.cli.parser import (
     _CLI_COMMANDS,
     _is_global_help_request,
+    _is_version_request,
     _print_global_help,
     build_parser,
 )
@@ -57,6 +58,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if _is_global_help_request(raw_argv):
         _print_global_help()
+        return 0
+
+    if _is_version_request(raw_argv):
+        from ci2lab import __version__
+
+        print(f"ci2lab {__version__}")
         return 0
 
     raw_argv = _expand_tools_shortcut(raw_argv)
