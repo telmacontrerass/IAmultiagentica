@@ -20,6 +20,11 @@ benchmarks/
 
 The harness code lives in the package at [`ci2lab/bench/`](../ci2lab/bench/).
 
+For the **public, third-party-graded** external-validity arm (ci2lab on
+Terminal-Bench 2.x via the Harbor harness, compared same-model against `opencode`
+and `deepagents`), see [`harbor/`](harbor/). It reuses the same model M and adds
+no marginal API cost.
+
 ## Running
 
 Benchmarks run **live** (local Ollama for ci2lab; Codex/Claude Code under their
