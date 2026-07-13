@@ -93,3 +93,38 @@ def test_non_boolean_argument_is_not_coerced():
 def test_unrecognized_boolean_string_is_left_untouched():
     args = normalize_tool_arguments({"replace_all": "maybe"}, tool_name="edit_file")
     assert args["replace_all"] == "maybe"
+
+
+# --- Integer coercion (via the schema-aware normalize_tool_arguments) ---
+
+
+def test_digit_string_coerces_to_int_for_uncovered_tool():
+    # tree.depth had no hand-written coercion: "2" reaching range()/comparisons
+    # blew up cryptically. Schema-driven coercion now fixes it.
+    args = normalize_tool_arguments({"path": ".", "depth": "2"}, tool_name="tree")
+    assert args["depth"] == 2
+    assert isinstance(args["depth"], int)
+
+
+def test_inspect_file_integers_coerce():
+    args = normalize_tool_arguments(
+        {"path": "a.py", "start": "3", "max_lines": "80"}, tool_name="inspect_file"
+    )
+    assert args["start"] == 3
+    assert args["max_lines"] == 80
+
+
+def test_real_int_is_left_untouched():
+    args = normalize_tool_arguments({"path": ".", "depth": 2}, tool_name="tree")
+    assert args["depth"] == 2
+
+
+def test_non_digit_string_on_int_arg_is_left_untouched():
+    args = normalize_tool_arguments({"path": ".", "depth": "deep"}, tool_name="tree")
+    assert args["depth"] == "deep"
+
+
+def test_non_integer_argument_is_not_coerced():
+    # `content` is a string field: a digit-only value must stay a string.
+    args = normalize_tool_arguments({"path": "a.txt", "content": "5"}, tool_name="write_file")
+    assert args["content"] == "5"

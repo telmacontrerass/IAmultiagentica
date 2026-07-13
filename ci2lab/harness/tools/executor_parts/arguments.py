@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ci2lab.harness.tools.arg_normalize import normalize_args_for_tool
+from ci2lab.harness.tools.arg_normalize import _coerce_int, normalize_args_for_tool
 from ci2lab.harness.tools.schemas_parts.builtins import (
     boolean_args_for_tool,
+    integer_args_for_tool,
     required_args_for_tool,
 )
 
@@ -24,8 +25,9 @@ def normalize_tool_arguments(
     """Drop ``None`` values and apply per-tool argument normalization.
 
     When ``tool_name`` is given this also coerces the tool's schema-declared
-    boolean arguments from stringy forms (``"false"`` → ``False``), so a model
-    that emits a boolean as text does not silently invert the flag.
+    boolean (``"false"`` → ``False``) and integer (``"2"`` → ``2``) arguments from
+    stringy forms, so a model that emits them as text does not silently invert a
+    flag or crash a handler that compares/slices with the value.
 
     Args:
         args: Raw argument mapping as produced by the model.
@@ -34,13 +36,15 @@ def normalize_tool_arguments(
 
     Returns:
         A new dict with ``None`` values stripped and, when ``tool_name`` is
-        given, tool-specific key/alias normalization and boolean coercion applied.
+        given, tool-specific key/alias normalization plus boolean and integer
+        coercion applied.
     """
     cleaned = {k: v for k, v in args.items() if v is not None}
     if not tool_name:
         return cleaned
     cleaned = normalize_args_for_tool(tool_name, cleaned)
-    return _coerce_boolean_args(tool_name, cleaned)
+    cleaned = _coerce_boolean_args(tool_name, cleaned)
+    return _coerce_integer_args(tool_name, cleaned)
 
 
 def _coerce_bool(value: Any) -> Any:
@@ -66,6 +70,20 @@ def _coerce_boolean_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]
     if not bool_keys:
         return args
     return {key: (_coerce_bool(val) if key in bool_keys else val) for key, val in args.items()}
+
+
+def _coerce_integer_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Coerce the tool's schema-declared integer arguments from digit strings.
+
+    Schema-driven, so it covers every integer argument uniformly — including
+    those (e.g. ``tree.depth``, ``inspect_file.start``) that the per-tool
+    normalization never hand-coerced. Reuses :func:`_coerce_int`, which leaves
+    non-digit strings and bools untouched.
+    """
+    int_keys = integer_args_for_tool(tool_name)
+    if not int_keys:
+        return args
+    return {key: (_coerce_int(val) if key in int_keys else val) for key, val in args.items()}
 
 
 def validate_tool_arguments(name: str, args: dict[str, Any]) -> str | None:

@@ -86,6 +86,38 @@ def boolean_args_for_tool(name: str) -> set[str]:
     return BOOLEAN_ARGS.get(name, set())
 
 
+#: Canonical tool name -> its top-level integer argument names. As with
+#: :data:`BOOLEAN_ARGS`, only top-level properties count (a nested integer is
+#: passed through inside its object argument), and the mapping is derived from
+#: :data:`FUNCTION_SCHEMAS` so it stays in sync with the schemas automatically.
+INTEGER_ARGS: dict[str, set[str]] = {
+    schema["function"]["name"]: {
+        prop
+        for prop, spec in schema["function"].get("parameters", {}).get("properties", {}).items()
+        if isinstance(spec, dict) and spec.get("type") == "integer"
+    }
+    for schema in FUNCTION_SCHEMAS
+    if "name" in schema.get("function", {})
+}
+
+
+def integer_args_for_tool(name: str) -> set[str]:
+    """Return a built-in tool's top-level integer argument names.
+
+    Used to coerce digit strings (e.g. ``"2"``) that a model may emit into real
+    ``int`` values before dispatch — without it, a handler that compares or slices
+    with the value fails cryptically (``'<' not supported between int and str``).
+
+    Args:
+        name: Canonical tool name.
+
+    Returns:
+        The set of integer argument names (empty for a tool with none, or one
+        that is not a built-in).
+    """
+    return INTEGER_ARGS.get(name, set())
+
+
 def get_function_schemas(config: Any | None = None) -> list[dict[str, Any]]:
     """Build the OpenAI function schema list for the current run.
 

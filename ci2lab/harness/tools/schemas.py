@@ -11,10 +11,12 @@ from __future__ import annotations
 from ci2lab.harness.tools.schemas_parts.builtins import (
     BOOLEAN_ARGS,
     FUNCTION_SCHEMAS,
+    INTEGER_ARGS,
     REQUIRED_ARGS,
     TOOL_NAMES,
     boolean_args_for_tool,
     get_function_schemas,
+    integer_args_for_tool,
     is_known_tool,
     required_args_for_tool,
 )
@@ -22,10 +24,12 @@ from ci2lab.harness.tools.schemas_parts.builtins import (
 __all__ = [
     "BOOLEAN_ARGS",
     "FUNCTION_SCHEMAS",
+    "INTEGER_ARGS",
     "REQUIRED_ARGS",
     "TOOL_NAMES",
     "boolean_args_for_tool",
     "get_function_schemas",
+    "integer_args_for_tool",
     "is_known_tool",
     "required_args_for_tool",
 ]
