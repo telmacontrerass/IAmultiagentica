@@ -391,6 +391,7 @@ def verify_completion(
         selection,
         parent_for_sub,
         capture_output=True,
+        display_prefix="contract-validator",
     )
 
     if result.status != "completed":

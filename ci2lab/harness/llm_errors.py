@@ -1,4 +1,4 @@
-"""Actionable errors for the LLM client (Ollama)."""
+"""Actionable errors for LLM backends."""
 
 from __future__ import annotations
 
@@ -28,7 +28,13 @@ class LLMError(Exception):
 class LLMTimeoutError(LLMError):
     """The model did not respond within the allowed time."""
 
-    def __init__(self, detail: str = "", *, num_images: int = 0) -> None:
+    def __init__(
+        self,
+        detail: str = "",
+        *,
+        num_images: int = 0,
+        backend: str = "ollama",
+    ) -> None:
         """Build a timeout error with guidance tailored to the request.
 
         Args:
@@ -52,54 +58,69 @@ class LLMTimeoutError(LLMError):
                 ]
             )
         else:
-            lines.extend(
-                [
-                    "Check that Ollama is running (`ollama serve`) and try again.",
-                    "Run `ci2lab doctor` to diagnose.",
-                ]
-            )
+            lines.extend(_backend_connection_guidance(backend))
         if detail:
             lines.append(f"\nDetail: {detail}")
         super().__init__("\n".join(lines), exit_code=2)
 
 
 class LLMConnectionError(LLMError):
-    """Ollama is not responding or there is no connectivity."""
+    """The configured inference backend is not responding."""
 
-    def __init__(self, detail: str = "") -> None:
+    def __init__(self, detail: str = "", *, backend: str = "ollama") -> None:
         """Build a connection error.
 
         Args:
             detail: Optional low-level detail appended to the message.
         """
-        lines = [
-            "Could not connect to Ollama.",
-            "Check:",
-            "1. That Ollama is open.",
-            "2. That `ollama serve` is running.",
-            "3. Run `ci2lab doctor`.",
-        ]
+        if backend == "ollama":
+            lines = [
+                "Could not connect to Ollama.",
+                "Check:",
+                "1. That Ollama is open.",
+                "2. That `ollama serve` is running.",
+                "3. Run `ci2lab doctor`.",
+            ]
+        else:
+            lines = [
+                "Could not connect to the OpenAI-compatible backend.",
+                "Check:",
+                "1. That the local inference server is running.",
+                "2. That `--base-url` / `CI2LAB_BACKEND_URL` points at the /v1 base URL.",
+                "3. That `/v1/chat/completions` is reachable.",
+                "4. Run `ci2lab doctor --backend openai --base-url <url>`.",
+            ]
         if detail:
             lines.append(f"\nDetail: {detail}")
         super().__init__("\n".join(lines), exit_code=2)
 
 
 class LLMModelNotFoundError(LLMError):
-    """The requested model is not available in Ollama."""
+    """The requested model is not available from the backend."""
 
-    def __init__(self, model: str, detail: str = "") -> None:
+    def __init__(self, model: str, detail: str = "", *, backend: str = "ollama") -> None:
         """Build a model-not-found error.
 
         Args:
             model: Requested model tag that could not be located.
             detail: Optional low-level detail appended to the message.
         """
-        lines = [
-            f"The model `{model}` does not appear to be available in Ollama.",
-            "Try:",
-            f"  ollama pull {model}",
-            "  ci2lab doctor",
-        ]
+        if backend == "ollama":
+            lines = [
+                f"The model `{model}` does not appear to be available in Ollama.",
+                "Try:",
+                f"  ollama pull {model}",
+                "  ci2lab doctor",
+            ]
+        else:
+            lines = [
+                f"The model `{model}` does not appear to be available from the backend.",
+                "Try:",
+                "  - Check the model name served by the local inference server.",
+                "  - Check `--base-url` / `CI2LAB_BACKEND_URL` points at the /v1 base URL.",
+                "  - Check that `/v1/chat/completions` is reachable.",
+                "  - Run `ci2lab doctor --backend openai --base-url <url>`.",
+            ]
         if detail:
             lines.append(f"\nDetail: {detail}")
         super().__init__("\n".join(lines), exit_code=3)
@@ -165,6 +186,7 @@ def classify_http_error(
     *,
     model: str,
     url: str,
+    backend: str = "ollama",
 ) -> LLMError:
     """Map an HTTP status error to a specific :class:`LLMError`.
 
@@ -183,9 +205,10 @@ def classify_http_error(
         detail,
         model,
     ):
-        return LLMModelNotFoundError(model, detail)
+        return LLMModelNotFoundError(model, detail, backend=backend)
+    provider = "Ollama" if backend == "ollama" else "OpenAI-compatible backend"
     return LLMError(
-        f"HTTP error {exc.response.status_code} contacting Ollama ({url}).\n"
+        f"HTTP error {exc.response.status_code} contacting {provider} ({url}).\n"
         f"Detail: {detail}\n"
         "Run `ci2lab doctor` to diagnose.",
         exit_code=1,
@@ -198,6 +221,7 @@ def classify_request_error(
     model: str,
     url: str,
     num_images: int = 0,
+    backend: str = "ollama",
 ) -> LLMError:
     """Map an arbitrary request exception to a specific :class:`LLMError`.
 
@@ -216,19 +240,36 @@ def classify_request_error(
         The most specific :class:`LLMError` subclass that matches ``exc``.
     """
     if isinstance(exc, httpx.HTTPStatusError):
-        return classify_http_error(exc, model=model, url=url)
+        return classify_http_error(exc, model=model, url=url, backend=backend)
 
     if isinstance(exc, httpx.ConnectError):
-        return LLMConnectionError(str(exc))
+        return LLMConnectionError(str(exc), backend=backend)
 
     if isinstance(exc, httpx.TimeoutException):
-        return LLMTimeoutError(f"Timeout contacting {url}: {exc}", num_images=num_images)
+        return LLMTimeoutError(
+            f"Timeout contacting {url}: {exc}",
+            num_images=num_images,
+            backend=backend,
+        )
 
     if isinstance(exc, httpx.RequestError):
-        return LLMConnectionError(str(exc))
+        return LLMConnectionError(str(exc), backend=backend)
 
     text = str(exc)
     if re.search(r"model.*not found|not found.*model", text, re.I):
-        return LLMModelNotFoundError(model, text)
+        return LLMModelNotFoundError(model, text, backend=backend)
 
     return LLMError(f"Error contacting the model: {text}", exit_code=1)
+
+
+def _backend_connection_guidance(backend: str) -> list[str]:
+    if backend == "ollama":
+        return [
+            "Check that Ollama is running (`ollama serve`) and try again.",
+            "Run `ci2lab doctor` to diagnose.",
+        ]
+    return [
+        "Check that the local OpenAI-compatible server is running.",
+        "Check `--base-url` / `CI2LAB_BACKEND_URL` and the `/v1/chat/completions` endpoint.",
+        "Run `ci2lab doctor --backend openai --base-url <url>` to diagnose.",
+    ]

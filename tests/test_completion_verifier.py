@@ -150,6 +150,7 @@ def test_verify_completion_uses_validator_role_when_auto_confirm():
         ) as mock_run:
             verify_completion(config, selection, "create out.txt", ["write_file out.txt"])
         assert mock_run.call_args.args[0] is expected
+        assert mock_run.call_args.kwargs["display_prefix"] == "contract-validator"
 
 
 def test_verifier_failure_injects_fix_message_then_finishes():

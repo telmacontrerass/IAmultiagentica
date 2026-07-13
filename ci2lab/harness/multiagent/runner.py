@@ -265,6 +265,7 @@ def run_subagent(
     attempt: int = 1,
     capture_output: bool = True,
     on_progress: Callable[[str], None] | None = None,
+    display_prefix: str | None = None,
 ) -> SubAgentResult:
     """Execute one role-specific subagent with its own message context."""
     subagent_config = build_subagent_config(role, config)
@@ -290,7 +291,8 @@ def run_subagent(
         # `console.capture()` intentionally hides verbose subagent output. A
         # plain flushed line bypasses that Rich capture so the interactive chat
         # still receives concise live activity updates.
-        print(f"[multi-agent:{role.value}] {label}", flush=True)
+        prefix = display_prefix or f"multi-agent:{role.value}"
+        print(f"[{prefix}] {label}", flush=True)
 
     def _invoke() -> str:
         return run_agent(

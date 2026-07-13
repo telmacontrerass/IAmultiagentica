@@ -179,6 +179,7 @@ class OllamaBackend(LLMBackend):
                             model=model,
                             url=self.chat_url,
                             num_images=self.vision_image_count,
+                            backend="ollama",
                         )
                         if (
                             isinstance(err, LLMModelNotFoundError)
@@ -249,6 +250,7 @@ class OllamaBackend(LLMBackend):
                             model=model,
                             url=self.chat_url,
                             num_images=self.vision_image_count,
+                            backend="ollama",
                         )
                         if (
                             isinstance(err, LLMModelNotFoundError)

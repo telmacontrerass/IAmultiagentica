@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from ci2lab.cli import _expand_tools_shortcut, main
-from ci2lab.cli.parser import _is_global_help_request, _print_global_help
+from ci2lab.cli.parser import _is_global_help_request, _print_global_help, build_parser
 
 _GLOBAL_MARKERS = (
     'ci2lab "request"',
@@ -25,6 +25,8 @@ _GLOBAL_MARKERS = (
     "ci2lab models run",
     "ci2lab evals run",
     "--workspace",
+    "--backend",
+    "--base-url",
     "--tool-mode",
     "--session",
     "--no-log",
@@ -129,6 +131,24 @@ def test_doctor_help_still_specific():
     with pytest.raises(SystemExit) as exc:
         main(["doctor", "--help"])
     assert exc.value.code == 0
+
+
+def test_doctor_accepts_backend_flags_after_subcommand():
+    args = build_parser().parse_args(
+        [
+            "doctor",
+            "--backend",
+            "openai",
+            "--base-url",
+            "http://localhost:8000/v1",
+            "--model",
+            "local-openai-model",
+        ]
+    )
+    assert args.command == "doctor"
+    assert args.backend == "openai"
+    assert args.backend_url == "http://localhost:8000/v1"
+    assert args.model == "local-openai-model"
 
 
 def test_models_recommend_help_still_specific():

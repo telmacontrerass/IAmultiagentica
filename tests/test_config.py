@@ -48,16 +48,32 @@ def test_load_config_from_yaml(monkeypatch, tmp_path):
 
 def test_merge_cli_overrides_yaml(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "ci2lab.yaml").write_text("model: yaml:1b\n", encoding="utf-8")
+    (tmp_path / "ci2lab.yaml").write_text(
+        "model: yaml:1b\nbackend: ollama\nbackend_url: http://localhost:11434/v1\n",
+        encoding="utf-8",
+    )
     base = load_config()
-    merged = merge_cli_config(base, model="cli:3b")
+    merged = merge_cli_config(
+        base,
+        model="cli:3b",
+        backend="openai",
+        backend_url="http://localhost:8000",
+    )
     assert merged.model == "cli:3b"
+    assert merged.backend == "openai"
+    assert merged.backend_url == "http://localhost:8000/v1"
 
 
 def test_merge_cli_workspace(tmp_path):
     base = Ci2LabConfig()
     merged = merge_cli_config(base, workspace=str(tmp_path))
     assert merged.workspace == str(tmp_path.resolve())
+
+
+def test_merge_cli_context_length_override(tmp_path):
+    base = Ci2LabConfig(context_length=None)
+    merged = merge_cli_config(base, context_length=16384, workspace=str(tmp_path))
+    assert merged.context_length == 16384
 
 
 def test_workspace_cwd_conflict():

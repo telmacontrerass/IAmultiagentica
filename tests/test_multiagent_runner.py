@@ -274,6 +274,31 @@ def test_run_subagent_forwards_concise_progress_while_output_is_captured(capsys)
     assert "[multi-agent:researcher] Reviewing the latest results..." in output
 
 
+def test_run_subagent_can_use_custom_progress_prefix(capsys):
+    selection = default_selection("test:1b")
+    config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)
+
+    def progressing_run_agent(*args, **kwargs):
+        kwargs["on_progress"]("Checking the artifact...")
+        return "done"
+
+    with patch(
+        "ci2lab.harness.multiagent.runner.run_agent",
+        side_effect=progressing_run_agent,
+    ):
+        run_subagent(
+            AgentRole.VALIDATOR,
+            "Verify this",
+            selection,
+            config,
+            display_prefix="contract-validator",
+        )
+
+    output = capsys.readouterr().out
+    assert "[contract-validator] Checking the artifact..." in output
+    assert "[multi-agent:validator]" not in output
+
+
 def test_subagent_does_not_clear_parent_progress_before_final_answer():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, run_log_enabled=False)

@@ -28,6 +28,25 @@ def test_classify_model_not_found():
     assert err.exit_code == 3
 
 
+def test_classify_openai_model_not_found_does_not_suggest_ollama_pull():
+    request = httpx.Request("POST", "http://localhost/v1/chat/completions")
+    response = httpx.Response(
+        404,
+        json={"error": "model 'local-openai-model' not found"},
+        request=request,
+    )
+    exc = httpx.HTTPStatusError("404", request=request, response=response)
+    err = classify_request_error(
+        exc,
+        model="local-openai-model",
+        url="http://localhost/v1/chat/completions",
+        backend="openai",
+    )
+    assert isinstance(err, LLMModelNotFoundError)
+    assert "ollama pull" not in err.user_message
+    assert "/v1/chat/completions" in err.user_message
+
+
 def test_classify_timeout_with_vision_images():
     exc = httpx.ReadTimeout("timed out")
     err = classify_request_error(

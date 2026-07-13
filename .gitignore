@@ -47,6 +47,20 @@ benchmarks/results/*
 artifacts/
 tmp/
 ci2lab_uploads/
+/outputs/
+
+# Local model weights and machine-specific Ollama experiment files
+*.gguf
+/models/
+/Modelfile.glm9b*
+
+# Manual local-model smoke-test leftovers
+/glm_suma.py
+/glm_*_test.txt
+/glm_test.txt
+/glm_smoke.txt
+/prueba_glm*.txt
+/qwen_summary_test.txt
 
 # Red-team / security audit generated data
 tests/fixtures/redteam_sandbox/

@@ -481,7 +481,7 @@ def _call_with_optional_progress(func: Any, *args: Any, on_progress: Any, **kwar
 
 
 def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate the payload's selected model and confirm it is installed.
+    """Validate the payload's selected model and, for Ollama, confirm it is installed.
 
     Resolves the model tag and display name from the catalog (falling back to the
     raw value), then checks the Ollama backend for installation.
@@ -491,9 +491,10 @@ def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dic
         payload: Request payload carrying the selected ``"model"``.
 
     Returns:
-        ``{"ok": True, "model": ..., "display_name": ...}`` when installed,
-        otherwise an ``{"ok": False, "error": ...}`` payload (with token-usage
-        defaults) describing the problem.
+        ``{"ok": True, "model": ..., "display_name": ...}`` when the model is
+        usable for the configured backend, otherwise an ``{"ok": False,
+        "error": ...}`` payload (with token-usage defaults) describing the
+        problem.
     """
     selected = str(payload.get("model") or "").strip()
     if not selected:
@@ -509,6 +510,13 @@ def resolve_selected_installed_model(state: Any, payload: dict[str, Any]) -> dic
     spec = find_model_by_tag(selected)
     model_tag = spec.ollama_tag if spec else selected
     display_name = spec.display_name if spec else selected
+
+    if getattr(state.runtime, "backend", "ollama") != "ollama":
+        return {
+            "ok": True,
+            "model": model_tag,
+            "display_name": display_name,
+        }
 
     installed, error = state.list_installed_models()
     if error:

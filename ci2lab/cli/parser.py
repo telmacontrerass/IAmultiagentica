@@ -57,7 +57,7 @@ def _print_global_help() -> None:
         "  ci2lab sessions [--json]          List saved sessions",
         "  ci2lab skills [--json]            List available built-in/user/workspace skills",
         "  ci2lab yard [list|describe|run]   Browse and run reusable Yard components",
-        "  ci2lab doctor                     Check Python, Ollama and models",
+        "  ci2lab doctor                     Check Python and inference backend",
         "  ci2lab hardware [--json]          RAM, GPU, memory budget",
         "  ci2lab models recommend [query]",
         "                                    Recommended models for your PC",
@@ -284,7 +284,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--yes", action="store_true", help="Auto-confirm host-mutating entrypoints"
     )
 
-    sub.add_parser("doctor", help="Check environment")
+    doctor_p = sub.add_parser("doctor", help="Check environment")
+    doctor_p.add_argument("--model", default=None, help="Model name/tag to check")
+    doctor_p.add_argument(
+        "--backend",
+        choices=["ollama", "openai"],
+        default=None,
+        help="Inference backend/provider",
+    )
+    doctor_p.add_argument(
+        "--base-url",
+        dest="backend_url",
+        default=None,
+        help="Backend base URL (e.g. http://localhost:8000/v1)",
+    )
 
     hardware_p = sub.add_parser("hardware", help="Detect the computer's characteristics")
     hardware_p.add_argument("--json", action="store_true", help="Show output as JSON")

@@ -147,6 +147,42 @@ def test_chat_start_payload_reports_terminal_like_context(tmp_path, monkeypatch)
     assert payload["multi_agent"] is False
 
 
+def test_chat_start_openai_backend_does_not_require_ollama_install(tmp_path, monkeypatch):
+    state = UIState(
+        runtime=Ci2LabConfig(
+            workspace=str(tmp_path),
+            model="local-openai-model",
+            backend="openai",
+            backend_url="http://localhost:8000/v1",
+        )
+    )
+
+    def fail_list_installed_models():
+        raise AssertionError("OpenAI-compatible UI path must not query Ollama models")
+
+    state.list_installed_models = fail_list_installed_models
+
+    def fake_prepare_session(*args, **kwargs):
+        assert kwargs["backend"] == "openai"
+        assert kwargs["backend_url"] == "http://localhost:8000/v1"
+        return None, ModelSelection(
+            model_id="local-openai-model",
+            ollama_tag="local-openai-model",
+            display_name="local-openai-model",
+            backend="openai",
+            backend_url="http://localhost:8000/v1",
+            tool_mode="fenced",
+        )
+
+    monkeypatch.setattr("ci2lab.ui.server.prepare_session", fake_prepare_session)
+
+    payload = _chat_start(state, {"model": "local-openai-model"})
+
+    assert payload["ok"] is True
+    assert payload["model"] == "local-openai-model"
+    assert payload["tool_mode"] == "fenced"
+
+
 def test_chat_start_reports_multi_agent_mode(tmp_path, monkeypatch):
     state = UIState(runtime=Ci2LabConfig(workspace=str(tmp_path), model="qwen2.5-coder:1.5b"))
     monkeypatch.setattr(

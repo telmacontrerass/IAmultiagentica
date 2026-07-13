@@ -312,3 +312,47 @@ def test_openai_backend_still_uses_v1_endpoint(monkeypatch):
     assert captured["url"].endswith("/v1/chat/completions")
     assert "options" not in captured["payload"]
     assert captured["payload"]["max_tokens"] == 4096
+
+
+def test_openai_backend_fenced_mode_does_not_send_native_tools(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}]},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    client = LLMClient(
+        _selection(
+            model_id="local-openai-model",
+            ollama_tag="local-openai-model",
+            display_name="local-openai-model",
+            backend="openai",
+            backend_url="http://localhost:8000/v1",
+            tool_mode="fenced",
+        )
+    )
+    client.chat(
+        [{"role": "user", "content": "x"}],
+        tools=[{"type": "function", "function": {"name": "write_file", "parameters": {}}}],
+    )
+
+    assert captured["url"] == "http://localhost:8000/v1/chat/completions"
+    assert captured["payload"]["model"] == "local-openai-model"
+    assert "tools" not in captured["payload"]
