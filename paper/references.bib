@@ -1,0 +1,890 @@
+% ============================================================================
+%  references.bib — ci2lab paper
+%
+%  PROVENANCE: every entry below was verified against a primary source (arXiv,
+%  ACL Anthology, PMLR, MLSys, NeurIPS/ICLR proceedings, USENIX, ACM DL or the
+%  project's own citation page) during a literature sweep on 2026-07-09.
+%
+%  Entries marked "% VERIFY:" have a field that could NOT be confirmed and must
+%  be checked before submission. Entries marked "% NON-PEER-REVIEWED:" are
+%  preprints, blog posts or software; they are the canonical artifact for their
+%  claim but a reviewer may object to load-bearing use.
+% ============================================================================
+
+
+% ---------------------------------------------------------------------------
+% 1. THE AGENT LOOP AND ITS SCAFFOLDING
+% ---------------------------------------------------------------------------
+
+@inproceedings{yao2023react,
+  title         = {{ReAct}: Synergizing Reasoning and Acting in Language Models},
+  author        = {Yao, Shunyu and Zhao, Jeffrey and Yu, Dian and Du, Nan and
+                   Shafran, Izhak and Narasimhan, Karthik and Cao, Yuan},
+  booktitle     = {The Eleventh International Conference on Learning Representations (ICLR)},
+  year          = {2023},
+  eprint        = {2210.03629},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2210.03629}
+}
+
+@inproceedings{yang2024sweagent,
+  title         = {{SWE-agent}: Agent-Computer Interfaces Enable Automated Software Engineering},
+  author        = {Yang, John and Jimenez, Carlos E. and Wettig, Alexander and Lieret, Kilian and
+                   Yao, Shunyu and Narasimhan, Karthik and Press, Ofir},
+  booktitle     = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  year          = {2024},
+  eprint        = {2405.15793},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2405.15793}
+}
+
+@inproceedings{wang2024codeact,
+  title         = {Executable Code Actions Elicit Better {LLM} Agents},
+  author        = {Wang, Xingyao and Chen, Yangyi and Yuan, Lifan and Zhang, Yizhe and
+                   Li, Yunzhu and Peng, Hao and Ji, Heng},
+  booktitle     = {Proceedings of the 41st International Conference on Machine Learning (ICML)},
+  series        = {PMLR},
+  volume        = {235},
+  pages         = {50208--50232},
+  year          = {2024},
+  url           = {https://proceedings.mlr.press/v235/wang24h.html}
+}
+
+@article{kapoor2025aiagents,
+  title         = {{AI} Agents That Matter},
+  author        = {Kapoor, Sayash and Stroebl, Benedikt and Siegel, Zachary S. and
+                   Nadgir, Nitya and Narayanan, Arvind},
+  journal       = {Transactions on Machine Learning Research (TMLR)},
+  year          = {2025},
+  eprint        = {2407.01502},
+  archivePrefix = {arXiv},
+  url           = {https://openreview.net/forum?id=Zy4uFzMviZ}
+}
+
+@article{kapoor2025hal,
+  title         = {Holistic Agent Leaderboard: The Missing Infrastructure for {AI} Agent Evaluation},
+  author        = {Kapoor, Sayash and Stroebl, Benedikt and Kirgis, Peter and Nadgir, Nitya and
+                   Siegel, Zachary S. and Wei, Boyi and Xue, Tianci and Chen, Ziru and others},
+  journal       = {arXiv preprint arXiv:2510.11977},
+  year          = {2025},
+  url           = {https://arxiv.org/abs/2510.11977}
+}
+% NON-PEER-REVIEWED: preprint. 32 authors; expand "and others" if required.
+
+@misc{metr2024elicitation,
+  title        = {Measuring the Impact of Post-Training Enhancements},
+  author       = {{METR}},
+  year         = {2024},
+  month        = {3},
+  howpublished = {METR blog},
+  url          = {https://metr.org/blog/2024-03-15-measuring-post-impact-enhancements/}
+}
+% NON-PEER-REVIEWED: blog. This is the strongest published COUNTER-EVIDENCE to
+% our thesis (post-training +26pp vs. elicitation/scaffolding +8pp). Cite it.
+
+@misc{mcclendon2026threeroles,
+  title         = {Three Roles, One Model: Role Orchestration at Inference Time to Close the
+                   Performance Gap Between Small and Large Agents},
+  author        = {McClendon, S. Aaron and Gallego-Feliciano, Jorge and Zervoudakis, Stavros and
+                   Saravanos, Antonios},
+  year          = {2026},
+  eprint        = {2604.11465},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2604.11465}
+}
+% NON-PEER-REVIEWED: preprint. CLOSEST published work to our thesis — a training-free
+% role scaffold roughly doubles an 8B model's tool-use completion. MUST differentiate.
+
+@misc{liu2026moreisnotbetter,
+  title         = {More Is Not Always Better: Cross-Component Interference in {LLM} Agent Scaffolding},
+  author        = {Liu, Ming},
+  year          = {2026},
+  eprint        = {2605.05716},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.05716}
+}
+% NON-PEER-REVIEWED: preprint. Full-factorial ablation showing MORE scaffolding can HURT.
+
+@misc{rombaut2026scaffold,
+  title         = {Inside the Scaffold: A Source-Code Taxonomy of Coding Agent Architectures},
+  author        = {Rombaut, Benjamin},
+  year          = {2026},
+  eprint        = {2604.03515},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2604.03515}
+}
+% NON-PEER-REVIEWED: preprint.
+
+@misc{xia2024agentless,
+  title         = {Agentless: Demystifying {LLM}-based Software Engineering Agents},
+  author        = {Xia, Chunqiu Steven and Deng, Yinlin and Dunn, Soren and Zhang, Lingming},
+  year          = {2024},
+  eprint        = {2407.01489},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2407.01489}
+}
+% VERIFY: a secondary source claims an FSE 2025 version; DBLP lists only the preprint.
+
+@inproceedings{shinn2023reflexion,
+  title         = {Reflexion: Language Agents with Verbal Reinforcement Learning},
+  author        = {Shinn, Noah and Cassano, Federico and Berman, Edward and
+                   Gopinath, Ashwin and Narasimhan, Karthik and Yao, Shunyu},
+  booktitle     = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
+  year          = {2023},
+  eprint        = {2303.11366},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2303.11366}
+}
+
+@inproceedings{madaan2023selfrefine,
+  title         = {Self-Refine: Iterative Refinement with Self-Feedback},
+  author        = {Madaan, Aman and Tandon, Niket and Gupta, Prakhar and Hallinan, Skyler and
+                   Gao, Luyu and Wiegreffe, Sarah and Alon, Uri and Dziri, Nouha and
+                   Prabhumoye, Shrimai and Yang, Yiming and Gupta, Shashank and
+                   Majumder, Bodhisattwa Prasad and Hermann, Katherine and Welleck, Sean and
+                   Yazdanbakhsh, Amir and Clark, Peter},
+  booktitle     = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
+  year          = {2023},
+  eprint        = {2303.17651},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2303.17651}
+}
+
+@inproceedings{huang2024llmscannot,
+  title         = {Large Language Models Cannot Self-Correct Reasoning Yet},
+  author        = {Huang, Jie and Chen, Xinyun and Mishra, Swaroop and Zheng, Huaixiu Steven and
+                   Yu, Adams Wei and Song, Xinying and Zhou, Denny},
+  booktitle     = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year          = {2024},
+  eprint        = {2310.01798},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2310.01798}
+}
+
+@inproceedings{wu2024autogen,
+  title         = {{AutoGen}: Enabling Next-Gen {LLM} Applications via Multi-Agent Conversations},
+  author        = {Wu, Qingyun and Bansal, Gagan and Zhang, Jieyu and Wu, Yiran and Li, Beibin and
+                   Zhu, Erkang and Jiang, Li and Zhang, Xiaoyun and Zhang, Shaokun and Liu, Jiale and
+                   Awadallah, Ahmed Hassan and White, Ryen W. and Burger, Doug and Wang, Chi},
+  booktitle     = {First Conference on Language Modeling (COLM)},
+  year          = {2024},
+  eprint        = {2308.08155},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2308.08155}
+}
+
+@inproceedings{hong2024metagpt,
+  title         = {{MetaGPT}: Meta Programming for a Multi-Agent Collaborative Framework},
+  author        = {Hong, Sirui and Zhuge, Mingchen and Chen, Jonathan and Zheng, Xiawu and
+                   Cheng, Yuheng and Wang, Jinlin and Zhang, Ceyao and Wang, Zili and
+                   Yau, Steven Ka Shing and Lin, Zijuan and Zhou, Liyang and Ran, Chenyu and
+                   Xiao, Lingfeng and Wu, Chenglin and Schmidhuber, J{\"u}rgen},
+  booktitle     = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year          = {2024},
+  eprint        = {2308.00352},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2308.00352}
+}
+
+@inproceedings{wang2025openhands,
+  title         = {{OpenHands}: An Open Platform for {AI} Software Developers as Generalist Agents},
+  author        = {Wang, Xingyao and Li, Boxuan and Song, Yufan and Xu, Frank F. and Tang, Xiangru
+                   and Zhuge, Mingchen and Pan, Jiayi and Song, Yueqi and Li, Bowen and
+                   Singh, Jaskirat and Tran, Hoang H. and Li, Fuqiang and Ma, Ren and
+                   Zheng, Mingzhang and Qian, Bill and Shao, Yanjun and Muennighoff, Niklas and
+                   Zhang, Yizhe and Hui, Binyuan and Lin, Junyang and Brennan, Robert and
+                   Peng, Hao and Ji, Heng and Neubig, Graham},
+  booktitle     = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year          = {2025},
+  eprint        = {2407.16741},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2407.16741}
+}
+% VERIFY: 24-author list reconstructed from the paper's author block.
+
+@software{chase2022langchain,
+  author = {Chase, Harrison},
+  title  = {{LangChain}},
+  year   = {2022},
+  month  = {10},
+  url    = {https://github.com/langchain-ai/langchain}
+}
+% NON-PEER-REVIEWED: no paper exists for LangChain/LangGraph. Software citation.
+
+
+% ---------------------------------------------------------------------------
+% 2. THE BASELINE HARNESSES (software artifacts — cite at a pinned commit)
+% ---------------------------------------------------------------------------
+
+@misc{deepagents,
+  author       = {{LangChain AI}},
+  title        = {{DeepAgents}: A {L}ang{G}raph-based harness for building deep agents},
+  year         = {2025},
+  howpublished = {\url{https://github.com/langchain-ai/deepagents}},
+  note         = {Audited at commit \texttt{<PIN COMMIT>}, accessed 2026-07-09}
+}
+% TODO: pin the exact commit hash of the audited checkout.
+
+@misc{opencode,
+  author       = {{OpenCode contributors}},
+  title        = {{OpenCode}: An open-source {AI} coding agent},
+  year         = {2025},
+  howpublished = {\url{https://github.com/sst/opencode}},
+  note         = {Audited at commit \texttt{<PIN COMMIT>}, accessed 2026-07-09}
+}
+% TODO: pin the exact commit hash of the audited checkout.
+
+
+% ---------------------------------------------------------------------------
+% 3. TOOL CALLING
+% ---------------------------------------------------------------------------
+
+@misc{schick2023toolformer,
+  title         = {Toolformer: Language Models Can Teach Themselves to Use Tools},
+  author        = {Schick, Timo and Dwivedi-Yu, Jane and Dess{\`i}, Roberto and Raileanu, Roberta
+                   and Lomeli, Maria and Zettlemoyer, Luke and Cancedda, Nicola and Scialom, Thomas},
+  year          = {2023},
+  eprint        = {2302.04761},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2302.04761}
+}
+
+@inproceedings{patil2024gorilla,
+  title     = {Gorilla: Large Language Model Connected with Massive {API}s},
+  author    = {Patil, Shishir G. and Zhang, Tianjun and Wang, Xin and Gonzalez, Joseph E.},
+  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  year      = {2024},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2024/hash/e4c61f578ff07830f5c37378dd3ecb0d-Abstract-Conference.html}
+}
+
+@inproceedings{qin2024toolllm,
+  title     = {{ToolLLM}: Facilitating Large Language Models to Master 16000+ Real-world {API}s},
+  author    = {Qin, Yujia and Liang, Shihao and Ye, Yining and Zhu, Kunlun and Yan, Lan and
+               Lu, Yaxi and Lin, Yankai and Cong, Xin and Tang, Xiangru and Qian, Bill and
+               Zhao, Sihan and Hong, Lauren and Tian, Runchu and Xie, Ruobing and Zhou, Jie and
+               Gerstein, Mark and Li, Dahai and Liu, Zhiyuan and Sun, Maosong},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=dHng2O0Jjr}
+}
+
+@inproceedings{patil2025bfcl,
+  title     = {The {B}erkeley Function Calling Leaderboard ({BFCL}): From Tool Use to
+               Agentic Evaluation of Large Language Models},
+  author    = {Patil, Shishir G. and Mao, Huanzhi and Yan, Fanjia and Ji, Charlie Cheng-Jie
+               and Suresh, Vishnu and Stoica, Ion and Gonzalez, Joseph E.},
+  booktitle = {Proceedings of the 42nd International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {267},
+  pages     = {48371--48392},
+  year      = {2025},
+  url       = {https://proceedings.mlr.press/v267/patil25a.html}
+}
+
+@misc{lin2024hammer,
+  title         = {Hammer: Robust Function-Calling for On-Device Language Models via Function Masking},
+  author        = {Lin, Qiqiang and Wen, Muning and Peng, Qiuying and Nie, Guanyu and Liao, Junwei
+                   and Wang, Jun and Mo, Xiaoyun and Zhou, Jiamu and Cheng, Cheng and Zhao, Yin
+                   and Wang, Jun and Zhang, Weinan},
+  year          = {2024},
+  eprint        = {2410.04587},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2410.04587}
+}
+
+@inproceedings{rabinovich2025robustness,
+  title         = {On the Robustness of Agentic Function Calling},
+  author        = {Rabinovich, Ella and Anaby-Tavor, Ateret},
+  booktitle     = {Proceedings of the 5th Workshop on Trustworthy NLP (TrustNLP) at NAACL},
+  year          = {2025},
+  eprint        = {2504.00914},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2504.00914}
+}
+
+
+% ---------------------------------------------------------------------------
+% 4. CONSTRAINED / GRAMMAR-BASED DECODING  (the alternative solution)
+% ---------------------------------------------------------------------------
+
+@misc{willard2023outlines,
+  title         = {Efficient Guided Generation for Large Language Models},
+  author        = {Willard, Brandon T. and Louf, R{\'e}mi},
+  year          = {2023},
+  eprint        = {2307.09702},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2307.09702}
+}
+
+@misc{dong2025xgrammar,
+  title         = {{XGrammar}: Flexible and Efficient Structured Generation Engine for
+                   Large Language Models},
+  author        = {Dong, Yixin and Ruan, Charlie F. and Cai, Yaxing and Lai, Ruihang and Xu, Ziyi
+                   and Zhao, Yilong and Chen, Tianqi},
+  year          = {2025},
+  eprint        = {2411.15100},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2411.15100}
+}
+% VERIFY: arXiv export says year=2025 though v1 is Nov 2024. No venue confirmed.
+
+@inproceedings{geng2023grammar,
+  title     = {Grammar-Constrained Decoding for Structured {NLP} Tasks without Finetuning},
+  author    = {Geng, Saibo and Josifoski, Martin and Peyrard, Maxime and West, Robert},
+  booktitle = {Proceedings of the 2023 Conference on Empirical Methods in Natural
+               Language Processing (EMNLP)},
+  pages     = {10932--10952},
+  year      = {2023},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2023.emnlp-main.674},
+  url       = {https://aclanthology.org/2023.emnlp-main.674/}
+}
+
+@inproceedings{beurer-kellner2024guiding,
+  title     = {Guiding {LLM}s The Right Way: Fast, Non-Invasive Constrained Generation},
+  author    = {Beurer-Kellner, Luca and Fischer, Marc and Vechev, Martin},
+  booktitle = {Proceedings of the 41st International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {235},
+  pages     = {3658--3673},
+  year      = {2024},
+  url       = {https://proceedings.mlr.press/v235/beurer-kellner24a.html}
+}
+% THE KEY REBUTTAL: accuracy loss under constrained decoding stems from subword
+% misalignment in the IMPLEMENTATION, not from constraint itself.
+
+@inproceedings{park2024grammar,
+  title     = {Grammar-Aligned Decoding},
+  author    = {Park, Kanghee and Wang, Jiayu and Berg-Kirkpatrick, Taylor and
+               Polikarpova, Nadia and D'Antoni, Loris},
+  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  year      = {2024},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2024/hash/2bdc2267c3d7d01523e2e17ac0a754f3-Abstract-Conference.html}
+}
+
+@inproceedings{tam2024speak,
+  title     = {Let Me Speak Freely? {A} Study On The Impact Of Format Restrictions On
+               Large Language Model Performance},
+  author    = {Tam, Zhi Rui and Wu, Cheng-Kuang and Tsai, Yi-Lin and Lin, Chieh-Yen
+               and Lee, Hung-yi and Chen, Yun-Nung},
+  booktitle = {Proceedings of the 2024 Conference on Empirical Methods in Natural
+               Language Processing: Industry Track},
+  pages     = {1218--1236},
+  year      = {2024},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2024.emnlp-industry.91},
+  url       = {https://aclanthology.org/2024.emnlp-industry.91/}
+}
+
+@misc{geng2025jsonschemabench,
+  title         = {{JSONSchemaBench}: A Rigorous Benchmark of Structured Outputs for
+                   Language Models},
+  author        = {Geng, Saibo and Cooper, Hudson and Moskal, Micha{\l} and Jenkins, Samuel and
+                   Berman, Julian and Ranchin, Nathan and West, Robert and Horvitz, Eric and
+                   Nori, Harsha},
+  year          = {2025},
+  eprint        = {2501.10868},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2501.10868}
+}
+% VERIFY: a COLM 2025 listing is claimed but unconfirmed. Cite as preprint.
+
+@misc{ray2026constrainttax,
+  title         = {The Constraint Tax: Measuring Validity-Correctness Tradeoffs in
+                   Structured Outputs for Small Language Models},
+  author        = {Ray, Jaideep},
+  year          = {2026},
+  eprint        = {2605.26128},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.26128}
+}
+% NON-PEER-REVIEWED: single-author preprint. Directly relevant: at sub-3B scale,
+% forcing schema validity RAISED valid-but-wrong outputs from 49.5% to 88.9%.
+
+@misc{llamacpp,
+  author       = {Gerganov, Georgi and {llama.cpp contributors}},
+  title        = {llama.cpp: {LLM} inference in {C/C++} (GBNF grammar-based sampling)},
+  year         = {2023},
+  howpublished = {\url{https://github.com/ggml-org/llama.cpp}},
+  note         = {No associated publication. Accessed 2026-07-09}
+}
+
+
+% ---------------------------------------------------------------------------
+% 5. HARDWARE, KV CACHE, CONTEXT
+% ---------------------------------------------------------------------------
+
+@inproceedings{kwon2023pagedattention,
+  author    = {Kwon, Woosuk and Li, Zhuohan and Zhuang, Siyuan and Sheng, Ying and
+               Zheng, Lianmin and Yu, Cody Hao and Gonzalez, Joseph E. and
+               Zhang, Hao and Stoica, Ion},
+  title     = {Efficient Memory Management for Large Language Model Serving with {PagedAttention}},
+  booktitle = {Proceedings of the 29th Symposium on Operating Systems Principles (SOSP)},
+  pages     = {611--626},
+  year      = {2023},
+  publisher = {ACM},
+  doi       = {10.1145/3600006.3613165},
+  url       = {https://arxiv.org/abs/2309.06180}
+}
+% THE KV-CACHE ARITHMETIC. Contains the explicit per-token formula our
+% context-window sizing implements.
+
+@inproceedings{pope2023efficiently,
+  author    = {Pope, Reiner and Douglas, Sholto and Chowdhery, Aakanksha and
+               Devlin, Jacob and Bradbury, James and Heek, Jonathan and
+               Xiao, Kefan and Agrawal, Shivani and Dean, Jeff},
+  title     = {Efficiently Scaling Transformer Inference},
+  booktitle = {Proceedings of Machine Learning and Systems (MLSys)},
+  volume    = {5},
+  year      = {2023},
+  url       = {https://arxiv.org/abs/2211.05102}
+}
+% VERIFY: page numbers not exposed by MLSys or DBLP.
+
+@inproceedings{ainslie2023gqa,
+  title     = {{GQA}: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints},
+  author    = {Ainslie, Joshua and Lee-Thorp, James and de Jong, Michiel and
+               Zemlyanskiy, Yury and Lebron, Federico and Sanghai, Sumit},
+  booktitle = {Proceedings of the 2023 Conference on Empirical Methods in Natural
+               Language Processing (EMNLP)},
+  pages     = {4895--4901},
+  year      = {2023},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2023.emnlp-main.298},
+  url       = {https://aclanthology.org/2023.emnlp-main.298/}
+}
+% CRITICAL for our KV math: GQA replaces n_heads with n_kv_groups in the
+% per-token KV formula. Qwen2.5 uses GQA.
+
+@article{shazeer2019mqa,
+  author        = {Shazeer, Noam},
+  title         = {Fast Transformer Decoding: One Write-Head is All You Need},
+  journal       = {arXiv preprint arXiv:1911.02150},
+  year          = {2019},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/1911.02150}
+}
+
+@article{liu2024lost,
+  title     = {Lost in the Middle: How Language Models Use Long Contexts},
+  author    = {Liu, Nelson F. and Lin, Kevin and Hewitt, John and Paranjape, Ashwin and
+               Bevilacqua, Michele and Petroni, Fabio and Liang, Percy},
+  journal   = {Transactions of the Association for Computational Linguistics (TACL)},
+  volume    = {12},
+  pages     = {157--173},
+  year      = {2024},
+  publisher = {MIT Press},
+  doi       = {10.1162/tacl_a_00638},
+  url       = {https://aclanthology.org/2024.tacl-1.9/}
+}
+
+@inproceedings{hsieh2024ruler,
+  author        = {Hsieh, Cheng-Ping and Sun, Simeng and Kriman, Samuel and Acharya, Shantanu and
+                   Rekesh, Dima and Jia, Fei and Zhang, Yang and Ginsburg, Boris},
+  title         = {{RULER}: What's the Real Context Size of Your Long-Context Language Models?},
+  booktitle     = {First Conference on Language Modeling (COLM)},
+  year          = {2024},
+  eprint        = {2404.06654},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2404.06654}
+}
+% Empirical basis for capping the context window BELOW the nominal maximum.
+
+@inproceedings{jiang2023llmlingua,
+  title     = {{LLMLingua}: Compressing Prompts for Accelerated Inference of Large Language Models},
+  author    = {Jiang, Huiqiang and Wu, Qianhui and Lin, Chin-Yew and Yang, Yuqing and Qiu, Lili},
+  booktitle = {Proceedings of the 2023 Conference on Empirical Methods in Natural
+               Language Processing (EMNLP)},
+  pages     = {13358--13376},
+  year      = {2023},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2023.emnlp-main.825},
+  url       = {https://aclanthology.org/2023.emnlp-main.825/}
+}
+
+@article{packer2023memgpt,
+  author        = {Packer, Charles and Wooders, Sarah and Lin, Kevin and Fang, Vivian and
+                   Patil, Shishir G. and Stoica, Ion and Gonzalez, Joseph E.},
+  title         = {{MemGPT}: Towards {LLM}s as Operating Systems},
+  journal       = {arXiv preprint arXiv:2310.08560},
+  year          = {2023},
+  url           = {https://arxiv.org/abs/2310.08560}
+}
+
+
+% ---------------------------------------------------------------------------
+% 6. LOCAL INFERENCE AND QUANTIZATION
+% ---------------------------------------------------------------------------
+
+@inproceedings{frantar2023gptq,
+  author        = {Frantar, Elias and Ashkboos, Saleh and Hoefler, Torsten and Alistarh, Dan},
+  title         = {{GPTQ}: Accurate Post-Training Quantization for Generative Pre-trained Transformers},
+  booktitle     = {The Eleventh International Conference on Learning Representations (ICLR)},
+  year          = {2023},
+  eprint        = {2210.17323},
+  archivePrefix = {arXiv},
+  url           = {https://openreview.net/forum?id=tcbBPnfwxS}
+}
+% VERIFY: the ICLR camera-ready is titled "OPTQ", the arXiv version "GPTQ".
+
+@inproceedings{lin2024awq,
+  author    = {Lin, Ji and Tang, Jiaming and Tang, Haotian and Yang, Shang and Chen, Wei-Ming and
+               Wang, Wei-Chen and Xiao, Guangxuan and Dang, Xingyu and Gan, Chuang and Han, Song},
+  title     = {{AWQ}: Activation-aware Weight Quantization for On-Device {LLM} Compression
+               and Acceleration},
+  booktitle = {Proceedings of Machine Learning and Systems (MLSys)},
+  volume    = {6},
+  pages     = {87--100},
+  year      = {2024},
+  url       = {https://proceedings.mlsys.org/paper_files/paper/2024/file/42a452cbafa9dd64e9ba4aa95cc1ef21-Paper-Conference.pdf}
+}
+
+@inproceedings{dong2025acbench,
+  title     = {Can Compressed {LLM}s Truly Act? {A}n Empirical Evaluation of Agentic
+               Capabilities in {LLM} Compression},
+  author    = {Dong, Peijie and Tang, Zhenheng and Liu, Xiang and Li, Lujun and Chu, Xiaowen
+               and Li, Bo},
+  booktitle = {Proceedings of the 42nd International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {267},
+  pages     = {14169--14202},
+  year      = {2025},
+  url       = {https://proceedings.mlr.press/v267/dong25k.html}
+}
+% Measures compression's effect on TOOL USE specifically, not perplexity.
+% 4-bit costs only 1-3% on tool use but 10-15% on real-world application accuracy.
+
+@misc{ollama,
+  author       = {{Ollama}},
+  title        = {Ollama: Get up and running with large language models locally},
+  year         = {2023},
+  howpublished = {\url{https://github.com/ollama/ollama}},
+  note         = {No associated publication. Accessed 2026-07-09}
+}
+
+@misc{belcak2025slm,
+  title         = {Small Language Models are the Future of Agentic {AI}},
+  author        = {Belcak, Peter and Heinrich, Greg and Diao, Shizhe and Fu, Yonggan and
+                   Dong, Xin and Muralidharan, Saurav and Lin, Yingyan Celine and
+                   Molchanov, Pavlo},
+  year          = {2025},
+  eprint        = {2506.02153},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2506.02153},
+  note          = {Position paper, NVIDIA Research}
+}
+
+@article{xu2024ondevice,
+  author  = {Xu, Jiajun and Li, Zhiyuan and Chen, Wei and Wang, Qun and Gao, Xin and Cai, Qi
+             and Ling, Ziyuan},
+  title   = {On-Device Language Models: A Comprehensive Review},
+  journal = {arXiv preprint arXiv:2409.00088},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2409.00088}
+}
+
+
+% ---------------------------------------------------------------------------
+% 7. ON-DEVICE AGENTS  (the papers from our literature review)
+% ---------------------------------------------------------------------------
+
+@misc{fu2024camphor,
+  title         = {{CAMPHOR}: Collaborative Agents for Multi-input Planning and High-Order
+                   Reasoning On Device},
+  author        = {Fu, Yicheng and Anantha, Raviteja and Cheng, Jianpeng},
+  year          = {2024},
+  eprint        = {2410.09407},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2410.09407}
+}
+
+@misc{kadekodi2025agentflux,
+  title  = {{AgentFlux}: Decoupled Fine-Tuning and Inference for On-Device Agentic Systems},
+  author = {Kadekodi, Rohan and Jin, Zhanggen and Kamahori, Keisuke and Gu, Yile and
+            Khatiri, Sean and Bayindirli, Noah H. and Gorbunov, Sergey and Kasikci, Baris},
+  year   = {2025},
+  url    = {https://www.semanticscholar.org/paper/67ac54c34f980ac1a0d6a6a36981e153cf9223dc}
+}
+% VERIFY: obtain the arXiv id / venue; the literature review only had a S2 link.
+
+@misc{vijayvargiya2025adaptive,
+  title         = {Efficient On-Device Agents via Adaptive Context Management},
+  author        = {Vijayvargiya, Sanidhya and Lokesh, R.},
+  year          = {2025},
+  eprint        = {2511.03728},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2511.03728}
+}
+% VERIFY: author first names taken from the literature review; confirm on arXiv.
+
+@misc{liu2026utility,
+  title  = {Utility-Guided Agent Orchestration for Efficient {LLM} Tool Use},
+  author = {Liu, Boyang and Zhao, Gongming and Xu, Hongliu},
+  year   = {2026},
+  url    = {https://www.semanticscholar.org/paper/e1951e680c8c4b40e299323b5fdd466494480191}
+}
+% VERIFY: obtain the arXiv id / venue.
+
+@misc{huang2025edge,
+  title  = {{LLM}s at the Edge: Performance and Efficiency Evaluation with {Ollama}
+            on Diverse Hardware},
+  author = {Huang, Donghao and Wang, Zhaoxia},
+  year   = {2025},
+  url    = {https://www.semanticscholar.org/paper/53380bdd8da10c88cf3c5f2918823a55c54a1bf2}
+}
+% VERIFY: obtain the DOI / venue.
+
+@article{martinez2025latency,
+  author  = {Mart{\'i}nez, H{\'e}ctor and Catal{\'a}n, Sandra and Castell{\'o}, Adri{\'a}n and
+             Mestre, Jos{\'e} I. and Quintana-Ort{\'i}, Enrique S.},
+  title   = {Latency-Critical Quantized Inference With Transformer Decoders on {ARM}
+             and {RISC-V} {CPU}s},
+  journal = {IEEE Internet of Things Journal},
+  year    = {2025},
+  doi     = {10.1109/JIOT.2025.3560382}
+}
+
+
+% ---------------------------------------------------------------------------
+% 8. EVALUATION METHODOLOGY
+% ---------------------------------------------------------------------------
+
+@article{chen2021codex,
+  title         = {Evaluating Large Language Models Trained on Code},
+  author        = {Chen, Mark and Tworek, Jerry and Jun, Heewoo and Yuan, Qiming and
+                   Pinto, Henrique Ponde de Oliveira and Kaplan, Jared and Edwards, Harri and
+                   Burda, Yuri and Joseph, Nicholas and Brockman, Greg and others},
+  journal       = {arXiv preprint arXiv:2107.03374},
+  year          = {2021},
+  doi           = {10.48550/arXiv.2107.03374},
+  url           = {https://arxiv.org/abs/2107.03374}
+}
+% The unbiased pass@k estimator we implement.
+
+@inproceedings{jimenez2024swebench,
+  title     = {{SWE-bench}: Can Language Models Resolve Real-world {GitHub} Issues?},
+  author    = {Jimenez, Carlos E. and Yang, John and Wettig, Alexander and Yao, Shunyu and
+               Pei, Kexin and Press, Ofir and Narasimhan, Karthik R.},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=VTF8yNQM66}
+}
+
+@inproceedings{merrill2026terminalbench,
+  title     = {Terminal-Bench: Benchmarking Agents on Hard, Realistic Tasks in
+               Command Line Interfaces},
+  author    = {Merrill, Mike A. and Shaw, Alexander Glenn and Carlini, Nicholas and
+               Li, Boxuan and Raj, Harsh and Bercovich, Ivan and Shi, Lin and others},
+  booktitle = {The Fourteenth International Conference on Learning Representations (ICLR)},
+  year      = {2026},
+  url       = {https://openreview.net/forum?id=a7Qa4CcHak}
+}
+% ~90 authors in the official entry; truncated with "and others".
+
+@inproceedings{liu2024agentbench,
+  title     = {{AgentBench}: Evaluating {LLM}s as Agents},
+  author    = {Liu, Xiao and Yu, Hao and Zhang, Hanchen and Xu, Yifan and Lei, Xuanyu and
+               Lai, Hanyu and Gu, Yu and Ding, Hangliang and Men, Kaiwen and Yang, Kejuan and
+               Zhang, Shudan and Deng, Xiang and Zeng, Aohan and Du, Zhengxiao and
+               Zhang, Chenhui and Shen, Sheng and Zhang, Tianjun and Su, Yu and Sun, Huan and
+               Huang, Minlie and Dong, Yuxiao and Tang, Jie},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2308.03688}
+}
+
+@article{yao2024taubench,
+  title         = {$\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains},
+  author        = {Yao, Shunyu and Shinn, Noah and Razavi, Pedram and Narasimhan, Karthik},
+  journal       = {arXiv preprint arXiv:2406.12045},
+  year          = {2024},
+  url           = {https://arxiv.org/abs/2406.12045}
+}
+
+@inproceedings{mialon2024gaia,
+  title     = {{GAIA}: A Benchmark for General {AI} Assistants},
+  author    = {Mialon, Gr{\'e}goire and Fourrier, Cl{\'e}mentine and Swift, Craig and
+               Wolf, Thomas and LeCun, Yann and Scialom, Thomas},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2311.12983}
+}
+
+@inproceedings{sainz2023contamination,
+  title     = {{NLP} Evaluation in Trouble: On the Need to Measure {LLM} Data Contamination
+               for each Benchmark},
+  author    = {Sainz, Oscar and Campos, Jon and Garc{\'i}a-Ferrero, Iker and Etxaniz, Julen and
+               de Lacalle, Oier Lopez and Agirre, Eneko},
+  booktitle = {Findings of the Association for Computational Linguistics: EMNLP 2023},
+  pages     = {10776--10787},
+  year      = {2023},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2023.findings-emnlp.722},
+  url       = {https://aclanthology.org/2023.findings-emnlp.722/}
+}
+% Justifies hand-authoring the task suite instead of reusing public benchmarks.
+
+@article{miller2024errorbars,
+  title         = {Adding Error Bars to Evals: A Statistical Approach to Language Model Evaluations},
+  author        = {Miller, Evan},
+  journal       = {arXiv preprint arXiv:2411.00640},
+  year          = {2024},
+  url           = {https://arxiv.org/abs/2411.00640}
+}
+% Best-practice justification for our bootstrap confidence intervals.
+
+@article{he2025nondeterminism,
+  author  = {He, Horace and {Thinking Machines Lab}},
+  title   = {Defeating Nondeterminism in {LLM} Inference},
+  journal = {Thinking Machines Lab: Connectionism},
+  year    = {2025},
+  doi     = {10.64434/tml.20250910},
+  url     = {https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/}
+}
+% NON-PEER-REVIEWED: lab blog. Why temperature=0 is NOT reproducible — justifies
+% k samples + CIs rather than assuming a single greedy run is deterministic.
+
+
+% ---------------------------------------------------------------------------
+% 9. FALSE SUCCESS, GROUNDING, JUDGES, SAFETY
+% ---------------------------------------------------------------------------
+
+@article{advani2026falsesuccess,
+  author  = {Advani, Laksh},
+  title   = {From Confident Closing to Silent Failure: Characterizing False Success in {LLM} Agents},
+  journal = {arXiv preprint arXiv:2606.09863},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2606.09863}
+}
+% NON-PEER-REVIEWED: preprint. DIRECT PRIOR ART for our false-positive metric.
+% Also: LLM judges detect false success at AUROC <= 0.65 because they key on
+% confident LANGUAGE rather than verified STATE — justifies our deterministic oracle.
+
+@article{cao2026corruptsuccess,
+  author  = {Cao, Hongliu and Driouich, Ilias and Thomas, Eoin},
+  title   = {Beyond Task Completion: Revealing Corrupt Success in {LLM} Agents through
+             Procedure-Aware Evaluation},
+  journal = {arXiv preprint arXiv:2603.03116},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2603.03116}
+}
+% NON-PEER-REVIEWED: preprint. Outcome-only grading over-reports success.
+
+@inproceedings{sharma2024sycophancy,
+  author    = {Sharma, Mrinank and Tong, Meg and Korbak, Tomasz and Duvenaud, David and
+               Askell, Amanda and Bowman, Samuel R. and Cheng, Newton and Durmus, Esin and
+               Hatfield-Dodds, Zac and Johnston, Scott R. and Kravec, Shauna and
+               Maxwell, Timothy and McCandlish, Sam and Ndousse, Kamal and Rausch, Oliver and
+               Schiefer, Nicholas and Yan, Da and Zhang, Miranda and Perez, Ethan},
+  title     = {Towards Understanding Sycophancy in Language Models},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=tvhaxkMKAn}
+}
+
+@inproceedings{zheng2023judging,
+  author    = {Zheng, Lianmin and Chiang, Wei-Lin and Sheng, Ying and Zhuang, Siyuan and
+               Wu, Zhanghao and Zhuang, Yonghao and Lin, Zi and Li, Zhuohan and Li, Dacheng and
+               Xing, Eric P. and Zhang, Hao and Gonzalez, Joseph E. and Stoica, Ion},
+  title     = {Judging {LLM-as-a-Judge} with {MT-Bench} and {Chatbot Arena}},
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS),
+               Datasets and Benchmarks Track},
+  year      = {2023},
+  url       = {https://arxiv.org/abs/2306.05685}
+}
+
+@article{panickssery2024llmevaluators,
+  author  = {Panickssery, Arjun and Bowman, Samuel R. and Feng, Shi},
+  title   = {{LLM} Evaluators Recognize and Favor Their Own Generations},
+  journal = {arXiv preprint arXiv:2404.13076},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2404.13076}
+}
+
+@article{ji2023hallucination,
+  author    = {Ji, Ziwei and Lee, Nayeon and Frieske, Rita and Yu, Tiezheng and Su, Dan and
+               Xu, Yan and Ishii, Etsuko and Bang, Yejin and Madotto, Andrea and Fung, Pascale},
+  title     = {Survey of Hallucination in Natural Language Generation},
+  journal   = {ACM Computing Surveys},
+  volume    = {55},
+  number    = {12},
+  articleno = {248},
+  year      = {2023},
+  publisher = {ACM},
+  doi       = {10.1145/3571730}
+}
+
+@article{rashkin2023attribution,
+  author    = {Rashkin, Hannah and Nikolaev, Vitaly and Lamm, Matthew and Aroyo, Lora and
+               Collins, Michael and Das, Dipanjan and Petrov, Slav and Tomar, Gaurav Singh and
+               Turc, Iulia and Reitter, David},
+  title     = {Measuring Attribution in Natural Language Generation Models},
+  journal   = {Computational Linguistics},
+  volume    = {49},
+  number    = {4},
+  pages     = {777--840},
+  year      = {2023},
+  publisher = {MIT Press},
+  doi       = {10.1162/coli_a_00486},
+  url       = {https://aclanthology.org/2023.cl-4.2/}
+}
+% The AIS framework: a claim must be verifiable against an independent source.
+% This is the formal standard our grounding gate enforces.
+
+@inproceedings{ruan2024toolemu,
+  author    = {Ruan, Yangjun and Dong, Honghua and Wang, Andrew and Pitis, Silviu and
+               Zhou, Yongchao and Ba, Jimmy and Dubois, Yann and Maddison, Chris J. and
+               Hashimoto, Tatsunori},
+  title     = {Identifying the Risks of {LM} Agents with an {LM}-Emulated Sandbox},
+  booktitle = {The Twelfth International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=GEcwtMk1uA}
+}
+
+@article{shi2025progent,
+  author  = {Shi, Tianneng and He, Jingxuan and Wang, Zhun and Li, Hongwei and Wu, Linyu and
+             Guo, Wenbo and Song, Dawn},
+  title   = {Progent: Securing {AI} Agents with Privilege Control},
+  journal = {arXiv preprint arXiv:2504.11703},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2504.11703}
+}
+% Academic precedent for a deterministic, out-of-model permission engine.
+
+
+% ---------------------------------------------------------------------------
+% 10. PRIVACY
+% ---------------------------------------------------------------------------
+
+@inproceedings{niu2023codexleaks,
+  author    = {Niu, Liang and Mirza, Shujaat and Maradni, Zayd and P{\"o}pper, Christina},
+  title     = {{CodexLeaks}: Privacy Leaks from Code Generation Language Models in
+               {GitHub} {Copilot}},
+  booktitle = {32nd USENIX Security Symposium (USENIX Security)},
+  pages     = {2133--2150},
+  year      = {2023},
+  publisher = {USENIX Association},
+  url       = {https://www.usenix.org/conference/usenixsecurity23/presentation/niu}
+}
+% Hard evidence of the harm that local-first execution avoids.
+
+@article{miranda2025privacy,
+  author  = {Miranda, Michele and Ruzzetti, Elena Sofia and Santilli, Andrea and
+             Zanzotto, Fabio Massimo and Brati{\`e}res, S{\'e}bastien and Rodol{\`a}, Emanuele},
+  title   = {Preserving Privacy in Large Language Models: A Survey on Current Threats and Solutions},
+  journal = {Transactions on Machine Learning Research (TMLR)},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2408.05212}
+}
+
+@article{zhang2024rtbf,
+  author  = {Zhang, Dawen and Finckenberg-Broman, Pamela and Hoang, Thong and Pan, Shidong and
+             Xing, Zhenchang and Staples, Mark and Xu, Xiwei},
+  title   = {Right to be Forgotten in the Era of Large Language Models: Implications,
+             Challenges, and Solutions},
+  journal = {AI and Ethics},
+  year    = {2024},
+  doi     = {10.1007/s43681-024-00573-9},
+  url     = {https://arxiv.org/abs/2307.03941}
+}
+% VERIFY: Springer volume/issue/pages unconfirmed.

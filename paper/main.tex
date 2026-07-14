@@ -1,0 +1,793 @@
+% =============================================================================
+%  ci2lab — "Scaffolding, Not Fine-Tuning"
+%  Working draft. Compile:  pdflatex main && bibtex main && pdflatex main x2
+%
+%  ---------------------------------------------------------------------------
+%  STATUS OF THIS DRAFT (read before editing)
+%  ---------------------------------------------------------------------------
+%  Sections 1-3 (Introduction, Related Work, Methods) are written and are
+%  grounded in verified citations and in a direct source audit of the two
+%  baseline harnesses.
+%
+%  Section 4 (Results) IS A SCAFFOLD. The benchmark suite has been implemented
+%  but HAS NOT YET BEEN RUN. Every number in Section 4 is a placeholder marked
+%  \tbd. NOTHING in this draft should be read as an empirical finding until the
+%  experiment matrix in Section 3.5 has actually been executed.
+%
+%  Do not remove the \tbd macros by hand. They disappear only when real numbers
+%  from benchmarks/results/*.jsonl replace them.
+% =============================================================================
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{listings}
+\usepackage{multirow}
+
+% --- Placeholder macro: every unmeasured quantity MUST use this. -------------
+\newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
+\newcommand{\note}[1]{\textcolor{red!70!black}{\small\textsf{[#1]}}}
+
+\title{\textbf{Scaffolding, Not Fine-Tuning:\\
+Deterministic Harness Mechanisms for Local Agentic Systems\\
+with Unreliable Tool Calling}}
+
+\author{%
+  \note{author list} \\
+  \note{affiliation} \\
+  \texttt{\note{contact}}
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% =============================================================================
+\begin{abstract}
+% TARGET: 300 words. Current draft is ~295.
+Research on tool-using language agents overwhelmingly assumes a capable
+underlying model that emits well-formed, provider-native tool calls. Production
+harnesses inherit this assumption: an audit of two widely used open-source
+systems, DeepAgents and OpenCode, confirms that both bind tools exclusively
+through native function-calling interfaces, with no recovery path when a model
+emits a tool call as prose, and that neither inspects the host machine to decide
+what it can run. This is a poor fit for local-first deployment, where hardware
+dictates the model and the affordable models are precisely those whose
+tool-calling is least reliable.
+
+We take the opposite position. We treat imperfect model output as the normal
+case and ask how much agentic reliability can be recovered by a deterministic
+layer built \emph{around} an unmodified, off-the-shelf open-weight model --- with
+no fine-tuning, no adapters, and no distillation. We present \textsc{ci2lab}, a
+local-first agentic system whose harness (i) recovers tool calls from free text
+through a multi-strategy parser cascade, (ii) derives its context window from
+measured VRAM using a KV-cache cost model and propagates that single budget to
+serving, compaction, and orchestration, and (iii) verifies agent claims against
+environment state using a non-LLM evidence gate.
+
+We evaluate on a hand-authored, contamination-resistant task suite graded by
+hidden exit-code oracles, under a design that isolates the harness from the
+model: the same open model is run under a competing harness, our single- and
+multi-agent modes are compared, and each scaffolding mechanism is ablated
+individually across a model-size ladder. Beyond task success we report a
+false-success rate --- runs that claim completion the oracle refutes.
+
+\note{Results sentence pending: the experiment matrix has been implemented but
+not yet executed. No empirical claim is made in this draft.}
+\end{abstract}
+
+\medskip
+\noindent\textbf{Keywords:} local-first AI agents; agent harness; scaffolding;
+tool calling; small language models; on-device inference; context management;
+deterministic verification; ablation study; privacy-preserving AI
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Language-model agents act on the world by emitting tool calls: structured
+requests to read a file, run a command, search a corpus. The dominant research
+programme treats the \emph{model} as the seat of agentic competence. When agents
+fail, the field's reflex is to improve the model --- by fine-tuning it for tool
+use, by distilling a prompted agent into a smaller network, or by training
+specialised expert modules. This reflex is visible across the on-device
+literature: AgentFlux trains LoRA adapters to decouple tool selection from
+argument generation \citep{kadekodi2025agentflux}; ReST-style approaches distil
+a prompted ReAct agent into a far smaller fine-tuned model; CAMPHOR builds a
+hierarchy of fine-tuned small-model experts \citep{fu2024camphor}. Each is a
+strong result. Each also assumes that the path to a reliable local agent runs
+through modifying the model's weights.
+
+Production harnesses encode a related but distinct assumption: that the model
+already speaks the protocol. We audited the source of two widely used
+open-source agent harnesses. DeepAgents \citep{deepagents} delegates its control
+loop to a framework that binds tools via a native function-calling interface;
+its own documentation states that a tool-calling model is a hard requirement,
+and we found no fallback path anywhere in the package. OpenCode \citep{opencode}
+drives generation through a streaming SDK and likewise consumes only structured,
+provider-native tool calls; its sole repair mechanism renames a mistaken tool or
+routes the call to an \texttt{invalid} sentinel. Neither system profiles the host
+machine's memory or accelerators, and neither derives its context window from
+anything other than model metadata.
+
+For a cloud deployment, these assumptions are benign: frontier models emit
+clean tool calls, and the context window is whatever the provider advertises.
+For a \emph{local-first} deployment they are close to fatal, and for a reason
+that is structural rather than incidental. On local hardware the machine chooses
+the model. A 48\,GB accelerator admits a quantised 32B model; a laptop admits a
+7B one; and the smaller the model, the less reliable its tool calling
+\citep{lin2024hammer,rabinovich2025robustness}. The very models a local-first
+system is forced to run are the ones these harnesses handle worst. The
+constraint compounds: weights and KV cache compete for the same memory, so the
+hardware also bounds the context window, and therefore how much of a task the
+agent can hold in view at once.
+
+This inverts the problem. If the hardware fixes the model, and the model cannot
+be improved without training it, then reliability must be recovered somewhere
+else --- in the deterministic machinery that surrounds the model. We call this
+machinery the \emph{harness}, and this paper asks a single question:
+
+\begin{quote}
+\emph{How much agentic reliability can a deterministic harness recover from an
+unmodified, off-the-shelf local model --- and which mechanisms are responsible?}
+\end{quote}
+
+The question is not rhetorical, and the honest answer is not obviously in our
+favour. There is published evidence on both sides. Supporting us: SWE-agent
+showed that holding the model fixed and changing only the agent--computer
+interface moves performance substantially \citep{yang2024sweagent}; CodeAct
+showed that the \emph{format} of the action space alone shifts success rates by
+up to twenty points \citep{wang2024codeact}; and Kapoor et al. argue that the
+community has systematically conflated scaffold engineering with model
+capability, reaching mistaken conclusions about the source of accuracy gains
+\citep{kapoor2025aiagents}. Cutting against us: METR found that post-training
+enhancements delivered a far larger gain than their own scaffolding effort on an
+already agency-tuned model \citep{metr2024elicitation}, and at least one
+factorial study reports that adding scaffolding components can \emph{reduce}
+performance through cross-component interference \citep{liu2026moreisnotbetter}.
+A paper that ignored this evidence would be advocacy, not science. We therefore
+frame our claim narrowly and test it adversarially: we expect scaffolding
+headroom to be largest exactly where METR's is smallest --- on small, local,
+\emph{non}-agency-tuned models.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \textbf{A harness architecture for unreliable tool calling.} A
+    multi-strategy parser cascade recovers tool calls that models emit as XML,
+    fenced code, bare JSON, or prose; in our model catalogue, 82 of 87 entries
+    require it (Sec.~\ref{sec:system-parsing}).
+  \item \textbf{Hardware-derived context budgeting.} We size the context window
+    from measured VRAM using a KV-cache cost model
+    \citep{kwon2023pagedattention,ainslie2023gqa}, and propagate that single
+    number to the serving parameter, the compaction thresholds, and the
+    multi-agent chunk planner (Sec.~\ref{sec:system-context}). To our knowledge
+    no prior agent system derives its context policy from the host machine.
+  \item \textbf{Deterministic, non-LLM verification.} Agent claims are checked
+    against environment state by plain code, not by a judge model
+    (Sec.~\ref{sec:system-grounding}) --- a choice supported by evidence that
+    LLM judges detect false success poorly, keying on confident language rather
+    than verified state \citep{advani2026falsesuccess}.
+  \item \textbf{A harness-isolating experimental design}, in which the model is
+    held fixed while the harness varies, each mechanism is ablated
+    independently, and the whole matrix is repeated across a model-size ladder
+    to test whether scaffolding value grows as the model shrinks
+    (Sec.~\ref{sec:methods}).
+\end{enumerate}
+
+% =============================================================================
+\section{Literature Review}
+\label{sec:related}
+
+We organise the relevant work into three strata and then locate the gap between
+them.
+
+\subsection{The runtime stratum: making local inference possible}
+
+A large body of systems work has made local inference practical on consumer
+hardware. Post-training quantisation compresses weights to three or four bits
+with modest degradation \citep{frantar2023gptq,lin2024awq}; efficient serving
+runtimes manage the KV cache as the binding memory constraint
+\citep{kwon2023pagedattention}; and empirical studies map the resulting
+performance envelope across desktop, laptop, and edge devices
+\citep{huang2025edge,martinez2025latency,xu2024ondevice}. This stratum answers
+\emph{can the model run here}. It stops at tokens per second, and does not ask
+what the agent above it should then do.
+
+One result from this stratum is directly load-bearing for us. ACBench evaluates
+compression's effect on \emph{agentic} capability rather than perplexity, and
+finds that 4-bit quantisation costs only 1--3\% on tool use and workflow
+generation, but 10--15\% on real-world application accuracy
+\citep{dong2025acbench}. A quantised local model is therefore a legitimate
+substrate for an agent --- but a fragile one, and fragile in exactly the
+long-horizon dimension a harness is positioned to defend.
+
+\subsection{The model stratum: making small models agentic by training them}
+
+The on-device agent literature converges on a single strategy: modify the model.
+AgentFlux decomposes tool calling into selection and argument generation and
+trains separate LoRA adapters for each \citep{kadekodi2025agentflux}. CAMPHOR
+fine-tunes a hierarchy of small-model experts for planning, retrieval, and tool
+interaction \citep{fu2024camphor}. ReST-style self-improvement distils a
+prompted ReAct agent into a model two orders of magnitude smaller. Hammer trains
+on-device models with function masking to resist misleading tool names
+\citep{lin2024hammer}. A recent NVIDIA position paper argues the endpoint of this
+trajectory explicitly: small models are sufficient for the repetitive, narrow
+invocations that dominate agentic systems \citep{belcak2025slm}.
+
+We agree with the premise and dispute the method. Every one of these approaches
+requires a training pipeline, and therefore a per-model, per-tool-set cost that
+must be paid again whenever either changes. None asks what a purely training-free
+intervention would buy.
+
+\subsection{The agent stratum: control policy and context}
+
+Above the model, work on agent design has produced the loop we build on
+\citep{yao2023react}, self-correction mechanisms
+\citep{shinn2023reflexion,madaan2023selfrefine} --- along with the important
+caveat that \emph{intrinsic} self-correction, without external feedback, fails
+and can even degrade accuracy \citep{huang2024llmscannot} --- and multi-agent
+orchestration frameworks \citep{wu2024autogen,hong2024metagpt}. Closer to our
+concerns, adaptive context management compresses agent state to fit tight
+on-device budgets \citep{vijayvargiya2025adaptive}, prompt compression reduces
+token footprint \citep{jiang2023llmlingua}, and OS-inspired designs page history
+in and out of a virtual context \citep{packer2023memgpt}. Utility-guided
+orchestration treats respond/retrieve/tool-call/verify/stop as an explicit policy
+problem \citep{liu2026utility}.
+
+Two properties unite this stratum. It is \emph{hardware-agnostic}: the context
+budget is a configuration number or a value read from model metadata, never a
+quantity derived from the machine. And it assumes the tool calls arrive intact:
+the control policy decides \emph{which} tool to call, never what to do when the
+model's call is malformed.
+
+\subsection{Scaffolding as a first-class variable}
+
+The claim that the harness --- not only the model --- determines agent
+performance has recently acquired direct evidence. SWE-agent's central result is
+that an agent--computer interface designed for a language model, with the model
+held constant, substantially improves task resolution
+\citep{yang2024sweagent}. CodeAct shows that merely changing the action format
+from JSON or text to executable code raises success by up to 20\%
+\citep{wang2024codeact}. Agentless makes the inverse point: a fixed pipeline can
+outperform an autonomous agent, so the \emph{structure}, not the agency, carries
+the result \citep{xia2024agentless}. At the meta level, Kapoor et al. show that
+agent benchmarks routinely conflate scaffold engineering with model capability
+\citep{kapoor2025aiagents}, and the Holistic Agent Leaderboard elevates
+``scaffold'' to an explicit experimental dimension alongside model and benchmark
+\citep{kapoor2025hal}.
+
+The closest published work to our thesis is a recent preprint showing that a
+single 8B model, placed in three scaffolded roles at inference time and with no
+training whatsoever, roughly doubles tool-use completion and surpasses a system
+four times its size \citep{mcclendon2026threeroles}. We differ in three ways.
+That work assumes native tool calling and studies role decomposition; we target
+models with \emph{no reliable tool-calling interface at all} and study output
+recovery. It does not connect the harness to hardware; our context policy is
+derived from it. And it reports task completion; we additionally measure
+\emph{false success}.
+
+\subsection{The alternative solution: constrain the decoder}
+
+An obvious objection to our approach is that malformed tool calls are a solved
+problem: constrain generation so that invalid output is unrepresentable. Guided
+decoding indexes a finite-state machine over the vocabulary at near-zero
+per-token cost \citep{willard2023outlines}; production engines enforce
+context-free grammars efficiently \citep{dong2025xgrammar}; grammar-constrained
+decoding without finetuning can beat both unconstrained and task-specific
+fine-tuned models \citep{geng2023grammar}; and the machinery is available
+on-device, not only through hosted APIs \citep{llamacpp}.
+
+We take this objection seriously, and the literature does \emph{not} support the
+convenient conclusion that constraints simply hurt. The best-known negative
+result --- that format restrictions degrade reasoning \citep{tam2024speak} ---
+is substantially undercut by evidence that the observed loss stems from subword
+misalignment in the enforcement \emph{implementation} rather than from constraint
+itself, with a properly aligned enforcer matching or exceeding unconstrained
+generation \citep{beurer-kellner2024guiding}; a complementary line of work shows
+that grammar-constrained decoding distorts the model's distribution and offers a
+principled correction \citep{park2024grammar}.
+
+Our position is therefore not that constrained decoding is wrong, but that it is
+\emph{orthogonal and insufficient}. It solves the syntax of a single call. It
+does not decide which tool to call, detect a loop, cut off a repeating error,
+budget the context, or determine whether an agent that claims success actually
+succeeded. Moreover, at the model scale a local-first system must live with,
+forcing validity appears to trade one failure for a worse one: recent evidence at
+sub-3B scale reports that mandatory schema conformance \emph{raised}
+valid-but-wrong outputs from 49.5\% to 88.9\%, converting visibly broken output
+into silently incorrect output \citep{ray2026constrainttax}. That is an argument
+for harness-side repair and independent verification, not against constraint.
+Accordingly we treat constrained decoding as a \textbf{baseline arm to be
+measured} (Sec.~\ref{sec:conditions}), not as a rival to be dismissed.
+
+\subsection{Verification, false success, and the choice of oracle}
+
+Agents over-claim. Sycophancy in RLHF-trained models is a documented root cause
+of assistants that tell users what they expect to hear
+\citep{sharma2024sycophancy}, and recent work characterises the agentic
+consequence directly: \emph{false success}, where an agent reports completion
+that programmatic environment state refutes, accounts for a large fraction of
+all failures \citep{advani2026falsesuccess}, while outcome-only grading conceals
+procedural violations behind apparently successful runs
+\citep{cao2026corruptsuccess}. We claim no novelty for the phenomenon --- it is
+named and measured in that work --- but we adopt its measurement as a
+first-class metric of a harness, alongside task success.
+
+The same work supplies our strongest argument for how to measure it. LLM judges
+detect false success poorly (AUROC $\leq 0.65$) precisely because they key on
+confident language rather than verified state changes
+\citep{advani2026falsesuccess}. Combined with the known biases of
+LLM-as-a-judge \citep{zheng2023judging} and the self-preference effect that
+arises when judge and agent share a model family
+\citep{panickssery2024llmevaluators} --- the normal situation in a single-model
+local deployment --- we reject the LLM judge for our core suite and grade by
+deterministic oracle. Our grounding gate follows the attribution standard that a
+claim counts only if it is verifiable against an independent source
+\citep{rashkin2023attribution}, and our permission engine follows the precedent
+of deterministic, out-of-model privilege control
+\citep{shi2025progent,ruan2024toolemu}.
+
+\subsection{The gap}
+
+Three strata; two silences. \textbf{No published work connects the runtime
+stratum to the agent stratum} --- hardware determines what can run, but no agent
+system lets the machine determine its context policy. And \textbf{no published
+work asks how far training-free scaffolding alone carries an off-the-shelf local
+model} whose tool calling is unreliable, since the on-device agent literature
+reaches for training by default. This paper occupies that gap.
+
+Finally, the local-first premise itself is not merely a convenience. Cloud code
+assistants have been shown to leak sensitive information present in the code they
+ingest \citep{niu2023codexleaks}; the broader privacy threat model is surveyed in
+\citet{miranda2025privacy}; and regulatory erasure obligations are technically
+near-impossible to honour once data reaches a hosted model
+\citep{zhang2024rtbf}. Running the agent locally does not make it more accurate.
+It changes the trade: less model capability, in exchange for data control and
+auditability.
+
+% =============================================================================
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Case study: the \textsc{ci2lab} system}
+\label{sec:system}
+
+\textsc{ci2lab} is a local-first agentic command-line system, written in Python,
+comprising four layers connected by explicit typed contracts.
+
+\paragraph{Hardware profiling.} The system scans host RAM, VRAM, and accelerator
+(via \texttt{psutil}, \texttt{nvidia-smi}, and Apple \texttt{sysctl}) and derives
+an \emph{inference budget}: on a discrete GPU, total VRAM less a fixed reserve;
+on CPU or unified memory, a conservative fraction of available RAM. The host is
+classified into a coarse tier (edge / workstation / enterprise).
+
+\paragraph{Model routing.} A catalogue of 87 open-weight models, each annotated
+with memory requirements, native context length, and tool-calling mode, is
+filtered to those that fit the measured budget and scored on a weighted
+combination of quality, speed, hardware fit, and context. The essential fact for
+this paper is the catalogue's composition: \textbf{82 of 87 models do not support
+native tool calling}, and must be driven by prompting.
+
+\paragraph{Transport.} Inference runs behind a pluggable backend interface. The
+default targets Ollama's native chat endpoint rather than its
+OpenAI-compatible shim, because only the former honours the context-length
+parameter \citep{ollama}; an OpenAI-compatible backend covers vLLM, LM~Studio,
+and llama.cpp. Swapping the model or the server is a configuration change.
+
+\subsubsection{The parser cascade}
+\label{sec:system-parsing}
+
+The agent runs a ReAct loop \citep{yao2023react}. Where our loop departs from
+convention is in how a tool call is obtained from the model's reply. Rather than
+requiring a structured \texttt{tool\_calls} field, the harness applies an ordered
+cascade of recovery strategies and accepts the first that yields a well-formed
+call:
+
+\begin{enumerate}\itemsep2pt
+  \item native structured calls, when the model and backend support them;
+  \item XML-style blocks (\texttt{<tool\_call>}, \texttt{<invoke>}), including
+        normalisation of a vendor-specific markup dialect;
+  \item fenced code blocks tagged with a tool name, carrying a JSON body;
+  \item JSON objects, fenced or bare, located by a recursive scan;
+  \item a bare tool name followed by a JSON object;
+  \item generic fenced blocks, where a shell-tagged block is interpreted as a
+        shell call.
+\end{enumerate}
+
+A separate detector recognises \emph{tool-shaped prose} --- text that is
+evidently an attempted call but parses as none of the above. Such a turn does not
+become the final answer; it triggers a corrective nudge. This is the mechanism
+that lets the 82 non-native models in the catalogue act as agents at all.
+
+\subsubsection{Loop robustness}
+\label{sec:system-robustness}
+
+Four further mechanisms, all task-agnostic and all deterministic, defend the
+loop. \emph{Loop detection} hashes the tool calls issued each round and
+intervenes when a round repeats. A \emph{retry governor} enforces two limits: an
+identical call is not executed twice, and a tool that fails three times with the
+same normalised error class --- even under varying arguments --- terminates the
+attempt rather than thrashing. A \emph{read cache} collapses redundant retrievals
+and is invalidated by any successful mutation. Finally, an \emph{anchor} is
+re-injected each round: a synthetic message restating the original request
+together with a progress digest built \emph{mechanically} from an evidence
+ledger, with no model call --- a working-memory prosthesis for models that lose
+the thread. Consistent with the finding that intrinsic self-correction fails
+without external signal \citep{huang2024llmscannot}, every one of these
+mechanisms is driven by observed tool and environment state, never by the model's
+own introspection.
+
+\subsubsection{Hardware-derived context budgeting}
+\label{sec:system-context}
+
+The context window is not configured; it is computed. Memory that is not occupied
+by weights is available for the KV cache, and the KV cache grows linearly with
+context length \citep{kwon2023pagedattention}. The harness therefore solves for
+the affordable context:
+\begin{equation}
+  L_{\max} \;=\; \min\!\left(
+    L_{\text{native}},\;
+    \left\lfloor
+      \frac{\alpha \,\bigl(B - W\bigr)}{c_{\mathrm{kv}}}
+    \right\rfloor
+  \right),
+  \label{eq:ctx}
+\end{equation}
+where $B$ is the measured inference budget, $W$ the model's weight footprint,
+$\alpha$ a safety fraction, $L_{\text{native}}$ the model's advertised window,
+and $c_{\mathrm{kv}}$ the per-token KV cost. In principle
+$c_{\mathrm{kv}} = 2 \cdot n_{\text{layers}} \cdot n_{\text{kv}} \cdot d_{\text{head}} \cdot s_{\text{dtype}}$;
+the factor $n_{\text{kv}}$ (rather than the full head count) is what makes modern
+grouped-query models affordable at long context \citep{ainslie2023gqa,shazeer2019mqa}.
+Our implementation currently approximates $c_{\mathrm{kv}}$ by a single constant
+scaled by weight size.
+\note{Calibrate this constant against measured VRAM occupancy per model, or
+replace it with the exact per-architecture formula; report the residual.}
+
+The resulting $L_{\max}$ is a single source of truth: it is sent to the inference
+server as the context parameter, it sets the thresholds of the compaction ladder,
+and it determines whether a multi-agent review task is feasible at all. We cap
+below the advertised window deliberately, since effective context is known to
+fall well short of the nominal figure \citep{hsieh2024ruler,liu2024lost}.
+
+Compaction is layered cheapest-first: superseded file reads are pruned; at 65\%
+occupancy old tool results are stubbed; only at 80\% is an LLM summarisation
+invoked; a mechanical trim is the final fallback.
+
+\subsubsection{Deterministic grounding}
+\label{sec:system-grounding}
+
+In its multi-agent mode, \textsc{ci2lab} routes work through capability-scoped
+roles whose tool allowlists are enforced outside the model, in the spirit of
+deterministic privilege control \citep{shi2025progent}. Role selection itself is
+rule-based, with no model call.
+
+Reviewer roles do not emit free prose. They emit \emph{findings}, each typed by
+its evidence: a verbatim quotation from the source document, an asserted absence,
+or an external citation. Each finding is then verified \emph{in plain code}: the
+quotation must occur in the document; the absent terms must genuinely be absent;
+the cited URL must actually have been fetched during the run. Findings are
+bucketed as verified, refuted, needs-check, or quarantined. No judge model is
+involved --- a choice justified in Sec.~\ref{sec:related} by the poor performance
+of LLM judges at precisely this task \citep{advani2026falsesuccess}, and modelled
+on the attribution standard of \citet{rashkin2023attribution}.
+
+\subsection{Task suite}
+\label{sec:tasks}
+
+We hand-author every task. Public agentic benchmarks may appear in pretraining
+data, and contamination invalidates exactly the comparison we need to make
+\citep{sainz2023contamination}; a small bespoke suite is contamination-resistant
+by construction. The cost is statistical power, which we address in
+Sec.~\ref{sec:stats} and concede in Sec.~\ref{sec:limitations}.
+
+The suite spans four families, chosen so that each targets a distinct failure
+mode (Table~\ref{tab:tasks}). Every task is self-contained, requires no network,
+is bounded by a round limit and a wall-clock cap, and is graded by an oracle the
+agent never sees.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}llp{5.4cm}p{4.4cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Family} & \textbf{Failure mode tested} & \textbf{Oracle} \\
+\midrule
+CLI-01 & CLI  & Tool selection under a large file: search vs.\ read-all (context blow-up) & Planted token in final answer \\
+CLI-02 & CLI  & Execute, read stderr, attribute the failing step & Names failing command + exit code \\
+QA-01  & Q\&A & Locate a symbol in an unseen project vs.\ hallucinate a plausible one & Correct file/function/type; read-only \\
+QA-02  & Q\&A & Multi-hop trace across three files, in order & Ordered three-hop chain \\
+BUG-01 & Bug  & Localise and patch a root cause without breaking regressions & FAIL\_TO\_PASS \emph{and} PASS\_TO\_PASS \\
+BUG-02 & Bug  & Two-file interacting regression; a one-line patch is insufficient & FAIL\_TO\_PASS \emph{and} PASS\_TO\_PASS \\
+FEAT-01& Gen  & Implement to a hidden specification, including edge cases & Hidden spec tests \\
+SEC-01 & Safety & Refuse or block a destructive command under policy & Tool blocked by permission engine \\
+\bottomrule
+\end{tabular}
+\caption{The task suite. Difficulty is deliberately spread: CLI-01 and QA-01 are
+warm-ups, QA-02/BUG-01/FEAT-01 discriminate, BUG-02 is the stretch task.}
+\label{tab:tasks}
+\end{table}
+
+\subsection{The oracle}
+\label{sec:oracle}
+
+Grading is by exit code, never by a judge model. After the agent halts, hidden
+test files are injected into the workspace --- into paths the agent never saw
+during the run --- and the verifier executes. For repair tasks this is a
+two-part contract: the previously failing test must now pass (FAIL\_TO\_PASS)
+\emph{and} a set of regression tests must still pass (PASS\_TO\_PASS), so that
+deleting an assertion or weakening the test cannot score as a fix. The verifier
+additionally fails any run that modified a forbidden path, detected via version
+control, which closes the remaining tampering route. This design follows the
+execution-graded tradition of SWE-bench \citep{jimenez2024swebench} while
+avoiding its contamination exposure.
+
+\subsection{Experimental conditions}
+\label{sec:conditions}
+
+The design isolates the harness from the model. Every condition below runs the
+\emph{same} task prompts, byte for byte, with no per-system prompt tuning.
+
+\begin{description}\itemsep2pt
+  \item[H1 --- System comparison (context).] \textsc{ci2lab} on a local open
+    model versus hosted frontier agents as shipped. Reported for context only;
+    it confounds model with harness and we do not rest any claim on it.
+  \item[H2 --- Harness isolation (primary).] \textsc{ci2lab} versus a competing
+    harness \emph{on the same self-hosted open model} $M$. Model held constant;
+    the delta is attributable to orchestration. This is the experiment SWE-agent's
+    ACI result \citep{yang2024sweagent} suggests should be decisive.
+  \item[H3 --- Internal control.] Single-agent versus multi-agent
+    \textsc{ci2lab} on $M$. No competitor, no confound.
+  \item[A --- Mechanism ablation (the core contribution).] Each scaffolding
+    mechanism is disabled \emph{individually}, leaving all others intact:
+    parser cascade, retry governor, loop detection, anchors and progress digest,
+    compaction ladder, and nudges. Given evidence that scaffolding components can
+    interfere destructively \citep{liu2026moreisnotbetter}, we also report the
+    all-off condition, so that the mechanisms' joint effect can be compared with
+    the sum of their individual effects.
+  \item[C --- Constrained-decoding baseline.] A condition in which tool calls
+    are enforced by grammar-constrained decoding rather than recovered by the
+    parser cascade \citep{willard2023outlines,llamacpp}. This is the honest
+    alternative to our central mechanism and must be measured, not argued away.
+    Following \citet{ray2026constrainttax}, we report schema validity and task
+    correctness \emph{separately}, since constraint is expected to improve the
+    former while potentially harming the latter.
+  \item[L --- Model ladder.] The full matrix is repeated across a size ladder
+    (7B / 14B / 32B of one model family). The interaction term is the headline:
+    \emph{does the value of scaffolding grow as the model shrinks?} This is also
+    where we test our reconciliation with METR's contrary finding
+    \citep{metr2024elicitation}, which was obtained on a large, agency-tuned
+    model.
+\end{description}
+
+\subsection{Metrics}
+\label{sec:metrics}
+
+\paragraph{Task success (primary).} Pass@1 from the oracle exit code. With $k$
+samples per (task, condition) we also report the unbiased Pass@$k$ estimator of
+\citet{chen2021codex}.
+
+\paragraph{False-success rate (primary, and the one we consider most
+diagnostic).} The fraction of runs in which the agent asserted completion but the
+oracle refuted it. This measures the failure mode that matters most for a local
+agent operating unattended --- and, following \citet{advani2026falsesuccess}, it
+is measured against environment state, not against a judge's reading of the
+agent's prose.
+
+\paragraph{Efficiency.} Input and output tokens, and \emph{tokens per solved
+task}, which is where a lean harness can win even when raw success trails. Cost
+in USD is derived uniformly from measured tokens via a dated price table, and is
+explicitly an \emph{imputed} hosted-equivalent figure for local runs, never an
+invoice.
+
+\paragraph{Latency.} End-to-end wall-clock, reported as median and p90, with a
+discarded warm-up run per (agent, model) so that model-load time does not
+contaminate the timed runs.
+
+\paragraph{Failure attribution.} Every run is classified as solved, wrong,
+stalled (round limit), or crashed. A harness that stalls fails differently from
+one that confidently answers wrong, and the ablations are interpretable only if
+the two are separated.
+
+\paragraph{Safety.} Count of blocked or violating tool invocations under the
+permission engine (SEC-01, and as a secondary axis throughout).
+
+\subsection{Statistical treatment}
+\label{sec:stats}
+
+We draw $k=5$ samples per (task, condition) and report 95\% confidence intervals
+by percentile bootstrap (2000 resamples, seeded for replayability). Point
+estimates without intervals are not reported: with a suite this size, the
+interval is the result \citep{miller2024errorbars}.
+
+We fix temperature at 0 and pin model digests and harness commits. We do
+\emph{not} claim this makes runs deterministic --- batch-dependent kernel
+non-invariance means even greedy decoding is not reproducible in general
+\citep{he2025nondeterminism} --- which is precisely why repeated sampling and
+intervals, rather than a single greedy run, are load-bearing here.
+
+\subsection{Threats to validity}
+\label{sec:threats}
+
+\paragraph{Model asymmetry.} Any comparison against hosted frontier agents (H1)
+measures model capability at least as much as harness quality. This is why H1
+carries no claim, and why H2/H3/A hold the model fixed. This confound is exactly
+the one \citet{kapoor2025aiagents} identify as endemic.
+
+\paragraph{Competitor handicap.} Running a competing harness on an open model it
+was not designed for may understate its quality. We state this plainly rather
+than exploit it: the H2 result should be read as \emph{``how these harnesses
+behave on the models a local-first user can actually run,''} not as a claim about
+their engineering in general.
+
+\paragraph{Small $N$.} Eight tasks cannot support a general claim about agentic
+capability. We scope every conclusion to this suite.
+
+\paragraph{Single hardware point.} The context-budget mechanism is validated on
+one machine. Its generality is untested.
+\note{Consider a second hardware point (e.g. a 16\,GB consumer GPU) --- it would
+strengthen the hardware-derived-context claim considerably.}
+
+\paragraph{Pre-registration.} The protocol, the task suite, and the metric
+definitions are frozen before the matrix is executed, and reported exactly as
+specified here. No post-hoc task selection.
+
+% =============================================================================
+\section{Results}
+\label{sec:results}
+
+\begin{center}
+\fbox{\parbox{0.92\linewidth}{\small\textcolor{red}{\textbf{DRAFT NOTICE.}
+The benchmark harness described in Sec.~\ref{sec:methods} is implemented, but
+\textbf{the experiment matrix has not yet been executed}. Every quantity in this
+section is a placeholder (\tbd). The tables below fix the \emph{shape} of the
+result and the analysis that will be applied to it; they contain no data. No
+empirical claim in this paper is currently supported.}}}
+\end{center}
+
+\subsection{H2: harness isolation on a fixed model}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Harness} & \textbf{Pass@1 (95\% CI)} & \textbf{Pass@5} &
+\textbf{False success} & \textbf{Tokens / solved} & \textbf{Latency p50 (s)} \\
+\midrule
+\textsc{ci2lab} (single) & \tbd & \tbd & \tbd & \tbd & \tbd \\
+\textsc{ci2lab} (multi)  & \tbd & \tbd & \tbd & \tbd & \tbd \\
+Competing harness        & \tbd & \tbd & \tbd & \tbd & \tbd \\
+\bottomrule
+\end{tabular}
+\caption{H2/H3. Same open model $M$ under different harnesses. The comparison is
+meaningful only because the model is held constant.}
+\label{tab:h2}
+\end{table}
+
+\noindent\emph{Analysis to apply.} If the interval on the \textsc{ci2lab}
+$-$ competitor difference excludes zero, the harness contributes independently of
+the model, and the direction of the effect answers the paper's central question
+for model $M$. If it does not, we say so.
+
+\subsection{Ablation: which mechanism carries the weight?}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Condition} & \textbf{Pass@1 (95\% CI)} & \textbf{$\Delta$ vs.\ full} &
+\textbf{False success} \\
+\midrule
+Full harness              & \tbd & --- & \tbd \\
+$-$ parser cascade        & \tbd & \tbd & \tbd \\
+$-$ retry governor        & \tbd & \tbd & \tbd \\
+$-$ loop detection        & \tbd & \tbd & \tbd \\
+$-$ anchors / digest      & \tbd & \tbd & \tbd \\
+$-$ compaction ladder     & \tbd & \tbd & \tbd \\
+$-$ nudges                & \tbd & \tbd & \tbd \\
+\midrule
+All mechanisms off        & \tbd & \tbd & \tbd \\
+Constrained decoding (C)  & \tbd & \tbd & \tbd \\
+\bottomrule
+\end{tabular}
+\caption{Mechanism ablation on model $M$. The ``all off'' row tests
+super-/sub-additivity: if the joint effect exceeds the sum of individual effects
+the mechanisms are complementary; if it falls short, they interfere
+\citep{liu2026moreisnotbetter}.}
+\label{tab:ablation}
+\end{table}
+
+\noindent\emph{Analysis to apply.} We expect the parser cascade to dominate on
+fenced models and to be inert on native ones --- if it is \emph{not} inert on a
+native model, our account of what it does is wrong, and we will say so. The
+constrained-decoding row is the one we are least able to predict; per
+\citet{ray2026constrainttax}, we specifically test whether it raises schema
+validity while \emph{worsening} false success.
+
+\subsection{Model ladder: does scaffolding matter more as the model shrinks?}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Model} & \textbf{Pass@1, full harness} & \textbf{Pass@1, all off} &
+\textbf{Scaffolding gain} \\
+\midrule
+7B  & \tbd & \tbd & \tbd \\
+14B & \tbd & \tbd & \tbd \\
+32B & \tbd & \tbd & \tbd \\
+\bottomrule
+\end{tabular}
+\caption{The headline interaction. A gain that \emph{increases} as parameters
+decrease is the paper's central claim; a flat or inverted profile refutes it.}
+\label{tab:ladder}
+\end{table}
+
+\noindent\emph{Analysis to apply.} This table is the paper's falsifiable core. A
+monotonically increasing scaffolding gain as the model shrinks supports the
+thesis and reconciles it with \citet{metr2024elicitation}, whose contrary result
+was obtained on a large, agency-tuned model. A flat profile means scaffolding is
+a constant additive benefit, which is a weaker but still publishable claim. A
+gain that \emph{grows with} model size would refute our framing outright, and we
+commit in advance to reporting it as such.
+
+\subsection{Discussion}
+
+\note{To be written against real data. The discussion must address, at minimum:
+(1) whether the H2 delta survives its confidence interval;
+(2) which mechanisms are load-bearing and which are decorative --- we should
+expect some of our own machinery to turn out not to matter, and should say so;
+(3) whether constrained decoding dominates the parser cascade, in which case the
+honest conclusion is that our central mechanism should be replaced --- and we
+will report that;
+(4) the false-success axis, where we predict the largest harness effect and the
+weakest competitor performance;
+(5) reconciliation with METR's contrary elicitation finding via the ladder.}
+
+% =============================================================================
+\section{Limitations}
+\label{sec:limitations}
+
+Eight hand-authored tasks on one hardware configuration, with one model family,
+cannot establish a general claim about agentic systems; every result is scoped to
+this suite. The competing harness is evaluated outside its design envelope, which
+likely understates it. Our KV-cache constant is an approximation pending
+calibration. And the phenomenon of false success is not our discovery
+\citep{advani2026falsesuccess,cao2026corruptsuccess}; our contribution is to
+treat it as a property of the \emph{harness} and to show it can be reduced
+without a judge model.
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+\note{To be written once results exist. The conclusion must not overstate: the
+defensible claim is about small, local, non-agency-tuned models on this suite ---
+not about agentic systems in general.}
+
+% =============================================================================
+\section*{Reproducibility}
+
+The harness, the task suite with its hidden oracles, the adapters, the pinned
+model digests, the price table, and the raw per-run results will be released.
+Every figure in this paper is regenerable from \texttt{results.jsonl} by a single
+command.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
