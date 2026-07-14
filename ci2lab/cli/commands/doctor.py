@@ -153,7 +153,9 @@ def _check_openai_backend(runtime: Ci2LabConfig) -> None:
             console.print(
                 f"[green]{_DOCTOR_OK}[/green] OpenAI-compatible chat endpoint at {chat_url}"
             )
-            console.print("[dim]Note: /models was unavailable, but chat/completions responded.[/dim]")
+            console.print(
+                "[dim]Note: /models was unavailable, but chat/completions responded.[/dim]"
+            )
         except Exception as chat_exc:
             console.print(
                 f"[yellow]{_DOCTOR_WARN}[/yellow] OpenAI-compatible backend "
@@ -161,7 +163,9 @@ def _check_openai_backend(runtime: Ci2LabConfig) -> None:
             )
             console.print(f"  /models error: {models_exc}")
             console.print(f"  /chat/completions error: {chat_exc}")
-            console.print("  Check the local server, base URL, model name, and /v1/chat/completions.")
+            console.print(
+                "  Check the local server, base URL, model name, and /v1/chat/completions."
+            )
 
 
 def _openai_model_names(payload: dict[str, Any]) -> list[str]:

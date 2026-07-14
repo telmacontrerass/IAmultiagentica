@@ -16,13 +16,13 @@ from ci2lab.console import console
 from ci2lab.contracts import HardwareProfile, ModelSpec
 from ci2lab.hardware import scan_hardware
 from ci2lab.router.catalog import load_model_catalog
-from ci2lab.router.intent import classify_intent
 from ci2lab.router.imported_models import (
     build_imported_profile,
     create_ollama_model,
     render_ollama_modelfile,
     save_imported_model_profile,
 )
+from ci2lab.router.intent import classify_intent
 from ci2lab.router.recommend import (
     ScoredRecommendation,
     build_display_recommendations,

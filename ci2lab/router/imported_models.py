@@ -21,9 +21,7 @@ from ci2lab.contracts import ToolMode
 
 TEMPLATES_PATH = Path(__file__).resolve().parents[1] / "catalog" / "model_templates.json"
 REGISTRY_ENV = "CI2LAB_IMPORTED_MODELS_PATH"
-_OLLAMA_MODEL_ID_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*)?$"
-)
+_OLLAMA_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
 
 
 @dataclass(frozen=True)
@@ -202,8 +200,7 @@ def build_imported_profile(
     normalized_id = model_id.strip()
     if not _OLLAMA_MODEL_ID_RE.fullmatch(normalized_id):
         raise ValueError(
-            "Invalid model id for Ollama. Use a simple name like "
-            "'glm4chattest' or 'glm4chat:q4km'."
+            "Invalid model id for Ollama. Use a simple name like 'glm4chattest' or 'glm4chat:q4km'."
         )
     if context_length <= 0:
         raise ValueError("Context length must be a positive integer.")

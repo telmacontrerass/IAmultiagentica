@@ -10,7 +10,6 @@ from ci2lab.router.imported_models import (
     save_imported_model_profile,
 )
 from ci2lab.router.selection import build_model_selection
-
 from tests.test_router_selection import _profile
 
 

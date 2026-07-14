@@ -7,8 +7,8 @@ from typing import Literal
 
 from ci2lab.contracts import HardwareProfile, ModelSelection, ModelSpec, ToolMode
 from ci2lab.hardware import scan_hardware
-from ci2lab.router.imported_models import ImportedModelProfile, find_imported_model_by_tag
 from ci2lab.router.catalog import find_model_by_tag
+from ci2lab.router.imported_models import ImportedModelProfile, find_imported_model_by_tag
 
 # --- Context-window sizing ------------------------------------------------
 # By default a model runs at its native maximum context window (the catalog
@@ -106,7 +106,9 @@ def build_model_selection(
             backend_url=resolved_backend,
             tool_mode=tool_mode,
             supports_tools=imported.supports_tools,
-            context_length=context_length if context_length is not None else imported.context_length,
+            context_length=context_length
+            if context_length is not None
+            else imported.context_length,
             hardware_tier=profile.hardware_tier,
             temperature=resolved_temperature,
             reason=(
