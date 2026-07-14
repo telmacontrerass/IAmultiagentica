@@ -59,6 +59,7 @@ def _print_global_help() -> None:
         "  ci2lab yard [list|describe|run]   Browse and run reusable Yard components",
         "  ci2lab doctor                     Check Python and inference backend",
         "  ci2lab hardware [--json]          RAM, GPU, memory budget",
+        "  ci2lab models list                  Imported local model profiles",
         "  ci2lab models recommend [query]",
         "                                    Recommended models for your PC",
         "  ci2lab models install <model>     pull/run/chat commands for a model",
@@ -93,6 +94,7 @@ def _print_global_help() -> None:
         "  ci2lab --model qwen2.5-coder:7b --tool-mode fenced chat",
         "",
         "Per-command options:",
+        "  models list [--json]",
         "  models recommend [--json] [--limit N] [query]",
         "  models install <id|tag> [--json]",
         "  models run <id|tag>",
@@ -304,6 +306,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     models_p = sub.add_parser("models", help="Work with local models")
     models_sub = models_p.add_subparsers(dest="models_command", required=True)
+    list_p = models_sub.add_parser("list", help="List locally imported CI2Lab model profiles")
+    list_p.add_argument("--json", action="store_true", help="Show output as JSON")
     recommend_p = models_sub.add_parser("recommend", help="Recommend models to download")
     recommend_p.add_argument("model_prompt", nargs="*", help="Optional specific query")
     recommend_p.add_argument("--json", action="store_true", help="Show output as JSON")
@@ -326,7 +330,12 @@ def build_parser() -> argparse.ArgumentParser:
     import_p.add_argument("--repo", required=True, help="Hugging Face repo id")
     import_p.add_argument("--file", required=True, help="GGUF filename in the repo")
     import_p.add_argument("--path", required=True, help="Local GGUF path")
-    import_p.add_argument("--id", required=True, help="Stable CI2Lab/Ollama model id")
+    import_p.add_argument("--id", required=True, help="Stable CI2Lab profile alias")
+    import_p.add_argument(
+        "--ollama-tag",
+        default=None,
+        help="Physical Ollama tag when it differs from the CI2Lab profile id",
+    )
     import_p.add_argument("--family", required=True, help="Model family, e.g. glm4")
     import_p.add_argument("--template", required=True, help="Template id, e.g. glm4-chat")
     import_p.add_argument("--ctx", type=int, required=True, help="Context length / num_ctx")
@@ -341,6 +350,99 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the generated Modelfile without running ollama create or saving metadata",
     )
+    import_p.add_argument(
+        "--run-smoke",
+        action="store_true",
+        help="Run gguf-import-smoke before final capability promotion",
+    )
+    import_p.add_argument("--smoke-backend", choices=["ollama", "llama-cpp"], default="ollama")
+    import_p.add_argument(
+        "--smoke-protocol", choices=["native", "adapted_native", "fenced"], default=None
+    )
+    import_p.add_argument("--smoke-adapter", default=None)
+    import_p.add_argument("--llama-server-path", default=None)
+    import_p.add_argument("--request-timeout", type=float, default=180)
+    import_p.add_argument("--runs-dir", default="runs/imports")
+    smoke_p = models_sub.add_parser(
+        "gguf-import-smoke", help="Run and optionally promote the official GGUF import smoke suite"
+    )
+    smoke_p.add_argument(
+        "--model", required=True, help="Imported CI2Lab profile alias or Ollama tag"
+    )
+    smoke_p.add_argument("--backend", choices=["ollama", "llama-cpp"], default="ollama")
+    smoke_p.add_argument("--backend-url", default="http://127.0.0.1:11434/v1")
+    smoke_p.add_argument("--model-path", default=None)
+    smoke_p.add_argument("--llama-server-path", default=None)
+    smoke_p.add_argument("--context-length", type=int, default=None)
+    smoke_p.add_argument("--request-timeout", type=float, default=180)
+    smoke_p.add_argument("--runs-dir", default="runs/imports")
+    smoke_p.add_argument("--no-stream", action="store_true", default=True)
+    smoke_p.add_argument("--no-promote", action="store_true")
+    smoke_p.add_argument(
+        "--scenario",
+        action="append",
+        choices=[
+            "inference_ok",
+            "simple_tool",
+            "opaque_observation",
+            "two_tool_chain",
+            "verified_write",
+            "read_write",
+            "complex_schema",
+            "controlled_error",
+            "no_execute",
+            "traversal",
+            "untrusted_content",
+        ],
+        help="Run only selected scenarios (repeatable; intended for live confirmation)",
+    )
+    inspect_p = models_sub.add_parser(
+        "inspect-gguf", help="Experimentally inspect GGUF metadata without registration"
+    )
+    inspect_p.add_argument("--model-path", required=True, help="Local GGUF path")
+    inspect_p.add_argument("--output-dir", default=None, help="Optional evidence directory")
+    validate_p = models_sub.add_parser(
+        "validate-gguf", help="Experimentally validate a GGUF with llama.cpp"
+    )
+    validate_p.add_argument("--model-path", required=True, help="Local GGUF path")
+    validate_p.add_argument("--runtime", choices=["llama.cpp"], default="llama.cpp")
+    validate_p.add_argument("--llama-server-path", default=None)
+    validate_p.add_argument("--context-length", type=int, default=16000)
+    validate_p.add_argument("--runs-dir", default="runs/imports")
+    validate_p.add_argument("--startup-timeout", type=float, default=120)
+    validate_p.add_argument("--request-timeout", type=float, default=120)
+    validate_p.add_argument("--no-stream", action="store_true", default=True)
+    adapted_p = models_sub.add_parser(
+        "validate-gguf-adapted",
+        help="Validate the explicit experimental GLM global-tools Jinja adapter",
+    )
+    adapted_p.add_argument("--model-path", required=True)
+    adapted_p.add_argument("--llama-server-path", required=True)
+    adapted_p.add_argument("--context-length", type=int, default=16000)
+    adapted_p.add_argument("--runs-dir", default="runs/imports")
+    adapted_p.add_argument("--startup-timeout", type=float, default=120)
+    adapted_p.add_argument("--request-timeout", type=float, default=180)
+    adapters_p = models_sub.add_parser(
+        "adapters", help="Inspect experimental GGUF adapter declarations"
+    )
+    adapters_sub = adapters_p.add_subparsers(dest="adapter_command", required=True)
+    adapters_sub.add_parser("list", help="List experimental adapters")
+    adapter_inspect = adapters_sub.add_parser("inspect", help="Inspect one adapter")
+    adapter_inspect.add_argument("adapter_id")
+    adapter_suite = adapters_sub.add_parser("suite", help="List adapted-tools benchmark scenarios")
+    adapter_suite.add_argument("--name", choices=["adapted-tools"], default="adapted-tools")
+    robust_p = models_sub.add_parser(
+        "benchmark-gguf-adapter", help="Run the opt-in live robust-tools adapter suite"
+    )
+    robust_p.add_argument("--model-path", required=True)
+    robust_p.add_argument("--llama-server-path", required=True)
+    robust_p.add_argument("--adapter", required=True)
+    robust_p.add_argument("--suite", choices=["robust-tools"], default="robust-tools")
+    robust_p.add_argument("--repetitions", type=int, default=5)
+    robust_p.add_argument("--context-length", type=int, default=16000)
+    robust_p.add_argument("--runs-dir", default="runs/imports")
+    robust_p.add_argument("--request-timeout", type=float, default=180)
+    robust_p.add_argument("--no-stream", action="store_true", default=True)
 
     evals_p = sub.add_parser("evals", help="Practical harness evaluation")
     evals_sub = evals_p.add_subparsers(dest="evals_command")

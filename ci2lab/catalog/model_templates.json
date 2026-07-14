@@ -3,8 +3,8 @@
     {
       "id": "glm4-chat",
       "family": "glm4",
-      "description": "GLM-4 chat template for Ollama GGUF imports.",
-      "template": "[gMASK]<sop>{{ if .System }}<|system|>\n{{ .System }}{{ end }}<|user|>\n{{ .Prompt }}<|assistant|>\n{{ .Response }}",
+      "description": "GLM-4 multi-turn Ollama template with dynamic tools and observation results.",
+      "template": "[gMASK]<sop>{{ if or .System .Tools }}<|system|>\n{{ if .System }}{{ .System }}{{ end }}{{ if .Tools }}\n\n# Available tools\n\nUse only the functions listed below. When a function is needed, respond with its exact name and a JSON object containing its arguments. Never invent a function.\n{{ range .Tools }}\n{{ .Function.Name }}\n{{ .Function }}\n{{ end }}{{ end }}{{ end }}{{ range $i, $message := .Messages }}{{ if eq $message.Role \"user\" }}<|user|>\n{{ $message.Content }}{{ else if eq $message.Role \"assistant\" }}<|assistant|>{{ if $message.ToolCalls }}{{ range $message.ToolCalls }}{{ .Function.Name }}\n{{ .Function.Arguments }}{{ end }}{{ else }}\n{{ $message.Content }}{{ end }}{{ else if eq $message.Role \"tool\" }}<|observation|>\n{{ $message.Content }}{{ end }}{{ end }}<|assistant|>\n",
       "stops": [
         "<|user|>",
         "<|assistant|>",

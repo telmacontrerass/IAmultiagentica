@@ -53,6 +53,9 @@ ci2lab_uploads/
 *.gguf
 /models/
 /Modelfile.glm9b*
+/tools/llama.cpp/
+/tool_test*.txt
+*.pid
 
 # Manual local-model smoke-test leftovers
 /glm_suma.py
@@ -68,6 +71,7 @@ audit/redteam_sandbox/
 audit/reports/
 audit/deterministic_claude/
 audit/live_claude/
+/audit/glm_*_20260714.md
 .ci2lab/
 
 # Course / exam materials

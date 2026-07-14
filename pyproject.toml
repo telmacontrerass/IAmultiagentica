@@ -64,11 +64,16 @@ packages = ["ci2lab"]
 "ci2lab/harness/skills/builtin" = "ci2lab/harness/skills/builtin"
 "ci2lab/harness/yard/builtin" = "ci2lab/harness/yard/builtin"
 "ci2lab/catalog/models.json" = "ci2lab/catalog/models.json"
+"ci2lab/catalog/experimental_gguf_adapters.json" = "ci2lab/catalog/experimental_gguf_adapters.json"
 "ci2lab/ui/static" = "ci2lab/ui/static"
 "ci2lab/py.typed" = "ci2lab/py.typed"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "ollama_integration: opt-in tests using an existing local Ollama model",
+    "llama_cpp_integration: opt-in tests using an existing llama-server and GGUF",
+]
 
 [tool.ruff]
 line-length = 100

@@ -42,6 +42,9 @@ class ToolCallLogEntry:
     duration_ms: int
     ok: bool
     output: str
+    requested_tool_mode: str = "unknown"
+    source_protocol: str = "unknown"
+    parser_id: str = "unknown"
     error: str | None = None
     outcome: str | None = None
     repaired: bool = False
@@ -234,6 +237,9 @@ class RunLogger:
             tool_call_id=call.call_id or result.call_id or "",
             tool=call.name,
             arguments=call.arguments,
+            requested_tool_mode=self.selection.tool_mode,
+            source_protocol=call.source_protocol,
+            parser_id=call.parser_id,
             started_at=_iso(started_at),
             ended_at=_iso(ended_at),
             duration_ms=duration_ms,

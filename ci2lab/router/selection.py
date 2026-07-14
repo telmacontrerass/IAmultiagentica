@@ -98,6 +98,15 @@ def build_model_selection(
         imported_backend: Literal["ollama", "openai"] = (
             "ollama" if imported.backend == "ollama" else "openai"
         )
+        warnings: list[str] = []
+        tool_evidence = imported.capabilities.tool_calling
+        capability = imported.tool_capabilities.get(tool_mode, "unknown")
+        if not tool_evidence.verified:
+            warnings.append(
+                f"Imported model tool mode '{tool_mode}' is preferred but not verified."
+            )
+        elif capability in {"unsupported", "incompatible"}:
+            warnings.append(f"Imported model is marked incompatible with tool mode '{tool_mode}'.")
         return ModelSelection(
             model_id=imported.id,
             ollama_tag=imported.ollama_tag,
@@ -105,7 +114,7 @@ def build_model_selection(
             backend=imported_backend,
             backend_url=resolved_backend,
             tool_mode=tool_mode,
-            supports_tools=imported.supports_tools,
+            supports_tools=tool_evidence.verified,
             context_length=context_length
             if context_length is not None
             else imported.context_length,
@@ -113,8 +122,10 @@ def build_model_selection(
             temperature=resolved_temperature,
             reason=(
                 f"Imported model profile: template={imported.template_id}, "
-                f"tool_mode={imported.tool_mode}."
+                f"tool_mode={imported.tool_mode}, protocol={tool_evidence.protocol}, "
+                f"parser={tool_evidence.parser or 'none'}."
             ),
+            warnings=warnings,
         )
 
     if spec is not None:

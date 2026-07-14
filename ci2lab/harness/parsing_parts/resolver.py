@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from typing import Any
 
 from ci2lab.harness.parsing_parts.common import (
@@ -111,18 +112,18 @@ def resolve_tool_calls(
     if native_calls:
         parsed = native_to_tool_calls(native_calls)
         if parsed:
-            return parsed
+            return [replace(call, source_protocol="native", parser_id="native") for call in parsed]
 
-    for parser in (
-        parse_xml_blocks,
-        parse_fenced_blocks,
-        parse_json_tool_objects,
-        _parse_text_tool_name_plus_json,
-        parse_generic_fenced_blocks,
+    for parser, protocol, parser_id in (
+        (parse_xml_blocks, "xml", "xml_blocks"),
+        (parse_fenced_blocks, "fenced", "fenced_blocks"),
+        (parse_json_tool_objects, "json", "json_objects"),
+        (_parse_text_tool_name_plus_json, "name_plus_json", "text_name_plus_json"),
+        (parse_generic_fenced_blocks, "generic_block", "generic_fenced_blocks"),
     ):
         parsed = parser(text)
         if parsed:
-            return parsed
+            return [replace(call, source_protocol=protocol, parser_id=parser_id) for call in parsed]
 
     return []
 

@@ -103,6 +103,22 @@ def fetch_installed_model_names(
     return {item["name"] for item in installed if item.get("name")}, error
 
 
+def normalize_ollama_model_name(name: str) -> str:
+    """Canonicalize Ollama names, treating an omitted tag as ``latest``."""
+    normalized = name.strip().lower()
+    if not normalized:
+        return ""
+    leaf = normalized.rsplit("/", 1)[-1]
+    return normalized if ":" in leaf else f"{normalized}:latest"
+
+
+def ollama_model_names_equivalent(left: str, right: str) -> bool:
+    """Return whether two names differ only by an omitted ``:latest`` tag."""
+    return bool(left.strip() and right.strip()) and (
+        normalize_ollama_model_name(left) == normalize_ollama_model_name(right)
+    )
+
+
 def is_catalog_model_installed(ollama_tag: str, installed_names: set[str]) -> bool:
     """Return True if a catalog tag matches any installed model name.
 
@@ -121,7 +137,7 @@ def is_catalog_model_installed(ollama_tag: str, installed_names: set[str]) -> bo
         return False
     for name in installed_names:
         normalized = name.strip().lower()
-        if normalized == tag:
+        if ollama_model_names_equivalent(normalized, tag):
             return True
         if normalized.startswith(f"{tag}-") or normalized.startswith(f"{tag}@"):
             return True

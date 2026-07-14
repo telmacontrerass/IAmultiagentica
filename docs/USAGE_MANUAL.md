@@ -359,6 +359,22 @@ ollama rm qwen2.5-coder:7b                # eliminar modelo del disco
 
 CI2Lab puede registrar un GGUF descargado desde Hugging Face y crear el modelo correspondiente en Ollama con `ci2lab models import-gguf`. El flujo recomendado es: buscar un repo GGUF, descargar el archivo con `hf download`, verificar la ruta local, hacer primero un `--dry-run`, revisar el Modelfile generado y solo entonces ejecutar el import real.
 
+La importación verifica hash, metadatos, `ollama show --json` e inferencia antes
+de guardar el perfil. No presupone tool calling: native exige una respuesta
+`tool_calls` real, adapted-native exige un adapter validado, fenced es un
+fallback experimental y un modelo desconocido comienza como inference-only.
+Las capacidades técnicas y la resistencia a contenido no confiable se guardan
+por separado; el executor continúa siendo la frontera de seguridad.
+
+Tras importar, ejecuta la suite oficial con `ci2lab models
+gguf-import-smoke --model <alias> --backend ollama`. Añade `--no-promote` para
+generar evidencia sin actualizar capacidades. La importación también admite
+`--run-smoke`; ambos caminos usan el mismo runner. Antes de crear, CI2Lab
+compara el snapshot estructurado de Ollama y distingue equivalencia,
+conflicto, perfil inconsistente y modelo externo no trazado. Un rollback nunca
+elimina un tag preexistente y exige que el digest siga siendo el creado por el
+intento actual.
+
 > `huggingface-cli` aparece como deprecated en instalaciones recientes. Usa `hf download`.
 
 #### Flujo recomendado en PowerShell
@@ -383,28 +399,32 @@ Get-ChildItem .\models\glm4-9b-chat
 $gguf = (Resolve-Path .\models\glm4-9b-chat\glm-4-9b-chat-Q4_K_M.gguf).Path
 
 ci2lab models import-gguf `
-  --id glm4chattest `
+  --id glm4 `
+  --ollama-tag ci2lab/glm-4-9b-chat:q4_k_m `
   --repo bartowski/glm-4-9b-chat-GGUF `
   --file glm-4-9b-chat-Q4_K_M.gguf `
   --path "$gguf" `
   --family glm4 `
   --template glm4-chat `
   --ctx 16384 `
+  --tool-mode fenced `
   --dry-run
 
 ci2lab models import-gguf `
-  --id glm4chattest `
+  --id glm4 `
+  --ollama-tag ci2lab/glm-4-9b-chat:q4_k_m `
   --repo bartowski/glm-4-9b-chat-GGUF `
   --file glm-4-9b-chat-Q4_K_M.gguf `
   --path "$gguf" `
   --family glm4 `
   --template glm4-chat `
-  --ctx 16384
+  --ctx 16384 `
+  --tool-mode fenced
 
 ollama list
-ollama run glm4chattest
+ollama run ci2lab/glm-4-9b-chat:q4_k_m
 
-ci2lab --backend ollama --model glm4chattest --context-length 8192 --max-rounds 1 --no-stream chat
+ci2lab --backend ollama --model glm4 --max-rounds 1 --no-stream chat
 ```
 
 En el `--dry-run`, revisa especialmente estas partes:
@@ -425,7 +445,7 @@ En Windows, preferir ruta absoluta evita ambigüedades. Si usas ruta relativa, e
 |-------|----------------|----------|
 | `huggingface-cli is deprecated` | CLI antiguo de Hugging Face | Usar `hf download ...` |
 | `lookup models: no such host` | Ollama interpretó `models/...` como remoto | Usar `.\models\...`, `./models/...` o ruta absoluta |
-| `400 Bad Request: invalid model name` | Nombre/tag demasiado largo o con formato no aceptado por Ollama | Usar `--id` simple, por ejemplo `glm4chattest` o `glm4chat:q4km` |
+| `400 Bad Request: invalid model name` | Nombre/tag con formato no aceptado por Ollama | Usar un `--id` simple como `glm4` y un `--ollama-tag` válido como `ci2lab/glm-4-9b-chat:q4_k_m` |
 | `request exceeds available context size` | La conversación supera el contexto configurado | Subir `--context-length`, por ejemplo `8192` o `16384` |
 | Funciona en `ollama run` pero falla en CI2Lab | Contexto, sesión o streaming complican el primer smoke test | Probar `--context-length 8192 --max-rounds 1 --no-stream` y una sesión limpia |
 

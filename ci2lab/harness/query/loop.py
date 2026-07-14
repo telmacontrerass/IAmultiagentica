@@ -1127,6 +1127,7 @@ def run_agent(
     content = ""
     status = "success"
     log_error: str | None = None
+    successful_tool_execution = False
     # Real token counters (filled in by Ollama after each LLM call).
     tokens_prompt_last: int = 0  # prompt_tokens from the last round
     tokens_prompt_peak: int = 0  # max prompt_tokens seen in any round
@@ -1260,6 +1261,24 @@ def run_agent(
                     append_assistant_turn(history, final_text or content)
                     maybe_save_session(cfg, history, selection)
                     break
+                if cfg.require_tool_execution and not successful_tool_execution:
+                    _print_model_step(content, already_streamed=streamed_this_round)
+                    console.print(
+                        "[yellow]A successful tool execution is required; asking the model to retry."
+                        "[/yellow]"
+                    )
+                    append_assistant_turn(history, content)
+                    history.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "A valid tool must actually execute successfully for this task. "
+                                "Do not answer from memory; call an available tool now."
+                            ),
+                        }
+                    )
+                    maybe_save_session(cfg, history, selection)
+                    continue
                 if (
                     stop_tools_requested
                     and not (strip_tool_markup(content).strip() or content.strip())
@@ -1581,6 +1600,7 @@ def run_agent(
                 ):
                     console.print(f"[yellow]{warning}[/yellow]")
                 rsig = _read_signature(call)
+                tool_was_executed = False
                 if round_had_error and call.name in MUTATING_TOOLS:
                     # An earlier call in this same batch failed. Do not commit a
                     # dependent write built on data that step never produced.
@@ -1626,10 +1646,13 @@ def run_agent(
                         outcome="repeated_failure",
                     )
                 else:
+                    tool_was_executed = True
                     result = execute_tool(call, cfg)
                     if is_policy_error(result):
                         policy_blocked_sigs.add(psig)
                         round_policy_error = True
+                if tool_was_executed and not result.is_error:
+                    successful_tool_execution = True
                 for warning in emit_hook_event(
                     cfg,
                     "after_tool",
@@ -1857,6 +1880,13 @@ def run_agent(
             )
             maybe_save_session(cfg, history, selection)
 
+        if cfg.require_tool_execution and not successful_tool_execution:
+            status = "REQUIRED_TOOL_NOT_EXECUTED"
+            log_error = "REQUIRED_TOOL_NOT_EXECUTED"
+            final_text = (
+                "REQUIRED_TOOL_NOT_EXECUTED: the run ended without a valid tool "
+                "being executed successfully."
+            )
         if final_text:
             if verify_final_answer:
                 review = review_final_answer(final_text, evidence_ledger)

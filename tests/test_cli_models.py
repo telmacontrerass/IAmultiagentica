@@ -6,6 +6,23 @@ from ci2lab.contracts import HardwareProfile
 from ci2lab.router.catalog import load_model_catalog
 
 
+def test_models_list_prints_imported_alias_and_tag(tmp_path, monkeypatch, capsys):
+    registry = tmp_path / "imported_models.json"
+    registry.write_text(
+        '{"models":[{"id":"glm4","backend":"ollama",'
+        '"ollama_tag":"ci2lab/glm-4-9b-0414:q4_k_m","source":{},'
+        '"family":"glm4","template_id":"glm4-chat","context_length":16384,'
+        '"tool_mode":"fenced"}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CI2LAB_IMPORTED_MODELS_PATH", str(registry))
+
+    assert main(["models", "list"]) == 0
+    output = capsys.readouterr().out
+    assert "glm4" in output
+    assert "ci2lab/glm-4-9b-0414:q4_k_m" in output
+
+
 def _profile() -> HardwareProfile:
     return HardwareProfile(
         ram_total_gb=8.0,

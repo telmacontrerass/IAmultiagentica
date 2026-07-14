@@ -18,10 +18,16 @@ from pathlib import Path
 from typing import Any
 
 from ci2lab.contracts import ToolMode
+from ci2lab.router.gguf_import.capabilities import ImportedCapabilities
+from ci2lab.runtime.ollama import ollama_model_names_equivalent
 
 TEMPLATES_PATH = Path(__file__).resolve().parents[1] / "catalog" / "model_templates.json"
 REGISTRY_ENV = "CI2LAB_IMPORTED_MODELS_PATH"
-_OLLAMA_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
+_PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_OLLAMA_MODEL_ID_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)*"
+    r"(?::[A-Za-z0-9][A-Za-z0-9_.-]*)?$"
+)
 
 
 @dataclass(frozen=True)
@@ -51,7 +57,10 @@ class ImportedModelProfile:
     tool_mode: ToolMode
     parameters: dict[str, float | int | str | bool] = field(default_factory=dict)
     stops: tuple[str, ...] = ()
-    supports_tools: bool = True
+    supports_tools: bool = False
+    tool_capabilities: dict[str, str] = field(default_factory=dict)
+    verification: dict[str, bool] = field(default_factory=dict)
+    capabilities: ImportedCapabilities = field(default_factory=ImportedCapabilities)
 
     @property
     def display_name(self) -> str:
@@ -74,6 +83,9 @@ class ImportedModelProfile:
             "parameters": dict(self.parameters),
             "stops": list(self.stops),
             "supports_tools": self.supports_tools,
+            "tool_capabilities": dict(self.tool_capabilities),
+            "verification": dict(self.verification),
+            "capabilities": self.capabilities.to_dict(),
         }
 
 
@@ -137,7 +149,15 @@ def _profile_from_dict(item: dict[str, Any]) -> ImportedModelProfile | None:
         tool_mode=_coerce_tool_mode(item.get("tool_mode", "fenced")),
         parameters=dict(item.get("parameters") or {}),
         stops=tuple(str(stop) for stop in item.get("stops", []) if str(stop)),
-        supports_tools=bool(item.get("supports_tools", True)),
+        # Legacy supports_tools=true meant "preferred/attemptable", not verified.
+        supports_tools=bool(item.get("supports_tools", False)),
+        tool_capabilities={
+            str(key): str(value) for key, value in dict(item.get("tool_capabilities") or {}).items()
+        },
+        verification={
+            str(key): bool(value) for key, value in dict(item.get("verification") or {}).items()
+        },
+        capabilities=ImportedCapabilities.from_dict(item.get("capabilities")),
     )
 
 
@@ -162,9 +182,10 @@ def load_imported_model_registry(path: Path | None = None) -> list[ImportedModel
 
 def find_imported_model_by_tag(tag: str) -> ImportedModelProfile | None:
     """Match an imported model by id or Ollama tag."""
-    normalized = tag.strip().lower()
     for profile in load_imported_model_registry():
-        if normalized in {profile.id.lower(), profile.ollama_tag.lower()}:
+        if ollama_model_names_equivalent(tag, profile.id) or ollama_model_names_equivalent(
+            tag, profile.ollama_tag
+        ):
             return profile
     return None
 
@@ -178,10 +199,34 @@ def save_imported_model_profile(
     registry_path = path or default_imported_models_path()
     models = [item for item in load_imported_model_registry(registry_path) if item.id != profile.id]
     models.append(profile)
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"models": [item.to_dict() for item in sorted(models, key=lambda m: m.id)]}
-    registry_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _write_registry_atomic(registry_path, models)
     return registry_path
+
+
+def replace_imported_model_registry(
+    profiles: list[ImportedModelProfile], *, path: Path | None = None
+) -> Path:
+    """Replace the local registry after an explicit model consolidation."""
+    registry_path = path or default_imported_models_path()
+    _write_registry_atomic(registry_path, profiles)
+    return registry_path
+
+
+def _write_registry_atomic(path: Path, profiles: list[ImportedModelProfile]) -> None:
+    """Replace a registry atomically so interruption cannot leave partial JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"models": [item.to_dict() for item in sorted(profiles, key=lambda m: m.id)]}
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(payload, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def build_imported_profile(
@@ -193,15 +238,17 @@ def build_imported_profile(
     family: str,
     template_id: str,
     context_length: int,
+    ollama_tag: str | None = None,
     tool_mode: str | None = None,
     parameters: dict[str, float | int | str | bool] | None = None,
 ) -> ImportedModelProfile:
     """Construct a profile from CLI import arguments and template defaults."""
     normalized_id = model_id.strip()
-    if not _OLLAMA_MODEL_ID_RE.fullmatch(normalized_id):
-        raise ValueError(
-            "Invalid model id for Ollama. Use a simple name like 'glm4chattest' or 'glm4chat:q4km'."
-        )
+    if not _PROFILE_ID_RE.fullmatch(normalized_id):
+        raise ValueError("Invalid CI2Lab profile id. Use a short alias such as 'glm4'.")
+    normalized_tag = (ollama_tag or normalized_id).strip()
+    if not _OLLAMA_MODEL_ID_RE.fullmatch(normalized_tag):
+        raise ValueError("Invalid Ollama tag. Use a name such as 'ci2lab/glm4:q4_k_m'.")
     if context_length <= 0:
         raise ValueError("Context length must be a positive integer.")
     template = get_model_template(template_id)
@@ -211,7 +258,7 @@ def build_imported_profile(
     return ImportedModelProfile(
         id=normalized_id,
         backend="ollama",
-        ollama_tag=normalized_id,
+        ollama_tag=normalized_tag,
         source={
             "type": "huggingface",
             "repo": repo,
@@ -224,7 +271,16 @@ def build_imported_profile(
         tool_mode=_coerce_tool_mode(tool_mode or template.default_tool_mode),
         parameters=merged_parameters,
         stops=template.stops,
-        supports_tools=True,
+        supports_tools=False,
+        tool_capabilities={"native": "unknown", "fenced": "unknown", "json": "unknown"},
+        verification={
+            "created": False,
+            "verified": False,
+            "chat_verified": False,
+            "native_tools_verified": False,
+            "fenced_tools_verified": False,
+        },
+        capabilities=ImportedCapabilities(),
     )
 
 
@@ -271,3 +327,28 @@ def create_ollama_model(
             errors="replace",
         )
     return modelfile, completed
+
+
+def verify_ollama_model(profile: ImportedModelProfile) -> subprocess.CompletedProcess[str]:
+    """Confirm non-destructively that Ollama can inspect a newly-created model."""
+    return subprocess.run(
+        ["ollama", "show", profile.ollama_tag, "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def verify_ollama_inference(profile: ImportedModelProfile) -> subprocess.CompletedProcess[str]:
+    """Require a deterministic minimal inference before registry promotion."""
+    return subprocess.run(
+        ["ollama", "run", profile.ollama_tag, "Respond only with OK."],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )

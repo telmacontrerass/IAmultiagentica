@@ -110,6 +110,7 @@ class BenchTask:
     verifier: VerifierSpec = field(default_factory=VerifierSpec)
     git_baseline: bool = False
     write_tools_enabled: bool | None = None
+    require_tool_execution: bool = False
     max_rounds: int = 15
     timeout_seconds: int = 600
     k_samples: int | None = None
@@ -151,6 +152,7 @@ class BenchTask:
             verifier=verifier,
             git_baseline=bool(git_baseline),
             write_tools_enabled=data.get("write_tools_enabled"),
+            require_tool_execution=bool(data.get("require_tool_execution", False)),
             max_rounds=int(data.get("max_rounds", 15)),
             timeout_seconds=int(data.get("timeout_seconds", 600)),
             k_samples=data.get("k_samples"),
