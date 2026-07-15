@@ -43,7 +43,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# Optional document read/write/convert libraries. python-docx powers DOCX
+# reading (read_document) and the write_docx tool; pdf2docx powers pdf_to_docx.
+# Both degrade gracefully when absent, so they stay opt-in here rather than core.
 convert = [
+    "python-docx>=1.1",
     "pdf2docx>=0.5",
 ]
 
@@ -59,14 +63,12 @@ ci2lab-audit-live = "ci2lab.scripts.audit_live_models:main"
 [tool.hatch.build.targets.wheel]
 packages = ["ci2lab"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"ci2lab/harness/prompts" = "ci2lab/harness/prompts"
-"ci2lab/harness/skills/builtin" = "ci2lab/harness/skills/builtin"
-"ci2lab/harness/yard/builtin" = "ci2lab/harness/yard/builtin"
-"ci2lab/catalog/models.json" = "ci2lab/catalog/models.json"
-"ci2lab/catalog/experimental_gguf_adapters.json" = "ci2lab/catalog/experimental_gguf_adapters.json"
-"ci2lab/ui/static" = "ci2lab/ui/static"
-"ci2lab/py.typed" = "ci2lab/py.typed"
+# `packages` selects the whole `ci2lab/` tree. Hatchling is VCS-aware and ships
+# every git-tracked file under it — including data files (prompts, builtin
+# skills/yard components, catalog/*.json, ui/static, py.typed) — so no
+# `force-include` is needed. A force-include of paths already inside the package
+# double-adds them and aborts the wheel build ("second file ... at the same
+# path"); keep bundled assets tracked in git instead.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

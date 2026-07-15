@@ -200,7 +200,7 @@ def fill_docx_template(
     try:
         from docx import Document
     except ImportError:
-        return "Error: missing python-docx dependency. Run: pip install -e '.'"
+        return "Error: missing python-docx dependency. Run: pip install -e '.[convert]'"
 
     # Resolve paths (already validated in preview, but re-validated for safety)
     try:
