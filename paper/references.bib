@@ -1,14 +1,26 @@
 % ============================================================================
 %  references.bib — ci2lab paper
 %
-%  PROVENANCE: every entry below was verified against a primary source (arXiv,
-%  ACL Anthology, PMLR, MLSys, NeurIPS/ICLR proceedings, USENIX, ACM DL or the
-%  project's own citation page) during a literature sweep on 2026-07-09.
+%  POLICY: cite the PEER-REVIEWED VERSION OF RECORD wherever one exists.
+%  Every entry below was checked against a primary source (ACL Anthology, PMLR,
+%  MLSys, NeurIPS/ICLR proceedings, ACM DL, IEEE/Crossref, USENIX, DBLP) on
+%  2026-07-09 and again on 2026-07-16.
 %
-%  Entries marked "% VERIFY:" have a field that could NOT be confirmed and must
-%  be checked before submission. Entries marked "% NON-PEER-REVIEWED:" are
-%  preprints, blog posts or software; they are the canonical artifact for their
-%  claim but a reviewer may object to load-bearing use.
+%  Entries still marked "% PREPRINT ONLY" were CHECKED and confirmed to have NO
+%  published version (DBLP lists them as CoRR / "Informal or Other Publication").
+%  They are not oversights.
+%
+%  NB: NEVER write a literal at-sign inside a comment in this file. BibTeX does
+%  not treat "%" as a comment character: it scans for at-signs and will read one
+%  in a comment as the start of a new entry, then fail with
+%  "I was expecting a `{' or a `('". Spell it out ("at-sign", "pass-at-k",
+%  "an article entry") instead. This has bitten this file twice already.
+%
+%  NB2: escape underscores in "doi" fields as \_ (e.g. 10.1162/tacl\_a\_00638).
+%  plainnat emits the DOI via \doi{...}, which typesets in TEXT mode, so a raw
+%  underscore is read as a subscript and raises "Missing $ inserted" / "Double
+%  subscript". This does NOT apply to "url" fields: plainnat wraps those in
+%  \url{...}, which is verbatim-safe. Affects the ACL/MIT Press DOIs only.
 % ============================================================================
 
 
@@ -51,15 +63,15 @@
 }
 
 @article{kapoor2025aiagents,
-  title         = {{AI} Agents That Matter},
-  author        = {Kapoor, Sayash and Stroebl, Benedikt and Siegel, Zachary S. and
-                   Nadgir, Nitya and Narayanan, Arvind},
-  journal       = {Transactions on Machine Learning Research (TMLR)},
-  year          = {2025},
-  eprint        = {2407.01502},
-  archivePrefix = {arXiv},
-  url           = {https://openreview.net/forum?id=Zy4uFzMviZ}
+  title   = {{AI} Agents That Matter},
+  author  = {Kapoor, Sayash and Stroebl, Benedikt and Siegel, Zachary S. and
+             Nadgir, Nitya and Narayanan, Arvind},
+  journal = {Transactions on Machine Learning Research (TMLR)},
+  year    = {2025},
+  issn    = {2835-8856},
+  url     = {https://openreview.net/forum?id=Zy4uFzMviZ}
 }
+% TMLR is peer-reviewed. Confirmed published, not a preprint.
 
 @article{kapoor2025hal,
   title         = {Holistic Agent Leaderboard: The Missing Infrastructure for {AI} Agent Evaluation},
@@ -115,26 +127,36 @@
 }
 % NON-PEER-REVIEWED: preprint.
 
-@misc{xia2024agentless,
-  title         = {Agentless: Demystifying {LLM}-based Software Engineering Agents},
-  author        = {Xia, Chunqiu Steven and Deng, Yinlin and Dunn, Soren and Zhang, Lingming},
-  year          = {2024},
-  eprint        = {2407.01489},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2407.01489}
+@article{xia2025demystifying,
+  author    = {Xia, Chunqiu Steven and Deng, Yinlin and Dunn, Soren and Zhang, Lingming},
+  title     = {Demystifying {LLM}-Based Software Engineering Agents},
+  journal   = {Proceedings of the ACM on Software Engineering (PACMSE)},
+  volume    = {2},
+  number    = {FSE},
+  articleno = {FSE037},
+  pages     = {801--824},
+  year      = {2025},
+  month     = jul,
+  publisher = {Association for Computing Machinery},
+  doi       = {10.1145/3715754},
+  url       = {https://dl.acm.org/doi/10.1145/3715754}
 }
-% VERIFY: a secondary source claims an FSE 2025 version; DBLP lists only the preprint.
+% NOTE: FSE 2025 publishes via the PACMSE journal, so this is an article entry,
+% NOT an inproceedings entry. The published title DROPS the "Agentless:" prefix,
+% so prose must name Agentless explicitly or the reader cannot find it.
 
 @inproceedings{shinn2023reflexion,
-  title         = {Reflexion: Language Agents with Verbal Reinforcement Learning},
-  author        = {Shinn, Noah and Cassano, Federico and Berman, Edward and
-                   Gopinath, Ashwin and Narasimhan, Karthik and Yao, Shunyu},
-  booktitle     = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
-  year          = {2023},
-  eprint        = {2303.11366},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2303.11366}
+  title     = {Reflexion: Language Agents with Verbal Reinforcement Learning},
+  author    = {Shinn, Noah and Cassano, Federico and Gopinath, Ashwin and
+               Narasimhan, Karthik and Yao, Shunyu},
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
+  pages     = {8634--8652},
+  year      = {2023},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2023/hash/1b44b878bb782e6954cd888628510e90-Abstract-Conference.html}
 }
+% SPOT-CHECK BEFORE SUBMISSION: page range came from a search summary, not the
+% rendered proceedings page. Also confirm whether the camera-ready author list
+% includes Edward Berman (present on arXiv, absent from the verified list here).
 
 @inproceedings{madaan2023selfrefine,
   title         = {Self-Refine: Iterative Refinement with Self-Feedback},
@@ -143,12 +165,12 @@
                    Prabhumoye, Shrimai and Yang, Yiming and Gupta, Shashank and
                    Majumder, Bodhisattwa Prasad and Hermann, Katherine and Welleck, Sean and
                    Yazdanbakhsh, Amir and Clark, Peter},
-  booktitle     = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
-  year          = {2023},
-  eprint        = {2303.17651},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2303.17651}
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS)},
+  pages     = {46534--46594},
+  year      = {2023},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2023/hash/91edff07232fb1b55a505a9e9f6c0ff3-Abstract-Conference.html}
 }
+% SPOT-CHECK: page range from a search summary, not the rendered proceedings page.
 
 @inproceedings{huang2024llmscannot,
   title         = {Large Language Models Cannot Self-Correct Reasoning Yet},
@@ -239,15 +261,20 @@
 % 3. TOOL CALLING
 % ---------------------------------------------------------------------------
 
-@misc{schick2023toolformer,
-  title         = {Toolformer: Language Models Can Teach Themselves to Use Tools},
-  author        = {Schick, Timo and Dwivedi-Yu, Jane and Dess{\`i}, Roberto and Raileanu, Roberta
-                   and Lomeli, Maria and Zettlemoyer, Luke and Cancedda, Nicola and Scialom, Thomas},
-  year          = {2023},
-  eprint        = {2302.04761},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2302.04761}
+@inproceedings{schick2023toolformer,
+  author    = {Schick, Timo and Dwivedi-Yu, Jane and Dess{\`i}, Roberto and Raileanu, Roberta and
+               Lomeli, Maria and Hambro, Eric and Zettlemoyer, Luke and Cancedda, Nicola and
+               Scialom, Thomas},
+  title     = {Toolformer: Language Models Can Teach Themselves to Use Tools},
+  booktitle = {Advances in Neural Information Processing Systems},
+  editor    = {A. Oh and T. Naumann and A. Globerson and K. Saenko and M. Hardt and S. Levine},
+  volume    = {36},
+  pages     = {68539--68551},
+  publisher = {Curran Associates, Inc.},
+  year      = {2023},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2023/hash/d842425e4bf79ba039352da0f658a906-Abstract-Conference.html}
 }
+% NeurIPS 2023 issued no DOIs. Author list corrected: Hambro was missing.
 
 @inproceedings{patil2024gorilla,
   title     = {Gorilla: Large Language Model Connected with Massive {API}s},
@@ -281,16 +308,18 @@
   url       = {https://proceedings.mlr.press/v267/patil25a.html}
 }
 
-@misc{lin2024hammer,
-  title         = {Hammer: Robust Function-Calling for On-Device Language Models via Function Masking},
-  author        = {Lin, Qiqiang and Wen, Muning and Peng, Qiuying and Nie, Guanyu and Liao, Junwei
-                   and Wang, Jun and Mo, Xiaoyun and Zhou, Jiamu and Cheng, Cheng and Zhao, Yin
-                   and Wang, Jun and Zhang, Weinan},
-  year          = {2024},
-  eprint        = {2410.04587},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2410.04587}
+@inproceedings{lin2025robust,
+  author    = {Lin, Qiqiang and Wen, Muning and Peng, Qiuying and Nie, Guanyu and Liao, Junwei and
+               Wang, Jun and Mo, Xiaoyun and Zhou, Jiamu and Cheng, Cheng and Zhao, Yin and
+               Wang, Jun and Zhang, Weinan},
+  title     = {Robust Function-Calling for On-Device Language Model via Function Masking},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  url       = {https://openreview.net/forum?id=yVQcr4qjD6}
 }
+% ICLR 2025 (NOT NAACL — secondary sources assert NAACL and are wrong; the PDF
+% header reads "Published as a conference paper at ICLR 2025"). Published title
+% drops the "Hammer:" prefix and uses "Model" (singular). ICLR issues no pages/DOI.
 
 @inproceedings{rabinovich2025robustness,
   title         = {On the Robustness of Agentic Function Calling},
@@ -316,17 +345,19 @@
   url           = {https://arxiv.org/abs/2307.09702}
 }
 
-@misc{dong2025xgrammar,
-  title         = {{XGrammar}: Flexible and Efficient Structured Generation Engine for
-                   Large Language Models},
-  author        = {Dong, Yixin and Ruan, Charlie F. and Cai, Yaxing and Lai, Ruihang and Xu, Ziyi
-                   and Zhao, Yilong and Chen, Tianqi},
-  year          = {2025},
-  eprint        = {2411.15100},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2411.15100}
+@inproceedings{dong2025xgrammar,
+  author    = {Dong, Yixin and Ruan, Charlie F. and Cai, Yaxing and Xu, Ziyi and Zhao, Yilong and
+               Lai, Ruihang and Chen, Tianqi},
+  title     = {{XGrammar}: Flexible and Efficient Structured Generation Engine for
+               Large Language Models},
+  booktitle = {Proceedings of Machine Learning and Systems},
+  editor    = {M. Zaharia and G. Joshi and Y. Lin},
+  volume    = {7},
+  publisher = {MLSys},
+  year      = {2025},
+  url       = {https://proceedings.mlsys.org/paper_files/paper/2025/hash/5c20ca4b0b20b0bd2f1d839dc605e70f-Abstract-Conference.html}
 }
-% VERIFY: arXiv export says year=2025 though v1 is Nov 2024. No venue confirmed.
+% MLSys 2025. The official MLSys BibTeX ships an empty pages field; omitted.
 
 @inproceedings{geng2023grammar,
   title     = {Grammar-Constrained Decoding for Structured {NLP} Tasks without Finetuning},
@@ -341,24 +372,35 @@
 }
 
 @inproceedings{beurer-kellner2024guiding,
-  title     = {Guiding {LLM}s The Right Way: Fast, Non-Invasive Constrained Generation},
   author    = {Beurer-Kellner, Luca and Fischer, Marc and Vechev, Martin},
+  title     = {Guiding {LLM}s The Right Way: Fast, Non-Invasive Constrained Generation},
   booktitle = {Proceedings of the 41st International Conference on Machine Learning (ICML)},
-  series    = {PMLR},
+  editor    = {Salakhutdinov, Ruslan and Kolter, Zico and Heller, Katherine and Weller, Adrian and
+               Oliver, Nuria and Scarlett, Jonathan and Berkenkamp, Felix},
+  series    = {Proceedings of Machine Learning Research},
   volume    = {235},
   pages     = {3658--3673},
+  month     = {21--27 Jul},
+  publisher = {PMLR},
   year      = {2024},
   url       = {https://proceedings.mlr.press/v235/beurer-kellner24a.html}
 }
 % THE KEY REBUTTAL: accuracy loss under constrained decoding stems from subword
 % misalignment in the IMPLEMENTATION, not from constraint itself.
+% Pages confirmed against PMLR. PMLR issues no DOIs.
 
 @inproceedings{park2024grammar,
-  title     = {Grammar-Aligned Decoding},
   author    = {Park, Kanghee and Wang, Jiayu and Berg-Kirkpatrick, Taylor and
                Polikarpova, Nadia and D'Antoni, Loris},
-  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  title     = {Grammar-Aligned Decoding},
+  booktitle = {Advances in Neural Information Processing Systems},
+  editor    = {A. Globerson and L. Mackey and D. Belgrave and A. Fan and U. Paquet and
+               J. Tomczak and C. Zhang},
+  volume    = {37},
+  pages     = {24547--24568},
+  publisher = {Curran Associates, Inc.},
   year      = {2024},
+  doi       = {10.52202/079017-0774},
   url       = {https://proceedings.neurips.cc/paper_files/paper/2024/hash/2bdc2267c3d7d01523e2e17ac0a754f3-Abstract-Conference.html}
 }
 
@@ -474,7 +516,7 @@
   pages     = {157--173},
   year      = {2024},
   publisher = {MIT Press},
-  doi       = {10.1162/tacl_a_00638},
+  doi       = {10.1162/tacl\_a\_00638},
   url       = {https://aclanthology.org/2024.tacl-1.9/}
 }
 
@@ -562,6 +604,22 @@
   note         = {No associated publication. Accessed 2026-07-09}
 }
 
+@misc{aksitov2023rest,
+  title         = {{ReST} meets {ReAct}: Self-Improvement for Multi-Step Reasoning {LLM} Agent},
+  author        = {Aksitov, Renat and Miryoosefi, Sobhan and Li, Zonglin and Li, Daliang and
+                   Babayan, Sheila and Kopparapu, Kavya and Fisher, Zachary and Guo, Ruiqi and
+                   Prakash, Sushant and Srinivasan, Pranesh and Zaheer, Manzil and Yu, Felix and
+                   Kumar, Sanjiv},
+  year          = {2023},
+  eprint        = {2312.10003},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  doi           = {10.48550/arXiv.2312.10003},
+  url           = {https://arxiv.org/abs/2312.10003}
+}
+% PREPRINT ONLY (checked). Google Research. This is the paper that appeared as
+% "Untitled" with no metadata in our source literature review.
+
 @misc{belcak2025slm,
   title         = {Small Language Models are the Future of Agentic {AI}},
   author        = {Belcak, Peter and Heinrich, Greg and Diao, Shizhe and Fu, Yonggan and
@@ -588,51 +646,77 @@
 % 7. ON-DEVICE AGENTS  (the papers from our literature review)
 % ---------------------------------------------------------------------------
 
-@misc{fu2024camphor,
-  title         = {{CAMPHOR}: Collaborative Agents for Multi-input Planning and High-Order
-                   Reasoning On Device},
-  author        = {Fu, Yicheng and Anantha, Raviteja and Cheng, Jianpeng},
-  year          = {2024},
-  eprint        = {2410.09407},
-  archivePrefix = {arXiv},
-  url           = {https://arxiv.org/abs/2410.09407}
+@inproceedings{fu2025camphor,
+  title     = {{CAMPHOR}: Collaborative Agents for Multi-input Planning and High-Order
+               Reasoning On Device},
+  author    = {Fu, Yicheng and Anantha, Raviteja and Cheng, Jianpeng},
+  editor    = {Kamalloo, Ehsan and Gontier, Nicolas and Lu, Xing Han and Dziri, Nouha and
+               Murty, Shikhar and Lacoste, Alexandre},
+  booktitle = {Proceedings of the 1st Workshop for Research on Agent Language Models (REALM)},
+  month     = jul,
+  year      = {2025},
+  address   = {Vienna, Austria},
+  publisher = {Association for Computational Linguistics},
+  pages     = {33--51},
+  isbn      = {979-8-89176-264-0},
+  doi       = {10.18653/v1/2025.realm-1.3},
+  url       = {https://aclanthology.org/2025.realm-1.3/}
 }
+% Published at the REALM 2025 ACL workshop (NOT EMNLP main, as some search
+% summaries claim). Peer-reviewed version of record.
 
 @misc{kadekodi2025agentflux,
-  title  = {{AgentFlux}: Decoupled Fine-Tuning and Inference for On-Device Agentic Systems},
-  author = {Kadekodi, Rohan and Jin, Zhanggen and Kamahori, Keisuke and Gu, Yile and
-            Khatiri, Sean and Bayindirli, Noah H. and Gorbunov, Sergey and Kasikci, Baris},
-  year   = {2025},
-  url    = {https://www.semanticscholar.org/paper/67ac54c34f980ac1a0d6a6a36981e153cf9223dc}
+  title         = {{AgentFlux}: Decoupled Fine-Tuning and Inference for On-Device Agentic Systems},
+  author        = {Kadekodi, Rohan and Jin, Zhan and Kamahori, Keisuke and Gu, Yile and
+                   Khatiri, Sean and Bayindirli, Noah H. and Gorbunov, Sergey and Kasikci, Baris},
+  year          = {2025},
+  eprint        = {2510.00229},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  doi           = {10.48550/arXiv.2510.00229},
+  url           = {https://arxiv.org/abs/2510.00229}
 }
-% VERIFY: obtain the arXiv id / venue; the literature review only had a S2 link.
+% PREPRINT ONLY (checked). Retitled: v1 was "DualTune: Decoupled Fine-Tuning for
+% On-Device Agentic Systems"; v4 carries the AgentFlux title. Same paper.
+% Group: Kasikci's lab (U. Washington) — established systems group.
 
 @misc{vijayvargiya2025adaptive,
   title         = {Efficient On-Device Agents via Adaptive Context Management},
-  author        = {Vijayvargiya, Sanidhya and Lokesh, R.},
+  author        = {Vijayvargiya, Sanidhya and Lokesh, Rahul},
   year          = {2025},
   eprint        = {2511.03728},
   archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  doi           = {10.48550/arXiv.2511.03728},
   url           = {https://arxiv.org/abs/2511.03728}
 }
-% VERIFY: author first names taken from the literature review; confirm on arXiv.
+% PREPRINT ONLY (checked). Author first names now verified against arXiv.
 
 @misc{liu2026utility,
-  title  = {Utility-Guided Agent Orchestration for Efficient {LLM} Tool Use},
-  author = {Liu, Boyang and Zhao, Gongming and Xu, Hongliu},
-  year   = {2026},
-  url    = {https://www.semanticscholar.org/paper/e1951e680c8c4b40e299323b5fdd466494480191}
+  title         = {Utility-Guided Agent Orchestration for Efficient {LLM} Tool Use},
+  author        = {Liu, Boyan and Zhao, Gongming and Xu, Hongli},
+  year          = {2026},
+  eprint        = {2603.19896},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  doi           = {10.48550/arXiv.2603.19896},
+  url           = {https://arxiv.org/abs/2603.19896}
 }
-% VERIFY: obtain the arXiv id / venue.
+% PREPRINT ONLY (checked). Author names CORRECTED against arXiv: Semantic Scholar
+% printed "Boyang Liu" / "Hongliu Xu"; the paper says Boyan Liu / Hongli Xu.
 
-@misc{huang2025edge,
-  title  = {{LLM}s at the Edge: Performance and Efficiency Evaluation with {Ollama}
-            on Diverse Hardware},
-  author = {Huang, Donghao and Wang, Zhaoxia},
-  year   = {2025},
-  url    = {https://www.semanticscholar.org/paper/53380bdd8da10c88cf3c5f2918823a55c54a1bf2}
+@inproceedings{huang2025edge,
+  title     = {{LLM}s at the Edge: Performance and Efficiency Evaluation with {Ollama}
+               on Diverse Hardware},
+  author    = {Huang, Donghao and Wang, Zhaoxia},
+  booktitle = {2025 International Joint Conference on Neural Networks (IJCNN)},
+  year      = {2025},
+  pages     = {1--8},
+  address   = {Rome, Italy},
+  publisher = {IEEE},
+  doi       = {10.1109/IJCNN64981.2025.11228317},
+  url       = {https://doi.org/10.1109/IJCNN64981.2025.11228317}
 }
-% VERIFY: obtain the DOI / venue.
 
 @article{martinez2025latency,
   author  = {Mart{\'i}nez, H{\'e}ctor and Catal{\'a}n, Sandra and Castell{\'o}, Adri{\'a}n and
@@ -640,8 +724,12 @@
   title   = {Latency-Critical Quantized Inference With Transformer Decoders on {ARM}
              and {RISC-V} {CPU}s},
   journal = {IEEE Internet of Things Journal},
+  volume  = {12},
+  number  = {13},
+  pages   = {25676--25690},
   year    = {2025},
-  doi     = {10.1109/JIOT.2025.3560382}
+  doi     = {10.1109/JIOT.2025.3560382},
+  url     = {https://doi.org/10.1109/JIOT.2025.3560382}
 }
 
 
@@ -659,7 +747,8 @@
   doi           = {10.48550/arXiv.2107.03374},
   url           = {https://arxiv.org/abs/2107.03374}
 }
-% The unbiased pass@k estimator we implement.
+% The unbiased pass-at-k estimator we implement. (NB: never write an "at" sign
+% in a .bib comment -- BibTeX ignores "%" and reads it as the start of an entry.)
 
 @inproceedings{jimenez2024swebench,
   title     = {{SWE-bench}: Can Language Models Resolve Real-world {GitHub} Issues?},
@@ -693,12 +782,12 @@
   url       = {https://arxiv.org/abs/2308.03688}
 }
 
-@article{yao2024taubench,
-  title         = {$\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains},
-  author        = {Yao, Shunyu and Shinn, Noah and Razavi, Pedram and Narasimhan, Karthik},
-  journal       = {arXiv preprint arXiv:2406.12045},
-  year          = {2024},
-  url           = {https://arxiv.org/abs/2406.12045}
+@inproceedings{yao2025taubench,
+  title     = {{$\tau$}-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains},
+  author    = {Yao, Shunyu and Shinn, Noah and Razavi, Pedram and Narasimhan, Karthik},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  url       = {https://proceedings.iclr.cc/paper_files/paper/2025/hash/1b126cc38b8638e07bef37e7b2bb72bf-Abstract-Conference.html}
 }
 
 @inproceedings{mialon2024gaia,
@@ -790,15 +879,15 @@
   booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS),
                Datasets and Benchmarks Track},
   year      = {2023},
-  url       = {https://arxiv.org/abs/2306.05685}
+  url       = {https://papers.nips.cc/paper_files/paper/2023/hash/91f18a1287b398d378ef22505bf41832-Abstract-Datasets_and_Benchmarks.html}
 }
 
-@article{panickssery2024llmevaluators,
-  author  = {Panickssery, Arjun and Bowman, Samuel R. and Feng, Shi},
-  title   = {{LLM} Evaluators Recognize and Favor Their Own Generations},
-  journal = {arXiv preprint arXiv:2404.13076},
-  year    = {2024},
-  url     = {https://arxiv.org/abs/2404.13076}
+@inproceedings{panickssery2024llmevaluators,
+  author    = {Panickssery, Arjun and Bowman, Samuel R. and Feng, Shi},
+  title     = {{LLM} Evaluators Recognize and Favor Their Own Generations},
+  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS)},
+  year      = {2024},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2024/hash/7f1f0218e45f5414c79c0679633e47bc-Abstract-Conference.html}
 }
 
 @article{ji2023hallucination,
@@ -825,7 +914,7 @@
   pages     = {777--840},
   year      = {2023},
   publisher = {MIT Press},
-  doi       = {10.1162/coli_a_00486},
+  doi       = {10.1162/coli\_a\_00486},
   url       = {https://aclanthology.org/2023.cl-4.2/}
 }
 % The AIS framework: a claim must be verifiable against an independent source.

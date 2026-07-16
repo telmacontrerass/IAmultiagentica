@@ -1,5 +1,5 @@
-% =============================================================================
-%  ci2lab — "Scaffolding, Not Fine-Tuning"
+﻿% =============================================================================
+%  ci2lab â€” "Scaffolding, Not Fine-Tuning"
 %  Working draft. Compile:  pdflatex main && bibtex main && pdflatex main x2
 %
 %  ---------------------------------------------------------------------------
@@ -29,11 +29,43 @@
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{xcolor}
-\usepackage{hyperref}
-\hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
-\usepackage[numbers,sort&compress]{natbib}
 \usepackage{listings}
 \usepackage{multirow}
+
+% --- Bibliography and hyperlinking -----------------------------------------
+% PACKAGE ORDER MATTERS. natbib MUST be loaded BEFORE hyperref: hyperref patches
+% natbib's \cite commands to make them clickable, and it can only do so if natbib
+% is already defined. Loading hyperref first silently produces dead citations.
+% Do not reorder these three lines.
+\usepackage[numbers,sort&compress]{natbib}
+
+% backref=page: each bibliography entry lists the page(s) that cite it, as a
+% clickable link back into the text. Set backref=false to disable for camera-ready.
+\usepackage[
+  colorlinks=true,
+  linkcolor=blue!50!black,   % internal links (sections, tables, equations)
+  citecolor=blue!45!black,   % \citep / \citet -> jumps to the bibliography
+  urlcolor=blue!55!black,    % \url and \href
+  linktoc=all,
+  backref=page,
+  pdfusetitle
+]{hyperref}
+
+% Makes the doi={...} field printed by plainnat into a clickable link.
+% MUST be loaded AFTER hyperref.
+\usepackage{doi}
+
+% Phrasing for the back-references printed in the bibliography.
+\renewcommand*{\backref}[1]{}
+\renewcommand*{\backrefalt}[4]{%
+  \ifcase #1 %
+    \relax
+  \or
+    {\footnotesize (cited on p.~#2)}%
+  \else
+    {\footnotesize (cited on pp.~#2)}%
+  \fi
+}
 
 % --- Placeholder macro: every unmeasured quantity MUST use this. -------------
 \newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
@@ -105,7 +137,7 @@ specialised expert modules. This reflex is visible across the on-device
 literature: AgentFlux trains LoRA adapters to decouple tool selection from
 argument generation \citep{kadekodi2025agentflux}; ReST-style approaches distil
 a prompted ReAct agent into a far smaller fine-tuned model; CAMPHOR builds a
-hierarchy of fine-tuned small-model experts \citep{fu2024camphor}. Each is a
+hierarchy of fine-tuned small-model experts \citep{fu2025camphor}. Each is a
 strong result. Each also assumes that the path to a reliable local agent runs
 through modifying the model's weights.
 
@@ -127,7 +159,7 @@ For a \emph{local-first} deployment they are close to fatal, and for a reason
 that is structural rather than incidental. On local hardware the machine chooses
 the model. A 48\,GB accelerator admits a quantised 32B model; a laptop admits a
 7B one; and the smaller the model, the less reliable its tool calling
-\citep{lin2024hammer,rabinovich2025robustness}. The very models a local-first
+\citep{lin2025robust,rabinovich2025robustness}. The very models a local-first
 system is forced to run are the ones these harnesses handle worst. The
 constraint compounds: weights and KV cache compete for the same memory, so the
 hardware also bounds the context window, and therefore how much of a task the
@@ -175,9 +207,11 @@ headroom to be largest exactly where METR's is smallest --- on small, local,
     no prior agent system derives its context policy from the host machine.
   \item \textbf{Deterministic, non-LLM verification.} Agent claims are checked
     against environment state by plain code, not by a judge model
-    (Sec.~\ref{sec:system-grounding}) --- a choice supported by evidence that
-    LLM judges detect false success poorly, keying on confident language rather
-    than verified state \citep{advani2026falsesuccess}.
+    (Sec.~\ref{sec:system-grounding}). A judge reading the transcript would be
+    evaluating the very signal that a false success has already corrupted, under
+    self-preference biases that are unavoidable when judge and agent share
+    weights \citep{panickssery2024llmevaluators} --- as they must in a
+    single-model local deployment.
   \item \textbf{A harness-isolating experimental design}, in which the model is
     held fixed while the harness varies, each mechanism is ablated
     independently, and the whole matrix is repeated across a model-size ladder
@@ -218,10 +252,11 @@ The on-device agent literature converges on a single strategy: modify the model.
 AgentFlux decomposes tool calling into selection and argument generation and
 trains separate LoRA adapters for each \citep{kadekodi2025agentflux}. CAMPHOR
 fine-tunes a hierarchy of small-model experts for planning, retrieval, and tool
-interaction \citep{fu2024camphor}. ReST-style self-improvement distils a
-prompted ReAct agent into a model two orders of magnitude smaller. Hammer trains
-on-device models with function masking to resist misleading tool names
-\citep{lin2024hammer}. A recent NVIDIA position paper argues the endpoint of this
+interaction \citep{fu2025camphor}. ReST-style self-improvement distils a
+prompted ReAct agent into a model two orders of magnitude smaller
+\citep{aksitov2023rest}. Hammer trains on-device models with function masking to
+resist misleading tool names \citep{lin2025robust}. A recent NVIDIA position
+paper argues the endpoint of this
 trajectory explicitly: small models are sufficient for the repetitive, narrow
 invocations that dominate agentic systems \citep{belcak2025slm}.
 
@@ -259,9 +294,10 @@ that an agent--computer interface designed for a language model, with the model
 held constant, substantially improves task resolution
 \citep{yang2024sweagent}. CodeAct shows that merely changing the action format
 from JSON or text to executable code raises success by up to 20\%
-\citep{wang2024codeact}. Agentless makes the inverse point: a fixed pipeline can
+\citep{wang2024codeact}. The \textsc{Agentless} pipeline of
+\citet{xia2025demystifying} makes the inverse point: a fixed pipeline can
 outperform an autonomous agent, so the \emph{structure}, not the agency, carries
-the result \citep{xia2024agentless}. At the meta level, Kapoor et al. show that
+the result. At the meta level, Kapoor et al. show that
 agent benchmarks routinely conflate scaffold engineering with model capability
 \citep{kapoor2025aiagents}, and the Holistic Agent Leaderboard elevates
 ``scaffold'' to an explicit experimental dimension alongside model and benchmark
@@ -299,44 +335,69 @@ that grammar-constrained decoding distorts the model's distribution and offers a
 principled correction \citep{park2024grammar}.
 
 Our position is therefore not that constrained decoding is wrong, but that it is
-\emph{orthogonal and insufficient}. It solves the syntax of a single call. It
-does not decide which tool to call, detect a loop, cut off a repeating error,
-budget the context, or determine whether an agent that claims success actually
-succeeded. Moreover, at the model scale a local-first system must live with,
-forcing validity appears to trade one failure for a worse one: recent evidence at
-sub-3B scale reports that mandatory schema conformance \emph{raised}
-valid-but-wrong outputs from 49.5\% to 88.9\%, converting visibly broken output
-into silently incorrect output \citep{ray2026constrainttax}. That is an argument
-for harness-side repair and independent verification, not against constraint.
-Accordingly we treat constrained decoding as a \textbf{baseline arm to be
-measured} (Sec.~\ref{sec:conditions}), not as a rival to be dismissed.
+\emph{orthogonal and insufficient} --- and this follows from what the mechanism
+is, not from any contested empirical claim. A grammar constrains the token
+sequence of a \emph{single generation} to a language. That is exactly the
+guarantee it offers, and exactly its limit. It cannot decide which tool the
+situation calls for, recognise that the same call has now been issued three times,
+stop a tool that keeps failing the same way, decide what to evict when the context
+fills, or establish whether an agent that reports success has actually changed the
+world. Those are properties of a \emph{trajectory} and of \emph{environment
+state}; a per-token vocabulary mask is not the kind of thing that can express
+them. Constrained decoding and a deterministic harness therefore operate on
+different objects, and the presence of one does not discharge the need for the
+other.
+
+There is a further consideration, which we raise as a hypothesis to be tested
+rather than as a settled result. Enforcing validity guarantees only that output
+\emph{parses}, not that it is \emph{right}; the natural worry is that at small
+scale it converts a visibly malformed call --- which a harness can detect and
+repair --- into a well-formed call with wrong arguments, which nothing downstream
+can detect at all. This concern is consistent with the distributional distortion
+that \citet{park2024grammar} characterise formally, and preliminary evidence at
+sub-3B scale points the same way \citep{ray2026constrainttax}, though that
+evidence is a single-author preprint and we do not rest any claim on it. The
+appropriate response is to measure it ourselves. Accordingly we treat constrained
+decoding as a \textbf{baseline arm} (Sec.~\ref{sec:conditions}) and report schema
+validity and task correctness as \emph{separate} quantities, so that a condition
+which improves the former while degrading the latter is visible rather than
+hidden behind a single success number.
 
 \subsection{Verification, false success, and the choice of oracle}
 
-Agents over-claim. Sycophancy in RLHF-trained models is a documented root cause
-of assistants that tell users what they expect to hear
-\citep{sharma2024sycophancy}, and recent work characterises the agentic
-consequence directly: \emph{false success}, where an agent reports completion
-that programmatic environment state refutes, accounts for a large fraction of
-all failures \citep{advani2026falsesuccess}, while outcome-only grading conceals
-procedural violations behind apparently successful runs
-\citep{cao2026corruptsuccess}. We claim no novelty for the phenomenon --- it is
-named and measured in that work --- but we adopt its measurement as a
-first-class metric of a harness, alongside task success.
+Agents over-claim, and the mechanism is well established rather than anecdotal:
+RLHF-trained models systematically prefer responses that match what the reader
+expects to hear over responses that are true \citep{sharma2024sycophancy}. An
+agent that has been trained to be agreeable and is then asked whether it finished
+the task is being asked precisely the question its training biases it to answer
+``yes'' to. We call the resulting failure \emph{false success}: the agent reports
+completion that the environment refutes. Recent work characterises the phenomenon
+directly and at scale \citep{advani2026falsesuccess}, and shows relatedly that
+outcome-only grading can conceal procedural violations behind apparently
+successful runs \citep{cao2026corruptsuccess}; both are preprints, and we cite
+them as corroboration rather than as foundations. We claim no novelty for the
+phenomenon. Our contribution is to treat its rate as a measured property of the
+\emph{harness}, reported alongside task success rather than folded into it.
 
-The same work supplies our strongest argument for how to measure it. LLM judges
-detect false success poorly (AUROC $\leq 0.65$) precisely because they key on
-confident language rather than verified state changes
-\citep{advani2026falsesuccess}. Combined with the known biases of
-LLM-as-a-judge \citep{zheng2023judging} and the self-preference effect that
-arises when judge and agent share a model family
-\citep{panickssery2024llmevaluators} --- the normal situation in a single-model
-local deployment --- we reject the LLM judge for our core suite and grade by
-deterministic oracle. Our grounding gate follows the attribution standard that a
-claim counts only if it is verifiable against an independent source
-\citep{rashkin2023attribution}, and our permission engine follows the precedent
-of deterministic, out-of-model privilege control
-\citep{shi2025progent,ruan2024toolemu}.
+Our reason for measuring it with code rather than with a judge model is again
+structural. A false success is, by construction, a case where the agent's prose
+and the environment's state disagree; the agent's report is fluent, confident,
+and wrong. A judge that reads the transcript is therefore evaluating exactly the
+signal that has already been corrupted, and it does so under known and relevant
+biases: LLM judges exhibit verbosity and self-enhancement effects
+\citep{zheng2023judging}, and they favour their own generations in proportion to
+their ability to recognise them \citep{panickssery2024llmevaluators} --- a
+self-preference confound that is unavoidable in a single-model local deployment,
+where judge and agent would necessarily be the same weights. An oracle that
+inspects state rather than prose is immune to all of this by construction, which
+is why our core suite is graded by exit code (Sec.~\ref{sec:oracle}) and our
+grounding gate verifies claims in plain code (Sec.~\ref{sec:system-grounding}).
+That design follows the attribution standard that a claim counts only if it is
+verifiable against an independent source \citep{rashkin2023attribution}, and the
+precedent for deterministic, out-of-model privilege control
+\citep{shi2025progent,ruan2024toolemu}. Empirical support that judges
+underperform on this specific task is reported by \citet{advani2026falsesuccess};
+our argument does not depend on that measurement.
 
 \subsection{The gap}
 
@@ -552,17 +613,19 @@ The design isolates the harness from the model. Every condition below runs the
   \item[A --- Mechanism ablation (the core contribution).] Each scaffolding
     mechanism is disabled \emph{individually}, leaving all others intact:
     parser cascade, retry governor, loop detection, anchors and progress digest,
-    compaction ladder, and nudges. Given evidence that scaffolding components can
-    interfere destructively \citep{liu2026moreisnotbetter}, we also report the
-    all-off condition, so that the mechanisms' joint effect can be compared with
-    the sum of their individual effects.
+    compaction ladder, and nudges. We additionally report the all-off condition,
+    so that the mechanisms' joint effect can be compared against the sum of their
+    individual effects: scaffolding components need not compose additively, and
+    may interfere \citep{liu2026moreisnotbetter}. Reporting only individual
+    ablations would hide that.
   \item[C --- Constrained-decoding baseline.] A condition in which tool calls
     are enforced by grammar-constrained decoding rather than recovered by the
     parser cascade \citep{willard2023outlines,llamacpp}. This is the honest
     alternative to our central mechanism and must be measured, not argued away.
-    Following \citet{ray2026constrainttax}, we report schema validity and task
-    correctness \emph{separately}, since constraint is expected to improve the
-    former while potentially harming the latter.
+    We report schema validity and task correctness as \emph{separate} quantities.
+    The two are logically distinct --- a call can parse perfectly and still name
+    the wrong file --- and a condition that improves one while degrading the other
+    is invisible in a single success number.
   \item[L --- Model ladder.] The full matrix is repeated across a size ladder
     (7B / 14B / 32B of one model family). The interaction term is the headline:
     \emph{does the value of scaffolding grow as the model shrinks?} This is also
@@ -580,10 +643,12 @@ samples per (task, condition) we also report the unbiased Pass@$k$ estimator of
 
 \paragraph{False-success rate (primary, and the one we consider most
 diagnostic).} The fraction of runs in which the agent asserted completion but the
-oracle refuted it. This measures the failure mode that matters most for a local
-agent operating unattended --- and, following \citet{advani2026falsesuccess}, it
-is measured against environment state, not against a judge's reading of the
-agent's prose.
+oracle refuted it. This is the failure mode that matters most for an agent
+operating unattended: a stalled agent is merely useless, whereas an agent that
+reports success it did not achieve actively misleads. It is measured against
+environment state --- necessarily so, since the agent's own report is the
+artifact under suspicion. The phenomenon and its prevalence are characterised in
+\citep{advani2026falsesuccess,cao2026corruptsuccess}.
 
 \paragraph{Efficiency.} Input and output tokens, and \emph{tokens per solved
 task}, which is where a lean harness can win even when raw success trails. Cost
@@ -713,9 +778,12 @@ the mechanisms are complementary; if it falls short, they interfere
 \noindent\emph{Analysis to apply.} We expect the parser cascade to dominate on
 fenced models and to be inert on native ones --- if it is \emph{not} inert on a
 native model, our account of what it does is wrong, and we will say so. The
-constrained-decoding row is the one we are least able to predict; per
-\citet{ray2026constrainttax}, we specifically test whether it raises schema
-validity while \emph{worsening} false success.
+constrained-decoding row is the one we are least able to predict. The specific
+question we put to it is whether it raises schema validity while \emph{worsening}
+false success: that pattern would indicate constraint is converting detectable
+failures into undetectable ones, whereas a uniform improvement would indicate our
+parser cascade should simply be replaced by a grammar where one is available.
+Both outcomes are publishable; only one is comfortable.
 
 \subsection{Model ladder: does scaffolding matter more as the model shrinks?}
 
@@ -770,6 +838,19 @@ calibration. And the phenomenon of false success is not our discovery
 \citep{advani2026falsesuccess,cao2026corruptsuccess}; our contribution is to
 treat it as a property of the \emph{harness} and to show it can be reduced
 without a judge model.
+
+\paragraph{A note on evidentiary weight.} Parts of the literature we engage with
+are recent preprints that have not been through peer review --- notably the
+characterisations of false success \citep{advani2026falsesuccess,%
+cao2026corruptsuccess}, the report of cross-component interference in scaffolding
+\citep{liu2026moreisnotbetter}, and the evidence on validity--correctness
+trade-offs under constraint \citep{ray2026constrainttax}. We have deliberately
+structured our arguments so that none of them depends on those sources: each is
+cited as corroboration for a position that is argued from mechanism or from
+peer-reviewed work, and each of the corresponding empirical questions is one this
+paper measures directly rather than inherits. Where a preprint's finding
+conflicts with ours, our data should be preferred, and where it agrees, it should
+be read as convergent rather than as support.
 
 % =============================================================================
 \section{Conclusion}
