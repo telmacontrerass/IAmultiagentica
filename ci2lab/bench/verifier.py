@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -172,7 +173,7 @@ def _run_command(cmd: str, workspace: Path, timeout: int) -> tuple[int, str]:
     env["PYTHONPATH"] = str(workspace) + (os.pathsep + existing if existing else "")
     try:
         proc = subprocess.run(
-            shlex.split(cmd),
+            _command_argv(cmd),
             cwd=workspace,
             capture_output=True,
             text=True,
@@ -184,6 +185,14 @@ def _run_command(cmd: str, workspace: Path, timeout: int) -> tuple[int, str]:
     except OSError as exc:
         return _NOT_FOUND_EXIT, str(exc)
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def _command_argv(cmd: str) -> list[str]:
+    """Split a verifier command, pinning bare Python calls to this interpreter."""
+    argv = shlex.split(cmd)
+    if argv and argv[0].lower() in {"python", "python.exe", "python3", "python3.exe"}:
+        argv[0] = sys.executable
+    return argv
 
 
 def _ordered_contains(haystack: str, needles: list[str]) -> bool:

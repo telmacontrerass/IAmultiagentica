@@ -103,6 +103,87 @@ def fetch_installed_model_names(
     return {item["name"] for item in installed if item.get("name")}, error
 
 
+def pick_installed_model(installed_names: set[str]) -> str | None:
+    """Pick a sensible default from the locally installed Ollama models.
+
+    Prefers instruction-tuned / tool-capable tags (their names usually carry an
+    ``instruct`` or ``tool`` marker) and otherwise falls back to the first name
+    in a stable alphabetical order so the choice is deterministic.
+
+    Args:
+        installed_names: The set of locally installed model names.
+
+    Returns:
+        A model name to use, or ``None`` when nothing is installed.
+    """
+    names = sorted(n for n in installed_names if n)
+    if not names:
+        return None
+    preferred = [n for n in names if "instruct" in n.lower() or "tool" in n.lower()]
+    return (preferred or names)[0]
+
+
+def _installed_match(requested: str, installed_names: set[str]) -> str | None:
+    """Return the concrete installed name that ``requested`` refers to, if any.
+
+    Matches an exact name as well as a quantization/variant suffix (e.g.
+    ``qwen2.5:3b`` -> the installed ``qwen2.5:3b-instruct``), so a slightly
+    imprecise tag still maps to the model that is really on disk.
+    """
+    tag = requested.strip().lower()
+    if not tag:
+        return None
+    exact = [n for n in installed_names if n.strip().lower() == tag]
+    if exact:
+        return exact[0]
+    variants = sorted(
+        n
+        for n in installed_names
+        if n.strip().lower().startswith(f"{tag}-") or n.strip().lower().startswith(f"{tag}@")
+    )
+    return variants[0] if variants else None
+
+
+def resolve_ollama_model(
+    requested: str,
+    backend_url: str = DEFAULT_BACKEND_URL,
+    *,
+    allow_fallback: bool = False,
+    timeout: float = 3.0,
+) -> str:
+    """Resolve ``requested`` against the models actually installed on Ollama.
+
+    Resolution order:
+
+    1. If ``requested`` matches an installed model (exactly or as a
+       quantization/variant suffix), the concrete installed name is returned so
+       the request targets a model that is really present.
+    2. Otherwise, when ``allow_fallback`` is set (used only when no model was
+       explicitly chosen), an installed model is auto-selected.
+    3. Failing both — or when the server is unreachable — ``requested`` is
+       returned unchanged.
+
+    Args:
+        requested: The model tag from configuration, env, or CLI.
+        backend_url: Backend URL to query (the ``/v1`` suffix is stripped).
+        allow_fallback: When ``True``, substitute an installed model if
+            ``requested`` is not installed at all.
+        timeout: Per-request timeout in seconds.
+
+    Returns:
+        A model tag to use for the session.
+    """
+    installed, error = fetch_installed_model_names(backend_url, timeout=timeout)
+    if error is not None or not installed:
+        return requested
+    match = _installed_match(requested, installed)
+    if match is not None:
+        return match
+    if allow_fallback:
+        return pick_installed_model(installed) or requested
+    return requested
+
+
 def is_catalog_model_installed(ollama_tag: str, installed_names: set[str]) -> bool:
     """Return True if a catalog tag matches any installed model name.
 

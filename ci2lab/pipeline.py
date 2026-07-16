@@ -79,6 +79,20 @@ def prepare_session(
 
     profile = scan_hardware()
     tag: str = force_model or os.environ.get("CI2LAB_MODEL") or DEFAULT_MODEL
+    # Reconcile the requested tag with what Ollama actually has installed: map a
+    # near-miss tag (e.g. ``qwen2.5:3b`` -> installed ``qwen2.5:3b-instruct``) to
+    # the concrete name, and — when the model was left at the built-in default —
+    # fall back to any installed model rather than a hard-coded tag that may not
+    # be pulled.
+    if backend == "ollama":
+        from ci2lab.config import DEFAULT_BACKEND_URL
+        from ci2lab.runtime.ollama import resolve_ollama_model
+
+        tag = resolve_ollama_model(
+            tag,
+            backend_url or DEFAULT_BACKEND_URL,
+            allow_fallback=(tag == DEFAULT_MODEL),
+        )
     selection = build_model_selection(
         tag,
         tool_mode_override=tool_mode_override,
