@@ -14,6 +14,13 @@ from ci2lab.harness.yard.loader import load_components
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+_NATIVE_OMITTED_SECTIONS = {
+    "## Tools",
+    "## Choosing the right tool",
+    "## Tool arguments (use these exact names)",
+    "## Calling tools",
+}
+
 
 def _read(name: str) -> str:
     """Read and strip a prompt fragment from the bundled ``prompts`` directory.
@@ -25,6 +32,21 @@ def _read(name: str) -> str:
         The fragment's text content with leading/trailing whitespace removed.
     """
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+def _base_system_prompt(tool_mode: ToolMode) -> str:
+    """Return the base prompt without duplicating API-provided native schemas."""
+    text = _read("system.md")
+    if tool_mode != "native":
+        return text
+    kept: list[str] = []
+    omit = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            omit = line.strip() in _NATIVE_OMITTED_SECTIONS
+        if not omit:
+            kept.append(line)
+    return "\n".join(kept).strip()
 
 
 def build_system_prompt(
@@ -54,7 +76,8 @@ def build_system_prompt(
     Returns:
         The complete system prompt as a single newline-joined string.
     """
-    parts = [_read("system.md")]
+    tool_mode: ToolMode = selection.tool_mode
+    parts = [_base_system_prompt(tool_mode)]
 
     if config is not None and not getattr(config, "write_tools_enabled", True):
         parts.append(
@@ -112,7 +135,6 @@ def build_system_prompt(
     if mcp_status:
         parts.append(mcp_status)
 
-    tool_mode: ToolMode = selection.tool_mode
     if tool_mode == "fenced" or not selection.supports_tools:
         parts.append(_read("fenced_tools.md"))
 

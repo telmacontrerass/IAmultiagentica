@@ -1,16 +1,20 @@
 import json
+import struct
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from ci2lab.cli import main
 from ci2lab.router.catalog import load_model_catalog
+from ci2lab.router.gguf_import.ollama_identity import OllamaModelSnapshot
 from ci2lab.router.imported_models import (
     build_imported_profile,
+    load_imported_model_registry,
     render_ollama_modelfile,
     save_imported_model_profile,
 )
 from ci2lab.router.selection import build_model_selection
-
+from ci2lab.runtime.ollama import ollama_model_names_equivalent
+from ci2lab.runtime.preflight import check_model_available
 from tests.test_router_selection import _profile
 
 
@@ -31,10 +35,11 @@ def test_glm_modelfile_uses_template_stops_and_context():
     modelfile = render_ollama_modelfile(_glm_profile())
 
     assert "FROM models/glm/GLM-4-9B-0414-Q4_K_M.gguf" in modelfile
-    assert 'TEMPLATE """\n[gMASK]<sop>{{ if .System }}<|system|>' in modelfile
-    assert "[gMASK]<sop>{{ if .System }}<|system|>" in modelfile
+    assert 'TEMPLATE """\n[gMASK]<sop>{{ if or .System .Tools }}<|system|>' in modelfile
+    assert "{{ range .Tools }}" in modelfile
+    assert '{{ else if eq $message.Role "tool" }}<|observation|>' in modelfile
     assert "<|user|>" in modelfile
-    assert "{{ .Prompt }}<|assistant|>" in modelfile
+    assert "{{ $message.Content }}" in modelfile
     assert "PARAMETER num_ctx 16384" in modelfile
     assert "PARAMETER temperature 0.1" in modelfile
     assert 'PARAMETER stop "<|user|>"' in modelfile
@@ -51,7 +56,7 @@ def test_import_gguf_dry_run_prints_modelfile_without_ollama_or_metadata(
     capsys,
 ):
     gguf = tmp_path / "model.gguf"
-    gguf.write_text("fake", encoding="utf-8")
+    _write_gguf(gguf)
     registry = tmp_path / "imported_models.json"
     monkeypatch.setenv("CI2LAB_IMPORTED_MODELS_PATH", str(registry))
 
@@ -83,7 +88,7 @@ def test_import_gguf_dry_run_prints_modelfile_without_ollama_or_metadata(
     assert result == 0
     output = capsys.readouterr().out
     assert f"FROM {gguf.resolve()}" in output
-    assert 'TEMPLATE """\n[gMASK]<sop>{{ if .System }}<|system|>' in output
+    assert 'TEMPLATE """\n[gMASK]<sop>{{ if or .System .Tools }}<|system|>' in output
     assert "PARAMETER num_ctx 16384" in output
     run.assert_not_called()
     assert not registry.exists()
@@ -91,7 +96,7 @@ def test_import_gguf_dry_run_prints_modelfile_without_ollama_or_metadata(
 
 def test_import_gguf_rejects_invalid_ollama_model_name(tmp_path, capsys):
     gguf = tmp_path / "model.gguf"
-    gguf.write_text("fake", encoding="utf-8")
+    _write_gguf(gguf)
 
     result = main(
         [
@@ -116,19 +121,57 @@ def test_import_gguf_rejects_invalid_ollama_model_name(tmp_path, capsys):
     )
 
     assert result == 1
-    assert "Invalid model id for Ollama" in capsys.readouterr().out
+    assert "Invalid CI2Lab profile id" in capsys.readouterr().out
+
+
+def test_profile_alias_can_target_one_canonical_ollama_tag():
+    profile = build_imported_profile(
+        model_id="glm4",
+        ollama_tag="ci2lab/glm-4-9b-0414:q4_k_m",
+        repo="unsloth/GLM-4-9B-0414-GGUF",
+        filename="GLM-4-9B-0414-Q4_K_M.gguf",
+        local_path="models/glm/GLM-4-9B-0414-Q4_K_M.gguf",
+        family="glm4",
+        template_id="glm4-chat",
+        context_length=16384,
+    )
+    assert profile.id == "glm4"
+    assert profile.ollama_tag == "ci2lab/glm-4-9b-0414:q4_k_m"
+
+
+def _write_gguf(path):
+    key, value = b"general.architecture", b"glm4"
+    path.write_bytes(
+        b"GGUF"
+        + struct.pack("<IQQ", 3, 0, 1)
+        + struct.pack("<Q", len(key))
+        + key
+        + struct.pack("<I", 8)
+        + struct.pack("<Q", len(value))
+        + value
+    )
 
 
 def test_import_gguf_saves_metadata_after_ollama_create(tmp_path, monkeypatch):
     gguf = tmp_path / "model.gguf"
-    gguf.write_text("fake", encoding="utf-8")
+    _write_gguf(gguf)
     registry = tmp_path / "imported_models.json"
     monkeypatch.setenv("CI2LAB_IMPORTED_MODELS_PATH", str(registry))
 
-    with patch(
-        "ci2lab.router.imported_models.subprocess.run",
-        return_value=CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-    ) as run:
+    snapshots = [
+        OllamaModelSnapshot("glm-4-9b-q4", "glm-4-9b-q4:latest", False),
+        OllamaModelSnapshot("glm-4-9b-q4", "glm-4-9b-q4:latest", True, digest="new"),
+    ]
+    with (
+        patch(
+            "ci2lab.router.imported_models.subprocess.run",
+            side_effect=[
+                CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+                CompletedProcess(args=[], returncode=0, stdout="OK\n", stderr=""),
+            ],
+        ) as run,
+        patch("ci2lab.cli.commands.models.snapshot_ollama_model", side_effect=snapshots),
+    ):
         result = main(
             [
                 "models",
@@ -153,7 +196,7 @@ def test_import_gguf_saves_metadata_after_ollama_create(tmp_path, monkeypatch):
         )
 
     assert result == 0
-    run.assert_called_once()
+    assert run.call_count == 2
     assert run.call_args.kwargs["encoding"] == "utf-8"
     assert run.call_args.kwargs["errors"] == "replace"
     assert run.call_args.kwargs["text"] is True
@@ -163,6 +206,86 @@ def test_import_gguf_saves_metadata_after_ollama_create(tmp_path, monkeypatch):
     assert model["source"]["repo"] == "unsloth/GLM-4-9B-0414-GGUF"
     assert model["context_length"] == 16384
     assert model["tool_mode"] == "fenced"
+    assert model["tool_capabilities"]["native"] == "unknown"
+    assert model["verification"]["verified"] is True
+    assert model["capabilities"]["inference"]["verified"] is True
+    assert model["capabilities"]["tool_calling"]["verified"] is False
+
+
+def test_ollama_latest_name_equivalence_is_conservative():
+    assert ollama_model_names_equivalent("model", "model:latest")
+    assert ollama_model_names_equivalent("model:latest", "model")
+    assert ollama_model_names_equivalent("namespace/model", "namespace/model:latest")
+    assert not ollama_model_names_equivalent("model:q4", "model:q8")
+    assert not ollama_model_names_equivalent("model:q4", "model")
+
+
+def test_imported_profile_without_tag_matches_ollama_latest_in_selection_and_preflight(
+    tmp_path, monkeypatch
+):
+    registry = tmp_path / "imported_models.json"
+    save_imported_model_profile(_glm_profile(), path=registry)
+    monkeypatch.setenv("CI2LAB_IMPORTED_MODELS_PATH", str(registry))
+    selection = build_model_selection("glm-4-9b-q4:latest", profile=_profile())
+    assert selection.model_id == "glm-4-9b-q4"
+    assert selection.context_length == 16384
+    assert selection.temperature == 0.1
+    with patch(
+        "ci2lab.runtime.preflight.fetch_installed_model_names",
+        return_value=({"glm-4-9b-q4:latest"}, None),
+    ):
+        check_model_available(selection)
+
+
+def test_legacy_supports_tools_true_loads_as_unverified(tmp_path):
+    registry = tmp_path / "legacy.json"
+    registry.write_text(
+        json.dumps({"models": [{"id": "legacy", "supports_tools": True}]}),
+        encoding="utf-8",
+    )
+    profile = load_imported_model_registry(registry)[0]
+    assert profile.supports_tools is True
+    assert profile.tool_capabilities == {}
+
+
+def test_import_metadata_not_saved_when_ollama_show_fails(tmp_path, monkeypatch):
+    gguf = tmp_path / "model.gguf"
+    _write_gguf(gguf)
+    registry = tmp_path / "imported_models.json"
+    monkeypatch.setenv("CI2LAB_IMPORTED_MODELS_PATH", str(registry))
+    missing = OllamaModelSnapshot("glm-test", "glm-test:latest", False, error="missing")
+    with (
+        patch(
+            "ci2lab.router.imported_models.subprocess.run",
+            return_value=CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ),
+        patch(
+            "ci2lab.cli.commands.models.snapshot_ollama_model",
+            side_effect=[missing, missing],
+        ),
+    ):
+        result = main(
+            [
+                "models",
+                "import-gguf",
+                "--repo",
+                "r",
+                "--file",
+                "m.gguf",
+                "--path",
+                str(gguf),
+                "--id",
+                "glm-test",
+                "--family",
+                "glm4",
+                "--template",
+                "glm4-chat",
+                "--ctx",
+                "8192",
+            ]
+        )
+    assert result == 1
+    assert not registry.exists()
 
 
 def test_imported_model_resolution_uses_profile_context_and_tool_mode(tmp_path, monkeypatch):
@@ -192,6 +315,7 @@ def test_imported_model_tool_mode_override_still_wins(tmp_path, monkeypatch):
     )
 
     assert selection.tool_mode == "native"
+    assert "not verified" in selection.warnings[0]
 
 
 def test_context_length_priority_cli_env_profile_default(tmp_path, monkeypatch):

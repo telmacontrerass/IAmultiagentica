@@ -30,6 +30,7 @@ _RUN_STATUS_MAP = {
     "stuck": "stuck",
     "interrupted": STATUS_ERROR,
     "llm_error": STATUS_ERROR,
+    "REQUIRED_TOOL_NOT_EXECUTED": STATUS_ERROR,
 }
 
 
@@ -68,6 +69,7 @@ class Ci2labAdapter:
             run_log_enabled=True,
             runs_dir=str(runs_dir),
             write_tools_enabled=write_enabled,
+            require_tool_execution=task.require_tool_execution,
             require_diff_preview=False,
             confirm_callback=lambda _name, _src: True,
             suppress_run_saved_message=True,

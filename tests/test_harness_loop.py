@@ -314,6 +314,88 @@ def test_run_agent_single_turn_no_tools():
     assert "summary" in result.lower()
 
 
+def test_require_tool_execution_rejects_text_only_answer():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        max_rounds=2,
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        require_tool_execution=True,
+        verify_final_answer=False,
+    )
+    response = LLMResponse(content="42", tool_calls=[])
+    with patch("ci2lab.harness.query.loop.call_llm", return_value=response):
+        result = run_agent("calculate", selection, config=config)
+    assert result.startswith("REQUIRED_TOOL_NOT_EXECUTED")
+
+
+def test_rejected_tool_call_does_not_satisfy_requirement():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        max_rounds=2,
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        require_tool_execution=True,
+        verify_final_answer=False,
+    )
+    response = LLMResponse(
+        content="",
+        tool_calls=[
+            {"id": "c1", "function": {"name": "read_file", "arguments": '{"path":"missing"}'}}
+        ],
+    )
+    with (
+        patch("ci2lab.harness.query.loop.call_llm", return_value=response),
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="read_file",
+                content="rejected",
+                is_error=True,
+                outcome="blocked_by_policy",
+            ),
+        ),
+    ):
+        result = run_agent("inspect", selection, config=config)
+    assert result.startswith("REQUIRED_TOOL_NOT_EXECUTED")
+
+
+def test_successful_tool_execution_satisfies_requirement_after_retry():
+    selection = default_selection("test:1b")
+    config = AgentConfig(
+        cwd=".",
+        max_rounds=4,
+        stream=False,
+        auto_confirm=True,
+        run_log_enabled=False,
+        require_tool_execution=True,
+        verify_final_answer=False,
+    )
+    text = LLMResponse(content="I can answer directly", tool_calls=[])
+    call = LLMResponse(
+        content="",
+        tool_calls=[
+            {"id": "c1", "function": {"name": "read_file", "arguments": '{"path":"README.md"}'}}
+        ],
+    )
+    final = LLMResponse(content="verified", tool_calls=[])
+    with (
+        patch("ci2lab.harness.query.loop.call_llm", side_effect=[text, call, final]),
+        patch(
+            "ci2lab.harness.query.loop.execute_tool",
+            return_value=ToolResult(
+                tool_name="read_file", content="ok", is_error=False, outcome="approved"
+            ),
+        ),
+    ):
+        result = run_agent("inspect", selection, config=config)
+    assert result == "verified"
+
+
 def test_run_agent_replaces_generic_thinking_with_task_progress():
     selection = default_selection("test:1b")
     config = AgentConfig(cwd=".", stream=False, auto_confirm=True, run_log_enabled=False)

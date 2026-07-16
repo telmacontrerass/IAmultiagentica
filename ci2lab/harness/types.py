@@ -21,6 +21,8 @@ class ToolCall:
     name: str
     arguments: dict[str, Any]
     call_id: str | None = None
+    source_protocol: str = "unknown"
+    parser_id: str = "unknown"
 
     repaired: bool = False
     """True when the harness had to fix what the model emitted to make this call.
@@ -83,6 +85,9 @@ class AgentConfig:
 
     run_log_enabled: bool = True
     """Persist run artifacts in runs/."""
+
+    require_tool_execution: bool = False
+    """Require at least one valid tool call to execute successfully."""
 
     suppress_run_saved_message: bool = False
     """If True, persist run artifacts without printing the final run path."""

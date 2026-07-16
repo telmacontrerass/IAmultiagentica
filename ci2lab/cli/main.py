@@ -10,10 +10,17 @@ from ci2lab.cli.commands.doctor import _cmd_doctor
 from ci2lab.cli.commands.evals import _cmd_evals
 from ci2lab.cli.commands.hardware import _cmd_hardware
 from ci2lab.cli.commands.models import (
+    _cmd_models_adapters,
+    _cmd_models_benchmark_gguf_adapter,
+    _cmd_models_gguf_import_smoke,
     _cmd_models_import_gguf,
+    _cmd_models_inspect_gguf,
     _cmd_models_install,
+    _cmd_models_list,
     _cmd_models_recommend,
     _cmd_models_run,
+    _cmd_models_validate_gguf,
+    _cmd_models_validate_gguf_adapted,
 )
 from ci2lab.cli.commands.sessions import _cmd_sessions
 from ci2lab.cli.commands.skills import _cmd_skills
@@ -106,12 +113,26 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_hardware(args)
     if args.command == "models" and args.models_command == "recommend":
         return _cmd_models_recommend(args)
+    if args.command == "models" and args.models_command == "list":
+        return _cmd_models_list(args)
     if args.command == "models" and args.models_command == "install":
         return _cmd_models_install(args)
     if args.command == "models" and args.models_command == "run":
         return _cmd_models_run(args)
     if args.command == "models" and args.models_command == "import-gguf":
         return _cmd_models_import_gguf(args)
+    if args.command == "models" and args.models_command == "gguf-import-smoke":
+        return _cmd_models_gguf_import_smoke(args)
+    if args.command == "models" and args.models_command == "inspect-gguf":
+        return _cmd_models_inspect_gguf(args)
+    if args.command == "models" and args.models_command == "validate-gguf":
+        return _cmd_models_validate_gguf(args)
+    if args.command == "models" and args.models_command == "validate-gguf-adapted":
+        return _cmd_models_validate_gguf_adapted(args)
+    if args.command == "models" and args.models_command == "adapters":
+        return _cmd_models_adapters(args)
+    if args.command == "models" and args.models_command == "benchmark-gguf-adapter":
+        return _cmd_models_benchmark_gguf_adapter(args)
     if args.command == "evals":
         return _cmd_evals(args)
     if args.command == "bench":

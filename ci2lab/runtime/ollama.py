@@ -103,6 +103,22 @@ def fetch_installed_model_names(
     return {item["name"] for item in installed if item.get("name")}, error
 
 
+def normalize_ollama_model_name(name: str) -> str:
+    """Canonicalize Ollama names, treating an omitted tag as ``latest``."""
+    normalized = name.strip().lower()
+    if not normalized:
+        return ""
+    leaf = normalized.rsplit("/", 1)[-1]
+    return normalized if ":" in leaf else f"{normalized}:latest"
+
+
+def ollama_model_names_equivalent(left: str, right: str) -> bool:
+    """Return whether two names differ only by an omitted ``:latest`` tag."""
+    return bool(left.strip() and right.strip()) and (
+        normalize_ollama_model_name(left) == normalize_ollama_model_name(right)
+    )
+
+
 def pick_installed_model(installed_names: set[str]) -> str | None:
     """Pick a sensible default from the locally installed Ollama models.
 
@@ -133,7 +149,7 @@ def _installed_match(requested: str, installed_names: set[str]) -> str | None:
     tag = requested.strip().lower()
     if not tag:
         return None
-    exact = [n for n in installed_names if n.strip().lower() == tag]
+    exact = [n for n in installed_names if ollama_model_names_equivalent(n, tag)]
     if exact:
         return exact[0]
     variants = sorted(
@@ -160,7 +176,7 @@ def resolve_ollama_model(
        the request targets a model that is really present.
     2. Otherwise, when ``allow_fallback`` is set (used only when no model was
        explicitly chosen), an installed model is auto-selected.
-    3. Failing both — or when the server is unreachable — ``requested`` is
+    3. Failing both - or when the server is unreachable - ``requested`` is
        returned unchanged.
 
     Args:
@@ -202,7 +218,7 @@ def is_catalog_model_installed(ollama_tag: str, installed_names: set[str]) -> bo
         return False
     for name in installed_names:
         normalized = name.strip().lower()
-        if normalized == tag:
+        if ollama_model_names_equivalent(normalized, tag):
             return True
         if normalized.startswith(f"{tag}-") or normalized.startswith(f"{tag}@"):
             return True

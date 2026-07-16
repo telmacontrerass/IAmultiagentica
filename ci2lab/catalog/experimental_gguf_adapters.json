@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "adapters": [
+    {
+      "id": "experimental_glm_global_tools_v1",
+      "version": 1,
+      "status": "experimental",
+      "enabled": true,
+      "origin": "ci2lab_experiment",
+      "match": {
+        "architecture": "chatglm",
+        "original_template_sha256": "27288f957f8364c990a2ce13bf5f8bf86921c4bce467ce698c76dcc69466d821",
+        "runtime": "llama.cpp"
+      },
+      "template": {
+        "origin": "gguf",
+        "transform": {
+          "type": "inject_global_tools_as_message",
+          "anchor": "[gMASK]<sop>",
+          "expected_adapted_template_sha256": "19a8b9611fdba51d8daae44c360066eb993c6d7f0f8517f8ebe585b8e4e69192",
+          "message": {
+            "role": "system",
+            "metadata": "",
+            "content": "",
+            "tools_from": "global.tools"
+          },
+          "position": "prepend"
+        }
+      },
+      "tool_call": {
+        "encoding": "name_json_then_text",
+        "name_source": "first_nonempty_line",
+        "arguments_source": "first_json_object_after_name",
+        "leading_text_policy": "reject",
+        "trailing_text_policy": "diagnostic_only",
+        "multiple_json_policy": "reject"
+      },
+      "reinjection": {
+        "call_message": {
+          "role": "assistant",
+          "name_field": "metadata",
+          "arguments_field": "content",
+          "arguments_encoding": "compact_json"
+        },
+        "result_message": {
+          "role": "observation",
+          "metadata": "",
+          "content_from": "tool_result"
+        }
+      },
+      "validation": {
+        "tested_runtime": "b9994",
+        "minimum_runtime": "b9994",
+        "validated_at": "2026-07-14",
+        "scenarios_passed": [
+          "schema_rendering",
+          "add_call",
+          "real_execution",
+          "observation_reinjection",
+          "final_response",
+          "no_repetition"
+        ]
+      },
+      "adapted_tool_mode": "adapted_native",
+      "limitations": [
+        "Experimental and not selectable by stable profiles",
+        "Validated live only with llama.cpp b9994 and the exact template hash",
+        "Trailing text in a call response is diagnostic and never user-visible"
+      ]
+    }
+  ]
+}

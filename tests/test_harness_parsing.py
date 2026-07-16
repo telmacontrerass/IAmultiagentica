@@ -12,6 +12,27 @@ from ci2lab.harness.parsing import (
 from ci2lab.harness.parsing_parts.common import map_name
 
 
+def test_resolver_records_actual_protocol_and_parser():
+    native = [{"id": "n1", "function": {"name": "read_file", "arguments": '{"path":"a"}'}}]
+    cases = [
+        ("", native, "native", "native"),
+        (
+            '<invoke name="read_file"><parameter name="path">a</parameter></invoke>',
+            [],
+            "xml",
+            "xml_blocks",
+        ),
+        ("```read_file\na\n```", [], "fenced", "fenced_blocks"),
+        ('{"name":"read_file","arguments":{"path":"a"}}', [], "json", "json_objects"),
+        ('bash\n{"cwd":"."}', [], "name_plus_json", "text_name_plus_json"),
+        ("```sh\necho hi\n```", [], "generic_block", "generic_fenced_blocks"),
+    ]
+    for text, native_calls, protocol, parser_id in cases:
+        call = resolve_tool_calls(text, native_calls, tool_mode="native")[0]
+        assert call.source_protocol == protocol
+        assert call.parser_id == parser_id
+
+
 def test_parse_fenced_bash():
     text = "I am going to list.\n```bash\nls -la\n```"
     calls = parse_fenced_blocks(text)
