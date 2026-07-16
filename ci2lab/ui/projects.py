@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import re
 import shutil
 import sqlite3
@@ -20,6 +18,7 @@ from ci2lab.ui.server_parts.serializers import format_upload_size
 from ci2lab.ui.server_parts.uploads import (
     MAX_UPLOAD_BYTES,
     SUPPORTED_UPLOAD_SUFFIXES,
+    decode_upload_content,
     safe_upload_name,
     unique_upload_path,
 )
@@ -511,11 +510,8 @@ def add_project_source(project_id: str, payload: dict[str, Any]) -> dict[str, An
     safe_name = safe_upload_name(name)
     if Path(safe_name).suffix.lower() not in SUPPORTED_UPLOAD_SUFFIXES:
         return {"ok": False, "error": "Unsupported source format."}
-    if "," in encoded and encoded.lower().startswith("data:"):
-        encoded = encoded.split(",", 1)[1]
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError):
+    raw = decode_upload_content(encoded)
+    if raw is None:
         return {"ok": False, "error": "The file did not arrive with valid content."}
     if len(raw) > MAX_UPLOAD_BYTES:
         return {

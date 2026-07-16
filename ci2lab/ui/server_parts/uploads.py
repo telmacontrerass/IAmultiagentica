@@ -45,6 +45,16 @@ DOCUMENT_UPLOAD_SUFFIXES = SUPPORTED_DOCUMENT_SUFFIXES | {".rtf"}
 MAX_EXTRACTED_RUBRIC_CHARS = 50_000
 
 
+def decode_upload_content(encoded: str) -> bytes | None:
+    """Decode plain or data-URL base64 upload content, returning ``None`` if invalid."""
+    if "," in encoded and encoded.lower().startswith("data:"):
+        encoded = encoded.split(",", 1)[1]
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
 def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
     """Validate and store a base64-encoded attachment in the workspace upload dir.
 
@@ -77,11 +87,8 @@ def upload_file(state: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "error": f"Unsupported format. Use one of these: {allowed}",
         }
 
-    if "," in encoded and encoded.lower().startswith("data:"):
-        encoded = encoded.split(",", 1)[1]
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError):
+    raw = decode_upload_content(encoded)
+    if raw is None:
         return {"ok": False, "error": "The file did not arrive with valid content."}
 
     if len(raw) > MAX_UPLOAD_BYTES:

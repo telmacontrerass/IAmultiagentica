@@ -24,7 +24,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from ci2lab.bench.metrics import compute_cost_usd, load_prices, mean, median, pass_at_k
+from ci2lab.bench.metrics import (
+    compute_cost_usd,
+    is_number,
+    load_prices,
+    mean,
+    median,
+    optional_round,
+    pass_at_k,
+)
 
 __all__ = ["write_report"]
 
@@ -116,9 +124,9 @@ def _aggregate_by_task_agent_model(rows: list[dict[str, Any]]) -> list[dict[str,
     for (agent, model, task), group in sorted(groups.items()):
         n = len(group)
         solved = sum(1 for r in group if r.get("solved") is True)
-        tokens = [float(r["total_tokens"]) for r in group if _is_num(r.get("total_tokens"))]
-        latencies = [float(r["wall_clock_s"]) for r in group if _is_num(r.get("wall_clock_s"))]
-        costs = [float(r["cost_usd"]) for r in group if _is_num(r.get("cost_usd"))]
+        tokens = [float(r["total_tokens"]) for r in group if is_number(r.get("total_tokens"))]
+        latencies = [float(r["wall_clock_s"]) for r in group if is_number(r.get("wall_clock_s"))]
+        costs = [float(r["cost_usd"]) for r in group if is_number(r.get("cost_usd"))]
         out.append(
             {
                 "agent": agent,
@@ -128,10 +136,10 @@ def _aggregate_by_task_agent_model(rows: list[dict[str, Any]]) -> list[dict[str,
                 "solved": solved,
                 "pass_at_1": round(solved / n, 4) if n else 0.0,
                 "pass_at_k": round(pass_at_k(n, solved, min(_K_REPORT, n)), 4),
-                "mean_total_tokens": _opt_round(mean(tokens), 0),
-                "median_latency_s": _opt_round(median(latencies), 1),
-                "mean_cost_usd": _opt_round(mean(costs), 6),
-                "total_cost_usd": _opt_round(sum(costs), 6) if costs else None,
+                "mean_total_tokens": optional_round(mean(tokens), 0),
+                "median_latency_s": optional_round(median(latencies), 1),
+                "mean_cost_usd": optional_round(mean(costs), 6),
+                "total_cost_usd": optional_round(sum(costs), 6) if costs else None,
                 "false_positives": sum(1 for r in group if r.get("false_positive") is True),
                 "tool_violations": sum(int(r.get("tool_violation_count", 0) or 0) for r in group),
             }
@@ -148,12 +156,14 @@ def _aggregate_by_agent_model(per_group: list[dict[str, Any]]) -> list[dict[str,
     out: list[dict[str, Any]] = []
     for (agent, model), task_rows in sorted(by_key.items()):
         tokens = [
-            float(r["mean_total_tokens"]) for r in task_rows if _is_num(r["mean_total_tokens"])
+            float(r["mean_total_tokens"]) for r in task_rows if is_number(r["mean_total_tokens"])
         ]
         latencies = [
-            float(r["median_latency_s"]) for r in task_rows if _is_num(r["median_latency_s"])
+            float(r["median_latency_s"]) for r in task_rows if is_number(r["median_latency_s"])
         ]
-        totals = [float(r["total_cost_usd"]) for r in task_rows if _is_num(r.get("total_cost_usd"))]
+        totals = [
+            float(r["total_cost_usd"]) for r in task_rows if is_number(r.get("total_cost_usd"))
+        ]
         runs = sum(int(r["n"]) for r in task_rows)
         total_cost = sum(totals) if totals else None
         out.append(
@@ -169,12 +179,12 @@ def _aggregate_by_agent_model(per_group: list[dict[str, Any]]) -> list[dict[str,
                     mean([float(r["pass_at_k"]) for r in task_rows]) or 0.0, 2
                 ),
                 "false_positives": sum(int(r["false_positives"]) for r in task_rows),
-                "mean_total_tokens": _opt_round(mean(tokens), 0),
-                "median_latency_s": _opt_round(mean(latencies), 1),
-                "mean_cost_usd": _opt_round(total_cost / runs, 6)
+                "mean_total_tokens": optional_round(mean(tokens), 0),
+                "median_latency_s": optional_round(mean(latencies), 1),
+                "mean_cost_usd": optional_round(total_cost / runs, 6)
                 if total_cost is not None and runs
                 else None,
-                "total_cost_usd": _opt_round(total_cost, 4) if total_cost is not None else None,
+                "total_cost_usd": optional_round(total_cost, 4) if total_cost is not None else None,
             }
         )
     return out
@@ -373,8 +383,8 @@ def _build_all_runs(workbook: Workbook, valid: list[dict[str, Any]]) -> None:
             r.get("prompt_tokens"),
             r.get("completion_tokens"),
             r.get("total_tokens"),
-            _opt_round(r.get("cost_usd"), 6),
-            _opt_round(r.get("wall_clock_s"), 1),
+            optional_round(r.get("cost_usd"), 6),
+            optional_round(r.get("wall_clock_s"), 1),
             r.get("rounds"),
             r.get("tool_calls"),
         ]
@@ -456,15 +466,3 @@ def _autosize(ws: Any, widths: dict[int, int]) -> None:
     """Set fixed column widths by column index."""
     for col, width in widths.items():
         ws.column_dimensions[get_column_letter(col)].width = width
-
-
-def _is_num(value: Any) -> bool:
-    """Whether ``value`` is a real number (not a bool)."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _opt_round(value: Any, digits: int) -> float | None:
-    """Round a numeric value to ``digits`` places, passing non-numbers through as ``None``."""
-    if not _is_num(value):
-        return None
-    return round(float(value), digits)

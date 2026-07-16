@@ -10,7 +10,7 @@ user-issued slash commands (which does not).
 
 from __future__ import annotations
 
-from ci2lab.harness.skills.loader import Skill, get_skill, load_skills
+from ci2lab.harness.skills.loader import get_skill, load_skills, render_skill
 from ci2lab.harness.types import AgentConfig
 
 
@@ -43,16 +43,7 @@ def invoke_skill(config: AgentConfig, skill_name: str, args: str | None = None) 
     if skill.allowed_tools:
         config.skill_allowed_tools = frozenset(skill.allowed_tools)
 
-    header = f"# Skill: {skill.name}\n\n{skill.description}\n"
-    if args and str(args).strip():
-        header += f"\n**User arguments:** {args.strip()}\n"
-    if skill.allowed_tools:
-        header += (
-            "\n**Allowed tools for this skill:** "
-            + ", ".join(f"`{t}`" for t in skill.allowed_tools)
-            + "\n"
-        )
-    return f"{header}\n{skill.body}"
+    return render_skill(skill, args or "")
 
 
 def invoke_skill_for_repl(config: AgentConfig, skill_name: str, args: str = "") -> str:

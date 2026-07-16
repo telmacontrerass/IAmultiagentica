@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ci2lab.harness.tools.paths import PathViolationError, resolve_path
+from ci2lab.harness.tools.paths import PathViolationError, display_path, resolve_path
 from ci2lab.harness.tools.write_preview import WritePreview
 
 MAX_SLIDES = 40
@@ -169,7 +169,7 @@ def validate_pptx_request(
     expected_titles = [
         str(slide["title"]) for slide in clean_slides if isinstance(slide.get("title"), str)
     ]
-    rel = _display_path(resolved, cwd)
+    rel = display_path(resolved, cwd)
     return (
         PresentationPlan(
             output_path=resolved,
@@ -1753,10 +1753,3 @@ def _shape_text(shape: Any) -> str:
                 values.append(str(cell.text))
         return "\n".join(values)
     return ""
-
-
-def _display_path(resolved: Path, cwd: str) -> str:
-    try:
-        return str(resolved.relative_to(Path(cwd).resolve()))
-    except ValueError:
-        return str(resolved)

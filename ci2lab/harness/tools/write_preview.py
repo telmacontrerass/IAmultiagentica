@@ -6,7 +6,7 @@ import difflib
 from dataclasses import dataclass
 from pathlib import Path
 
-from ci2lab.harness.tools.paths import resolve_path
+from ci2lab.harness.tools.paths import display_path, resolve_path
 from ci2lab.harness.tools.secret_files import is_sensitive_path, secret_file_block_message
 
 #: Maximum number of unified-diff lines to show before truncating the preview.
@@ -78,7 +78,7 @@ def _truncate_diff_lines(diff: str) -> list[str]:
     return head
 
 
-def _unified_diff(old: str, new: str, path: str) -> str:
+def unified_diff(old: str, new: str, path: str) -> str:
     """Build a unified diff string between ``old`` and ``new`` for ``path``."""
     old_lines = old.splitlines(keepends=True)
     new_lines = new.splitlines(keepends=True)
@@ -140,7 +140,7 @@ def compute_edit_result(
 def preview_write_docx(cwd: str, path: str, content: str) -> WritePreview:
     """Preview creating or replacing a DOCX from markdown source."""
     resolved = resolve_path(path, cwd)
-    rel = _display_path(resolved, cwd)
+    rel = display_path(resolved, cwd)
     if resolved.suffix.lower() != ".docx":
         return WritePreview(
             path=rel,
@@ -164,7 +164,7 @@ def preview_write_docx(cwd: str, path: str, content: str) -> WritePreview:
         return WritePreview(
             path=rel,
             is_new_file=False,
-            diff=_unified_diff(current, content, rel),
+            diff=unified_diff(current, content, rel),
             new_content="[Will convert markdown -> .docx with pandoc]\n" + content,
         )
     return WritePreview(
@@ -202,7 +202,7 @@ def preview_write_file(
         if not candidate.is_absolute():
             candidate = Path(cwd) / candidate
         resolved = candidate.resolve()
-    rel = _display_path(resolved, cwd)
+    rel = display_path(resolved, cwd)
     if enforce_hard_policy and is_sensitive_path(resolved, workspace=cwd):
         return WritePreview(
             path=rel,
@@ -215,7 +215,7 @@ def preview_write_file(
         return WritePreview(
             path=rel,
             is_new_file=False,
-            diff=_unified_diff(current, content, rel),
+            diff=unified_diff(current, content, rel),
             new_content=content,
         )
     return WritePreview(
@@ -257,7 +257,7 @@ def preview_edit_file(
         if not candidate.is_absolute():
             candidate = Path(cwd) / candidate
         resolved = candidate.resolve()
-    rel = _display_path(resolved, cwd)
+    rel = display_path(resolved, cwd)
     if enforce_hard_policy and is_sensitive_path(resolved, workspace=cwd):
         return WritePreview(
             path=rel,
@@ -277,7 +277,7 @@ def preview_edit_file(
     return WritePreview(
         path=rel,
         is_new_file=False,
-        diff=_unified_diff(current, new_text or "", rel),
+        diff=unified_diff(current, new_text or "", rel),
         new_content=new_text,
     )
 
@@ -384,7 +384,7 @@ def _conversion_preview(
             validation_error=f"Error: source file not found: {source}",
         )
 
-    rel_out = _display_path(output_path, cwd)
+    rel_out = display_path(output_path, cwd)
     overwrite_note = "existing — will be overwritten" if output_path.is_file() else "new file"
     summary = (
         f"Source : {source}\n"
@@ -407,11 +407,3 @@ def preview_docx_to_pdf(cwd: str, source: str, output: str) -> WritePreview:
 def preview_pdf_to_docx(cwd: str, source: str, output: str) -> WritePreview:
     """Preview for pdf_to_docx conversion."""
     return _conversion_preview(cwd, source, output, ".pdf", ".docx", "pdf_to_docx")
-
-
-def _display_path(resolved: Path, cwd: str) -> str:
-    """Return ``resolved`` relative to ``cwd`` when possible, else its absolute form."""
-    try:
-        return str(resolved.relative_to(Path(cwd).resolve()))
-    except ValueError:
-        return str(resolved)

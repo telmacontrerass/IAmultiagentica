@@ -8,9 +8,12 @@ from ci2lab.bench.metrics import (
     RunResult,
     bootstrap_ci,
     compute_cost_usd,
+    format_optional_number,
+    is_number,
     load_prices,
     mean,
     median,
+    optional_round,
     pass_at_k,
 )
 from ci2lab.bench.runner import _aggregate, _evidence_metrics
@@ -64,6 +67,15 @@ def test_mean_and_median() -> None:
     assert mean([1.0, 2.0, 3.0]) == 2.0
     assert median([1.0, 2.0, 3.0]) == 2.0
     assert median([1.0, 2.0, 3.0, 4.0]) == 2.5
+
+
+def test_shared_numeric_formatters() -> None:
+    assert is_number(1.5)
+    assert not is_number(True)
+    assert optional_round(1.234, 2) == 1.23
+    assert optional_round(None, 2) is None
+    assert format_optional_number(None) == "-"
+    assert format_optional_number(1.25) == "1.25"
 
 
 def test_bootstrap_ci_empty_is_none() -> None:

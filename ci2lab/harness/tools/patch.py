@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import difflib
 import re
 from dataclasses import dataclass, field
 
 from ci2lab.harness.tools.paths import PathViolationError, resolve_path
 from ci2lab.harness.tools.secret_files import is_sensitive_path, secret_file_block_message
+from ci2lab.harness.tools.write_preview import unified_diff
 
 _HUNK_HEADER: re.Pattern[str] = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _NO_NL: str = "\\ No newline at end of file"
@@ -64,23 +64,6 @@ class PatchPlan:
     deletes: set[str]
     combined_diff: str
     touched_paths: list[str]
-
-
-def _unified_diff(old: str, new: str, path: str) -> str:
-    """Render a unified diff between ``old`` and ``new`` text for ``path``."""
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-    if not old_lines and not new_lines:
-        old_lines, new_lines = [""], [""]
-    chunks = difflib.unified_diff(
-        old_lines,
-        new_lines,
-        fromfile=f"a/{path}",
-        tofile=f"b/{path}",
-        lineterm="",
-    )
-    text = "\n".join(chunks)
-    return text if text else "(no changes detected)"
 
 
 def _normalize_patch_text(patch_text: str) -> str:
@@ -407,7 +390,7 @@ def plan_patch(cwd: str, patch_text: str) -> tuple[PatchPlan | None, str | None]
 
         pending[path] = new_text
         touched.append(path)
-        diff_chunks.append(_unified_diff(old_text, new_text, path))
+        diff_chunks.append(unified_diff(old_text, new_text, path))
 
     combined = "\n".join(chunk for chunk in diff_chunks if chunk)
     return (

@@ -20,6 +20,7 @@ from ci2lab.bench.metrics import (
 )
 from ci2lab.bench.task import BenchTask
 from ci2lab.evals.task import load_tool_calls_jsonl
+from ci2lab.harness.run_logger import find_latest_run_dir
 
 __all__ = ["Ci2labAdapter"]
 
@@ -105,7 +106,7 @@ class Ci2labAdapter:
         completion_tokens = usage.completion_tokens if usage.available else None
         total_tokens = usage.total_tokens if usage.available else None
 
-        run_dir = _find_latest_run_dir(runs_dir)
+        run_dir = find_latest_run_dir(runs_dir)
         tool_calls: int | None = None
         rounds: int | None = None
         if run_dir is not None:
@@ -127,16 +128,6 @@ class Ci2labAdapter:
             transcript_path=str(run_dir) if run_dir is not None else None,
             raw={"model": usage.model or model},
         )
-
-
-def _find_latest_run_dir(runs_parent: Path) -> Path | None:
-    """Return the most recently modified subdirectory of ``runs_parent``."""
-    if not runs_parent.is_dir():
-        return None
-    dirs = [p for p in runs_parent.iterdir() if p.is_dir()]
-    if not dirs:
-        return None
-    return max(dirs, key=lambda p: p.stat().st_mtime)
 
 
 def _read_run_json(run_dir: Path) -> tuple[int | None, str | None]:

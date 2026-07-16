@@ -11,6 +11,7 @@ from typing import Any
 
 from ci2lab.harness.types import AgentConfig
 from ci2lab.security.engine import evaluate_tool_gate
+from ci2lab.security.gate_check import target_label
 from ci2lab.security.opencode_permissions import (
     OpenCodePermissionConfig,
     evaluate_opencode_tool,
@@ -159,15 +160,6 @@ def _opencode_decision(
     if action == "confirm":
         return "ask", decision.matched_rule, decision.external_directory
     return action, decision.matched_rule, decision.external_directory
-
-
-def _target_label(args: dict[str, Any]) -> str:
-    """Return a short label for a tool call's command or path target."""
-    if "command" in args:
-        return str(args["command"])
-    if "path" in args:
-        return str(args["path"])
-    return str(args)[:120]
 
 
 def _risk_note_for_row(
@@ -430,7 +422,7 @@ def run_comparison(
                 engine="ci2lab",
                 permission_config="hard_policy",
                 tool=case.tool,
-                target_or_command=_target_label(case.args),
+                target_or_command=target_label(case.args),
                 expected_decision=case.expected_ci2lab,
                 actual_decision=actual_ci2lab,
                 matched_rule=matched_ci2lab,
@@ -468,7 +460,7 @@ def run_comparison(
                     engine="opencode_experimental",
                     permission_config=preset_key,
                     tool=case.tool,
-                    target_or_command=_target_label(case.args),
+                    target_or_command=target_label(case.args),
                     expected_decision=expected,
                     actual_decision=actual,
                     matched_rule=matched,
@@ -521,7 +513,7 @@ def run_comparison(
                     engine="ci2lab_guard",
                     permission_config=preset_key,
                     tool=case.tool,
-                    target_or_command=_target_label(case.args),
+                    target_or_command=target_label(case.args),
                     expected_decision=expected,
                     actual_decision=actual,
                     matched_rule=matched,

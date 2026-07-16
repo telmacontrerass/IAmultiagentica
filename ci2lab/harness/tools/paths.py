@@ -15,6 +15,7 @@ from ci2lab.security.paths import (
 __all__ = [
     "PathViolationError",
     "assert_within_workspace",
+    "display_path",
     "format_size",
     "is_within_workspace",
     "resolve_path",
@@ -42,6 +43,14 @@ def resolve_path(raw: str, cwd: str) -> Path:
         PathViolationError: If the resolved path escapes the workspace root.
     """
     return resolve_workspace_path(cwd, raw)
+
+
+def display_path(resolved: Path, cwd: str) -> str:
+    """Return a path relative to ``cwd`` when possible, otherwise as absolute."""
+    try:
+        return str(resolved.relative_to(Path(cwd).resolve()))
+    except ValueError:
+        return str(resolved)
 
 
 def format_size(num_bytes: int) -> str:

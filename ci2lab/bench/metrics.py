@@ -19,9 +19,12 @@ __all__ = [
     "RunResult",
     "bootstrap_ci",
     "compute_cost_usd",
+    "format_optional_number",
+    "is_number",
     "load_prices",
     "mean",
     "median",
+    "optional_round",
     "pass_at_k",
 ]
 
@@ -160,6 +163,21 @@ def median(values: list[float]) -> float | None:
     if len(ordered) % 2 == 1:
         return ordered[mid]
     return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def is_number(value: Any) -> bool:
+    """Return whether ``value`` is a real number but not a boolean."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def optional_round(value: Any, digits: int) -> float | None:
+    """Round a numeric value, returning ``None`` for missing or non-numeric input."""
+    return round(float(value), digits) if is_number(value) else None
+
+
+def format_optional_number(value: float | None) -> str:
+    """Format an optional aggregate for a compact table cell."""
+    return "-" if value is None else f"{value:g}"
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:

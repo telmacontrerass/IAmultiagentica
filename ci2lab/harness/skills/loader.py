@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ci2lab.harness.frontmatter import parse_frontmatter
+
 MAX_SKILL_BODY_CHARS = 16_000
 MAX_CATALOG_CHARS = 8_000
 SKILL_FILENAME = "SKILL.md"
@@ -55,36 +57,6 @@ def _builtin_skills_root() -> Path:
     return Path(__file__).resolve().parent / "builtin"
 
 
-def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Parse YAML-like frontmatter between --- markers.
-
-    Args:
-        text: The raw file contents, optionally beginning with a ``---``
-            delimited frontmatter block.
-
-    Returns:
-        A tuple of the parsed key/value metadata mapping and the remaining body
-        text. The mapping is empty when no frontmatter is present.
-    """
-    if not text.startswith("---"):
-        return {}, text.strip()
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, re.DOTALL)
-    if not match:
-        return {}, text.strip()
-    raw_fm = match.group(1)
-    body = text[match.end() :].strip()
-    meta: dict[str, str] = {}
-    for line in raw_fm.splitlines():
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip().lower().replace("-", "_")
-        value = value.strip().strip("'\"")
-        if value:
-            meta[key] = value
-    return meta, body
-
-
 def _parse_allowed_tools(raw: str | None) -> list[str]:
     """Split a whitespace/comma-separated tool list into individual names."""
     if not raw:
@@ -97,6 +69,17 @@ def _parse_bool(value: str | None) -> bool:
     if not value:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def render_skill(skill: Skill, args: str = "") -> str:
+    """Render a skill's standard header, optional arguments and instruction body."""
+    header = f"# Skill: {skill.name}\n\n{skill.description}\n"
+    if args.strip():
+        header += f"\n**User arguments:** {args.strip()}\n"
+    if skill.allowed_tools:
+        tools = ", ".join(f"`{tool}`" for tool in skill.allowed_tools)
+        header += f"\n**Allowed tools for this skill:** {tools}\n"
+    return f"{header}\n{skill.body}"
 
 
 def _load_skill_file(path: Path, source: str) -> Skill | None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ci2lab.harness.types import AgentConfig
 from ci2lab.security.engine import evaluate_tool_gate, normalize_security_engine
@@ -39,13 +39,22 @@ def build_tool_args(tool: str, target: str) -> dict[str, Any]:
     return {"path": target}
 
 
-def _gate_to_decision(gate: Any) -> str:
+def gate_decision(gate: Any) -> Literal["allow", "ask", "deny"]:
     """Collapse a gate result into a single ``allow``/``ask``/``deny`` label."""
     if gate.blocked:
         return "deny"
     if gate.needs_confirm:
         return "ask"
     return "allow"
+
+
+def target_label(args: Mapping[str, Any]) -> str:
+    """Return a short command or path label for a tool call."""
+    if "command" in args:
+        return str(args["command"])
+    if "path" in args:
+        return str(args["path"])
+    return str(args)[:120]
 
 
 def load_permission_config(path: str | Path) -> OpenCodePermissionConfig:
@@ -121,7 +130,7 @@ def evaluate_security_gate(
         "engine": normalized_engine,
         "tool": tool_name,
         "target": target,
-        "decision": _gate_to_decision(gate),
+        "decision": gate_decision(gate),
         "reason": gate.reason,
         "matched_rule": gate.matched_rule,
         "external_directory": gate.external_directory,

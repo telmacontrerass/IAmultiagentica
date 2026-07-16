@@ -23,9 +23,11 @@ from ci2lab.bench.gitutil import changed_paths, init_baseline
 from ci2lab.bench.metrics import (
     bootstrap_ci,
     compute_cost_usd,
+    format_optional_number,
     load_prices,
     mean,
     median,
+    optional_round,
     pass_at_k,
 )
 from ci2lab.bench.task import (
@@ -390,17 +392,12 @@ def _aggregate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 ),
                 "false_positive_count": false_positives,
                 "tool_violation_count": tool_violations,
-                "mean_total_tokens": _opt_round(mean(tokens), 1),
-                "mean_cost_usd": _opt_round(mean(costs), 6),
-                "median_latency_s": _opt_round(median(latencies), 2),
+                "mean_total_tokens": optional_round(mean(tokens), 1),
+                "mean_cost_usd": optional_round(mean(costs), 6),
+                "median_latency_s": optional_round(median(latencies), 2),
             }
         )
     return rows
-
-
-def _opt_round(value: float | None, digits: int) -> float | None:
-    """Round ``value`` to ``digits`` places, passing ``None`` through."""
-    return None if value is None else round(value, digits)
 
 
 def _round_ci(ci: tuple[float, float] | None, digits: int = 4) -> list[float] | None:
@@ -444,14 +441,9 @@ def print_summary_table(summary: BenchRunSummary) -> None:
             row["agent"],
             f"{row['pass_at_1']:.2f}",
             f"{row['pass_at_k']:.2f}",
-            _fmt(row["mean_total_tokens"]),
-            _fmt(row["mean_cost_usd"]),
-            _fmt(row["median_latency_s"]),
+            format_optional_number(row["mean_total_tokens"]),
+            format_optional_number(row["mean_cost_usd"]),
+            format_optional_number(row["median_latency_s"]),
             str(row.get("tool_violation_count", 0)),
         )
     console.print(table)
-
-
-def _fmt(value: float | None) -> str:
-    """Format an optional numeric aggregate for the summary table."""
-    return "-" if value is None else f"{value:g}"

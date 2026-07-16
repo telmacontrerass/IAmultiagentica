@@ -29,6 +29,14 @@ LOG_OUTPUT_MAX_CHARS = 2000
 RunStatus = str  # success | llm_error | max_rounds | interrupted
 
 
+def find_latest_run_dir(runs_parent: Path) -> Path | None:
+    """Return the most recently modified run directory, if one exists."""
+    if not runs_parent.is_dir():
+        return None
+    directories = [path for path in runs_parent.iterdir() if path.is_dir()]
+    return max(directories, key=lambda path: path.stat().st_mtime) if directories else None
+
+
 @dataclass
 class ToolCallLogEntry:
     """One serialized record of a tool call for the run log."""

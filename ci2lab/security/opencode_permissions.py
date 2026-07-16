@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ci2lab.security.decisions import DecisionAction, SecurityDecision
+from ci2lab.security.opencode_defaults import build_default_permissions
 from ci2lab.security.paths import is_within_workspace
 
 PermissionValue = str  # allow | ask | deny
@@ -49,54 +50,6 @@ _TOOL_RULE_ALIASES["write_pptx"] = ["edit", "write", "write_pptx"]
 for _t in _BASH_TOOLS:
     _TOOL_RULE_ALIASES[_t] = ["bash", "shell", _t]
 
-_DEFAULT_EXPERIMENTAL_RULES: dict[str, Any] = {
-    "*": "ask",
-    "skill": "allow",
-    "yard": "allow",
-    "ask_user": "allow",
-    "todo_write": "allow",
-    "read": {
-        "*": "allow",
-        ".env": "deny",
-        "*.env": "deny",
-        "*.env.*": "deny",
-        "**/.env": "deny",
-        "**/.env.*": "deny",
-    },
-    "edit": "ask",
-    "bash": {
-        "*": "ask",
-        "git *": "allow",
-        "pytest *": "allow",
-        "rm *": "deny",
-        "del *": "deny",
-        "rmdir *": "deny",
-        "rd *": "deny",
-        "erase *": "deny",
-        "Remove-Item *": "deny",
-        "git clean *": "deny",
-        "git reset --hard*": "deny",
-        "find * -delete*": "deny",
-        "find * -exec rm*": "deny",
-        "xargs rm *": "deny",
-        "*| xargs rm*": "deny",
-        "chmod -R *": "deny",
-        "chown -R *": "deny",
-        "sudo *": "deny",
-        "dd *": "deny",
-        "mkfs*": "deny",
-        "mount *": "deny",
-        "umount *": "deny",
-        "truncate *": "deny",
-        "shred *": "deny",
-        "bash -c *": "deny",
-        "sh -c *": "deny",
-    },
-    "external_directory": {
-        "*": "deny",
-    },
-}
-
 
 @dataclass
 class OpenCodePermissionConfig:
@@ -107,7 +60,13 @@ class OpenCodePermissionConfig:
     @classmethod
     def default_experimental(cls) -> OpenCodePermissionConfig:
         """Return a config seeded with the built-in experimental defaults."""
-        return cls(rules=dict(_DEFAULT_EXPERIMENTAL_RULES))
+        return cls(
+            rules=build_default_permissions(
+                edit="ask",
+                external_directory="deny",
+                allow_internal_tools=True,
+            )
+        )
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any] | None) -> OpenCodePermissionConfig:
@@ -122,7 +81,7 @@ class OpenCodePermissionConfig:
         """
         if not raw:
             return cls.default_experimental()
-        merged = dict(_DEFAULT_EXPERIMENTAL_RULES)
+        merged = cls.default_experimental().rules
         for key, value in raw.items():
             if isinstance(value, dict) and isinstance(merged.get(key), dict):
                 merged[key] = {**merged[key], **value}

@@ -10,6 +10,7 @@ from typing import Any
 
 from ci2lab.harness.types import AgentConfig
 from ci2lab.security.engine import evaluate_tool_gate
+from ci2lab.security.gate_check import target_label
 from ci2lab.security.opencode_config_io import (
     OpenCodeConfigBundle,
     bundle_from_preset,
@@ -156,15 +157,6 @@ def build_config_comparison_cases(
     ]
 
 
-def _target_label(args: dict[str, Any]) -> str:
-    """Return a short label for a tool call's command or path target."""
-    if "command" in args:
-        return str(args["command"])
-    if "path" in args:
-        return str(args["path"])
-    return str(args)[:120]
-
-
 def _risk_note_for_case(
     *,
     case_id: str,
@@ -243,7 +235,7 @@ def run_config_comparison(
                     case_id=case["case_id"],
                     config_name=config_name,
                     tool=tool,
-                    target_or_command=_target_label(args),
+                    target_or_command=target_label(args),
                     actual_decision=decision,
                     matched_rule=gate.matched_rule,
                     external_directory=gate.external_directory,

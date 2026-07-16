@@ -25,7 +25,14 @@ from typing import Any
 
 from rich.table import Table
 
-from ci2lab.bench.metrics import mean, median, pass_at_k
+from ci2lab.bench.metrics import (
+    format_optional_number,
+    is_number,
+    mean,
+    median,
+    optional_round,
+    pass_at_k,
+)
 from ci2lab.bench.task import default_results_dir
 from ci2lab.console import console
 
@@ -144,9 +151,9 @@ def _summarize(agent: str, task: str, group: list[dict[str, Any]]) -> dict[str, 
     """Summarize one (task, agent) group of run rows."""
     n = len(group)
     solved = sum(1 for r in group if r.get("solved") is True)
-    tokens = [float(r["total_tokens"]) for r in group if _is_num(r.get("total_tokens"))]
-    costs = [float(r["cost_usd"]) for r in group if _is_num(r.get("cost_usd"))]
-    latencies = [float(r["wall_clock_s"]) for r in group if _is_num(r.get("wall_clock_s"))]
+    tokens = [float(r["total_tokens"]) for r in group if is_number(r.get("total_tokens"))]
+    costs = [float(r["cost_usd"]) for r in group if is_number(r.get("cost_usd"))]
+    latencies = [float(r["wall_clock_s"]) for r in group if is_number(r.get("wall_clock_s"))]
     return {
         "agent": agent,
         "task_id": task,
@@ -154,9 +161,9 @@ def _summarize(agent: str, task: str, group: list[dict[str, Any]]) -> dict[str, 
         "solved": solved,
         "pass_at_1": round(solved / n, 4) if n else 0.0,
         "pass_at_k": round(pass_at_k(n, solved, min(_K_REPORT, n)), 4),
-        "mean_total_tokens": _opt_round(mean(tokens), 1),
-        "mean_cost_usd": _opt_round(mean(costs), 6),
-        "median_latency_s": _opt_round(median(latencies), 2),
+        "mean_total_tokens": optional_round(mean(tokens), 1),
+        "mean_cost_usd": optional_round(mean(costs), 6),
+        "median_latency_s": optional_round(median(latencies), 2),
         "errors": sum(1 for r in group if r.get("status") in _ERROR_STATUSES),
         "false_positives": sum(1 for r in group if r.get("false_positive") is True),
     }
@@ -183,21 +190,6 @@ def _uniform_token_warning(agent: str, group: list[dict[str, Any]]) -> list[str]
     return []
 
 
-def _is_num(value: Any) -> bool:
-    """Whether ``value`` is a real number (not a bool)."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _opt_round(value: float | None, digits: int) -> float | None:
-    """Round ``value`` to ``digits`` places, passing ``None`` through."""
-    return None if value is None else round(value, digits)
-
-
-def _fmt(value: float | None) -> str:
-    """Format an optional numeric aggregate for a table cell."""
-    return "-" if value is None else f"{value:g}"
-
-
 def _print_task_agent_table(rows: list[dict[str, Any]]) -> None:
     """Render the per (task, agent) comparison table."""
     table = Table(title="Per task × agent")
@@ -221,9 +213,9 @@ def _print_task_agent_table(rows: list[dict[str, Any]]) -> None:
             str(row["n"]),
             f"{row['pass_at_1']:.2f}",
             f"{row['pass_at_k']:.2f}",
-            _fmt(row["mean_total_tokens"]),
-            _fmt(row["mean_cost_usd"]),
-            _fmt(row["median_latency_s"]),
+            format_optional_number(row["mean_total_tokens"]),
+            format_optional_number(row["mean_cost_usd"]),
+            format_optional_number(row["median_latency_s"]),
             str(row["errors"]),
             str(row["false_positives"]),
         )

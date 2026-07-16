@@ -12,7 +12,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from ci2lab.harness.skills.loader import get_skill, load_skills
+from ci2lab.harness.skills.loader import get_skill, load_skills, render_skill
 
 if TYPE_CHECKING:
     from ci2lab.contracts.types import ModelSelection
@@ -277,16 +277,7 @@ def build_exercise_skill_prefix(
         return None
 
     allowed = frozenset(skill.allowed_tools) if skill.allowed_tools else None
-    header = f"# Skill: {skill.name}\n\n{skill.description}\n"
-    if user_args.strip():
-        header += f"\n**User arguments:** {user_args.strip()}\n"
-    if skill.allowed_tools:
-        header += (
-            "\n**Allowed tools for this skill:** "
-            + ", ".join(f"`{t}`" for t in skill.allowed_tools)
-            + "\n"
-        )
-    return f"{header}\n{skill.body}", allowed
+    return render_skill(skill, user_args), allowed
 
 
 def enrich_user_prompt_with_exercise_skill(
@@ -357,7 +348,7 @@ def enrich_turn_content_with_exercise_skill(
     return skill_block + "\n\n" + content, allowed
 
 
-def _strip_wrapping_fence(text: str) -> str:
+def strip_wrapping_fence(text: str) -> str:
     """Drop a single ``` fence a vision model sometimes wraps a page in."""
     stripped = text.strip()
     if not stripped.startswith("```"):
@@ -366,6 +357,10 @@ def _strip_wrapping_fence(text: str) -> str:
     if len(lines) < 2 or not lines[-1].rstrip().endswith("```"):
         return stripped
     return "\n".join(lines[1:-1]).strip()
+
+
+# Compatibility alias for callers that imported the former private helper.
+_strip_wrapping_fence = strip_wrapping_fence
 
 
 def transcribe_visual_document(
@@ -440,7 +435,7 @@ def transcribe_visual_document(
             console.print(
                 f"[dim]── Transcribing {name} ({len(desc)} chars, model {vision_tag}) ──[/dim]"
             )
-            parts.append(f"## {name}\n\n{_strip_wrapping_fence(desc)}")
+            parts.append(f"## {name}\n\n{strip_wrapping_fence(desc)}")
     finally:
         for tmp in temp_dirs:
             shutil.rmtree(tmp, ignore_errors=True)

@@ -24,6 +24,7 @@ from ci2lab.security.claude_live_audit import (
     prepare_audit_workspace,
 )
 from ci2lab.security.engine import evaluate_tool_gate
+from ci2lab.security.gate_check import gate_decision
 from ci2lab.security.opencode_permissions import OpenCodePermissionConfig
 from ci2lab.security.opencode_presets import preset_permissions
 from ci2lab.security.session_permissions import (
@@ -420,15 +421,6 @@ def build_dispatch_cases(ws_root: Path, outside_secret: Path) -> list[DispatchCa
     ]
 
 
-def _gate_decision(gate: Any) -> GateDecision:
-    """Collapse a gate result into a single ``allow``/``ask``/``deny`` label."""
-    if gate.blocked:
-        return "deny"
-    if gate.needs_confirm:
-        return "ask"
-    return "allow"
-
-
 def _match_rule(actual: str | None, expected: str | None) -> bool:
     """Return whether ``actual`` satisfies the ``expected`` rule or prefix."""
     if expected is None:
@@ -502,7 +494,7 @@ def evaluate_gate_case(
             session_id=spec.session_id,
         )
         gate = evaluate_tool_gate(spec.tool, spec.args, config)
-        decision = _gate_decision(gate)
+        decision = gate_decision(gate)
         ok = decision == spec.expectation.decision and _match_rule(
             gate.matched_rule, spec.expectation.matched_rule
         )

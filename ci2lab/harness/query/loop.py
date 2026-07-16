@@ -95,6 +95,7 @@ from ci2lab.harness.vision_exercise import (
     enrich_turn_content_with_exercise_skill,
     is_transcription_request,
     is_visual_document_request,
+    strip_wrapping_fence,
 )
 
 logger = logging.getLogger(__name__)
@@ -814,21 +815,8 @@ def _prepend_missing_reads(calls: list[ToolCall], user_prompt: str) -> list[Tool
     return prefixed + calls
 
 
-def _strip_code_fence(text: str) -> str:
-    """Drop a single wrapping ``` fence a vision model sometimes adds.
-
-    Small vision models like to wrap a page transcription in a fenced block
-    (```markdown … ```). That reads as a nested code block once written to a
-    ``.md`` file, so peel exactly one outer fence when it wraps the whole text;
-    anything else is left untouched.
-    """
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) < 2 or not lines[-1].rstrip().endswith("```"):
-        return stripped
-    return "\n".join(lines[1:-1]).strip()
+# Compatibility alias for callers that imported the former private helper.
+_strip_code_fence = strip_wrapping_fence
 
 
 def _prepare_turn_content(

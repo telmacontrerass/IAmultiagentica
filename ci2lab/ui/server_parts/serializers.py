@@ -13,6 +13,7 @@ from ci2lab.harness.session import (
     message_text,
     session_title,
 )
+from ci2lab.harness.tools.paths import format_size
 
 
 def disk_payload(workspace: str) -> dict[str, Any]:
@@ -45,12 +46,8 @@ def bytes_to_gb(value: int | float) -> float:
 
 
 def format_upload_size(num_bytes: int) -> str:
-    """Format a byte count as a human-readable ``B``/``KB``/``MB`` string."""
-    if num_bytes < 1024:
-        return f"{num_bytes} B"
-    if num_bytes < 1024 * 1024:
-        return f"{num_bytes / 1024:.1f} KB"
-    return f"{num_bytes / (1024 * 1024):.1f} MB"
+    """Format an upload size using the shared byte-size formatter."""
+    return format_size(num_bytes)
 
 
 def sessions_payload() -> list[dict[str, Any]]:

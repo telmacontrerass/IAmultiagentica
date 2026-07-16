@@ -26,6 +26,7 @@ from ci2lab.evals.task import (
 from ci2lab.harness import AgentConfig, default_selection, run_agent
 from ci2lab.harness.llm_client import LLMResponse
 from ci2lab.harness.llm_errors import LLMError
+from ci2lab.harness.run_logger import find_latest_run_dir
 
 
 @dataclass
@@ -66,16 +67,6 @@ def _mock_responses_to_llm(
         )
         for item in responses
     ]
-
-
-def _find_latest_run_dir(runs_parent: Path) -> Path | None:
-    """Return the most recently modified subdirectory, or ``None`` if none exist."""
-    if not runs_parent.is_dir():
-        return None
-    dirs = [p for p in runs_parent.iterdir() if p.is_dir()]
-    if not dirs:
-        return None
-    return max(dirs, key=lambda p: p.stat().st_mtime)
 
 
 def _build_agent_config(
@@ -180,7 +171,7 @@ def run_single_task(
         error = exc.user_message
         final_answer = exc.user_message
 
-    run_log_dir = _find_latest_run_dir(task_runs_dir)
+    run_log_dir = find_latest_run_dir(task_runs_dir)
     tool_calls = load_tool_calls_jsonl(run_log_dir / "tool_calls.jsonl") if run_log_dir else []
 
     result = evaluate_task(

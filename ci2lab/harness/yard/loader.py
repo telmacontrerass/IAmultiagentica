@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ci2lab.harness.frontmatter import parse_frontmatter
+
 MAX_COMPONENT_BODY_CHARS = 16_000
 MAX_CATALOG_CHARS = 8_000
 COMPONENT_FILENAME = "COMPONENT.md"
@@ -190,35 +192,6 @@ def _workspace_yard_root(cwd: str) -> Path:
 def _builtin_yard_root() -> Path:
     """Return the root directory for Yard components shipped with the package."""
     return Path(__file__).resolve().parent / "builtin"
-
-
-def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Parse ``---`` delimited scalar frontmatter, returning (meta, body).
-
-    Args:
-        text: Raw file contents, optionally beginning with a frontmatter block.
-
-    Returns:
-        A ``(meta, body)`` tuple. ``meta`` maps normalised keys (lower-cased,
-        hyphens to underscores) to their string values; ``body`` is the
-        remaining text. ``meta`` is empty when no frontmatter is present.
-    """
-    if not text.startswith("---"):
-        return {}, text.strip()
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, re.DOTALL)
-    if not match:
-        return {}, text.strip()
-    body = text[match.end() :].strip()
-    meta: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip().lower().replace("-", "_")
-        value = value.strip().strip("'\"")
-        if value:
-            meta[key] = value
-    return meta, body
 
 
 def _split_list(raw: str | None) -> list[str]:
