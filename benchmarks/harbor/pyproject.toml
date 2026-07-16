@@ -2,9 +2,10 @@
 #
 # Install into the SAME environment as the `harbor` CLI (Python >= 3.12):
 #     uv pip install -e benchmarks/harbor
-# ci2lab and harbor must also be importable there:
-#     uv tool install harbor        # or: pip install harbor
-#     pip install ci2lab            # or: pip install -e .   (from the repo root)
+# ci2lab and harbor must also be importable there. The `bench` extra pulls in
+# harbor, so from the repo root:
+#     pip install -e '.[bench]'     # ci2lab + harbor (or: pip install harbor)
+#     pip install -e benchmarks/harbor
 #
 # Alternatively skip the install and run Harbor with this directory on the path:
 #     PYTHONPATH=benchmarks/harbor harbor run --agent ci2lab_harbor:Ci2LabAgent ...

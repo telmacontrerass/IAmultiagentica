@@ -47,6 +47,11 @@ benchmarks/results/*
 artifacts/
 tmp/
 ci2lab_uploads/
+
+# Harbor (Terminal-Bench) run outputs and downloaded datasets. `harbor run -o`
+# defaults under jobs/, and `harbor datasets download` drops the task tree in CWD.
+jobs/
+/terminal-bench/
 /outputs/
 
 # Local model weights and machine-specific Ollama experiment files
@@ -110,3 +115,4 @@ generated_ok.md
 /imagen4.jpg
 /P1_T1_IE.pdf
 /drones-10-00361-v2.pdf
+/openthoughts-tblite/

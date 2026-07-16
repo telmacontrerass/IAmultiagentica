@@ -39,11 +39,11 @@ constants or `CI2LAB_MODEL` (see below).
 ## One-time setup (on the A6000 host)
 
 ```bash
-# 1) Harbor (Python >= 3.12) + Docker running
-uv tool install harbor          # or: pip install harbor
+# 1) Harbor (Python >= 3.12) + Docker running.
+#    The `bench` extra installs ci2lab + harbor together (from the repo root):
+pip install -e '.[bench]'             # or: uv tool install harbor / pip install harbor
 
-# 2) ci2lab importable in the same env as harbor, and this shim on the path
-pip install -e .                      # from the repo root
+# 2) Put this adapter shim on the path so --agent ci2lab_harbor:… resolves
 uv pip install -e benchmarks/harbor   # or export PYTHONPATH=benchmarks/harbor
 
 # 3) Serve the ci2lab wheel to the task containers.
@@ -66,7 +66,7 @@ Sanity-check the harness itself with the reference solution before touching
 ci2lab:
 
 ```bash
-harbor run -d terminal-bench@2.1 -a oracle          # should score ~100%
+harbor run -d terminal-bench@2.0 -a oracle          # should score ~100%
 ```
 
 ## Pre-register the task subset (do this BEFORE any run)
@@ -97,7 +97,7 @@ identical across all four conditions. `--allow-agent-host host.docker.internal`
 lets the container reach the host's Ollama **and** the wheel server.
 
 ```bash
-D=terminal-bench@2.1
+D=terminal-bench@2.0
 # plus, on every command below: -k 3 and the frozen task list from tasks_30.txt
 
 # ci2lab single-agent
@@ -151,7 +151,7 @@ local, third-party-graded delta between these four.
 
 Terminal-Bench task containers are CPU/Docker; the **A6000 is the model server**,
 so a single 32B-class model serializes real agent concurrency to ~1–2 regardless
-of `-n/--n-concurrent`. The full 89-task `terminal-bench@2.1` on a local model is
+of `-n/--n-concurrent`. The full 89-task `terminal-bench@2.0` on a local model is
 order **tens of hours per condition**. Practical options:
 
 - Pre-register a **fixed subset** stratified across TB's task categories and
@@ -173,7 +173,7 @@ differs.
 
 ## One dataset, many benchmarks
 
-The same adapter runs the TB registry by changing only `-d`: `terminal-bench@2.1`
+The same adapter runs the TB registry by changing only `-d`: `terminal-bench@2.0`
 (primary, contamination-resistant by construction), `swebench-verified`
 (official grading via TB; cite with a contamination caveat), `appworld`,
 `deveval`, `evoeval`. Confirm exact dataset slugs with `harbor dataset --help`.

@@ -14,31 +14,45 @@ from pathlib import Path
 import pytest
 
 from ci2lab.bench.harbor import (
+    DEFAULT_MAX_ROUNDS,
     DEFAULT_MODEL,
     TokenReadback,
     agent_env,
+    build_install_command,
     build_run_command,
     find_latest_run_summary,
     read_run_summary,
 )
+from ci2lab.config import DEFAULT_MAX_ROUNDS as PRODUCT_MAX_ROUNDS
 
 
 def test_build_run_command_single_agent() -> None:
     cmd = build_run_command("find the bug")
-    assert cmd.startswith("ci2lab agent ")
+    # Invoked as a module, not the bare console script, so it does not depend on
+    # pip's script dir being on PATH inside an arbitrary task image (exit 127).
+    assert cmd.startswith("python3 -m ci2lab.cli agent ")
     assert "--multi-agent" not in cmd
     assert "--yes" in cmd
     assert "--no-stream" in cmd
-    assert "--workspace" in cmd
+    # No --workspace by default: ci2lab falls back to the process cwd, which
+    # Harbor sets to each task's own workdir (datasets differ: /app vs /workdir).
+    assert "--workspace" not in cmd
     assert "--runs-dir" in cmd
     assert "'find the bug'" in cmd
     assert "tee" in cmd
 
 
+def test_build_run_command_omits_workspace_unless_overridden() -> None:
+    # A hardcoded workdir broke every task built on a non-/app root; the default
+    # must delegate to the task workdir, while an explicit override still works.
+    assert "--workspace" not in build_run_command("x")
+    assert "--workspace /workdir" in build_run_command("x", workdir="/workdir")
+
+
 def test_build_run_command_multi_agent_flag_precedes_subcommand() -> None:
     # --multi-agent is a global flag and must come BEFORE the agent subcommand.
     cmd = build_run_command("do it", multi=True)
-    assert "ci2lab --multi-agent agent " in cmd
+    assert "python3 -m ci2lab.cli --multi-agent agent " in cmd
 
 
 def test_build_run_command_quotes_untrusted_instruction() -> None:
@@ -66,6 +80,27 @@ def test_agent_env_overrides() -> None:
     assert env["CI2LAB_MODEL"] == "devstral:24b"
     assert env["CI2LAB_BACKEND_URL"] == "http://x:1/v1"
     assert env["CI2LAB_NUM_CTX"] == "8192"
+
+
+def test_agent_env_raises_the_round_cap_above_the_product_default() -> None:
+    # A benchmark trial must be stopped by the task's wall-clock timeout (applied
+    # identically to every arm), not by ci2lab's interactive 25-round default —
+    # otherwise the score measures the round budget instead of the harness.
+    env = agent_env()
+    assert int(env["CI2LAB_MAX_ROUNDS"]) == DEFAULT_MAX_ROUNDS
+    assert int(env["CI2LAB_MAX_ROUNDS"]) > PRODUCT_MAX_ROUNDS
+    assert agent_env(max_rounds=7)["CI2LAB_MAX_ROUNDS"] == "7"
+
+
+def test_install_command_falls_back_when_break_system_packages_unsupported() -> None:
+    # pip < 23 has no --break-system-packages and exits 2 on it; PEP-668 images
+    # need it. Neither form works everywhere, so both must be attempted.
+    cmd = build_install_command("http://h:8000/x.whl")
+    guarded, _, fallback = cmd.partition("||")
+    assert "--break-system-packages" in guarded
+    assert "--break-system-packages" not in fallback
+    assert "pip install" in fallback
+    assert "http://h:8000/x.whl" in guarded and "http://h:8000/x.whl" in fallback
 
 
 def _write_run_summary(

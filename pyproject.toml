@@ -50,6 +50,12 @@ convert = [
     "python-docx>=1.1",
     "pdf2docx>=0.5",
 ]
+# Terminal-Bench 2.x (Harbor) external-validity benchmark arm. Heavy transitive
+# tree (fastapi/litellm/supabase); benchmark-only, never needed to run ci2lab.
+# Install alongside the adapter shim: pip install -e '.[bench]' -e benchmarks/harbor
+bench = [
+    "harbor>=0.18",
+]
 
 [project.urls]
 Repository = "https://github.com/telmacontrerass/IAmultiagentica"

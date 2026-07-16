@@ -28,7 +28,10 @@ from harbor.models.agent.context import AgentContext
 
 from ci2lab import __version__ as _CI2LAB_VERSION
 from ci2lab.bench.harbor import (
-    CONTAINER_WORKDIR,
+    DEFAULT_BACKEND_URL,
+    DEFAULT_MAX_ROUNDS,
+    DEFAULT_MODEL,
+    DEFAULT_NUM_CTX,
     DEFAULT_WHEEL_URL,
     agent_env,
     build_install_command,
@@ -46,8 +49,20 @@ class Ci2LabAgent(BaseInstalledAgent):
         # ci2lab-specific knobs (``--agent-kwarg workdir=/foo``,
         # ``--agent-kwarg wheel_url=...``); pop them before delegating so Harbor's
         # base never sees an unknown kwarg.
-        self._workdir = str(kwargs.pop("workdir", CONTAINER_WORKDIR))
+        # Default to None so Harbor runs ci2lab in the task's own configured
+        # workdir (it varies by dataset: /app, /workdir, /workspace, ...).
+        # Forcing a single path fails every task built on a different root.
+        _wd = kwargs.pop("workdir", None)
+        self._workdir = str(_wd) if _wd is not None else None
         self._wheel_url = str(kwargs.pop("wheel_url", DEFAULT_WHEEL_URL))
+        # The host endpoint is not discoverable from inside the container: the
+        # defaults name ``host.docker.internal``, which only resolves on Docker
+        # Desktop. On a native-Linux daemon Harbor adds no host-gateway mapping,
+        # so the host must be addressed by IP (e.g. the bridge gateway).
+        self._backend_url = str(kwargs.pop("backend_url", DEFAULT_BACKEND_URL))
+        self._model = str(kwargs.pop("model", DEFAULT_MODEL))
+        self._num_ctx = int(str(kwargs.pop("num_ctx", DEFAULT_NUM_CTX)))
+        self._max_rounds = int(str(kwargs.pop("max_rounds", DEFAULT_MAX_ROUNDS)))
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     @staticmethod
@@ -85,7 +100,12 @@ class Ci2LabAgent(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=command,
-            env=agent_env(),
+            env=agent_env(
+                model=self._model,
+                backend_url=self._backend_url,
+                num_ctx=self._num_ctx,
+                max_rounds=self._max_rounds,
+            ),
             cwd=self._workdir,
         )
 

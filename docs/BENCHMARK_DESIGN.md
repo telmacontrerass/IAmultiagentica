@@ -18,7 +18,7 @@ others.
 
 | # | Benchmark | What it grades | Why it is here | Contamination |
 | --- | --- | --- | --- | --- |
-| **B1** | **Terminal-Bench 2.1** (via Harbor) | Binary pass/fail on the container's **final state**, 89 hand-authored tasks | **External validity.** Public, third-party-graded, tasks we did not author. Neutralises the "you tuned to your own suite" objection. | Resistant *by construction* (hand-authored, hidden outcome tests), not by secrecy |
+| **B1** | **OpenThoughts-TBLite** (via Harbor) | Binary pass/fail on the container's **final state**, 100 **difficulty-calibrated** terminal-agent tasks (24 easy / 43 medium / 33 hard+) | **External validity *with resolution*.** Public, third-party-graded, tasks we did not author — same properties as Terminal-Bench, but a difficulty range that lands *inside* the local-model capability band, so the harness comparison is actually measurable. Replaces Terminal-Bench 2.0, which floored (see below). | Resistant *by construction* (hand-authored, hidden outcome tests), not by secrecy |
 | **B2** | **Internal suite** (`benchmarks/tasks/`) | Pass rate + tokens + latency on 7 private tasks | **Control.** Leak-proof, fast, and the only place we can author tasks that probe specific harness mechanisms. | Private (never published) |
 | **B3** | **Tool-Call Correctness** (this repo's instrumentation) | Per-tool-call correctness, computed from run traces | **Mechanism isolation.** B1/B2 fuse tool-calling with reasoning and planning; this separates them. **This is the KPI you asked for.** | N/A — derived from our own runs |
 | **B4** | **SWE-bench Verified** (via Harbor registry) | Official SWE-bench grading script | **Recognition.** A number reviewers already know how to read. | ⚠️ Known exposure — reported as secondary, with a caveat |
@@ -30,6 +30,21 @@ Running ci2lab "on BFCL" would measure *BFCL's* scaffolding wrapped around our
 model, which is the opposite of the question we are asking. BFCL holds the harness
 fixed and varies the model; H2 needs the transpose. It remains the right citation
 for tool-calling *metric definitions* (§4) — just not a benchmark we execute.
+
+**Why B1 is OpenThoughts-TBLite and not Terminal-Bench 2.0.** B1 was originally
+Terminal-Bench 2.0. On a locally-servable model (M = `qwen3-coder:30b`) it
+produced a **floor effect**: pass@1 ≈ 0 across the board, with no spread between
+arms. A benchmark on which every harness scores zero has no power to test H2 or
+H3 — it does not measure harness performance, it only confirms the tasks are out
+of reach. TB 2.0 could not be re-sampled out of this (only 4 of its 89 tasks are
+`easy`, and choosing the tasks a harness happened to pass would be post-hoc
+selection), and a model-selection pilot (three models on held-out tasks) showed
+no locally-servable model clears its medium/hard band — so changing M did not
+recover resolution either. OpenThoughts-TBLite keeps the **same third-party
+terminal-agent format, grading, and external validity** but is explicitly
+difficulty-calibrated, so a fixed-M harness comparison is measurable. Terminal-
+Bench 2.0 is therefore **retired as a benchmark arm**; it may still be cited as
+context (a ceiling that current local models do not reach), but it is not run.
 
 **Why B3 had to be built.** B1, B2 and B4 all grade *outcomes*. A task fails
 identically whether the model reasoned badly or simply emitted a malformed JSON

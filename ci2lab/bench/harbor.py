@@ -32,6 +32,7 @@ __all__ = [
     "CONTAINER_RUNS_DIR",
     "CONTAINER_WORKDIR",
     "DEFAULT_BACKEND_URL",
+    "DEFAULT_MAX_ROUNDS",
     "DEFAULT_MODEL",
     "DEFAULT_NUM_CTX",
     "DEFAULT_WHEEL_URL",
@@ -51,6 +52,18 @@ DEFAULT_BACKEND_URL = "http://host.docker.internal:11434/v1"
 
 DEFAULT_NUM_CTX = 32768
 """Context window to request; the model supports far more, capped for KV headroom."""
+
+DEFAULT_MAX_ROUNDS = 100
+"""Round budget for a benchmark trial.
+
+ci2lab's product default (``config.DEFAULT_MAX_ROUNDS`` = 25) is tuned for an
+interactive session, and under Terminal-Bench it *binds*: trials stop at exactly
+25 rounds with wall-clock left over, so the score measures the round budget
+rather than the harness. Set this high enough that the task's own timeout — the
+one limit Harbor applies identically to every arm — is what actually stops a
+trial. Competing agents are not throttled to 25 steps, so leaving this at the
+product default would make a same-model comparison measure budgets, not harnesses.
+"""
 
 CONTAINER_WORKDIR = "/app"
 """Default working directory inside a Terminal-Bench task container.
@@ -84,13 +97,19 @@ under test, which is what a reproducible paper run requires.
 def build_install_command(wheel_url: str = DEFAULT_WHEEL_URL) -> str:
     """Build the shell command that installs ci2lab into a task container.
 
+    Task images ship different pip versions. ``--break-system-packages`` is
+    required on PEP-668 "externally managed" images but does not exist before
+    pip 23.0, where it aborts the install outright (exit 2). Neither variant
+    works everywhere, so try the guarded form and fall back to the plain one.
+
     Args:
         wheel_url: URL of the ci2lab wheel, reachable from inside the container.
 
     Returns:
         A shell command suitable for Harbor's ``exec_as_agent``.
     """
-    return f"pip install --no-input --break-system-packages {shlex.quote(wheel_url)}"
+    url = shlex.quote(wheel_url)
+    return f"pip install --no-input --break-system-packages {url} || pip install --no-input {url}"
 
 
 @dataclass
@@ -116,6 +135,7 @@ def agent_env(
     model: str = DEFAULT_MODEL,
     backend_url: str = DEFAULT_BACKEND_URL,
     num_ctx: int = DEFAULT_NUM_CTX,
+    max_rounds: int = DEFAULT_MAX_ROUNDS,
 ) -> dict[str, str]:
     """Build the environment that points ci2lab at a local model, non-interactively.
 
@@ -127,6 +147,8 @@ def agent_env(
         model: Ollama model tag to run (the benchmark's fixed model M).
         backend_url: OpenAI-compatible base URL reachable from the container.
         num_ctx: Context window to request (drives Ollama's ``num_ctx``).
+        max_rounds: ReAct round budget; keep it above the point where the task's
+            wall-clock timeout binds first (see ``DEFAULT_MAX_ROUNDS``).
 
     Returns:
         Environment variables to inject into the agent's container commands.
@@ -135,6 +157,7 @@ def agent_env(
         "CI2LAB_MODEL": model,
         "CI2LAB_BACKEND_URL": backend_url,
         "CI2LAB_NUM_CTX": str(num_ctx),
+        "CI2LAB_MAX_ROUNDS": str(max_rounds),
         # Mirror the shipped product configuration used by the internal bench
         # adapter (diff-preview gate off) so both benchmark surfaces measure the
         # same harness rather than a weaker variant.
@@ -146,7 +169,7 @@ def build_run_command(
     instruction: str,
     *,
     multi: bool = False,
-    workdir: str = CONTAINER_WORKDIR,
+    workdir: str | None = None,
     security_engine: str = "ci2lab",
     runs_dir: str = CONTAINER_RUNS_DIR,
     log_path: str = CONTAINER_LOG_PATH,
@@ -163,7 +186,13 @@ def build_run_command(
     Args:
         instruction: The task prompt handed to ci2lab verbatim.
         multi: Use the multi-agent orchestrator (the H3 control) when true.
-        workdir: Container directory ci2lab operates in (the graded files).
+        workdir: Container directory ci2lab operates in (the graded files). When
+            ``None`` (the default), ``--workspace`` is omitted and ci2lab falls
+            back to the process working directory — which Harbor sets to the
+            task's own configured workdir. Different datasets standardise on
+            different roots (``/app``, ``/workdir``, ``/workspace``), so pinning
+            one here breaks every task that uses another; leave it unset unless a
+            task needs an explicit override.
         security_engine: ci2lab security engine; ``ci2lab`` mirrors the internal
             benchmark adapter's product configuration.
         runs_dir: Directory for ci2lab's run log (token usage, status).
@@ -173,10 +202,16 @@ def build_run_command(
         A single shell command string suitable for Harbor's ``exec_as_agent``.
     """
     global_flags = "--multi-agent " if multi else ""
+    workspace_flag = f"--workspace {shlex.quote(workdir)} " if workdir else ""
+    # Invoke via ``python3 -m ci2lab.cli`` rather than the bare ``ci2lab`` console
+    # script: pip drops that script wherever the image's install scheme puts it
+    # (often ``~/.local/bin`` under a non-root agent user), which is not always on
+    # PATH — bare ``ci2lab`` then fails with exit 127 before the agent even runs.
+    # Module invocation resolves through the installed package, independent of PATH.
     return (
-        f"ci2lab {global_flags}agent --yes --no-stream "
+        f"python3 -m ci2lab.cli {global_flags}agent --yes --no-stream "
         f"--security-engine {shlex.quote(security_engine)} "
-        f"--workspace {shlex.quote(workdir)} "
+        f"{workspace_flag}"
         f"--runs-dir {shlex.quote(runs_dir)} "
         f"{shlex.quote(instruction)} "
         f"2>&1 | tee {shlex.quote(log_path)}"
